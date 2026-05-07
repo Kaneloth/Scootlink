@@ -4,6 +4,7 @@
  * The `profiles` table stores extended user data keyed by user id (uuid).
  */
 import { supabase } from './supabaseClient';
+export { supabase };
 import { base44 } from './base44Client';
 
 // ─── Auth helpers ────────────────────────────────────────────────────────────
