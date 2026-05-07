@@ -71,7 +71,9 @@ export default function Subscription() {
   useEffect(() => {
     auth.me().then(u => {
       setUser(u);
-      if (u.account_type) setSelected(u.account_type === 'both' ? 'both' : u.account_type);
+      // Use the actual subscription plan from metadata; fallback to account_type if missing
+      const plan = u.subscription_plan || u.account_type || 'driver';
+      setSelected(plan === 'both' ? 'both' : plan);
     }).catch(() => {});
   }, []);
 
@@ -93,15 +95,16 @@ export default function Subscription() {
 
       if (error) {
         console.error('Failed to sync auth metadata', error);
-        toast.warning('Plan updated, but you may need to re-login to see changes.');
+        toast.warning('Plan updated, but you may need to re-login.');
       }
 
       toast.success('Subscription activated! Welcome to Scootlink.');
-      navigate('/');
+      // Force a full page reload so the Dashboard picks up the new metadata
+      window.location.href = '/';
     } catch {
       toast.error('Something went wrong. Please try again.');
+      setProcessing(false);
     }
-    setProcessing(false);
   };
 
   const plan = PLANS.find(p => p.id === selected);
