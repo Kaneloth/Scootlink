@@ -50,7 +50,7 @@ export default function Dashboard() {
   const completedRentals = rentals.filter(r => r.status === 'completed');
   const accountType = user?.user_metadata?.subscription_plan || 'driver';
 
-alert(`DEBUG – accountType: ${accountType}`);
+
   // ---------- Owner content ----------
   const renderOwnerContent = () => (
     <>
