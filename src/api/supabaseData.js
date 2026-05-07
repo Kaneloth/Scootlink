@@ -1,80 +1,122 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Search, MapPin, Wallet, Settings, Bike, LogOut, Users, Plus } from 'lucide-react';
-import { auth } from '@/api/supabaseData';
+/**
+ * Supabase data layer — mirrors the Base44 entity API surface.
+ * Tables expected in Supabase: vehicles, rentals, transactions, reviews, profiles
+ * The `profiles` table stores extended user data keyed by user id (uuid).
+ */
+import { supabase } from './supabaseClient';
+export { supabase };
+import { base44 } from './base44Client';
 
-const navItems = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
-  { label: 'Search Vehicles', icon: Search, path: '/search-vehicles' },
-  { label: 'Find Drivers', icon: Users, path: '/find-drivers' },
-  { label: 'Add Vehicle', icon: Plus, path: '/add-vehicle' },
-  { label: 'GPS Tracking', icon: MapPin, path: '/tracking' },
-  { label: 'Wallet', icon: Wallet, path: '/wallet' },
-  { label: 'Settings', icon: Settings, path: '/settings' },
-];
+// ─── Auth helpers ────────────────────────────────────────────────────────────
 
-export default function Sidebar() {
-  const location = useLocation();
-  const [user, setUser] = useState(null);
+export const auth = {
+  me: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    // All profile data lives in user_metadata
+    return { ...user.user_metadata, id: user.id, email: user.email };
+  },
+  updateMe: async (updates) => {
+    const { data, error } = await supabase.auth.updateUser({ data: updates });
+    if (error) throw error;
+    return data;
+  },
+  logout: async () => {
+    await supabase.auth.signOut();
+    window.location.href = '/auth';
+  },
+  isAuthenticated: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    return !!user;
+  },
+};
 
-  useEffect(() => {
-    auth.me().then(setUser).catch(() => {});
-  }, []);
+// ─── Generic entity helpers ──────────────────────────────────────────────────
 
-  return (
-    <aside className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-card border-r border-border z-40">
-      <div className="p-6 border-b border-border">
-        <Link to="/" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-            <Bike className="w-5 h-5 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-foreground tracking-tight">Scootlink</h1>
-            <p className="text-xs text-muted-foreground">Delivery Rentals</p>
-          </div>
-        </Link>
-      </div>
+const entity = (table) => ({
+  list: async (orderCol = 'created_at', limit = 50) => {
+    const col = orderCol.startsWith('-') ? orderCol.slice(1) : orderCol;
+    const asc = !orderCol.startsWith('-');
+    const { data, error } = await supabase.from(table).select('*').order(col, { ascending: asc }).limit(limit);
+    if (error) throw error;
+    return data || [];
+  },
+  filter: async (filters = {}, orderCol = '-created_at', limit = 100) => {
+    const col = orderCol.startsWith('-') ? orderCol.slice(1) : orderCol;
+    const asc = !orderCol.startsWith('-');
+    let q = supabase.from(table).select('*');
+    Object.entries(filters).forEach(([k, v]) => { q = q.eq(k, v); });
+    const { data, error } = await q.order(col, { ascending: asc }).limit(limit);
+    if (error) throw error;
+    return data || [];
+  },
+  get: async (id) => {
+    const { data, error } = await supabase.from(table).select('*').eq('id', id).single();
+    if (error) throw error;
+    return data;
+  },
+  create: async (payload) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const row = { ...payload, owner_id: user?.id };
+    const { data, error } = await supabase.from(table).insert(row).select().single();
+    if (error) throw new Error(`${error.message} (code: ${error.code}, details: ${error.details})`);
+    return data;
+  },
+  update: async (id, payload) => {
+    const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+  delete: async (id) => {
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    if (error) throw error;
+  },
+});
 
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.path;
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
-                isActive
-                  ? 'bg-primary text-primary-foreground shadow-md'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-              }`}
-            >
-              <item.icon className="w-4.5 h-4.5" />
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+// ─── Exported entities ───────────────────────────────────────────────────────
 
-      <div className="p-4 border-t border-border">
-        {user && (
-          <div className="flex items-center gap-3 px-3 py-2 mb-2">
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
-              {user.full_name?.[0] || 'U'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{user.full_name || 'User'}</p>
-              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-            </div>
-          </div>
-        )}
-        <button
-          onClick={() => auth.logout()}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all w-full"
-        >
-          <LogOut className="w-4 h-4" />
-          Logout
-        </button>
-      </div>
-    </aside>
-  );
-}
+const vehicleToDb = (v) => {
+  const mapped = { ...v };
+  if ('vehicle_type' in mapped) { mapped.type = mapped.vehicle_type; delete mapped.vehicle_type; }
+  if ('price_per_week' in mapped) { mapped.price = mapped.price_per_week; delete mapped.price_per_week; }
+  return mapped;
+};
+const vehicleFromDb = (v) => {
+  if (!v) return v;
+  const mapped = { ...v };
+  if ('type' in mapped) { mapped.vehicle_type = mapped.type; delete mapped.type; }
+  if ('price' in mapped) { mapped.price_per_week = mapped.price; delete mapped.price; }
+  return mapped;
+};
+
+const _vehicleEntity = entity('vehicles');
+export const Vehicle = {
+  list: async (...args) => (await _vehicleEntity.list(...args)).map(vehicleFromDb),
+  filter: async (...args) => (await _vehicleEntity.filter(...args)).map(vehicleFromDb),
+  get: async (id) => vehicleFromDb(await _vehicleEntity.get(id)),
+  create: async (payload) => vehicleFromDb(await _vehicleEntity.create(vehicleToDb(payload))),
+  update: async (id, payload) => vehicleFromDb(await _vehicleEntity.update(id, vehicleToDb(payload))),
+  delete: async (id) => _vehicleEntity.delete(id),
+};
+export const Rental      = entity('rentals');
+export const Transaction = entity('transactions');
+export const Review      = entity('reviews');
+export const User        = {
+  ...entity('profiles'),
+  list: async () => {
+    const { data, error } = await supabase.from('profiles').select('*');
+    if (error) throw error;
+    return data || [];
+  },
+};
+
+// ─── File upload via Supabase Storage ────────────────────────────────────────
+
+export const uploadFile = async (file, bucket = 'uploads') => {
+  const ext = file.name.split('.').pop();
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file);
+  if (error) throw error;
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return { file_url: data.publicUrl };
+};
