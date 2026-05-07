@@ -182,7 +182,7 @@ alert(`DEBUG – accountType: ${accountType}`);
       </div>
 
       {/* Owner-only action buttons */}
-      {(accountType === 'owner' || accountType === 'both') && (
+      {false && (
         <div className="flex flex-wrap gap-2 mt-6">
           <Link to="/add-vehicle">
             <Button className="gap-2">
