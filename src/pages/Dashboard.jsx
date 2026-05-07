@@ -49,7 +49,8 @@ export default function Dashboard() {
   const activeRentals = rentals.filter(r => r.status === 'active' || r.status === 'pending');
   const completedRentals = rentals.filter(r => r.status === 'completed');
   const accountType = user?.account_type || 'both';
-
+const accountType = user?.account_type || 'both';
+alert(`DEBUG – accountType: ${accountType}`);
   // ---------- Owner content ----------
   const renderOwnerContent = () => (
     <>
