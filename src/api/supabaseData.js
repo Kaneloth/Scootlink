@@ -75,6 +75,7 @@ const entity = (table) => ({
 
 // ─── Exported entities ───────────────────────────────────────────────────────
 
+// Column mapping: app field → Supabase column
 const vehicleToDb = (v) => {
   const mapped = { ...v };
   if ('vehicle_type' in mapped) { mapped.type = mapped.vehicle_type; delete mapped.vehicle_type; }
