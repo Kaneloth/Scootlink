@@ -182,7 +182,7 @@ export default function Dashboard() {
       </div>
 
       {/* Owner-only action buttons */}
-      {false && (
+      {(accountType === 'owner' || accountType === 'both') && (
         <div className="flex flex-wrap gap-2 mt-6">
           <Link to="/add-vehicle">
             <Button className="gap-2">
