@@ -1,0 +1,41 @@
+{
+  "name": "Transaction",
+  "type": "object",
+  "properties": {
+    "from_email": {
+      "type": "string",
+      "description": "Sender email or 'system'"
+    },
+    "to_email": {
+      "type": "string",
+      "description": "Recipient email or 'bank'"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "transaction_type": {
+      "type": "string",
+      "enum": [
+        "deposit",
+        "withdrawal",
+        "payment",
+        "rental_payment",
+        "refund"
+      ]
+    },
+    "description": {
+      "type": "string"
+    },
+    "rental_id": {
+      "type": "string",
+      "description": "Associated rental ID if applicable"
+    }
+  },
+  "required": [
+    "from_email",
+    "to_email",
+    "amount",
+    "transaction_type",
+    "description"
+  ]
+}

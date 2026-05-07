@@ -1,0 +1,76 @@
+{
+  "name": "Vehicle",
+  "type": "object",
+  "properties": {
+    "vehicle_type": {
+      "type": "string",
+      "enum": [
+        "scooter",
+        "motorcycle",
+        "car"
+      ],
+      "description": "Type of vehicle"
+    },
+    "make": {
+      "type": "string",
+      "description": "Vehicle manufacturer"
+    },
+    "model": {
+      "type": "string",
+      "description": "Vehicle model"
+    },
+    "year": {
+      "type": "number",
+      "description": "Year of manufacture"
+    },
+    "plate": {
+      "type": "string",
+      "description": "License plate number"
+    },
+    "location": {
+      "type": "string",
+      "description": "Where the vehicle is located"
+    },
+    "price_per_week": {
+      "type": "number",
+      "description": "Weekly rental price in ZAR"
+    },
+    "deposit": {
+      "type": "number",
+      "description": "Security deposit in ZAR"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "available",
+        "rented",
+        "pending",
+        "maintenance"
+      ],
+      "default": "available"
+    },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Photo URLs"
+    },
+    "rating": {
+      "type": "number",
+      "default": 0
+    },
+    "total_reviews": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "make",
+    "model",
+    "vehicle_type",
+    "plate",
+    "location",
+    "price_per_week"
+  ]
+}
