@@ -3,12 +3,12 @@ import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Search, MapPin, Wallet, Settings, Bike, LogOut, Users, Plus } from 'lucide-react';
 import { auth } from '@/api/supabaseData';
 
-const allNavItems = [
+const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
   { label: 'Search Vehicles', icon: Search, path: '/search-vehicles' },
-  { label: 'Find Drivers', icon: Users, path: '/find-drivers', ownerOnly: true },
-  { label: 'Add Vehicle', icon: Plus, path: '/add-vehicle', ownerOnly: true },
-  { label: 'GPS Tracking', icon: MapPin, path: '/tracking', ownerOnly: true },
+  { label: 'Find Drivers', icon: Users, path: '/find-drivers' },
+  { label: 'Add Vehicle', icon: Plus, path: '/add-vehicle' },
+  { label: 'GPS Tracking', icon: MapPin, path: '/tracking' },
   { label: 'Wallet', icon: Wallet, path: '/wallet' },
   { label: 'Settings', icon: Settings, path: '/settings' },
 ];
@@ -19,21 +19,7 @@ export default function Sidebar() {
 
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
-    // Subscribe to auth state changes to keep sidebar in sync
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        const metadata = session.user.user_metadata;
-        setUser(prev => ({ ...prev, subscription_plan: metadata?.subscription_plan }));
-      }
-    });
-    return () => subscription?.unsubscribe();
   }, []);
-
-  // Determine which items to show
-  const accountType = user?.subscription_plan || 'driver';
-  const navItems = allNavItems.filter(
-    (item) => !item.ownerOnly || accountType === 'owner' || accountType === 'both'
-  );
 
   return (
     <aside className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-card border-r border-border z-40">
