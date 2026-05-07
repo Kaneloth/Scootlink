@@ -1,0 +1,40 @@
+{
+  "name": "Review",
+  "type": "object",
+  "properties": {
+    "reviewer_email": {
+      "type": "string"
+    },
+    "reviewer_name": {
+      "type": "string"
+    },
+    "target_email": {
+      "type": "string"
+    },
+    "target_type": {
+      "type": "string",
+      "enum": [
+        "owner",
+        "driver",
+        "vehicle"
+      ]
+    },
+    "rating": {
+      "type": "number",
+      "description": "1-5 star rating"
+    },
+    "text": {
+      "type": "string"
+    },
+    "vehicle_id": {
+      "type": "string",
+      "description": "Optional vehicle reference"
+    }
+  },
+  "required": [
+    "reviewer_email",
+    "target_email",
+    "target_type",
+    "rating"
+  ]
+}

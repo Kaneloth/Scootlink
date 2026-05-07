@@ -1,0 +1,61 @@
+{
+  "name": "Rental",
+  "type": "object",
+  "properties": {
+    "vehicle_id": {
+      "type": "string",
+      "description": "ID of the rented vehicle"
+    },
+    "owner_email": {
+      "type": "string",
+      "description": "Email of the vehicle owner"
+    },
+    "driver_email": {
+      "type": "string",
+      "description": "Email of the driver"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "end_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "active",
+        "completed",
+        "cancelled"
+      ],
+      "default": "pending"
+    },
+    "price_per_week": {
+      "type": "number"
+    },
+    "deposit": {
+      "type": "number"
+    },
+    "message": {
+      "type": "string",
+      "description": "Message from driver to owner"
+    },
+    "contract_signed_owner": {
+      "type": "boolean",
+      "default": false
+    },
+    "contract_signed_driver": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "vehicle_id",
+    "owner_email",
+    "driver_email",
+    "start_date",
+    "end_date"
+  ]
+}

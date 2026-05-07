@@ -1,0 +1,140 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "user"
+      ],
+      "default": "user"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "gender": {
+      "type": "string",
+      "enum": [
+        "Male",
+        "Female",
+        "Other"
+      ]
+    },
+    "date_of_birth": {
+      "type": "string",
+      "format": "date"
+    },
+    "location": {
+      "type": "string"
+    },
+    "residential_address": {
+      "type": "string"
+    },
+    "account_type": {
+      "type": "string",
+      "enum": [
+        "owner",
+        "driver",
+        "both"
+      ],
+      "default": "driver"
+    },
+    "citizenship": {
+      "type": "string"
+    },
+    "sa_id": {
+      "type": "string",
+      "description": "13-digit South African ID number (encrypted)"
+    },
+    "passport": {
+      "type": "string"
+    },
+    "passport_country": {
+      "type": "string"
+    },
+    "license_number": {
+      "type": "string"
+    },
+    "license_year": {
+      "type": "number"
+    },
+    "selfie_url": {
+      "type": "string",
+      "description": "URL to the user's KYC selfie photo"
+    },
+    "verified": {
+      "type": "boolean",
+      "default": false,
+      "description": "Identity verified via Home Affairs"
+    },
+    "kyc_completed": {
+      "type": "boolean",
+      "default": false
+    },
+    "onboarding_completed": {
+      "type": "boolean",
+      "default": false
+    },
+    "sign_in_method": {
+      "type": "string",
+      "enum": [
+        "password",
+        "biometric",
+        "both"
+      ],
+      "default": "password"
+    },
+    "biometric_enrolled": {
+      "type": "boolean",
+      "default": false
+    },
+    "subscription_active": {
+      "type": "boolean",
+      "default": false
+    },
+    "subscription_plan": {
+      "type": "string",
+      "enum": [
+        "driver",
+        "owner",
+        "both"
+      ]
+    },
+    "subscription_start": {
+      "type": "string"
+    },
+    "subscription_expires": {
+      "type": "string"
+    },
+    "wallet_balance": {
+      "type": "number",
+      "default": 0
+    },
+    "rating": {
+      "type": "number",
+      "default": 0
+    },
+    "total_reviews": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "phone",
+    "gender",
+    "date_of_birth",
+    "location",
+    "residential_address",
+    "citizenship",
+    "sa_id",
+    "passport",
+    "passport_country",
+    "license_number",
+    "license_year",
+    "selfie_url",
+    "subscription_plan",
+    "subscription_start",
+    "subscription_expires"
+  ]
+}
