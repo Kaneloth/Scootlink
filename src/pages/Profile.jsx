@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth } from '@/api/supabaseData';
+import { auth, supabase } from '@/api/supabaseData'; // supabase is now exported from supabaseData
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, Loader2 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import StarRating from '@/components/reviews/StarRating';
 import ReviewsSection from '@/components/reviews/ReviewsSection';
@@ -17,9 +17,18 @@ export default function Profile() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [form, setForm] = useState({
-    phone: '', gender: '', location: '', residential_address: '',
-    account_type: 'driver', license_number: '', license_year: '',
-    citizenship: 'South African', sa_id: '', passport: '',
+    full_name: '',
+    email: '',
+    phone: '',
+    gender: '',
+    location: '',
+    residential_address: '',
+    account_type: 'driver',
+    license_number: '',
+    license_year: '',
+    citizenship: 'South African',
+    sa_id: '',
+    passport: '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -27,20 +36,58 @@ export default function Profile() {
     auth.me().then(u => {
       setUser(u);
       setForm({
-        phone: u.phone || '', gender: u.gender || '', location: u.location || '',
-        residential_address: u.residential_address || '', account_type: u.account_type || 'driver',
-        license_number: u.license_number || '', license_year: u.license_year || '',
-        citizenship: u.citizenship || 'South African', sa_id: u.sa_id || '', passport: u.passport || '',
+        full_name: u.full_name || '',
+        email: u.email || '',
+        phone: u.phone || '',
+        gender: u.gender || '',
+        location: u.location || '',
+        residential_address: u.residential_address || '',
+        account_type: u.account_type || 'driver',
+        license_number: u.license_number || '',
+        license_year: u.license_year ? String(u.license_year) : '',
+        citizenship: u.citizenship || 'South African',
+        sa_id: u.sa_id || '',
+        passport: u.passport || '',
       });
     }).catch(() => {});
   }, []);
 
   const handleSave = async () => {
     setSaving(true);
-    await auth.updateMe({ ...form, license_year: form.license_year ? parseInt(form.license_year) : undefined });
-    toast.success('Profile updated!');
-    setSaving(false);
-    navigate('/settings');
+
+    try {
+      // 1. Update metadata (full_name, phone, etc.)
+      const metadataUpdates = {
+        full_name: form.full_name,
+        phone: form.phone,
+        gender: form.gender,
+        location: form.location,
+        residential_address: form.residential_address,
+        account_type: form.account_type,
+        license_number: form.license_number,
+        license_year: form.license_year ? parseInt(form.license_year) : null,
+        citizenship: form.citizenship,
+        sa_id: form.sa_id,
+        passport: form.passport,
+      };
+
+      await auth.updateMe(metadataUpdates);
+
+      // 2. If email changed, initiate email change (sends confirmation)
+      if (form.email !== user.email) {
+        const { error } = await supabase.auth.updateUser({ email: form.email });
+        if (error) throw error;
+        toast.success('Confirmation email sent to ' + form.email + '. Please verify to complete the change.');
+      }
+
+      toast.success('Profile updated!');
+      navigate('/settings');
+    } catch (err) {
+      console.error(err);
+      toast.error('Update failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const update = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
@@ -68,7 +115,7 @@ export default function Profile() {
               <p className="text-sm text-muted-foreground">{user.email}</p>
               <div className="flex items-center gap-2 mt-1">
                 <StarRating value={Math.round(user.rating || 0)} size="sm" showValue />
-                {(user.total_reviews > 0) && (
+                {user.total_reviews > 0 && (
                   <span className="text-xs text-muted-foreground">({user.total_reviews} reviews)</span>
                 )}
               </div>
@@ -90,15 +137,31 @@ export default function Profile() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <Label>Full Name</Label>
-                  <Input className="mt-1" value={user?.full_name || ''} disabled />
-                  <p className="text-[10px] text-muted-foreground mt-1">Managed by your login account</p>
+                  <Input
+                    className="mt-1"
+                    value={form.full_name}
+                    onChange={e => update('full_name', e.target.value)}
+                    placeholder="Your full name"
+                  />
                 </div>
                 <div className="col-span-2">
                   <Label>Email</Label>
-                  <Input className="mt-1" value={user?.email || ''} disabled />
+                  <Input
+                    className="mt-1"
+                    value={form.email}
+                    onChange={e => update('email', e.target.value)}
+                    placeholder="you@example.com"
+                    type="email"
+                  />
+                  {form.email !== user?.email && (
+                    <p className="text-[11px] text-amber-600 mt-1">
+                      A confirmation email will be sent to verify your new address.
+                    </p>
+                  )}
                 </div>
               </div>
 
+              {/* Rest of the form stays identical */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Phone</Label>
@@ -176,6 +239,7 @@ export default function Profile() {
               )}
 
               <Button onClick={handleSave} className="w-full" disabled={saving}>
+                {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                 {saving ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
