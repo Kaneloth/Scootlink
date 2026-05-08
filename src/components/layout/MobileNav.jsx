@@ -1,10 +1,12 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Search, MapPin, Wallet, Settings } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 
 const items = [
   { label: 'Home', icon: LayoutDashboard, path: '/' },
   { label: 'Search', icon: Search, path: '/search-vehicles' },
+  { label: 'Messages', icon: MessageCircle, path: '/messages' },
   { label: 'Track', icon: MapPin, path: '/tracking' },
   { label: 'Wallet', icon: Wallet, path: '/wallet' },
   { label: 'Settings', icon: Settings, path: '/settings' },
