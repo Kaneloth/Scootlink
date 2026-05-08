@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ArrowLeft, Send, MessageCircle, User } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 export default function Messages() {
   const navigate = useNavigate();
