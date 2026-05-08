@@ -31,12 +31,13 @@ export default function RentalRequest() {
     auth.me().then(setUser).catch(() => {});
   }, []);
 
-  const { data: vehicles = [] } = useQuery({
+  const { data: vehicles = [], isLoading } = useQuery({
     queryKey: ['all-vehicles'],
     queryFn: () => Vehicle.list(),
   });
 
-  const vehicle = vehicles.find(v => v.id === vehicleId);
+  // Compare as strings to handle numeric ID vs string parameter
+  const vehicle = vehicles.find(v => String(v.id) === vehicleId);
 
   const estimate = useMemo(() => {
     if (!vehicle || !form.start_date || !form.end_date) return null;
@@ -68,6 +69,15 @@ export default function RentalRequest() {
       message: form.message,
     });
   };
+
+  if (isLoading) {
+    return (
+      <div className="p-4 lg:p-8 max-w-2xl mx-auto">
+        <PageHeader title="Rental Request" backTo="/search-vehicles" />
+        <p className="text-muted-foreground">Loading vehicle…</p>
+      </div>
+    );
+  }
 
   if (!vehicle) {
     return (
