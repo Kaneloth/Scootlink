@@ -22,6 +22,7 @@ import Settings from '@/pages/Settings';
 import Profile from '@/pages/Profile';
 import Onboarding from '@/pages/Onboarding';
 import Subscription from '@/pages/Subscription';
+import Messages from '@/pages/Messages';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
@@ -72,6 +73,7 @@ const AuthenticatedApp = () => {
       </Route>
 
       <Route path="*" element={<PageNotFound />} />
+      <Route path="/messages" element={<Messages />} />
     </Routes>
   );
 };
