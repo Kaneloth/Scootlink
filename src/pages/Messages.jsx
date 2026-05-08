@@ -6,20 +6,20 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, Send, MessageCircle, User } from 'lucide-react';
+import { ArrowLeft, Send, MessageCircle, User, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-
 
 export default function Messages() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [conversations, setConversations] = useState([]);
-  const [selectedChat, setSelectedChat] = useState(null); // { otherUserId, otherUserName }
+  const [selectedChat, setSelectedChat] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [subject, setSubject] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Get current user
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
   }, []);
@@ -82,7 +82,7 @@ export default function Messages() {
       await supabase.from('messages').update({ read: true }).in('id', unreadIds);
     }
 
-    // Get the other user's name (we'll display it later – you could fetch from profiles)
+    // Get the other user's name (we'll display it later — you could fetch from profiles)
     const otherUser = data.find((m) => m.sender_id === otherUserId)?.sender_name || 'User';
 
     setSelectedChat({ otherUserId, otherUserName: otherUser });
@@ -106,31 +106,41 @@ export default function Messages() {
     } else {
       setNewMessage('');
       setSubject('');
-      // Refresh the conversation
+      // Refresh the conversation and conversation list
       openChat(selectedChat.otherUserId);
       fetchConversations();
     }
     setLoading(false);
   };
 
+  // Exit chat view
+  const closeChat = () => {
+    setSelectedChat(null);
+    fetchConversations(); // refresh conversation list
+  };
+
   if (!user) {
-    return <div className="p-4">Loading…</div>;
+    return (
+      <div className="p-4 lg:p-8 max-w-5xl mx-auto">
+        <p className="text-muted-foreground">Loading…</p>
+      </div>
+    );
   }
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-     <button
-  onClick={() => {
-    if (window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate('/');
-    }
-  }}
-  className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6">
-  ← Back
-</button>
-        ← Back
+      {/* Back button */}
+      <button
+        onClick={() => {
+          if (window.history.length > 1) {
+            navigate(-1);
+          } else {
+            navigate('/');
+          }
+        }}
+        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6"
+      >
+        <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
       {!selectedChat ? (
@@ -174,7 +184,7 @@ export default function Messages() {
         /* ─── Chat View ─── */
         <>
           <div className="flex items-center gap-3 mb-4">
-            <button onClick={() => setSelectedChat(null)} className="text-muted-foreground hover:text-foreground">
+            <button onClick={closeChat} className="text-muted-foreground hover:text-foreground">
               <ArrowLeft className="w-5 h-5" />
             </button>
             <h2 className="text-xl font-bold text-foreground">Chat</h2>
@@ -216,8 +226,8 @@ export default function Messages() {
               className="mb-2"
             />
             <Button onClick={handleSend} disabled={!newMessage.trim() || loading} className="w-full gap-2">
-              {loading ? 'Sending…' : <Send className="w-4 h-4" />}
-              Send
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {loading ? 'Sending…' : 'Send'}
             </Button>
           </div>
         </>
