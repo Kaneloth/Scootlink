@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth } from '@/api/supabaseData';
+import { supabase } from '@/api/supabaseClient'; // or @/api/supabaseData if exported there
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -74,6 +74,20 @@ export default function Auth() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    const email = prompt('Enter your email address to reset your password:');
+    if (!email) return;
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/auth', // redirect back to login after reset
+      });
+      if (error) throw error;
+      toast.success('Password reset email sent! Check your inbox.');
+    } catch (err) {
+      toast.error(err.message || 'Failed to send reset email');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -83,7 +97,9 @@ export default function Auth() {
             <Bike className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-foreground">Scootlink</h1>
-          <p className="text-sm text-muted-foreground mt-1">The formal way to connect owners and drivers in the delivery space.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            The formal way to connect owners and drivers in the delivery space.
+          </p>
         </div>
 
         <Card className="p-6 border border-border/50">
@@ -109,6 +125,15 @@ export default function Auth() {
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                   />
+                </div>
+                <div className="text-left">
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="text-sm text-primary hover:underline"
+                  >
+                    Forgot your password?
+                  </button>
                 </div>
                 <Button
                   onClick={handleLogin}
