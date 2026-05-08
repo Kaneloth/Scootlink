@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Search, MapPin, Wallet, Settings, Bike, LogOut, Users, Plus } from 'lucide-react';
+import {
+  LayoutDashboard, Search, MapPin, Wallet, Settings, Bike, LogOut, Users, Plus, MessageCircle
+} from 'lucide-react';
 import { auth } from '@/api/supabaseData';
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
   { label: 'Search Vehicles', icon: Search, path: '/search-vehicles' },
+  { label: 'Messages', icon: MessageCircle, path: '/messages' },
   { label: 'Find Drivers', icon: Users, path: '/find-drivers' },
   { label: 'Add Vehicle', icon: Plus, path: '/add-vehicle' },
   { label: 'GPS Tracking', icon: MapPin, path: '/tracking' },
