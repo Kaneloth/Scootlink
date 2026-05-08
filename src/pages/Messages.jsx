@@ -119,7 +119,17 @@ export default function Messages() {
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6">
+     <button
+  onClick={() => {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/');
+    }
+  }}
+  className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6">
+  ← Back
+</button>
         ← Back
       </button>
 
