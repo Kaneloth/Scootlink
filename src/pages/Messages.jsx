@@ -129,7 +129,7 @@ export default function Messages() {
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      {/* Back button */}
+      {/* Back button – improved mobile touch target and z‑index */}
       <button
         onClick={() => {
           if (window.history.length > 1) {
@@ -138,9 +138,10 @@ export default function Messages() {
             navigate('/');
           }
         }}
-        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6"
+        className="relative z-30 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 py-3 px-2 -ml-2 rounded-lg active:bg-accent"
+        style={{ touchAction: 'manipulation', minHeight: '44px' }}
       >
-        <ArrowLeft className="w-4 h-4" /> Back
+        <ArrowLeft className="w-5 h-5" /> Back
       </button>
 
       {!selectedChat ? (
@@ -148,7 +149,7 @@ export default function Messages() {
         <>
           <h2 className="text-2xl font-bold text-foreground mb-4">Messages</h2>
           {conversations.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
+            <div className="relative z-10 text-center py-12 text-muted-foreground">
               <MessageCircle className="w-12 h-12 mx-auto mb-3" />
               <p>No messages yet.</p>
             </div>
@@ -184,7 +185,11 @@ export default function Messages() {
         /* ─── Chat View ─── */
         <>
           <div className="flex items-center gap-3 mb-4">
-            <button onClick={closeChat} className="text-muted-foreground hover:text-foreground">
+            <button
+              onClick={closeChat}
+              className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg py-2 px-1 -ml-1"
+              style={{ touchAction: 'manipulation', minHeight: '44px' }}
+            >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <h2 className="text-xl font-bold text-foreground">Chat</h2>
