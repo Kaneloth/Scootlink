@@ -303,38 +303,38 @@ export default function Dashboard() {
     }
 
     if (accountType === 'both') {
-      return (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
-          <div onClick={() => navigateToBothSection('owner', ownerVehiclesRef)} className="cursor-pointer">
-            <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
-          </div>
-          <div onClick={() => navigateToBothSection('driver', driverAvailableRef)} className="cursor-pointer">
-            <StatCard icon={Search} label="Available" value={availableForMe.length} subtitle="Vehicles near you" />
-          </div>
-          <div onClick={() => navigateToBothSection('owner', ownerAssignmentsRef)} className="cursor-pointer">
-            <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length + ownerPendingRentals.length} />
-          </div>
-          <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
-            <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
-          </div>
-        </div>
-      );
-    }
+     if (accountType === 'both') {
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+      <div onClick={() => navigateToBothSection('owner', ownerVehiclesRef)} className="cursor-pointer">
+        <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
+      </div>
+      <div onClick={() => navigateToBothSection('driver', driverAvailableRef)} className="cursor-pointer">
+        <StatCard icon={Search} label="Available" value={availableForMe.length} subtitle="Vehicles near you" />
+      </div>
+      <div onClick={() => navigateToBothSection('owner', ownerAssignmentsRef)} className="cursor-pointer">
+        <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} />
+      </div>
+      <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
+        <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
+      </div>
+    </div>
+  );
+}
 
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
-        <div onClick={() => scrollToSection(ownerVehiclesRef)} className="cursor-pointer">
-          <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
-        </div>
-        <div onClick={() => scrollToSection(ownerAssignmentsRef)} className="cursor-pointer">
-          <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length + ownerPendingRentals.length} />
-        </div>
-        <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
-          <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
-        </div>
-      </div>
-    );
-  };
+  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+    <div onClick={() => scrollToSection(ownerVehiclesRef)} className="cursor-pointer">
+      <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
+    </div>
+    <div onClick={() => scrollToSection(ownerAssignmentsRef)} className="cursor-pointer">
+      <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} />
+    </div>
+    <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
+      <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
+    </div>
+  </div>
+);
 
   const renderActionButtons = () => {
     const rowButtonClass = "w-full gap-1.5 py-3 text-xs lg:text-sm";
