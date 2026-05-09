@@ -24,7 +24,6 @@ export default function Messages() {
   const [newChatEmail, setNewChatEmail] = useState('');
   const [startNewChat, setStartNewChat] = useState(false);
 
-  // Ref to keep track of the subscription so we can unsubscribe
   const subscriptionRef = useRef(null);
 
   // Get current user
@@ -32,7 +31,7 @@ export default function Messages() {
     auth.me().then(setUser).catch(() => {});
   }, []);
 
-  // Fetch all messages for the current user and group by conversation (manual load on mount)
+  // Fetch all messages and group by conversation, then fetch names
   const fetchConversations = useCallback(async () => {
     if (!user) return;
     const { data, error } = await supabase
@@ -46,12 +45,38 @@ export default function Messages() {
       return;
     }
 
+    // Collect unique other user IDs
+    const otherIds = new Set();
+    data.forEach((msg) => {
+      const otherId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
+      otherIds.add(otherId);
+    });
+
+    // Fetch names of all other users in one query
+    const { data: profiles, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', Array.from(otherIds));
+
+    if (profileError) {
+      console.error(profileError);
+    }
+
+    // Create a name map from profiles
+    const nameMap = {};
+    if (profiles) {
+      profiles.forEach((p) => {
+        nameMap[p.id] = p.full_name || 'User';
+      });
+    }
+
     const grouped = {};
     data.forEach((msg) => {
       const otherId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
       if (!grouped[otherId]) {
         grouped[otherId] = {
           otherUserId: otherId,
+          otherUserName: nameMap[otherId] || 'User',
           lastMessage: msg.body,
           unread: !msg.read && msg.receiver_id === user.id,
           lastTime: msg.created_at,
@@ -62,43 +87,31 @@ export default function Messages() {
     setConversations(Object.values(grouped));
   }, [user]);
 
-  // Initial fetch of conversations
   useEffect(() => {
     fetchConversations();
   }, [fetchConversations]);
 
-  // If a userId is provided in the URL, auto-open that chat
+  // Auto-open chat from URL parameter
   useEffect(() => {
     if (urlUserId && user && user.id !== urlUserId) {
       openChat(urlUserId);
     }
   }, [urlUserId, user]);
 
-  // REAL-TIME SUBSCRIPTION: Listen for new messages involving the current user
+  // Real-time subscription
   useEffect(() => {
     if (!user) return;
 
-    // Subscribe to all messages where current user is sender or receiver
     const subscription = supabase
       .channel('messages-channel')
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `sender_id=eq.${user.id}`,
-        },
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
         (payload) => handleRealtimeMessage(payload.new)
       )
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `receiver_id=eq.${user.id}`,
-        },
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
         (payload) => handleRealtimeMessage(payload.new)
       )
       .subscribe();
@@ -110,9 +123,7 @@ export default function Messages() {
     };
   }, [user]);
 
-  // Handle a new message that just arrived via realtime
   const handleRealtimeMessage = async (msg) => {
-    // If we're currently viewing a chat with the other person, append the message
     if (selectedChat) {
       if (
         (msg.sender_id === user.id && msg.receiver_id === selectedChat.otherUserId) ||
@@ -120,23 +131,19 @@ export default function Messages() {
       ) {
         setMessages((prev) => [...prev, msg]);
 
-        // Mark as read if it was sent by the other party
         if (msg.receiver_id === user.id) {
           await supabase.from('messages').update({ read: true }).eq('id', msg.id);
         }
       }
     }
-
-    // Always refresh the conversation list to update the last message / unread indicator
     fetchConversations();
   };
 
-  // Fetch full conversation with a specific user (manual, not realtime)
   const openChat = async (otherUserId) => {
     if (!user) return;
 
     // Get other user's name from profiles
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile } = await supabase
       .from('profiles')
       .select('full_name, email')
       .eq('id', otherUserId)
@@ -155,7 +162,6 @@ export default function Messages() {
       return;
     }
 
-    // Mark unread messages from this sender as read
     const unreadIds = data
       .filter((m) => m.receiver_id === user.id && !m.read)
       .map((m) => m.id);
@@ -185,13 +191,10 @@ export default function Messages() {
     } else {
       setNewMessage('');
       setSubject('');
-      // We no longer need to manually refresh — realtime will push the sent message back to us,
-      // but for instant UI feedback we could append it locally. Realtime will do it shortly.
     }
     setLoading(false);
   };
 
-  // Start a new chat with a user by email
   const handleNewChat = async () => {
     if (!newChatEmail.trim()) return;
     const { data, error } = await supabase
@@ -229,7 +232,6 @@ export default function Messages() {
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      {/* Back button */}
       <button
         onClick={() => {
           if (window.history.length > 1) navigate(-1);
@@ -242,7 +244,6 @@ export default function Messages() {
       </button>
 
       {!selectedChat ? (
-        /* ─── Conversation List ─── */
         <>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-foreground">Messages</h2>
@@ -284,7 +285,7 @@ export default function Messages() {
                         <User className="w-5 h-5 text-primary" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-foreground">User</p>
+                        <p className="text-sm font-medium text-foreground">{conv.otherUserName}</p>
                         <p className="text-xs text-muted-foreground truncate max-w-[200px]">{conv.lastMessage}</p>
                       </div>
                     </div>
@@ -299,7 +300,6 @@ export default function Messages() {
           )}
         </>
       ) : (
-        /* ─── Chat View ─── */
         <>
           <div className="flex items-center gap-3 mb-4">
             <button onClick={closeChat} className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg py-2 px-1 -ml-1" style={{ touchAction: 'manipulation', minHeight: '44px' }}>
