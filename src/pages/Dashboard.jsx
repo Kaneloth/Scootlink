@@ -45,21 +45,22 @@ export default function Dashboard() {
     queryFn: () => Vehicle.filter({ status: 'available' }),
   });
 
+  // Fetch rentals – now using owner_id/driver_id instead of email
   const { data: rentals = [] } = useQuery({
     queryKey: ['my-rentals'],
     queryFn: async () => {
       const all = await Rental.list();
-      return all.filter(r => r.owner_email === user?.email || r.driver_email === user?.email);
+      return all.filter(r => r.owner_id === user?.id || r.driver_id === user?.id);
     },
-    enabled: !!user?.email,
+    enabled: !!user?.id,
   });
 
   const availableForMe = allVehicles.filter(v => v.created_by !== user?.email);
   const activeRentals = rentals.filter(r => r.status === 'active' || r.status === 'pending');
   const completedRentals = rentals.filter(r => r.status === 'completed');
 
-  const ownerActiveRentals = activeRentals.filter(r => r.owner_email === user?.email);
-  const driverActiveRentals = rentals.filter(r => r.driver_email === user?.email && (r.status === 'active' || r.status === 'pending'));
+  const ownerActiveRentals = activeRentals.filter(r => r.owner_id === user?.id);
+  const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && (r.status === 'active' || r.status === 'pending'));
 
   const accountType = user?.subscription_plan || 'driver';
 
@@ -102,14 +103,18 @@ export default function Dashboard() {
       {user?.subscription_active ? (
         ownerActiveRentals.length > 0 ? (
           <div className="space-y-3">
-            {ownerActiveRentals.map(r => (
-              <RentalCard
-                key={r.id}
-                rental={r}
-                vehicle={vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id)}
-                counterpartyName={r.driver_email}
-              />
-            ))}
+            {ownerActiveRentals.map(r => {
+              const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
+              const driverName = r.driver_email || (r.driver_id ? 'Driver' : 'Unknown'); // could fetch driver name later
+              return (
+                <RentalCard
+                  key={r.id}
+                  rental={r}
+                  vehicle={vehicle}
+                  counterpartyName={driverName}
+                />
+              );
+            })}
           </div>
         ) : (
           <EmptyState icon="📋" title="No active assignments" description="When drivers rent your vehicles, they'll appear here" />
@@ -155,14 +160,18 @@ export default function Dashboard() {
       <h3 className="text-lg font-semibold mb-3 mt-8" ref={driverActiveRentalsRef}>My Active Rentals</h3>
       {driverActiveRentals.length > 0 ? (
         <div className="space-y-3">
-          {driverActiveRentals.map(r => (
-            <RentalCard
-              key={r.id}
-              rental={r}
-              vehicle={allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id)}
-              counterpartyName={r.owner_email}
-            />
-          ))}
+          {driverActiveRentals.map(r => {
+            const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
+            const ownerName = r.owner_email || (r.owner_id ? 'Owner' : 'Unknown');
+            return (
+              <RentalCard
+                key={r.id}
+                rental={r}
+                vehicle={vehicle}
+                counterpartyName={ownerName}
+              />
+            );
+          })}
         </div>
       ) : (
         <EmptyState icon="📋" title="No active rentals" description="You haven't rented any vehicles yet" />
@@ -223,7 +232,6 @@ export default function Dashboard() {
   };
 
   const renderActionButtons = () => {
-    // Common icon size and text style for row buttons to prevent overlap
     const rowButtonClass = "w-full gap-1.5 py-3 text-xs lg:text-sm";
     const iconClass = "w-4 h-4";
 
@@ -347,7 +355,7 @@ export default function Dashboard() {
           <h3 className="text-lg font-semibold mb-3">Completed Rentals</h3>
           <div className="space-y-3">
             {completedRentals.map(r => {
-              const isOwner = r.owner_email === user?.email;
+              const isOwner = r.owner_id === user?.id;
               const targetEmail = isOwner ? r.driver_email : r.owner_email;
               const targetType = isOwner ? 'driver' : 'owner';
               const v = [...vehicles, ...allVehicles].find(v => v.id === r.vehicle_id);
