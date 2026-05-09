@@ -50,7 +50,6 @@ export default function Dashboard() {
   const completedRentals = rentals.filter(r => r.status === 'completed');
   const accountType = user?.user_metadata?.subscription_plan || 'driver';
 
-
   // ---------- Owner content ----------
   const renderOwnerContent = () => (
     <>
@@ -181,28 +180,32 @@ export default function Dashboard() {
         <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
       </div>
 
-      {/* Owner-only action buttons */}
+      {/* Owner‑only action buttons – mobile friendly */}
       {(accountType === 'owner' || accountType === 'both') && (
-        <div className="flex flex-wrap gap-2 mt-6">
-          <Link to="/add-vehicle">
-            <Button className="gap-2">
-              <Plus className="w-4 h-4" /> Add Vehicle
+        <div className="mt-6">
+          {/* Full‑width Add Vehicle button */}
+          <Link to="/add-vehicle" className="block w-full mb-2">
+            <Button className="w-full gap-2 py-6 text-base">
+              <Plus className="w-5 h-5" /> Add Vehicle
             </Button>
           </Link>
-          <Link to="/find-drivers">
-            <Button variant="outline" className="gap-2">
-              <Users className="w-4 h-4" /> Find Drivers
-            </Button>
-          </Link>
-          <Link to="/tracking">
-            <Button variant="outline" className="gap-2">
-              <MapPin className="w-4 h-4" /> GPS Track
-            </Button>
-          </Link>
+          {/* Two side‑by‑side buttons */}
+          <div className="grid grid-cols-2 gap-2">
+            <Link to="/find-drivers">
+              <Button variant="outline" className="w-full gap-2 py-4">
+                <Users className="w-5 h-5" /> Find Drivers
+              </Button>
+            </Link>
+            <Link to="/tracking">
+              <Button variant="outline" className="w-full gap-2 py-4">
+                <MapPin className="w-5 h-5" /> GPS Track
+              </Button>
+            </Link>
+          </div>
         </div>
       )}
 
-      {/* Role-based content */}
+      {/* Role‑based content */}
       <div className="mt-8">
         {accountType === 'both' ? (
           <Tabs defaultValue="owner">
