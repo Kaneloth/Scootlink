@@ -23,7 +23,6 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [reviewModal, setReviewModal] = useState(null);
-  const [selectedDriver, setSelectedDriver] = useState(null);
 
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
@@ -65,7 +64,6 @@ export default function Dashboard() {
   const completedRentals = rentals.filter(r => r.status === 'completed');
 
   const ownerRentals = rentals.filter(r => r.owner_id === user?.id);
-  const ownerPendingRentals = ownerRentals.filter(r => r.status === 'pending');
   const ownerActiveRentals = ownerRentals.filter(r => r.status === 'active');
   const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
 
@@ -130,46 +128,11 @@ export default function Dashboard() {
 
       <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerAssignmentsRef}>Active Assignments</h3>
 
-      {/* Pending proposals */}
-      {ownerPendingRentals.length > 0 && (
-        <div className="mb-6">
-          <p className="text-sm font-medium text-muted-foreground mb-2">PENDING PROPOSALS</p>
-          <div className="space-y-3">
-            {ownerPendingRentals.map(r => {
-              if (!r || !r.vehicle_id) return null; // safety check
-              const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
-              const driverName = r.driver_email || 'Driver';
+      {/* PENDING PROPOSALS – hidden for now to avoid crash */}
+      <div className="mb-6">
+        <p className="text-sm text-muted-foreground">Proposal management will be available soon.</p>
+      </div>
 
-              return (
-                <Card key={r.id} className="p-4 border border-amber-200 bg-amber-50">
-                  <div className="flex flex-col sm:flex-row justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : 'Rental'}</p>
-                      <p className="text-xs text-muted-foreground">Driver: {driverName}</p>
-                      <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
-                      <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
-                      {r.message && <p className="text-xs italic mt-1">"{r.message}"</p>}
-                      <button onClick={() => toast.info('Driver details coming soon')} className="text-xs text-primary mt-1 underline">
-                        View driver details
-                      </button>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" className="gap-1" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'accept'); }}>
-                        <Check className="w-3.5 h-3.5" /> Accept
-                      </Button>
-                      <Button size="sm" variant="outline" className="gap-1 text-destructive" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'reject'); }}>
-                        <X className="w-3.5 h-3.5" /> Reject
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Active assignments */}
       {user?.subscription_active ? (
         ownerActiveRentals.length > 0 ? (
           <div className="space-y-3">
@@ -276,7 +239,7 @@ export default function Dashboard() {
             <StatCard icon={Search} label="Available" value={availableForMe.length} subtitle="Vehicles near you" />
           </div>
           <div onClick={() => navigateToBothSection('owner', ownerAssignmentsRef)} className="cursor-pointer">
-            <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length + ownerPendingRentals.length} />
+            <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} />
           </div>
           <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
             <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
@@ -291,7 +254,7 @@ export default function Dashboard() {
           <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
         </div>
         <div onClick={() => scrollToSection(ownerAssignmentsRef)} className="cursor-pointer">
-          <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length + ownerPendingRentals.length} />
+          <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} />
         </div>
         <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
           <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
@@ -355,8 +318,6 @@ export default function Dashboard() {
 
     return null;
   };
-
-  const currentYear = new Date().getFullYear();
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
