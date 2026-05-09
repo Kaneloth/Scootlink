@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { auth, Vehicle, Rental } from '@/api/supabaseData';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -20,8 +20,12 @@ import StarRating from '@/components/reviews/StarRating';
 export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [reviewModal, setReviewModal] = useState(null);
-  const vehiclesSectionRef = useRef(null);
-  const assignmentsSectionRef = useRef(null);
+
+  // Refs for scrolling to sections
+  const ownerVehiclesRef = useRef(null);
+  const ownerAssignmentsRef = useRef(null);
+  const driverAvailableRef = useRef(null);
+  const driverActiveRentalsRef = useRef(null);
   const reviewsSectionRef = useRef(null);
 
   useEffect(() => {
@@ -51,6 +55,12 @@ export default function Dashboard() {
   const availableForMe = allVehicles.filter(v => v.created_by !== user?.email);
   const activeRentals = rentals.filter(r => r.status === 'active' || r.status === 'pending');
   const completedRentals = rentals.filter(r => r.status === 'completed');
+
+  // Owner‑specific counts
+  const ownerActiveRentals = activeRentals.filter(r => r.owner_email === user?.email);
+  // Driver‑specific counts
+  const driverActiveRentals = rentals.filter(r => r.driver_email === user?.email && (r.status === 'active' || r.status === 'pending'));
+
   const accountType = user?.subscription_plan || 'driver';
 
   const scrollToSection = (ref) => {
@@ -60,7 +70,7 @@ export default function Dashboard() {
   // ---------- Owner content ----------
   const renderOwnerContent = () => (
     <>
-      <h3 className="text-lg font-semibold mb-3" ref={vehiclesSectionRef}>My Listed Vehicles</h3>
+      <h3 className="text-lg font-semibold mb-3" ref={ownerVehiclesRef}>My Listed Vehicles</h3>
       {vehicles.length > 0 ? (
         <div className="space-y-3">
           {vehicles.map(v => (
@@ -82,11 +92,11 @@ export default function Dashboard() {
         />
       )}
 
-      <h3 className="text-lg font-semibold mb-3 mt-8" ref={assignmentsSectionRef}>Active Assignments</h3>
+      <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerAssignmentsRef}>Active Assignments</h3>
       {user?.subscription_active ? (
-        activeRentals.filter(r => r.owner_email === user?.email).length > 0 ? (
+        ownerActiveRentals.length > 0 ? (
           <div className="space-y-3">
-            {activeRentals.filter(r => r.owner_email === user?.email).map(r => (
+            {ownerActiveRentals.map(r => (
               <RentalCard
                 key={r.id}
                 rental={r}
@@ -114,7 +124,7 @@ export default function Dashboard() {
   // ---------- Driver content ----------
   const renderDriverContent = () => (
     <>
-      <h3 className="text-lg font-semibold mb-3">Available Vehicles</h3>
+      <h3 className="text-lg font-semibold mb-3" ref={driverAvailableRef}>Available Vehicles</h3>
       {availableForMe.length > 0 ? (
         <div className="space-y-3">
           {availableForMe.map(v => {
@@ -136,8 +146,105 @@ export default function Dashboard() {
       ) : (
         <EmptyState icon="🔍" title="No available vehicles" description="Check back later for new listings" />
       )}
+
+      {/* Driver's active rentals */}
+      <h3 className="text-lg font-semibold mb-3 mt-8" ref={driverActiveRentalsRef}>My Active Rentals</h3>
+      {driverActiveRentals.length > 0 ? (
+        <div className="space-y-3">
+          {driverActiveRentals.map(r => (
+            <RentalCard
+              key={r.id}
+              rental={r}
+              vehicle={allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id)}
+              counterpartyName={r.owner_email}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyState icon="📋" title="No active rentals" description="You haven't rented any vehicles yet" />
+      )}
     </>
   );
+
+  // ---------- Stat cards – role‑dependent ----------
+  const renderStatCards = () => {
+    if (accountType === 'driver') {
+      return (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+          <div onClick={() => scrollToSection(driverAvailableRef)} className="cursor-pointer">
+            <StatCard icon={Search} label="Available Vehicles" value={availableForMe.length} subtitle="Vehicles near you" />
+          </div>
+          <div onClick={() => scrollToSection(driverActiveRentalsRef)} className="cursor-pointer">
+            <StatCard icon={Bike} label="Active Rentals" value={driverActiveRentals.length} />
+          </div>
+          <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
+            <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
+          </div>
+        </div>
+      );
+    }
+
+    // owner or both
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+        <div onClick={() => scrollToSection(ownerVehiclesRef)} className="cursor-pointer">
+          <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
+        </div>
+        <div onClick={() => scrollToSection(ownerAssignmentsRef)} className="cursor-pointer">
+          <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} />
+        </div>
+        <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
+          <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
+        </div>
+      </div>
+    );
+  };
+
+  // ---------- Action buttons – role‑dependent ----------
+  const renderActionButtons = () => {
+    if (accountType === 'owner' || accountType === 'both') {
+      return (
+        <div className="mt-6">
+          <Link to="/add-vehicle" className="block w-full mb-2">
+            <Button className="w-full gap-2 py-6 text-base">
+              <Plus className="w-5 h-5" /> Add Vehicle
+            </Button>
+          </Link>
+          <div className="grid grid-cols-2 gap-2">
+            <Link to="/find-drivers">
+              <Button variant="outline" className="w-full gap-2 py-4">
+                <Users className="w-5 h-5" /> Find Drivers
+              </Button>
+            </Link>
+            <Link to="/tracking">
+              <Button variant="outline" className="w-full gap-2 py-4">
+                <MapPin className="w-5 h-5" /> GPS Track
+              </Button>
+            </Link>
+          </div>
+        </div>
+      );
+    }
+
+    if (accountType === 'driver') {
+      return (
+        <div className="grid grid-cols-2 gap-2 mt-6">
+          <Link to="/search-vehicles">
+            <Button className="w-full gap-2 py-4">
+              <Search className="w-5 h-5" /> Find Vehicles
+            </Button>
+          </Link>
+          <Link to="/tracking">
+            <Button variant="outline" className="w-full gap-2 py-4">
+              <MapPin className="w-5 h-5" /> GPS Track
+            </Button>
+          </Link>
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
@@ -180,41 +287,8 @@ export default function Dashboard() {
 
       <WalletCard balance={user?.wallet_balance || 0} />
 
-      {/* Stat cards – only 3, clickable to scroll to sections */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
-        <div onClick={() => scrollToSection(vehiclesSectionRef)} className="cursor-pointer">
-          <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
-        </div>
-        <div onClick={() => scrollToSection(assignmentsSectionRef)} className="cursor-pointer">
-          <StatCard icon={Bike} label="Active Rentals" value={activeRentals.length} />
-        </div>
-        <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
-          <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
-        </div>
-      </div>
-
-      {/* Owner‑only action buttons – mobile friendly */}
-      {(accountType === 'owner' || accountType === 'both') && (
-        <div className="mt-6">
-          <Link to="/add-vehicle" className="block w-full mb-2">
-            <Button className="w-full gap-2 py-6 text-base">
-              <Plus className="w-5 h-5" /> Add Vehicle
-            </Button>
-          </Link>
-          <div className="grid grid-cols-2 gap-2">
-            <Link to="/find-drivers">
-              <Button variant="outline" className="w-full gap-2 py-4">
-                <Users className="w-5 h-5" /> Find Drivers
-              </Button>
-            </Link>
-            <Link to="/tracking">
-              <Button variant="outline" className="w-full gap-2 py-4">
-                <MapPin className="w-5 h-5" /> GPS Track
-              </Button>
-            </Link>
-          </div>
-        </div>
-      )}
+      {renderStatCards()}
+      {renderActionButtons()}
 
       {/* Role‑based content */}
       <div className="mt-8">
