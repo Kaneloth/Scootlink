@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Bike, LogIn, ArrowRight, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -22,6 +23,7 @@ export default function Auth() {
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const handleLogin = async () => {
     if (!loginEmail || !loginPassword) {
@@ -52,6 +54,10 @@ export default function Auth() {
       toast.error('Passwords do not match');
       return;
     }
+    if (!agreedToTerms) {
+      toast.error('You must agree to the Terms and Conditions');
+      return;
+    }
     setLoading(true);
     try {
       const { error } = await supabase.auth.signUp({
@@ -60,7 +66,7 @@ export default function Auth() {
         options: {
           data: {
             full_name: regName,
-            account_type: 'driver', // default role; can be changed later
+            account_type: 'driver', // default role; user can upgrade via subscription
           },
         },
       });
@@ -79,7 +85,7 @@ export default function Auth() {
     if (!email) return;
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + '/auth', // redirect back to login after reset
+        redirectTo: window.location.origin + '/auth',
       });
       if (error) throw error;
       toast.success('Password reset email sent! Check your inbox.');
@@ -194,6 +200,30 @@ export default function Auth() {
                     onChange={(e) => setRegConfirmPassword(e.target.value)}
                   />
                 </div>
+
+                {/* Terms and Conditions Checkbox */}
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="terms"
+                    checked={agreedToTerms}
+                    onCheckedChange={(checked) => setAgreedToTerms(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <label htmlFor="terms" className="text-sm text-muted-foreground">
+                    I agree to the{' '}
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        alert('Terms and Conditions will be available soon.');
+                      }}
+                      className="text-primary hover:underline"
+                    >
+                      Terms and Conditions
+                    </a>
+                  </label>
+                </div>
+
                 <Button
                   onClick={handleRegister}
                   className="w-full gap-2"
