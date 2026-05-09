@@ -1,6 +1,5 @@
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import SearchPage from '@/pages/SearchPage';
 import SearchVehicles from '@/pages/SearchVehicles';
 import FindDrivers from '@/pages/FindDrivers';
 
@@ -14,10 +13,10 @@ export default function SearchPage() {
           <TabsTrigger value="drivers">👤 Find Drivers</TabsTrigger>
         </TabsList>
         <TabsContent value="vehicles">
-          <SearchVehicles embedded />
+          <SearchVehicles />
         </TabsContent>
         <TabsContent value="drivers">
-          <FindDrivers embedded />
+          <FindDrivers />
         </TabsContent>
       </Tabs>
     </div>
