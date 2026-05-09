@@ -13,6 +13,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/Dashboard';
 import SearchVehicles from '@/pages/SearchVehicles';
 import FindDrivers from '@/pages/FindDrivers';
+import SearchPage from '@/pages/SearchPage';
 import AddVehicle from '@/pages/AddVehicle';
 import EditVehicle from '@/pages/EditVehicle';
 import RentalRequest from '@/pages/RentalRequest';
