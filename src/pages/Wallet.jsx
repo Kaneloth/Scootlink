@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { auth, Transaction } from '@/api/supabaseData';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { auth, supabase } from '@/api/supabaseData'; // supabase must be exported here
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,60 +23,104 @@ export default function Wallet() {
   const [withdrawModal, setWithdrawModal] = useState(false);
   const [payModal, setPayModal] = useState(false);
   const [amount, setAmount] = useState('');
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     auth.me().then(setUser).catch(() => {}).finally(() => setUserLoading(false));
   }, []);
 
-  const { data: transactions = [] } = useQuery({
-    queryKey: ['transactions'],
+  const { data: transactions = [], refetch: refetchTransactions } = useQuery({
+    queryKey: ['transactions', user?.id],
     queryFn: async () => {
-      const all = await Transaction.list('-created_at', 50);
-      return all.filter(t => t.from_email === user?.email || t.to_email === user?.email);
+      if (!user?.id) return [];
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data;
     },
-    enabled: !!user?.email,
+    enabled: !!user?.id,
   });
 
-  const createTransaction = useMutation({
-    mutationFn: async ({ type, amt }) => {
-      await Transaction.create({
-        from_email: type === 'deposit' ? 'system' : user.email,
-        to_email: type === 'withdrawal' ? 'bank' : user.email,
-        amount: amt,
-        transaction_type: type,
-        description: type === 'deposit' ? 'Funds added' : 'Withdrawal to bank',
-      });
-      const newBalance = type === 'deposit' ? (user.wallet_balance || 0) + amt : (user.wallet_balance || 0) - amt;
-      await auth.updateMe({ wallet_balance: newBalance });
-      const updatedUser = await auth.me();
-      setUser(updatedUser);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      toast.success('Transaction complete');
-      setDepositModal(false);
-      setWithdrawModal(false);
-      setAmount('');
-    },
-  });
-
-  const handleDeposit = () => {
+  const handleDeposit = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return; }
-    createTransaction.mutate({ type: 'deposit', amt });
+
+    setProcessing(true);
+    try {
+      // 1. Insert the transaction record
+      const { error: insertError } = await supabase.from('transactions').insert([
+        {
+          from_user_id: null, // system deposit
+          to_user_id: user.id,
+          amount: amt,
+          type: 'deposit',
+          description: 'Funds added',
+        },
+      ]);
+      if (insertError) throw insertError;
+
+      // 2. Update wallet balance in user metadata
+      const newBalance = (user.wallet_balance || 0) + amt;
+      await auth.updateMe({ wallet_balance: newBalance });
+
+      // 3. Refresh user data and transactions
+      const updatedUser = await auth.me();
+      setUser(updatedUser);
+      refetchTransactions();
+
+      toast.success(`R ${amt} deposited successfully!`);
+      setDepositModal(false);
+      setAmount('');
+    } catch (err) {
+      console.error('Deposit error:', err);
+      toast.error(err.message || 'Deposit failed');
+    } finally {
+      setProcessing(false);
+    }
   };
 
-  const handleWithdraw = () => {
+  const handleWithdraw = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return; }
     if (amt > (user?.wallet_balance || 0)) { toast.error('Insufficient funds'); return; }
-    createTransaction.mutate({ type: 'withdrawal', amt });
+
+    setProcessing(true);
+    try {
+      const { error: insertError } = await supabase.from('transactions').insert([
+        {
+          from_user_id: user.id,
+          to_user_id: null, // withdrawal
+          amount: amt,
+          type: 'withdrawal',
+          description: 'Withdrawal to bank',
+        },
+      ]);
+      if (insertError) throw insertError;
+
+      const newBalance = (user.wallet_balance || 0) - amt;
+      await auth.updateMe({ wallet_balance: newBalance });
+      const updatedUser = await auth.me();
+      setUser(updatedUser);
+      refetchTransactions();
+
+      toast.success(`R ${amt} withdrawn successfully!`);
+      setWithdrawModal(false);
+      setAmount('');
+    } catch (err) {
+      console.error('Withdraw error:', err);
+      toast.error(err.message || 'Withdrawal failed');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <PageHeader title="Wallet" subtitle="Manage your funds" backTo="/" />
-
       <WalletCard balance={user?.wallet_balance || 0} />
 
       <SubscriptionGate user={user} loading={userLoading}>
@@ -100,7 +144,7 @@ export default function Wallet() {
         {transactions.length > 0 ? (
           <div className="space-y-2">
             {transactions.map(t => {
-              const isReceived = t.to_email === user?.email && t.from_email !== user?.email;
+              const isReceived = t.to_user_id === user?.id && t.from_user_id !== user?.id;
               return (
                 <Card key={t.id} className="p-4 border border-border/50">
                   <div className="flex items-center justify-between">
@@ -114,7 +158,7 @@ export default function Wallet() {
                       <div>
                         <p className="text-sm font-medium">{t.description}</p>
                         <p className="text-xs text-muted-foreground">
-                          {t.created_date && format(new Date(t.created_date), 'MMM d, yyyy')}
+                          {t.created_at && format(new Date(t.created_at), 'MMM d, yyyy')}
                         </p>
                       </div>
                     </div>
@@ -131,6 +175,7 @@ export default function Wallet() {
         )}
       </SubscriptionGate>
 
+      {/* Deposit Modal */}
       <Dialog open={depositModal} onOpenChange={setDepositModal}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add Funds</DialogTitle></DialogHeader>
@@ -140,13 +185,14 @@ export default function Wallet() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDepositModal(false)}>Cancel</Button>
-            <Button onClick={handleDeposit} disabled={createTransaction.isPending}>
-              {createTransaction.isPending ? 'Processing...' : 'Deposit'}
+            <Button onClick={handleDeposit} disabled={processing}>
+              {processing ? 'Processing...' : 'Deposit'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Withdraw Modal */}
       <Dialog open={withdrawModal} onOpenChange={setWithdrawModal}>
         <DialogContent>
           <DialogHeader><DialogTitle>Withdraw Funds</DialogTitle></DialogHeader>
@@ -157,8 +203,8 @@ export default function Wallet() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setWithdrawModal(false)}>Cancel</Button>
-            <Button onClick={handleWithdraw} disabled={createTransaction.isPending}>
-              {createTransaction.isPending ? 'Processing...' : 'Withdraw'}
+            <Button onClick={handleWithdraw} disabled={processing}>
+              {processing ? 'Processing...' : 'Withdraw'}
             </Button>
           </DialogFooter>
         </DialogContent>
