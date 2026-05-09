@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Search, MapPin, Wallet, Settings } from 'lucide-react';
 import { MessageCircle } from 'lucide-react';
+import { auth } from '@/api/supabaseData'; // ← added to read subscription plan
 
 const items = [
   { label: 'Home', icon: LayoutDashboard, path: '/' },
-  { label: 'Search', icon: Search, path: '/search-vehicles' },
+  { label: 'Search', icon: Search, path: '/search-vehicles' }, // default, will be overridden dynamically
   { label: 'Messages', icon: MessageCircle, path: '/messages' },
   { label: 'Track', icon: MapPin, path: '/tracking' },
   { label: 'Wallet', icon: Wallet, path: '/wallet' },
@@ -14,11 +15,33 @@ const items = [
 
 export default function MobileNav() {
   const location = useLocation();
+  const [accountType, setAccountType] = useState('driver'); // default to driver
+
+  // Fetch the current user's subscription plan
+  useEffect(() => {
+    auth.me().then(user => {
+      setAccountType(user?.subscription_plan || 'driver');
+    }).catch(() => {});
+  }, []);
+
+  // Determine the correct Search path based on plan
+  const searchPath =
+    accountType === 'owner' ? '/find-drivers' :
+    accountType === 'both'   ? '/mysearch' :
+    '/search-vehicles'; // driver
+
+  // Build the final navigation items, updating Search's path
+  const navItems = items.map(item => {
+    if (item.label === 'Search') {
+      return { ...item, path: searchPath };
+    }
+    return item;
+  });
 
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-lg border-t border-border z-50 safe-area-bottom">
       <div className="flex justify-around items-center py-2 px-2">
-        {items.map((item) => {
+        {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <Link
