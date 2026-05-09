@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, supabase } from '@/api/supabaseData'; // supabase is now exported from supabaseData
+import { auth, supabase } from '@/api/supabaseData'; // supabase is exported from supabaseData
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,6 @@ export default function Profile() {
     gender: '',
     location: '',
     residential_address: '',
-    account_type: 'driver',
     license_number: '',
     license_year: '',
     citizenship: 'South African',
@@ -42,7 +41,6 @@ export default function Profile() {
         gender: u.gender || '',
         location: u.location || '',
         residential_address: u.residential_address || '',
-        account_type: u.account_type || 'driver',
         license_number: u.license_number || '',
         license_year: u.license_year ? String(u.license_year) : '',
         citizenship: u.citizenship || 'South African',
@@ -63,7 +61,6 @@ export default function Profile() {
         gender: form.gender,
         location: form.location,
         residential_address: form.residential_address,
-        account_type: form.account_type,
         license_number: form.license_number,
         license_year: form.license_year ? parseInt(form.license_year) : null,
         citizenship: form.citizenship,
@@ -161,7 +158,8 @@ export default function Profile() {
                 </div>
               </div>
 
-              {/* Rest of the form stays identical */}
+              {/* Account Type removed – role is determined by subscription plan */}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Phone</Label>
@@ -178,18 +176,6 @@ export default function Profile() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-
-              <div>
-                <Label>Account Type</Label>
-                <Select value={form.account_type} onValueChange={v => update('account_type', v)}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="owner">Vehicle Owner</SelectItem>
-                    <SelectItem value="driver">Driver</SelectItem>
-                    <SelectItem value="both">Both</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
 
               <div>
@@ -225,18 +211,17 @@ export default function Profile() {
                 </div>
               )}
 
-              {(form.account_type === 'driver' || form.account_type === 'both') && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>License Number</Label>
-                    <Input className="mt-1" placeholder="DL123" value={form.license_number} onChange={e => update('license_number', e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>License Year</Label>
-                    <Input className="mt-1" type="number" placeholder="2018" value={form.license_year} onChange={e => update('license_year', e.target.value)} />
-                  </div>
+              {/* License fields are shown for all users, not just drivers */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>License Number</Label>
+                  <Input className="mt-1" placeholder="DL123" value={form.license_number} onChange={e => update('license_number', e.target.value)} />
                 </div>
-              )}
+                <div>
+                  <Label>License Year</Label>
+                  <Input className="mt-1" type="number" placeholder="2018" value={form.license_year} onChange={e => update('license_year', e.target.value)} />
+                </div>
+              </div>
 
               <Button onClick={handleSave} className="w-full" disabled={saving}>
                 {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
