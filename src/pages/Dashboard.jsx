@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { auth, Vehicle, Rental } from '@/api/supabaseData';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -19,7 +19,10 @@ import StarRating from '@/components/reviews/StarRating';
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
-  const [reviewModal, setReviewModal] = useState(null); // { rental, targetEmail, targetName, targetType }
+  const [reviewModal, setReviewModal] = useState(null);
+  const vehiclesSectionRef = useRef(null);
+  const assignmentsSectionRef = useRef(null);
+  const reviewsSectionRef = useRef(null);
 
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
@@ -50,10 +53,14 @@ export default function Dashboard() {
   const completedRentals = rentals.filter(r => r.status === 'completed');
   const accountType = user?.subscription_plan || 'driver';
 
+  const scrollToSection = (ref) => {
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   // ---------- Owner content ----------
   const renderOwnerContent = () => (
     <>
-      <h3 className="text-lg font-semibold mb-3">My Listed Vehicles</h3>
+      <h3 className="text-lg font-semibold mb-3" ref={vehiclesSectionRef}>My Listed Vehicles</h3>
       {vehicles.length > 0 ? (
         <div className="space-y-3">
           {vehicles.map(v => (
@@ -75,7 +82,7 @@ export default function Dashboard() {
         />
       )}
 
-      <h3 className="text-lg font-semibold mb-3 mt-8">Active Assignments</h3>
+      <h3 className="text-lg font-semibold mb-3 mt-8" ref={assignmentsSectionRef}>Active Assignments</h3>
       {user?.subscription_active ? (
         activeRentals.filter(r => r.owner_email === user?.email).length > 0 ? (
           <div className="space-y-3">
@@ -173,23 +180,27 @@ export default function Dashboard() {
 
       <WalletCard balance={user?.wallet_balance || 0} />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
-        <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
-        <StatCard icon={Bike} label="Active Rentals" value={activeRentals.length} />
-        <StatCard icon={Search} label="Available" value={availableForMe.length} subtitle="Vehicles near you" />
-        <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
+      {/* Stat cards – only 3, clickable to scroll to sections */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+        <div onClick={() => scrollToSection(vehiclesSectionRef)} className="cursor-pointer">
+          <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
+        </div>
+        <div onClick={() => scrollToSection(assignmentsSectionRef)} className="cursor-pointer">
+          <StatCard icon={Bike} label="Active Rentals" value={activeRentals.length} />
+        </div>
+        <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
+          <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
+        </div>
       </div>
 
       {/* Owner‑only action buttons – mobile friendly */}
       {(accountType === 'owner' || accountType === 'both') && (
         <div className="mt-6">
-          {/* Full‑width Add Vehicle button */}
           <Link to="/add-vehicle" className="block w-full mb-2">
             <Button className="w-full gap-2 py-6 text-base">
               <Plus className="w-5 h-5" /> Add Vehicle
             </Button>
           </Link>
-          {/* Two side‑by‑side buttons */}
           <div className="grid grid-cols-2 gap-2">
             <Link to="/find-drivers">
               <Button variant="outline" className="w-full gap-2 py-4">
@@ -229,7 +240,7 @@ export default function Dashboard() {
 
       {/* Completed rentals — leave review */}
       {completedRentals.length > 0 && (
-        <div className="mt-8">
+        <div className="mt-8" ref={reviewsSectionRef}>
           <h3 className="text-lg font-semibold mb-3">Completed Rentals</h3>
           <div className="space-y-3">
             {completedRentals.map(r => {
