@@ -70,7 +70,7 @@ const AuthenticatedApp = () => {
         <Route path="/wallet" element={<Wallet />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
-       
+       <Route path="/mysearch" element={<SearchPage />} />
       </Route>
 
       <Route path="*" element={<PageNotFound />} />
