@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { User, auth } from '@/api/supabaseData';
 import { useQuery } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Clock, MessageCircle, ShieldCheck, SlidersHorizontal, X, Lock } from 'lucide-react';
+import { MapPin, Clock, MessageCircle, ShieldCheck, SlidersHorizontal, X, Lock, User as UserIcon, Star } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import StarRating from '@/components/reviews/StarRating';
 import PageHeader from '@/components/layout/PageHeader';
@@ -15,9 +16,11 @@ import EmptyState from '@/components/common/EmptyState';
 import { toast } from 'sonner';
 
 export default function FindDrivers() {
+  const navigate = useNavigate();
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({ location: '', minExperience: 0, minRating: 0, radius: 50 });
   const [currentUser, setCurrentUser] = useState(null);
+  const [selectedDriver, setSelectedDriver] = useState(null); // for the detail modal
 
   useEffect(() => {
     auth.me().then(setCurrentUser).catch(() => {});
@@ -103,7 +106,11 @@ export default function FindDrivers() {
           {drivers.map(d => {
             const exp = d.license_year ? currentYear - d.license_year : 0;
             return (
-              <Card key={d.id} className="p-4 border border-border/50">
+              <Card
+                key={d.id}
+                className="p-4 border border-border/50 cursor-pointer hover:bg-accent/50 transition-colors"
+                onClick={() => setSelectedDriver(d)}
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary">
@@ -121,15 +128,9 @@ export default function FindDrivers() {
                       </div>
                     </div>
                   </div>
-                  {currentUser?.subscription_active && currentUser?.verified ? (
-                    <Button size="sm" variant="outline" onClick={() => toast.info('Contact feature coming soon')}>
-                      <MessageCircle className="w-3 h-3 mr-1" /> Contact
-                    </Button>
-                  ) : (
-                    <Button size="sm" variant="outline" disabled title="Subscribe & verify to contact drivers">
-                      <Lock className="w-3 h-3 mr-1" /> Contact
-                    </Button>
-                  )}
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setSelectedDriver(d); /* opens modal */ }}>
+                    <UserIcon className="w-3 h-3 mr-1" /> Details
+                  </Button>
                 </div>
               </Card>
             );
@@ -137,6 +138,67 @@ export default function FindDrivers() {
         </div>
       ) : (
         <EmptyState icon="👤" title="No drivers found" description="Try adjusting your search filters" />
+      )}
+
+      {/* ---------- Driver Detail Modal ---------- */}
+      {selectedDriver && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setSelectedDriver(null)}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-md w-full p-6 border border-border" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Driver Profile</h2>
+              <button onClick={() => setSelectedDriver(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
+                {selectedDriver.full_name?.[0] || '?'}
+              </div>
+              <div>
+                <p className="font-semibold text-lg">{selectedDriver.full_name || 'Driver'}</p>
+                <p className="text-sm text-muted-foreground">{selectedDriver.email}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              {selectedDriver.phone && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Phone</span>
+                  <span className="font-medium">{selectedDriver.phone}</span>
+                </div>
+              )}
+              {selectedDriver.location && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Location</span>
+                  <span className="font-medium">{selectedDriver.location}</span>
+                </div>
+              )}
+              {selectedDriver.license_year && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Experience</span>
+                  <span className="font-medium">{currentYear - selectedDriver.license_year} years</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Verified</span>
+                <span>{selectedDriver.verified ? <Badge className="bg-emerald-100 text-emerald-700">✅ Verified</Badge> : <Badge variant="outline">⏳ Pending</Badge>}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Rating</span>
+                <span><StarRating value={Math.round(selectedDriver.rating || 0)} size="sm" showValue /></span>
+              </div>
+            </div>
+
+            <Button
+              className="w-full mt-6 gap-2"
+              onClick={() => {
+                setSelectedDriver(null);
+                navigate(`/messages?userId=${selectedDriver.id}`);
+              }}
+            >
+              <MessageCircle className="w-4 h-4" /> Contact {selectedDriver.full_name?.split(' ')[0]}
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
