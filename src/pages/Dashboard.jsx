@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { auth, Vehicle, Rental } from '@/api/supabaseData';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Plus, Search, MapPin, Bike, Users, Car, Crown, ShieldCheck, AlertTriangle } from 'lucide-react';
+import {
+  Plus, Search, MapPin, Bike, Users, Car, Crown, ShieldCheck, AlertTriangle,
+  Check, X, User as UserIcon, MessageCircle
+} from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
@@ -21,6 +24,7 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [reviewModal, setReviewModal] = useState(null);
 
+  // Refs for scrolling
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
   const driverAvailableRef = useRef(null);
@@ -30,9 +34,14 @@ export default function Dashboard() {
 
   const [bothTab, setBothTab] = useState('owner');
 
+  // Driver detail popup state
+  const [selectedDriver, setSelectedDriver] = useState(null);
+
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
   }, []);
+
+  const queryClient = useQueryClient();
 
   const { data: vehicles = [] } = useQuery({
     queryKey: ['my-vehicles'],
@@ -45,7 +54,7 @@ export default function Dashboard() {
     queryFn: () => Vehicle.filter({ status: 'available' }),
   });
 
-  // Fetch rentals – now using owner_id/driver_id instead of email
+  // Fetch rentals – filter by owner_id or driver_id
   const { data: rentals = [] } = useQuery({
     queryKey: ['my-rentals'],
     queryFn: async () => {
@@ -59,8 +68,13 @@ export default function Dashboard() {
   const activeRentals = rentals.filter(r => r.status === 'active' || r.status === 'pending');
   const completedRentals = rentals.filter(r => r.status === 'completed');
 
-  const ownerActiveRentals = activeRentals.filter(r => r.owner_id === user?.id);
-  const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && (r.status === 'active' || r.status === 'pending'));
+  // Owner‑specific rental slices
+  const ownerRentals = rentals.filter(r => r.owner_id === user?.id);
+  const ownerPendingRentals = ownerRentals.filter(r => r.status === 'pending');
+  const ownerActiveRentals = ownerRentals.filter(r => r.status === 'active');
+
+  // Driver‑specific rental slice
+  const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
 
   const accountType = user?.subscription_plan || 'driver';
 
@@ -75,6 +89,31 @@ export default function Dashboard() {
     }, 100);
   };
 
+  // Accept / reject proposal
+  const handleProposalResponse = async (rentalId, action) => {
+    try {
+      const rental = rentals.find(r => r.id === rentalId);
+      if (!rental) return;
+
+      if (action === 'accept') {
+        await Rental.update(rentalId, { status: 'active' });
+        await Vehicle.update(rental.vehicle_id, { status: 'rented' });
+        toast.success('Proposal accepted! Vehicle assigned.');
+      } else {
+        await Rental.update(rentalId, { status: 'rejected' });
+        toast.success('Proposal rejected.');
+      }
+
+      // Invalidate queries to refresh
+      queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
+      queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+    } catch (err) {
+      toast.error('Failed to update proposal: ' + err.message);
+    }
+  };
+
+  // ─────────────── Owner Content ───────────────
   const renderOwnerContent = () => (
     <>
       <h3 className="text-lg font-semibold mb-3" ref={ownerVehiclesRef}>My Listed Vehicles</h3>
@@ -100,12 +139,56 @@ export default function Dashboard() {
       )}
 
       <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerAssignmentsRef}>Active Assignments</h3>
+
+      {/* Pending proposals */}
+      {ownerPendingRentals.length > 0 && (
+        <div className="mb-6">
+          <p className="text-sm font-medium text-muted-foreground mb-2">PENDING PROPOSALS</p>
+          <div className="space-y-3">
+            {ownerPendingRentals.map(r => {
+              const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
+              const driver = r.driver_id ? users.find(u => u.id === r.driver_id) : null;
+              const driverName = driver?.full_name || r.driver_email || 'Driver';
+
+              return (
+                <Card key={r.id} className="p-4 border border-amber-200 bg-amber-50">
+                  <div className="flex flex-col sm:flex-row justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : 'Rental'}</p>
+                      <p className="text-xs text-muted-foreground">Driver: {driverName}</p>
+                      <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
+                      <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
+                      {r.message && <p className="text-xs italic mt-1">"{r.message}"</p>}
+                      <button
+                        onClick={() => setSelectedDriver(driver)}
+                        className="text-xs text-primary mt-1 underline"
+                      >
+                        View driver details
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" className="gap-1" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'accept'); }}>
+                        <Check className="w-3.5 h-3.5" /> Accept
+                      </Button>
+                      <Button size="sm" variant="outline" className="gap-1 text-destructive" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'reject'); }}>
+                        <X className="w-3.5 h-3.5" /> Reject
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Active assignments */}
       {user?.subscription_active ? (
         ownerActiveRentals.length > 0 ? (
           <div className="space-y-3">
             {ownerActiveRentals.map(r => {
               const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
-              const driverName = r.driver_email || (r.driver_id ? 'Driver' : 'Unknown'); // could fetch driver name later
+              const driverName = r.driver_email || 'Driver';
               return (
                 <RentalCard
                   key={r.id}
@@ -132,6 +215,7 @@ export default function Dashboard() {
     </>
   );
 
+  // ─────────────── Driver Content ───────────────
   const renderDriverContent = () => (
     <>
       <h3 className="text-lg font-semibold mb-3" ref={driverAvailableRef}>Available Vehicles</h3>
@@ -162,7 +246,7 @@ export default function Dashboard() {
         <div className="space-y-3">
           {driverActiveRentals.map(r => {
             const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
-            const ownerName = r.owner_email || (r.owner_id ? 'Owner' : 'Unknown');
+            const ownerName = r.owner_email || 'Owner';
             return (
               <RentalCard
                 key={r.id}
@@ -179,6 +263,7 @@ export default function Dashboard() {
     </>
   );
 
+  // ─────────────── Stat Cards ───────────────
   const renderStatCards = () => {
     if (accountType === 'driver') {
       return (
@@ -206,7 +291,7 @@ export default function Dashboard() {
             <StatCard icon={Search} label="Available" value={availableForMe.length} subtitle="Vehicles near you" />
           </div>
           <div onClick={() => navigateToBothSection('owner', ownerAssignmentsRef)} className="cursor-pointer">
-            <StatCard icon={Bike} label="Active Rentals" value={activeRentals.length} />
+            <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length + ownerPendingRentals.length} />
           </div>
           <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
             <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
@@ -222,7 +307,7 @@ export default function Dashboard() {
           <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
         </div>
         <div onClick={() => scrollToSection(ownerAssignmentsRef)} className="cursor-pointer">
-          <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} />
+          <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length + ownerPendingRentals.length} />
         </div>
         <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
           <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
@@ -287,6 +372,9 @@ export default function Dashboard() {
     return null;
   };
 
+  // ─────────────── Driver Detail Modal ───────────────
+  const currentYear = new Date().getFullYear();
+
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
       <PageHeader
@@ -294,6 +382,7 @@ export default function Dashboard() {
         subtitle="Manage your vehicles and rentals"
       />
 
+      {/* Onboarding prompt */}
       {user && !user.onboarding_completed && (
         <Card className="p-4 border-2 border-amber-300 bg-amber-50 mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -309,6 +398,7 @@ export default function Dashboard() {
         </Card>
       )}
 
+      {/* Subscription prompt */}
       {user && user.onboarding_completed && !user.subscription_active && (
         <Card className="p-4 border-2 border-primary/30 bg-primary/5 mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -350,6 +440,7 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* Completed rentals — leave review */}
       {completedRentals.length > 0 && (
         <div className="mt-8" ref={reviewsSectionRef}>
           <h3 className="text-lg font-semibold mb-3">Completed Rentals</h3>
@@ -390,6 +481,67 @@ export default function Dashboard() {
           targetName={reviewModal.targetName}
           targetType={reviewModal.targetType}
         />
+      )}
+
+      {/* Driver Detail Modal */}
+      {selectedDriver && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setSelectedDriver(null)}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-md w-full p-6 border border-border" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Driver Profile</h2>
+              <button onClick={() => setSelectedDriver(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
+                {selectedDriver.full_name?.[0] || '?'}
+              </div>
+              <div>
+                <p className="font-semibold text-lg">{selectedDriver.full_name || 'Driver'}</p>
+                <p className="text-sm text-muted-foreground">{selectedDriver.email}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              {selectedDriver.phone && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Phone</span>
+                  <span className="font-medium">{selectedDriver.phone}</span>
+                </div>
+              )}
+              {selectedDriver.location && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Location</span>
+                  <span className="font-medium">{selectedDriver.location}</span>
+                </div>
+              )}
+              {selectedDriver.license_year && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Experience</span>
+                  <span className="font-medium">{currentYear - selectedDriver.license_year} years</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Verified</span>
+                <span>{selectedDriver.verified ? '✅ Verified' : '⏳ Pending'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Rating</span>
+                <span><StarRating value={Math.round(selectedDriver.rating || 0)} size="sm" showValue /></span>
+              </div>
+            </div>
+
+            <Button
+              className="w-full mt-6 gap-2"
+              onClick={() => {
+                setSelectedDriver(null);
+                navigate(`/messages?userId=${selectedDriver.id}`);
+              }}
+            >
+              <MessageCircle className="w-4 h-4" /> Message {selectedDriver.full_name?.split(' ')[0]}
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
