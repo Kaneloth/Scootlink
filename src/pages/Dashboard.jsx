@@ -223,30 +223,35 @@ export default function Dashboard() {
   };
 
   const renderActionButtons = () => {
+    // Common icon size and text style for row buttons to prevent overlap
+    const rowButtonClass = "w-full gap-1.5 py-3 text-xs lg:text-sm";
+    const iconClass = "w-4 h-4";
+
     if (accountType === 'owner' || accountType === 'both') {
+      const gridCols = accountType === 'both' ? 'grid-cols-3' : 'grid-cols-2';
       return (
         <div className="mt-6">
           <Link to="/add-vehicle" className="block w-full mb-2">
-            <Button className="w-full gap-2 py-6 text-base">
-              <Plus className="w-5 h-5" /> Add Vehicle
+            <Button className="w-full gap-2 py-5 text-base">
+              <Plus className={iconClass} /> Add Vehicle
             </Button>
           </Link>
-          <div className={`grid gap-2 ${accountType === 'both' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          <div className={`grid gap-2 ${gridCols}`}>
             <Link to="/find-drivers">
-              <Button variant="outline" className="w-full gap-2 py-4">
-                <Users className="w-5 h-5" /> Find Drivers
+              <Button variant="outline" className={rowButtonClass}>
+                <Users className={iconClass} /> Find Drivers
               </Button>
             </Link>
             {accountType === 'both' && (
               <Link to="/search-vehicles">
-                <Button variant="outline" className="w-full gap-2 py-4">
-                  <Search className="w-5 h-5" /> Find Vehicles
+                <Button variant="outline" className={rowButtonClass}>
+                  <Search className={iconClass} /> Find Vehicles
                 </Button>
               </Link>
             )}
             <Link to="/tracking">
-              <Button variant="outline" className="w-full gap-2 py-4">
-                <MapPin className="w-5 h-5" /> GPS Track
+              <Button variant="outline" className={rowButtonClass}>
+                <MapPin className={iconClass} /> GPS Track
               </Button>
             </Link>
           </div>
@@ -258,13 +263,13 @@ export default function Dashboard() {
       return (
         <div className="grid grid-cols-2 gap-2 mt-6">
           <Link to="/search-vehicles">
-            <Button className="w-full gap-2 py-4">
-              <Search className="w-5 h-5" /> Find Vehicles
+            <Button className="w-full gap-2 py-4 text-sm">
+              <Search className="w-4 h-4" /> Find Vehicles
             </Button>
           </Link>
           <Link to="/tracking">
-            <Button variant="outline" className="w-full gap-2 py-4">
-              <MapPin className="w-5 h-5" /> GPS Track
+            <Button variant="outline" className="w-full gap-2 py-4 text-sm">
+              <MapPin className="w-4 h-4" /> GPS Track
             </Button>
           </Link>
         </div>
