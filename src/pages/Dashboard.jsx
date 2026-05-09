@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { auth, Vehicle, Rental } from '@/api/supabaseData';
+import { auth, Vehicle, Rental, supabase } from '@/api/supabaseData';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
   Plus, Search, MapPin, Bike, Users, Car, Crown, ShieldCheck, AlertTriangle,
-  Check, X, User as UserIcon, MessageCircle
+  Check, X, User as UserIcon, MessageCircle, Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/layout/PageHeader';
@@ -23,6 +23,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [reviewModal, setReviewModal] = useState(null);
+  const [selectedDriver, setSelectedDriver] = useState(null); // stores driver profile
+  const [loadingDriver, setLoadingDriver] = useState(false);   // for the driver detail modal
 
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
@@ -64,6 +66,7 @@ export default function Dashboard() {
   const completedRentals = rentals.filter(r => r.status === 'completed');
 
   const ownerRentals = rentals.filter(r => r.owner_id === user?.id);
+  const ownerPendingRentals = ownerRentals.filter(r => r.status === 'pending');
   const ownerActiveRentals = ownerRentals.filter(r => r.status === 'active');
   const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
 
@@ -102,6 +105,26 @@ export default function Dashboard() {
     }
   };
 
+  // Safely fetch driver details from the profiles table
+  const fetchDriverDetails = async (driverId) => {
+    setLoadingDriver(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, phone, location, license_year, verified, rating')
+        .eq('id', driverId)
+        .single();
+
+      if (error) throw error;
+      setSelectedDriver(data);
+    } catch (err) {
+      toast.error('Could not load driver details');
+      console.error(err);
+    } finally {
+      setLoadingDriver(false);
+    }
+  };
+
   const renderOwnerContent = () => (
     <>
       <h3 className="text-lg font-semibold mb-3" ref={ownerVehiclesRef}>My Listed Vehicles</h3>
@@ -128,10 +151,50 @@ export default function Dashboard() {
 
       <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerAssignmentsRef}>Active Assignments</h3>
 
-      {/* PENDING PROPOSALS – hidden for now to avoid crash */}
-      <div className="mb-6">
-        <p className="text-sm text-muted-foreground">Proposal management will be available soon.</p>
-      </div>
+      {/* Pending proposals */}
+      {ownerPendingRentals.length > 0 && (
+        <div className="mb-6">
+          <p className="text-sm font-medium text-muted-foreground mb-2">PENDING PROPOSALS</p>
+          <div className="space-y-3">
+            {ownerPendingRentals.map(r => {
+              if (!r || !r.vehicle_id) return null;
+              const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
+              const driverName = r.driver_email || 'Driver';
+
+              return (
+                <Card key={r.id} className="p-4 border border-amber-200 bg-amber-50">
+                  <div className="flex flex-col sm:flex-row justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : 'Rental'}</p>
+                      <p className="text-xs text-muted-foreground">Driver: {driverName}</p>
+                      <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
+                      <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
+                      {r.message && <p className="text-xs italic mt-1">"{r.message}"</p>}
+                      {r.driver_id && (
+                        <button
+                          onClick={() => fetchDriverDetails(r.driver_id)}
+                          className="text-xs text-primary mt-1 underline"
+                          disabled={loadingDriver}
+                        >
+                          View driver details
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" className="gap-1" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'accept'); }}>
+                        <Check className="w-3.5 h-3.5" /> Accept
+                      </Button>
+                      <Button size="sm" variant="outline" className="gap-1 text-destructive" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'reject'); }}>
+                        <X className="w-3.5 h-3.5" /> Reject
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {user?.subscription_active ? (
         ownerActiveRentals.length > 0 ? (
@@ -239,7 +302,7 @@ export default function Dashboard() {
             <StatCard icon={Search} label="Available" value={availableForMe.length} subtitle="Vehicles near you" />
           </div>
           <div onClick={() => navigateToBothSection('owner', ownerAssignmentsRef)} className="cursor-pointer">
-            <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} />
+            <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length + ownerPendingRentals.length} />
           </div>
           <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
             <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
@@ -254,7 +317,7 @@ export default function Dashboard() {
           <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
         </div>
         <div onClick={() => scrollToSection(ownerAssignmentsRef)} className="cursor-pointer">
-          <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} />
+          <StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length + ownerPendingRentals.length} />
         </div>
         <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
           <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
@@ -318,6 +381,8 @@ export default function Dashboard() {
 
     return null;
   };
+
+  const currentYear = new Date().getFullYear();
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
@@ -422,6 +487,67 @@ export default function Dashboard() {
           targetName={reviewModal.targetName}
           targetType={reviewModal.targetType}
         />
+      )}
+
+      {/* Driver Detail Modal */}
+      {selectedDriver && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setSelectedDriver(null)}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-md w-full p-6 border border-border" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Driver Profile</h2>
+              <button onClick={() => setSelectedDriver(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
+                {selectedDriver.full_name?.[0] || '?'}
+              </div>
+              <div>
+                <p className="font-semibold text-lg">{selectedDriver.full_name || 'Driver'}</p>
+                <p className="text-sm text-muted-foreground">{selectedDriver.email}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              {selectedDriver.phone && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Phone</span>
+                  <span className="font-medium">{selectedDriver.phone}</span>
+                </div>
+              )}
+              {selectedDriver.location && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Location</span>
+                  <span className="font-medium">{selectedDriver.location}</span>
+                </div>
+              )}
+              {selectedDriver.license_year && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Experience</span>
+                  <span className="font-medium">{currentYear - selectedDriver.license_year} years</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Verified</span>
+                <span>{selectedDriver.verified ? '✅ Verified' : '⏳ Pending'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Rating</span>
+                <span><StarRating value={Math.round(selectedDriver.rating || 0)} size="sm" showValue /></span>
+              </div>
+            </div>
+
+            <Button
+              className="w-full mt-6 gap-2"
+              onClick={() => {
+                setSelectedDriver(null);
+                navigate(`/messages?userId=${selectedDriver.id}`);
+              }}
+            >
+              <MessageCircle className="w-4 h-4" /> Message {selectedDriver.full_name?.split(' ')[0]}
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
