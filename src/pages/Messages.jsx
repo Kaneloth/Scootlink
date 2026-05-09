@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth } from '@/api/supabaseData';
 import { supabase } from '@/api/supabaseClient';
@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 export default function Messages() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const urlUserId = searchParams.get('userId'); // from contact button
+  const urlUserId = searchParams.get('userId');
 
   const [user, setUser] = useState(null);
   const [conversations, setConversations] = useState([]);
@@ -24,12 +24,15 @@ export default function Messages() {
   const [newChatEmail, setNewChatEmail] = useState('');
   const [startNewChat, setStartNewChat] = useState(false);
 
+  // Ref to keep track of the subscription so we can unsubscribe
+  const subscriptionRef = useRef(null);
+
   // Get current user
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
   }, []);
 
-  // Fetch all messages for the current user and group by conversation
+  // Fetch all messages for the current user and group by conversation (manual load on mount)
   const fetchConversations = useCallback(async () => {
     if (!user) return;
     const { data, error } = await supabase
@@ -59,6 +62,7 @@ export default function Messages() {
     setConversations(Object.values(grouped));
   }, [user]);
 
+  // Initial fetch of conversations
   useEffect(() => {
     fetchConversations();
   }, [fetchConversations]);
@@ -70,9 +74,67 @@ export default function Messages() {
     }
   }, [urlUserId, user]);
 
-  // Fetch full conversation with a specific user
+  // REAL-TIME SUBSCRIPTION: Listen for new messages involving the current user
+  useEffect(() => {
+    if (!user) return;
+
+    // Subscribe to all messages where current user is sender or receiver
+    const subscription = supabase
+      .channel('messages-channel')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `sender_id=eq.${user.id}`,
+        },
+        (payload) => handleRealtimeMessage(payload.new)
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `receiver_id=eq.${user.id}`,
+        },
+        (payload) => handleRealtimeMessage(payload.new)
+      )
+      .subscribe();
+
+    subscriptionRef.current = subscription;
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [user]);
+
+  // Handle a new message that just arrived via realtime
+  const handleRealtimeMessage = async (msg) => {
+    // If we're currently viewing a chat with the other person, append the message
+    if (selectedChat) {
+      if (
+        (msg.sender_id === user.id && msg.receiver_id === selectedChat.otherUserId) ||
+        (msg.receiver_id === user.id && msg.sender_id === selectedChat.otherUserId)
+      ) {
+        setMessages((prev) => [...prev, msg]);
+
+        // Mark as read if it was sent by the other party
+        if (msg.receiver_id === user.id) {
+          await supabase.from('messages').update({ read: true }).eq('id', msg.id);
+        }
+      }
+    }
+
+    // Always refresh the conversation list to update the last message / unread indicator
+    fetchConversations();
+  };
+
+  // Fetch full conversation with a specific user (manual, not realtime)
   const openChat = async (otherUserId) => {
     if (!user) return;
+
     // Get other user's name from profiles
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
@@ -123,9 +185,8 @@ export default function Messages() {
     } else {
       setNewMessage('');
       setSubject('');
-      // Refresh the conversation and conversation list
-      openChat(selectedChat.otherUserId);
-      fetchConversations();
+      // We no longer need to manually refresh — realtime will push the sent message back to us,
+      // but for instant UI feedback we could append it locally. Realtime will do it shortly.
     }
     setLoading(false);
   };
@@ -133,7 +194,6 @@ export default function Messages() {
   // Start a new chat with a user by email
   const handleNewChat = async () => {
     if (!newChatEmail.trim()) return;
-    // Look up user by email in profiles
     const { data, error } = await supabase
       .from('profiles')
       .select('id, full_name, email')
@@ -155,10 +215,8 @@ export default function Messages() {
     setNewChatEmail('');
   };
 
-  // Exit chat view
   const closeChat = () => {
     setSelectedChat(null);
-    fetchConversations();
   };
 
   if (!user) {
@@ -253,7 +311,7 @@ export default function Messages() {
             </div>
           </div>
 
-          <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto">
+          <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto" id="messages-container">
             {messages.map((msg) => (
               <div key={msg.id} className={`flex ${msg.sender_id === user.id ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[75%] p-3 rounded-xl ${msg.sender_id === user.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border/50'}`}>
