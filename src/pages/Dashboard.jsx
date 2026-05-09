@@ -21,12 +21,14 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [reviewModal, setReviewModal] = useState(null);
 
-  // Refs for scrolling to sections
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
   const driverAvailableRef = useRef(null);
   const driverActiveRentalsRef = useRef(null);
   const reviewsSectionRef = useRef(null);
+  const tabsRef = useRef(null);
+
+  const [bothTab, setBothTab] = useState('owner');
 
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
@@ -56,9 +58,7 @@ export default function Dashboard() {
   const activeRentals = rentals.filter(r => r.status === 'active' || r.status === 'pending');
   const completedRentals = rentals.filter(r => r.status === 'completed');
 
-  // Owner‑specific counts
   const ownerActiveRentals = activeRentals.filter(r => r.owner_email === user?.email);
-  // Driver‑specific counts
   const driverActiveRentals = rentals.filter(r => r.driver_email === user?.email && (r.status === 'active' || r.status === 'pending'));
 
   const accountType = user?.subscription_plan || 'driver';
@@ -67,7 +67,13 @@ export default function Dashboard() {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  // ---------- Owner content ----------
+  const navigateToBothSection = (tab, ref) => {
+    setBothTab(tab);
+    setTimeout(() => {
+      scrollToSection(ref);
+    }, 100);
+  };
+
   const renderOwnerContent = () => (
     <>
       <h3 className="text-lg font-semibold mb-3" ref={ownerVehiclesRef}>My Listed Vehicles</h3>
@@ -121,7 +127,6 @@ export default function Dashboard() {
     </>
   );
 
-  // ---------- Driver content ----------
   const renderDriverContent = () => (
     <>
       <h3 className="text-lg font-semibold mb-3" ref={driverAvailableRef}>Available Vehicles</h3>
@@ -147,7 +152,6 @@ export default function Dashboard() {
         <EmptyState icon="🔍" title="No available vehicles" description="Check back later for new listings" />
       )}
 
-      {/* Driver's active rentals */}
       <h3 className="text-lg font-semibold mb-3 mt-8" ref={driverActiveRentalsRef}>My Active Rentals</h3>
       {driverActiveRentals.length > 0 ? (
         <div className="space-y-3">
@@ -166,7 +170,6 @@ export default function Dashboard() {
     </>
   );
 
-  // ---------- Stat cards – role‑dependent ----------
   const renderStatCards = () => {
     if (accountType === 'driver') {
       return (
@@ -184,7 +187,26 @@ export default function Dashboard() {
       );
     }
 
-    // owner or both
+    if (accountType === 'both') {
+      return (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+          <div onClick={() => navigateToBothSection('owner', ownerVehiclesRef)} className="cursor-pointer">
+            <StatCard icon={Car} label="My Vehicles" value={vehicles.length} />
+          </div>
+          <div onClick={() => navigateToBothSection('driver', driverAvailableRef)} className="cursor-pointer">
+            <StatCard icon={Search} label="Available" value={availableForMe.length} subtitle="Vehicles near you" />
+          </div>
+          <div onClick={() => navigateToBothSection('owner', ownerAssignmentsRef)} className="cursor-pointer">
+            <StatCard icon={Bike} label="Active Rentals" value={activeRentals.length} />
+          </div>
+          <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer">
+            <StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} />
+          </div>
+        </div>
+      );
+    }
+
+    // owner
     return (
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
         <div onClick={() => scrollToSection(ownerVehiclesRef)} className="cursor-pointer">
@@ -200,7 +222,6 @@ export default function Dashboard() {
     );
   };
 
-  // ---------- Action buttons – role‑dependent ----------
   const renderActionButtons = () => {
     if (accountType === 'owner' || accountType === 'both') {
       return (
@@ -210,12 +231,19 @@ export default function Dashboard() {
               <Plus className="w-5 h-5" /> Add Vehicle
             </Button>
           </Link>
-          <div className="grid grid-cols-2 gap-2">
+          <div className={`grid gap-2 ${accountType === 'both' ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <Link to="/find-drivers">
               <Button variant="outline" className="w-full gap-2 py-4">
                 <Users className="w-5 h-5" /> Find Drivers
               </Button>
             </Link>
+            {accountType === 'both' && (
+              <Link to="/search-vehicles">
+                <Button variant="outline" className="w-full gap-2 py-4">
+                  <Search className="w-5 h-5" /> Find Vehicles
+                </Button>
+              </Link>
+            )}
             <Link to="/tracking">
               <Button variant="outline" className="w-full gap-2 py-4">
                 <MapPin className="w-5 h-5" /> GPS Track
@@ -253,7 +281,6 @@ export default function Dashboard() {
         subtitle="Manage your vehicles and rentals"
       />
 
-      {/* Onboarding prompt */}
       {user && !user.onboarding_completed && (
         <Card className="p-4 border-2 border-amber-300 bg-amber-50 mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -269,7 +296,6 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Subscription prompt */}
       {user && user.onboarding_completed && !user.subscription_active && (
         <Card className="p-4 border-2 border-primary/30 bg-primary/5 mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -290,10 +316,9 @@ export default function Dashboard() {
       {renderStatCards()}
       {renderActionButtons()}
 
-      {/* Role‑based content */}
-      <div className="mt-8">
+      <div className="mt-8" ref={tabsRef}>
         {accountType === 'both' ? (
-          <Tabs defaultValue="owner">
+          <Tabs value={bothTab} onValueChange={setBothTab}>
             <TabsList className="grid w-full grid-cols-2 max-w-xs">
               <TabsTrigger value="owner">Owner</TabsTrigger>
               <TabsTrigger value="driver">Driver</TabsTrigger>
@@ -312,7 +337,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Completed rentals — leave review */}
       {completedRentals.length > 0 && (
         <div className="mt-8" ref={reviewsSectionRef}>
           <h3 className="text-lg font-semibold mb-3">Completed Rentals</h3>
