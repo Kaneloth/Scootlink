@@ -94,3 +94,14 @@
     @apply bg-background text-foreground font-inter;
   }
 }
+
+/* Global overflow protection for mobile */
+html, body {
+  overflow-x: hidden;
+  width: 100%;
+}
+
+#root {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
