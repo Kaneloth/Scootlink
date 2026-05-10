@@ -44,23 +44,29 @@ export default function FindDrivers() {
   });
 
   const fetchDriverReviews = async (driverId) => {
-  setLoadingReviews(true);
-  try {
-    const { data, error } = await supabase
-      .from('reviews')
-      .select('id, rating, comment, created_at, reviewer_id')
-      .eq('target_id', driverId)
-      .order('created_at', { ascending: false })
-      .limit(10);
+    setLoadingReviews(true);
+    try {
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('id, rating, comment, created_at, reviewer_id')
+        .eq('target_id', driverId)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-    if (error) throw error;
-    setDriverReviews(data || []);
-  } catch (err) {
-    console.error('Failed to load reviews:', err);
-  } finally {
-    setLoadingReviews(false);
-  }
-};
+      if (error) throw error;
+      setDriverReviews(data || []);
+    } catch (err) {
+      console.error('Failed to load reviews:', err);
+    } finally {
+      setLoadingReviews(false);
+    }
+  };
+
+  const openDriverDetail = (driver) => {
+    setSelectedDriver(driver);
+    fetchDriverReviews(driver.id);
+  };
+
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
       <PageHeader
@@ -130,7 +136,7 @@ export default function FindDrivers() {
               <Card
                 key={d.id}
                 className="p-4 border border-border/50 cursor-pointer hover:bg-accent/50 transition-colors"
-                onClick={() => setSelectedDriver(d)}
+                onClick={() => openDriverDetail(d)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -149,7 +155,7 @@ export default function FindDrivers() {
                       </div>
                     </div>
                   </div>
-                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setSelectedDriver(d); /* opens modal */ }}>
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openDriverDetail(d); }}>
                     <UserIcon className="w-3 h-3 mr-1" /> Details
                   </Button>
                 </div>
@@ -164,7 +170,7 @@ export default function FindDrivers() {
       {/* ---------- Driver Detail Modal ---------- */}
       {selectedDriver && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setSelectedDriver(null)}>
-          <div className="bg-card rounded-2xl shadow-xl max-w-md w-full p-6 border border-border" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-md w-full p-6 border border-border max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Driver Profile</h2>
               <button onClick={() => setSelectedDriver(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -207,6 +213,28 @@ export default function FindDrivers() {
                 <span className="text-muted-foreground">Rating</span>
                 <span><StarRating value={Math.round(selectedDriver.rating || 0)} size="sm" showValue /></span>
               </div>
+            </div>
+
+            {/* Reviews Section */}
+            <div className="mt-4">
+              {loadingReviews ? (
+                <p className="text-xs text-muted-foreground">Loading reviews...</p>
+              ) : driverReviews.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Recent Reviews</p>
+                  {driverReviews.map(review => (
+                    <div key={review.id} className="p-3 rounded-xl bg-muted/50 border border-border/30">
+                      <div className="flex items-center gap-2 mb-1">
+                        <StarRating value={review.rating} size="sm" />
+                        <span className="text-xs text-muted-foreground">{new Date(review.created_at).toLocaleDateString()}</span>
+                      </div>
+                      {review.comment && <p className="text-xs text-foreground">{review.comment}</p>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No reviews yet.</p>
+              )}
             </div>
 
             <Button
