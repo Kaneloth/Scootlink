@@ -34,51 +34,48 @@ export default function VehicleCard({ vehicle, onClick, showPrice = true }) {
       className="p-4 hover:shadow-lg transition-all duration-200 cursor-pointer border border-border/50 group"
       onClick={onClick}
     >
-      <div className="flex gap-4">
-        <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center text-3xl shrink-0 group-hover:scale-105 transition-transform">
-          {typeIcons[vehicle.vehicle_type] || '🛵'}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex gap-4 flex-1 min-w-0">
+          <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center text-3xl shrink-0 group-hover:scale-105 transition-transform">
+            {typeIcons[vehicle.vehicle_type] || '🛵'}
+          </div>
+          <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-foreground truncate">
               {vehicle.make} {vehicle.model}
             </h3>
-            <Badge variant="outline" className={`text-[10px] shrink-0 ${statusStyles[vehicle.status] || ''}`}>
-              {vehicle.status}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
-              {vehicle.year}
-            </span>
-            <span className="flex items-center gap-1">
-              <MapPin className="w-3 h-3" />
-              {vehicle.location}
-            </span>
-            {vehicle.rating > 0 && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
-                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                {vehicle.rating.toFixed(1)}
+                <Calendar className="w-3 h-3" />
+                {vehicle.year}
               </span>
-            )}
-            {ownerRating !== null && ownerRating > 0 && (
               <span className="flex items-center gap-1">
-                <Star className="w-3 h-3 fill-yellow-500 text-yellow-500" />
-                Owner {ownerRating.toFixed(1)}
+                <MapPin className="w-3 h-3" />
+                {vehicle.location}
               </span>
-            )}
-          </div>
-          {showPrice && (
-            <p className="mt-2 text-sm">
-              <span className="font-bold text-foreground">R {vehicle.price_per_week}</span>
-              <span className="text-muted-foreground">/week</span>
-              {vehicle.deposit > 0 && (
-                <span className="text-muted-foreground text-xs ml-2">· R {vehicle.deposit} deposit</span>
+              {vehicle.rating > 0 && (
+                <span className="flex items-center gap-1">
+                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  {vehicle.rating.toFixed(1)}
+                </span>
               )}
-            </p>
-          )}
+              {ownerRating !== null && ownerRating > 0 && (
+                <span className="flex items-center gap-1">
+                  <Star className="w-3 h-3 fill-yellow-500 text-yellow-500" />
+                  Owner {ownerRating.toFixed(1)}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
+        {showPrice && (
+          <div className="text-sm shrink-0">
+            <span className="font-bold text-foreground">R {vehicle.price_per_week}</span>
+            <span className="text-muted-foreground">/week</span>
+            {vehicle.deposit > 0 && (
+              <span className="text-muted-foreground text-xs ml-2">· R {vehicle.deposit} deposit</span>
+            )}
+          </div>
+        )}
       </div>
       {vehicle.images?.length > 0 && (
         <div className="flex gap-2 mt-3 overflow-x-auto">
