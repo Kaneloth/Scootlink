@@ -21,6 +21,7 @@ export default function AddVehicle() {
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
   }, []);
+
   const [form, setForm] = useState({
     vehicle_type: 'scooter',
     make: '',
@@ -30,7 +31,10 @@ export default function AddVehicle() {
     location: '',
     price_per_week: '',
     deposit: '',
+    storage_type: 'owner_address',   // default: owner's address
+    pickup_return_location: '',
   });
+
   const [images, setImages] = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -93,6 +97,11 @@ export default function AddVehicle() {
       toast.error('Please fill in all required fields');
       return;
     }
+    // Validation for storage fields (optional)
+    if (form.storage_type === 'owner_address' && !form.pickup_return_location) {
+      toast.error('Please specify the pickup/return address');
+      return;
+    }
     mutation.mutate({
       ...form,
       year: parseInt(form.year) || 2024,
@@ -151,6 +160,29 @@ export default function AddVehicle() {
             <Input className="mt-1" placeholder="Johannesburg CBD" value={form.location} onChange={e => update('location', e.target.value)} />
           </div>
 
+          {/* Storage Type and Pickup/Return Location */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Storage Type</Label>
+              <Select value={form.storage_type} onValueChange={v => update('storage_type', v)}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="owner_address">Owner's Address</SelectItem>
+                  <SelectItem value="driver_responsibility">Driver's Responsibility</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Pickup/Return Address</Label>
+              <Input
+                className="mt-1"
+                placeholder="123 Main St, Johannesburg"
+                value={form.pickup_return_location}
+                onChange={e => update('pickup_return_location', e.target.value)}
+              />
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Weekly Price (ZAR) *</Label>
@@ -197,6 +229,6 @@ export default function AddVehicle() {
           </Button>
         </div>
       </Card>
-      </div>
+    </div>
   );
 }
