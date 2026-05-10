@@ -26,16 +26,17 @@ export default function Dashboard() {
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [loadingDriver, setLoadingDriver] = useState(false);
 
-  // Contract modal states
+  // Contract modal states (shared between owner & driver)
   const [contractModal, setContractModal] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState(null);
   const [contractAgreed, setContractAgreed] = useState(false);
-  const [driverProfile, setDriverProfile] = useState(null);
+  const [contractRole, setContractRole] = useState('owner'); // 'owner' or 'driver'
 
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
   const driverAvailableRef = useRef(null);
   const driverActiveRentalsRef = useRef(null);
+  const driverPendingConfRef = useRef(null);
   const reviewsSectionRef = useRef(null);
   const tabsRef = useRef(null);
 
@@ -68,13 +69,15 @@ export default function Dashboard() {
   });
 
   const availableForMe = allVehicles.filter(v => v.owner_id !== user?.id);
-  const activeRentals = rentals.filter(r => r.status === 'active' || r.status === 'pending');
   const completedRentals = rentals.filter(r => r.status === 'completed');
 
   const ownerRentals = rentals.filter(r => r.owner_id === user?.id);
   const ownerPendingRentals = ownerRentals.filter(r => r.status === 'pending');
   const ownerActiveRentals = ownerRentals.filter(r => r.status === 'active');
-  const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
+  
+  const driverRentals = rentals.filter(r => r.driver_id === user?.id);
+  const driverPendingConfRentals = driverRentals.filter(r => r.status === 'awaiting_driver_confirmation');
+  const driverActiveRentals = driverRentals.filter(r => r.status === 'active');
 
   const accountType = user?.subscription_plan || 'driver';
 
@@ -89,26 +92,33 @@ export default function Dashboard() {
     }, 100);
   };
 
-  const handleProposalResponse = async (rentalId, action) => {
+  // ─── General contract acceptance handler ───
+  const handleContractAccept = async (rentalId, newStatus, shouldUpdateVehicle = false) => {
     try {
       const rental = rentals.find(r => r.id === rentalId);
       if (!rental) return;
 
-      if (action === 'accept') {
-        await Rental.update(rentalId, { status: 'awaiting_driver_confirmation' });
-        toast.success('Proposal accepted! Waiting for driver confirmation.');
-      } else {
-        await Rental.update(rentalId, { status: 'rejected' });
-        toast.success('Proposal rejected.');
+      await Rental.update(rentalId, { status: newStatus });
+      
+      if (shouldUpdateVehicle) {
+        await Vehicle.update(rental.vehicle_id, { status: 'rented' });
       }
+
+      toast.success(newStatus === 'active' ? 'Rental confirmed! Vehicle assigned.' : 'Proposal accepted! Awaiting driver confirmation.');
 
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
     } catch (err) {
-      toast.error('Failed to update proposal: ' + err.message);
+      toast.error('Failed to update: ' + err.message);
     }
   };
+
+  // ─── Owner accepts with contract ───
+  const handleOwnerAccept = () => handleContractAccept(selectedProposal.id, 'awaiting_driver_confirmation', false);
+
+  // ─── Driver confirms with contract ───
+  const handleDriverConfirm = () => handleContractAccept(selectedProposal.id, 'active', true);
 
   const fetchDriverDetails = async (driverId) => {
     setLoadingDriver(true);
@@ -121,7 +131,6 @@ export default function Dashboard() {
 
       if (error) throw error;
       setSelectedDriver(data);
-      setDriverProfile(data);
       return data;
     } catch (err) {
       toast.error('Could not load driver details');
@@ -131,7 +140,7 @@ export default function Dashboard() {
     }
   };
 
-  // Generate contract text from template
+  // Generate contract text (same for both sides)
   const generateContractText = (rental, vehicle, driverProfile) => {
     const ownerName = user?.full_name || 'Owner';
     const driverName = driverProfile?.full_name || rental.driver_email || 'Driver';
@@ -184,14 +193,24 @@ ${storageClause}
 `;
   };
 
-  const openContractModal = async (rental) => {
+  // Open contract modal (works for both roles)
+  const openContractModal = async (rental, role) => {
     setSelectedProposal(rental);
     setContractAgreed(false);
+    setContractRole(role);
 
     const vehicle = vehicles.find(v => v.id === rental.vehicle_id) || allVehicles.find(v => v.id === rental.vehicle_id);
-    if (rental.driver_id) {
+    // For owner side, fetch driver details; for driver side, we already have user profile
+    if (role === 'owner' && rental.driver_id) {
       const profile = await fetchDriverDetails(rental.driver_id);
       const text = generateContractText(rental, vehicle, profile);
+      setSelectedProposal({ ...rental, contractText: text });
+    } else if (role === 'driver') {
+      // For driver, we need owner name – use rental.owner_email or fetch owner profile
+      const ownerName = rental.owner_email || 'Owner';
+      // We can still fetch the owner profile for full name, but minimal version works
+      const driverProfile = { full_name: user?.full_name, license_number: user?.license_number };
+      const text = generateContractText(rental, vehicle, driverProfile);
       setSelectedProposal({ ...rental, contractText: text });
     } else {
       const text = generateContractText(rental, vehicle, null);
@@ -206,9 +225,13 @@ ${storageClause}
     setContractAgreed(false);
   };
 
-  const handleAcceptWithContract = async () => {
+  const handleModalAccept = async () => {
     if (!contractAgreed || !selectedProposal) return;
-    await handleProposalResponse(selectedProposal.id, 'accept');
+    if (contractRole === 'owner') {
+      await handleOwnerAccept();
+    } else {
+      await handleDriverConfirm();
+    }
     closeContractModal();
   };
 
@@ -271,10 +294,10 @@ ${storageClause}
                       )}
                     </div>
                     <div className="flex gap-2 sm:flex-row flex-col">
-                      <Button size="sm" variant="default" className="gap-1" onClick={(e) => { e.stopPropagation(); openContractModal(r); }}>
+                      <Button size="sm" variant="default" className="gap-1" onClick={(e) => { e.stopPropagation(); openContractModal(r, 'owner'); }}>
                         <Check className="w-3.5 h-3.5" /> Accept
                       </Button>
-                      <Button size="sm" variant="outline" className="gap-1" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'reject'); }}>
+                      <Button size="sm" variant="outline" className="gap-1" onClick={(e) => { e.stopPropagation(); handleContractAccept(r.id, 'rejected'); }}>
                         <X className="w-3.5 h-3.5" /> Reject
                       </Button>
                     </div>
@@ -342,6 +365,38 @@ ${storageClause}
         </div>
       ) : (
         <EmptyState icon="🔍" title="No available vehicles" description="Check back later for new listings" />
+      )}
+
+      {/* Pending confirmation (driver must confirm) */}
+      {driverPendingConfRentals.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold mb-3" ref={driverPendingConfRef}>Pending Confirmation</h3>
+          <div className="space-y-3">
+            {driverPendingConfRentals.map(r => {
+              const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
+              const ownerName = r.owner_email || 'Owner';
+              return (
+                <Card key={r.id} className="p-4 border border-primary/30 bg-primary/5">
+                  <div className="flex flex-col sm:flex-row justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">
+                        {vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Owner: {ownerName}</p>
+                      <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
+                      <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
+                    </div>
+                    <div>
+                      <Button size="sm" className="gap-1" onClick={() => openContractModal(r, 'driver')}>
+                        <Check className="w-3.5 h-3.5" /> Review & Confirm
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       <h3 className="text-lg font-semibold mb-3 mt-8" ref={driverActiveRentalsRef}>My Active Rentals</h3>
@@ -642,7 +697,7 @@ ${storageClause}
         </div>
       )}
 
-      {/* Contract Modal */}
+      {/* Contract Modal (reusable for owner & driver) */}
       {contractModal && selectedProposal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
           <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border min-h-[70vh] max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -670,8 +725,8 @@ ${storageClause}
 
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={closeContractModal}>Cancel</Button>
-              <Button className="flex-1" disabled={!contractAgreed} onClick={handleAcceptWithContract}>
-                Accept & Sign Agreement
+              <Button className="flex-1" disabled={!contractAgreed} onClick={handleModalAccept}>
+                {contractRole === 'owner' ? 'Accept & Sign Agreement' : 'Confirm & Finalize Rental'}
               </Button>
             </div>
           </div>
