@@ -23,7 +23,7 @@ export default function FindDrivers() {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({ location: '', minExperience: 0, minRating: 0, radius: 50 });
   const [currentUser, setCurrentUser] = useState(null);
-  const [selectedDriver, setSelectedDriver] = useState(null); // for the detail modal
+  const [selectedDriver, setSelectedDriver] = useState(null);
 
   useEffect(() => {
     auth.me().then(setCurrentUser).catch(() => {});
@@ -52,7 +52,6 @@ export default function FindDrivers() {
         .eq('target_id', driverId)
         .order('created_at', { ascending: false })
         .limit(10);
-
       if (error) throw error;
       setDriverReviews(data || []);
     } catch (err) {
@@ -68,7 +67,7 @@ export default function FindDrivers() {
   };
 
   return (
-    <div className="p-4 lg:p-8 max-w-5xl mx-auto">
+    <div className="p-4 lg:p-8 max-w-5xl mx-auto overflow-x-hidden">
       <PageHeader
         title="Find Drivers"
         subtitle={`${drivers.length} driver${drivers.length !== 1 ? 's' : ''} found`}
@@ -139,23 +138,23 @@ export default function FindDrivers() {
                 onClick={() => openDriverDetail(d)}
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary shrink-0">
                       {d.full_name?.[0] || '?'}
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <h4 className="font-semibold text-foreground">{d.full_name || 'Driver'}</h4>
-                        {d.verified && <ShieldCheck className="w-4 h-4 text-primary" />}
+                        <h4 className="font-semibold text-foreground text-sm truncate">{d.full_name || 'Driver'}</h4>
+                        {d.verified && <ShieldCheck className="w-4 h-4 text-primary shrink-0" />}
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted-foreground">
                         {d.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{d.location}</span>}
                         {exp > 0 && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{exp}y exp</span>}
                         {d.rating > 0 && <StarRating value={Math.round(d.rating)} size="sm" showValue />}
                       </div>
                     </div>
                   </div>
-                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openDriverDetail(d); }}>
+                  <Button size="sm" variant="outline" className="shrink-0 ml-2" onClick={(e) => { e.stopPropagation(); openDriverDetail(d); }}>
                     <UserIcon className="w-3 h-3 mr-1" /> Details
                   </Button>
                 </div>
@@ -167,22 +166,25 @@ export default function FindDrivers() {
         <EmptyState icon="👤" title="No drivers found" description="Try adjusting your search filters" />
       )}
 
-      {/* ---------- Driver Detail Modal ---------- */}
+      {/* ---------- Driver Detail Modal (responsive) ---------- */}
       {selectedDriver && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setSelectedDriver(null)}>
-          <div className="bg-card rounded-2xl shadow-xl max-w-md w-full p-6 border border-border max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div 
+            className="bg-card rounded-2xl shadow-xl w-full max-w-md p-6 border border-border max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Driver Profile</h2>
-              <button onClick={() => setSelectedDriver(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+              <h2 className="text-xl font-bold truncate">Driver Profile</h2>
+              <button onClick={() => setSelectedDriver(null)} className="text-muted-foreground hover:text-foreground shrink-0"><X className="w-5 h-5" /></button>
             </div>
 
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0">
                 {selectedDriver.full_name?.[0] || '?'}
               </div>
-              <div>
-                <p className="font-semibold text-lg">{selectedDriver.full_name || 'Driver'}</p>
-                <p className="text-sm text-muted-foreground">{selectedDriver.email}</p>
+              <div className="min-w-0">
+                <p className="font-semibold text-lg truncate">{selectedDriver.full_name || 'Driver'}</p>
+                <p className="text-sm text-muted-foreground truncate">{selectedDriver.email}</p>
               </div>
             </div>
 
@@ -190,13 +192,13 @@ export default function FindDrivers() {
               {selectedDriver.phone && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Phone</span>
-                  <span className="font-medium">{selectedDriver.phone}</span>
+                  <span className="font-medium truncate ml-4">{selectedDriver.phone}</span>
                 </div>
               )}
               {selectedDriver.location && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Location</span>
-                  <span className="font-medium">{selectedDriver.location}</span>
+                  <span className="font-medium truncate ml-4">{selectedDriver.location}</span>
                 </div>
               )}
               {selectedDriver.license_year && (
@@ -223,7 +225,7 @@ export default function FindDrivers() {
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-muted-foreground">Recent Reviews</p>
                   {driverReviews.map(review => (
-                    <div key={review.id} className="p-3 rounded-xl bg-muted/50 border border-border/30">
+                    <div key={review.id} className="p-3 rounded-xl bg-muted/50 border border-border/30 break-words">
                       <div className="flex items-center gap-2 mb-1">
                         <StarRating value={review.rating} size="sm" />
                         <span className="text-xs text-muted-foreground">{new Date(review.created_at).toLocaleDateString()}</span>
