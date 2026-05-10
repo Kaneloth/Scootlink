@@ -14,10 +14,10 @@ export const auth = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
-    // Fetch wallet balance from profiles table
+    // Fetch latest profile data (wallet, rating, total_reviews)
     const { data: profile } = await supabase
       .from('profiles')
-      .select('wallet_balance')
+      .select('wallet_balance, rating, total_reviews')
       .eq('id', user.id)
       .single();
 
@@ -25,7 +25,9 @@ export const auth = {
       ...user.user_metadata,
       id: user.id,
       email: user.email,
-      wallet_balance: profile?.wallet_balance ?? 0, // profiles table is the source of truth
+      wallet_balance: profile?.wallet_balance ?? 0,
+      rating: profile?.rating ?? 0,
+      total_reviews: profile?.total_reviews ?? 0, // profiles table is the source of truth
     };
   },
   updateMe: async (updates) => {
