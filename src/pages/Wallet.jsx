@@ -3,7 +3,12 @@ import { auth, supabase } from '@/api/supabaseData';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowDownLeft, ArrowUpRight, Plus, Minus, Send, RefreshCw } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import { ArrowDownLeft, ArrowUpRight, Plus, Minus, Send, RefreshCw, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import PageHeader from '@/components/layout/PageHeader';
 import WalletCard from '@/components/dashboard/WalletCard';
@@ -17,6 +22,10 @@ export default function Wallet() {
   const [user, setUser] = useState(null);
   const [userLoading, setUserLoading] = useState(true);
   const [payModal, setPayModal] = useState(false);
+  const [depositModal, setDepositModal] = useState(false);
+  const [withdrawModal, setWithdrawModal] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [amount, setAmount] = useState('');
 
   const refreshUser = async () => {
     const updated = await auth.me();
@@ -29,6 +38,77 @@ export default function Wallet() {
 
   const handlePaymentSuccess = async () => {
     await refreshUser();
+  };
+
+  // ---------- Deposit ----------
+  const handleDeposit = async () => {
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return; }
+    setProcessing(true);
+    try {
+      const newBalance = (user.wallet_balance || 0) + amt;
+      // Update profiles table (source of truth)
+      await supabase.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id);
+      // Also update auth metadata for immediate UI
+      await auth.updateMe({ wallet_balance: newBalance });
+
+      // Insert transaction record
+      await supabase.from('transactions').insert([{
+        from_user_id: null,
+        to_user_id: user.id,
+        amount: amt,
+        type: 'deposit',
+        description: 'Funds added',
+        created_at: new Date().toISOString(),
+      }]);
+
+      toast.success(`R ${amt.toFixed(2)} deposited`);
+      closeDialogs();
+      await refreshUser();
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    } catch (err) {
+      toast.error('Deposit failed: ' + err.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // ---------- Withdraw ----------
+  const handleWithdraw = async () => {
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return; }
+    if (amt > (user.wallet_balance || 0)) { toast.error('Insufficient balance'); return; }
+    setProcessing(true);
+    try {
+      const newBalance = (user.wallet_balance || 0) - amt;
+      await supabase.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id);
+      await auth.updateMe({ wallet_balance: newBalance });
+
+      await supabase.from('transactions').insert([{
+        from_user_id: user.id,
+        to_user_id: null,
+        amount: amt,
+        type: 'withdraw',
+        description: 'Withdrawal',
+        created_at: new Date().toISOString(),
+      }]);
+
+      toast.success(`R ${amt.toFixed(2)} withdrawn`);
+      closeDialogs();
+      await refreshUser();
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    } catch (err) {
+      toast.error('Withdrawal failed: ' + err.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const closeDialogs = () => {
+    setDepositModal(false);
+    setWithdrawModal(false);
+    setAmount('');
+    setProcessing(false);
   };
 
   const { data: transactions = [], isLoading: txLoading } = useQuery({
@@ -91,11 +171,11 @@ export default function Wallet() {
 
       <SubscriptionGate user={user} loading={userLoading}>
         <div className="grid grid-cols-3 gap-3 mt-6">
-          <Button onClick={() => toast.info('Deposit feature coming soon')} className="gap-2 h-auto py-3 flex-col">
+          <Button onClick={() => setDepositModal(true)} className="gap-2 h-auto py-3 flex-col">
             <Plus className="w-5 h-5" />
             <span className="text-xs">Add Funds</span>
           </Button>
-          <Button variant="outline" onClick={() => toast.info('Withdraw feature coming soon')} className="gap-2 h-auto py-3 flex-col">
+          <Button variant="outline" onClick={() => setWithdrawModal(true)} className="gap-2 h-auto py-3 flex-col">
             <Minus className="w-5 h-5" />
             <span className="text-xs">Withdraw</span>
           </Button>
@@ -143,6 +223,41 @@ export default function Wallet() {
           <EmptyState icon="💳" title="No transactions yet" description="Your transaction history will appear here" />
         )}
       </SubscriptionGate>
+
+      {/* Deposit Modal */}
+      <Dialog open={depositModal} onOpenChange={setDepositModal}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Funds</DialogTitle></DialogHeader>
+          <div>
+            <Label>Amount (ZAR)</Label>
+            <Input className="mt-1" type="number" placeholder="500" value={amount} onChange={e => setAmount(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialogs}>Cancel</Button>
+            <Button onClick={handleDeposit} disabled={processing}>
+              {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Deposit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Withdraw Modal */}
+      <Dialog open={withdrawModal} onOpenChange={setWithdrawModal}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Withdraw Funds</DialogTitle></DialogHeader>
+          <div>
+            <Label>Amount (ZAR)</Label>
+            <Input className="mt-1" type="number" placeholder="500" value={amount} onChange={e => setAmount(e.target.value)} />
+            <p className="text-xs text-muted-foreground mt-1">Available: R {(user?.wallet_balance || 0).toFixed(2)}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialogs}>Cancel</Button>
+            <Button onClick={handleWithdraw} disabled={processing}>
+              {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Withdraw
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <PayModal
         open={payModal}
