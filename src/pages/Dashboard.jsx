@@ -96,7 +96,6 @@ export default function Dashboard() {
 
       if (action === 'accept') {
         await Rental.update(rentalId, { status: 'awaiting_driver_confirmation' });
-        // Vehicle status remains 'available' until driver confirms
         toast.success('Proposal accepted! Waiting for driver confirmation.');
       } else {
         await Rental.update(rentalId, { status: 'rejected' });
@@ -122,7 +121,7 @@ export default function Dashboard() {
 
       if (error) throw error;
       setSelectedDriver(data);
-      setDriverProfile(data); // also set for contract modal
+      setDriverProfile(data);
       return data;
     } catch (err) {
       toast.error('Could not load driver details');
@@ -139,10 +138,9 @@ export default function Dashboard() {
     const licenseNumber = driverProfile?.license_number || 'Not provided';
     const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
 
-    // Determine storage clause based on vehicle's storage_type
     let storageClause = '';
     if (vehicle?.storage_type === 'owner_address') {
-      storageClause = `The vehicle must be parked at the Owner's designated residential address (${vehicle.pickup_return_location || 'Owner's address'}) when not in use. The Owner is responsible for maintaining a safe storage environment. The driver's security obligation is limited to ensuring the vehicle is locked and the alarm activated.`;
+      storageClause = `The vehicle must be parked at the Owner's designated residential address (${vehicle.pickup_return_location || "Owner's address"}) when not in use. The Owner is responsible for maintaining a safe storage environment. The driver's security obligation is limited to ensuring the vehicle is locked and the alarm activated.`;
     } else {
       storageClause = `The Driver is permitted to store the vehicle at a location of their choice and assumes full responsibility for the security and safekeeping of the vehicle. The Driver must ensure it is stored in a secure, locked location.`;
     }
@@ -647,7 +645,7 @@ ${storageClause}
       {/* Contract Modal */}
       {contractModal && selectedProposal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
-          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border min-h-[70vh] max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Rental Agreement</h2>
               <button onClick={closeContractModal} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
