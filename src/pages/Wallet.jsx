@@ -40,40 +40,28 @@ export default function Wallet() {
     await refreshUser();
   };
 
-  // ---------- Deposit ----------
+  // Deposit
   const handleDeposit = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return; }
     setProcessing(true);
     try {
       const newBalance = (user.wallet_balance || 0) + amt;
-      // Update profiles table (source of truth)
       await supabase.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id);
-      // Also update auth metadata for immediate UI
       await auth.updateMe({ wallet_balance: newBalance });
-
-      // Insert transaction record
       await supabase.from('transactions').insert([{
-        from_user_id: null,
-        to_user_id: user.id,
-        amount: amt,
-        type: 'deposit',
-        description: 'Funds added',
-        created_at: new Date().toISOString(),
+        from_user_id: null, to_user_id: user.id, amount: amt,
+        type: 'deposit', description: 'Funds added', created_at: new Date().toISOString(),
       }]);
-
       toast.success(`R ${amt.toFixed(2)} deposited`);
       closeDialogs();
       await refreshUser();
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    } catch (err) {
-      toast.error('Deposit failed: ' + err.message);
-    } finally {
-      setProcessing(false);
-    }
+    } catch (err) { toast.error('Deposit failed: ' + err.message); }
+    finally { setProcessing(false); }
   };
 
-  // ---------- Withdraw ----------
+  // Withdraw
   const handleWithdraw = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return; }
@@ -83,25 +71,16 @@ export default function Wallet() {
       const newBalance = (user.wallet_balance || 0) - amt;
       await supabase.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id);
       await auth.updateMe({ wallet_balance: newBalance });
-
       await supabase.from('transactions').insert([{
-        from_user_id: user.id,
-        to_user_id: null,
-        amount: amt,
-        type: 'withdraw',
-        description: 'Withdrawal',
-        created_at: new Date().toISOString(),
+        from_user_id: user.id, to_user_id: null, amount: amt,
+        type: 'withdraw', description: 'Withdrawal', created_at: new Date().toISOString(),
       }]);
-
       toast.success(`R ${amt.toFixed(2)} withdrawn`);
       closeDialogs();
       await refreshUser();
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    } catch (err) {
-      toast.error('Withdrawal failed: ' + err.message);
-    } finally {
-      setProcessing(false);
-    }
+    } catch (err) { toast.error('Withdrawal failed: ' + err.message); }
+    finally { setProcessing(false); }
   };
 
   const closeDialogs = () => {
@@ -122,7 +101,6 @@ export default function Wallet() {
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
-
       const ids = new Set();
       data.forEach(t => {
         if (t.from_user_id) ids.add(t.from_user_id);
@@ -144,24 +122,31 @@ export default function Wallet() {
     enabled: !!user?.id,
   });
 
+  // Full‑page loader until user data is ready
+  if (userLoading) {
+    return (
+      <div className="p-4 lg:p-8 max-w-2xl mx-auto flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <PageHeader title="Wallet" subtitle="Manage your funds" backTo="/" />
 
-      {/* Balance card with manual refresh, show skeleton while loading */}
-      if (userLoading) {
-  return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto flex items-center justify-center min-h-[60vh]">
-      <Loader2 className="w-8 h-8 animate-spin text-primary" />
-    </div>
-  );
-}
+      <div className="relative">
+        <WalletCard balance={user?.wallet_balance ?? 0} />
+        <button
+          onClick={refreshUser}
+          className="absolute top-3 right-3 p-2 rounded-full bg-white/20 hover:bg-white/30 text-white"
+          title="Refresh balance"
+        >
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
 
-return (
-  // regular page content (same as before)
-);
-
-      <SubscriptionGate user={user} loading={userLoading}>
+      <SubscriptionGate user={user} loading={false}>
         <div className="grid grid-cols-3 gap-3 mt-6">
           <Button onClick={() => setDepositModal(true)} className="gap-2 h-auto py-3 flex-col">
             <Plus className="w-5 h-5" />
@@ -181,7 +166,7 @@ return (
 
         {txLoading ? (
           <div className="text-center py-8 text-muted-foreground">
-            <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
+            <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
             Loading transactions...
           </div>
         ) : transactions.length > 0 ? (
