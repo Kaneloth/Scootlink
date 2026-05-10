@@ -27,51 +27,58 @@ const StarRating = ({ value, onChange, size = 'md' }) => {
   );
 };
 
-export default function LeaveReviewModal({ open, onClose, rental, currentUser, targetEmail, targetName, targetType, targetId }) {
+export default function LeaveReviewModal({
+  open, onClose, rental, currentUser, targetEmail, targetName, targetType, targetId: propTargetId
+}) {
   const queryClient = useQueryClient();
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [errorMsg, setErrorMsg] = useState(null);
 
+  // Compute the counterparty ID from the rental if the prop is missing or null
+  const counterpartyId = propTargetId
+    || (rental && currentUser
+      ? (rental.owner_id === currentUser.id ? rental.driver_id : rental.owner_id)
+      : null);
+
   const submitReview = useMutation({
     mutationFn: async () => {
       setErrorMsg(null);
 
-      // Safety check – if targetId is missing, show a clear error
-      if (!targetId) {
-        throw new Error('Missing target user ID. The rental may not have a valid driver/owner.');
+      if (!counterpartyId) {
+        throw new Error('Could not determine who to review. Please try again later.');
       }
 
       // Ensure target profile exists
       const { error: profileError } = await supabase
         .from('profiles')
-        .upsert({ id: targetId, email: targetEmail }, { onConflict: 'id' });
+        .upsert({ id: counterpartyId, email: targetEmail }, { onConflict: 'id' });
       if (profileError) throw new Error('Profile upsert failed: ' + profileError.message);
 
       // Insert review
       const { error: reviewError } = await supabase.from('reviews').insert([{
         rental_id: rental.id,
         reviewer_id: currentUser.id,
-        target_id: targetId,
+        target_id: counterpartyId,
         target_type: targetType,
         rating,
         comment: comment.trim() || null,
       }]);
       if (reviewError) throw new Error('Review insert failed: ' + reviewError.message);
 
-      // Recalculate average
+      // Recalculate average rating
       const { data: avgData, error: avgError } = await supabase
         .from('reviews')
         .select('rating')
-        .eq('target_id', targetId);
-      if (avgError) throw new Error('Avg calc failed: ' + avgError.message);
+        .eq('target_id', counterpartyId);
+      if (avgError) throw new Error('Rating calculation failed: ' + avgError.message);
 
       const total = avgData.reduce((sum, r) => sum + r.rating, 0);
       const newAvg = total / avgData.length;
       await supabase
         .from('profiles')
         .update({ rating: newAvg, total_reviews: avgData.length })
-        .eq('id', targetId);
+        .eq('id', counterpartyId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reviews'] });
