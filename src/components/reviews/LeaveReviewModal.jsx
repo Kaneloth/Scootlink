@@ -34,15 +34,21 @@ export default function LeaveReviewModal({ open, onClose, rental, currentUser, t
 
   const submitReview = useMutation({
     mutationFn: async () => {
-      // 1. Fetch target user's profile (to get current rating/total_reviews) – optional, but we need the ID which we already have
-      const { data: profile, error: profileError } = await supabase
+      // 1. Ensure target user has a profiles row (create if missing)
+      const { data: existing } = await supabase
         .from('profiles')
-        .select('rating, total_reviews')
+        .select('id')
         .eq('id', targetId)
-        .single();
-      if (profileError) throw new Error('Target user not found');
+        .maybeSingle();
 
-      // 2. Insert review
+      if (!existing) {
+        const { error: insertProfileError } = await supabase
+          .from('profiles')
+          .insert({ id: targetId, email: targetEmail });
+        if (insertProfileError) throw new Error('Could not create target profile');
+      }
+
+      // 2. Insert the review
       const { error: reviewError } = await supabase.from('reviews').insert([{
         rental_id: rental.id,
         reviewer_id: currentUser.id,
