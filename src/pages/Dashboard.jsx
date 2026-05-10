@@ -446,7 +446,9 @@ export default function Dashboard() {
                     <p className="text-xs text-muted-foreground">{isOwner ? 'Driver: ' : 'Owner: '}{targetEmail}</p>
                   </div>
                   <Button size="sm" variant="outline" className="gap-1.5 shrink-0"
-                    onClick={() => setReviewModal({ rental: r, targetEmail, targetName: targetEmail, targetType })}>
+                    const targetId = isOwner ? r.driver_id : r.owner_id; // get the counterparty's ID
+
+onClick={() => setReviewModal({ rental: r, targetEmail, targetName: targetEmail, targetType, targetId })}>
                     <StarRating value={0} size="sm" /> Rate
                   </Button>
                 </Card>
