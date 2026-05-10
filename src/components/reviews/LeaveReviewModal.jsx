@@ -79,8 +79,10 @@ export default function LeaveReviewModal({ open, onClose, rental, currentUser, t
       toast.success('Review submitted!');
       onClose();
     },
-    onError: (err) => {
-      toast.error('Failed to submit review: ' + err.message);
+   onError: (err) => {
+  alert('DEBUG: ' + (err.message || JSON.stringify(err)));
+  toast.error('Failed to submit review: ' + err.message);
+},;
     },
   });
 
