@@ -26,6 +26,12 @@ export default function Dashboard() {
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [loadingDriver, setLoadingDriver] = useState(false);
 
+  // Contract modal states
+  const [contractModal, setContractModal] = useState(false);
+  const [selectedProposal, setSelectedProposal] = useState(null);
+  const [contractAgreed, setContractAgreed] = useState(false);
+  const [driverProfile, setDriverProfile] = useState(null);
+
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
   const driverAvailableRef = useRef(null);
@@ -41,20 +47,17 @@ export default function Dashboard() {
 
   const queryClient = useQueryClient();
 
-  // Owner's vehicles – always contains all their listed vehicles
   const { data: vehicles = [] } = useQuery({
     queryKey: ['my-vehicles'],
     queryFn: () => Vehicle.filter({ owner_id: user?.id }),
     enabled: !!user?.id,
   });
 
-  // All available vehicles (for driver view)
   const { data: allVehicles = [] } = useQuery({
     queryKey: ['all-vehicles'],
     queryFn: () => Vehicle.filter({ status: 'available' }),
   });
 
-  // Rentals where the user is owner or driver
   const { data: rentals = [] } = useQuery({
     queryKey: ['my-rentals'],
     queryFn: async () => {
@@ -64,7 +67,7 @@ export default function Dashboard() {
     enabled: !!user?.id,
   });
 
-  const availableForMe = allVehicles.filter(v => v.owner_id !== user?.id);  // available vehicles not owned by me
+  const availableForMe = allVehicles.filter(v => v.owner_id !== user?.id);
   const activeRentals = rentals.filter(r => r.status === 'active' || r.status === 'pending');
   const completedRentals = rentals.filter(r => r.status === 'completed');
 
@@ -92,9 +95,9 @@ export default function Dashboard() {
       if (!rental) return;
 
       if (action === 'accept') {
-        await Rental.update(rentalId, { status: 'active' });
-        await Vehicle.update(rental.vehicle_id, { status: 'rented' });
-        toast.success('Proposal accepted! Vehicle assigned.');
+        await Rental.update(rentalId, { status: 'awaiting_driver_confirmation' });
+        // Vehicle status remains 'available' until driver confirms
+        toast.success('Proposal accepted! Waiting for driver confirmation.');
       } else {
         await Rental.update(rentalId, { status: 'rejected' });
         toast.success('Proposal rejected.');
@@ -108,24 +111,107 @@ export default function Dashboard() {
     }
   };
 
-  // Safely fetch driver details from the profiles table
   const fetchDriverDetails = async (driverId) => {
     setLoadingDriver(true);
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, email, phone, location, license_year, verified, rating')
+        .select('id, full_name, email, phone, location, license_year, license_number, verified, rating')
         .eq('id', driverId)
         .single();
 
       if (error) throw error;
       setSelectedDriver(data);
+      setDriverProfile(data); // also set for contract modal
+      return data;
     } catch (err) {
       toast.error('Could not load driver details');
       console.error(err);
     } finally {
       setLoadingDriver(false);
     }
+  };
+
+  // Generate contract text from template
+  const generateContractText = (rental, vehicle, driverProfile) => {
+    const ownerName = user?.full_name || 'Owner';
+    const driverName = driverProfile?.full_name || rental.driver_email || 'Driver';
+    const licenseNumber = driverProfile?.license_number || 'Not provided';
+    const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    // Determine storage clause based on vehicle's storage_type
+    let storageClause = '';
+    if (vehicle?.storage_type === 'owner_address') {
+      storageClause = `The vehicle must be parked at the Owner's designated residential address (${vehicle.pickup_return_location || 'Owner's address'}) when not in use. The Owner is responsible for maintaining a safe storage environment. The driver's security obligation is limited to ensuring the vehicle is locked and the alarm activated.`;
+    } else {
+      storageClause = `The Driver is permitted to store the vehicle at a location of their choice and assumes full responsibility for the security and safekeeping of the vehicle. The Driver must ensure it is stored in a secure, locked location.`;
+    }
+
+    return `
+VEHICLE RENTAL CONTRACT
+
+This vehicle rental contract is entered into on ${today} (Effective date)
+BETWEEN: ${ownerName} (The owner)
+AND: ${driverName} (Driver)
+
+1. Vehicle Specifications
+Type: ${vehicle?.vehicle_type || 'N/A'}
+Make: ${vehicle?.make || 'N/A'}
+Model: ${vehicle?.model || 'N/A'}
+Year: ${vehicle?.year || 'N/A'}
+Current Odometer: Not recorded
+
+2. Rental Terms
+Start date: ${rental.start_date || 'N/A'}
+End date: ${rental.end_date || 'N/A'}
+Weekly rate: R ${rental.price_per_week || 'N/A'}
+Deposit: R ${rental.deposit || '0'}
+
+3. Driver Requirements
+The driver must be at least 18 years of age with a valid driver's licence. Must demonstrate the ability to operate the vehicle safely. If the vehicle is a motorbike or scooter, the helmet provided by the owner must be worn at all times and maximum of one rider unless designed for two.
+Driver's licence number: ${licenseNumber}
+
+4. Operating Guidelines
+The driver shall at all times observe all the traffic laws and speeding limits. No highway or freeway use for vehicles that are prohibited. Park only in designated areas. No driving/riding under the influence of alcohol. Report accidents or damages immediately.
+Fuel level at start: Not recorded
+
+5. Owner's Responsibility
+It is the responsibility of the owner to ensure that the rented vehicle meets all the roadworthiness and safety requirements. It is the responsibility of the owner to ensure that the rented vehicle is adequately insured and fitted with a functional tracking device.
+
+6. Liability
+The owner of the rented vehicle is not liable for injuries or damages resulting of the use of the vehicle. The driver shall be liable for any traffic fines that may be incurred as a result of his/her failure to adhere to traffic laws. All the damages beyond normal wear and tear shall be the responsibility of the driver. This excludes the accident damages for which the owner has as responsibility for provide valid insurance coverage.
+
+7. Vehicle Storage & Security
+${storageClause}
+`;
+  };
+
+  const openContractModal = async (rental) => {
+    setSelectedProposal(rental);
+    setContractAgreed(false);
+
+    const vehicle = vehicles.find(v => v.id === rental.vehicle_id) || allVehicles.find(v => v.id === rental.vehicle_id);
+    if (rental.driver_id) {
+      const profile = await fetchDriverDetails(rental.driver_id);
+      const text = generateContractText(rental, vehicle, profile);
+      setSelectedProposal({ ...rental, contractText: text });
+    } else {
+      const text = generateContractText(rental, vehicle, null);
+      setSelectedProposal({ ...rental, contractText: text });
+    }
+    setContractModal(true);
+  };
+
+  const closeContractModal = () => {
+    setContractModal(false);
+    setSelectedProposal(null);
+    setContractAgreed(false);
+  };
+
+  const handleAcceptWithContract = async () => {
+    if (!contractAgreed || !selectedProposal) return;
+    await handleProposalResponse(selectedProposal.id, 'accept');
+    closeContractModal();
   };
 
   // ─────────────── Owner Content ───────────────
@@ -187,7 +273,7 @@ export default function Dashboard() {
                       )}
                     </div>
                     <div className="flex gap-2 sm:flex-row flex-col">
-                      <Button size="sm" variant="default" className="gap-1" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'accept'); }}>
+                      <Button size="sm" variant="default" className="gap-1" onClick={(e) => { e.stopPropagation(); openContractModal(r); }}>
                         <Check className="w-3.5 h-3.5" /> Accept
                       </Button>
                       <Button size="sm" variant="outline" className="gap-1" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'reject'); }}>
@@ -202,7 +288,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Active assignments */}
       {user?.subscription_active ? (
         ownerActiveRentals.length > 0 ? (
           <div className="space-y-3">
@@ -320,7 +405,6 @@ export default function Dashboard() {
       );
     }
 
-    // Owner
     return (
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
         <div onClick={() => scrollToSection(ownerVehiclesRef)} className="cursor-pointer">
@@ -556,6 +640,42 @@ export default function Dashboard() {
             >
               <MessageCircle className="w-4 h-4" /> Message {selectedDriver.full_name?.split(' ')[0]}
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Contract Modal */}
+      {contractModal && selectedProposal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Rental Agreement</h2>
+              <button onClick={closeContractModal} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="bg-muted p-4 rounded-xl whitespace-pre-wrap text-sm font-mono mb-6">
+              {selectedProposal.contractText}
+            </div>
+
+            <div className="flex items-start gap-3 mb-4">
+              <input
+                type="checkbox"
+                id="agree-contract"
+                checked={contractAgreed}
+                onChange={(e) => setContractAgreed(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              <label htmlFor="agree-contract" className="text-sm text-muted-foreground">
+                I confirm I have read, understood, and agree to be bound by this Rental Agreement and all its terms.
+              </label>
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={closeContractModal}>Cancel</Button>
+              <Button className="flex-1" disabled={!contractAgreed} onClick={handleAcceptWithContract}>
+                Accept & Sign Agreement
+              </Button>
+            </div>
           </div>
         </div>
       )}
