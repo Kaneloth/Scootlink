@@ -166,7 +166,7 @@ export default function FindDrivers() {
         <EmptyState icon="👤" title="No drivers found" description="Try adjusting your search filters" />
       )}
 
-      {/* ---------- Driver Detail Modal (responsive) ---------- */}
+      {/* ---------- Driver Detail Modal (responsive & fitted) ---------- */}
       {selectedDriver && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setSelectedDriver(null)}>
           <div 
