@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { auth, supabase } from '@/api/supabaseData';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,11 +15,11 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
   const [selectedId, setSelectedId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [step, setStep] = useState('select'); // 'select' | 'amount' | 'confirm'
+  const [step, setStep] = useState('select');
   const [counterparties, setCounterparties] = useState([]);
   const [fetching, setFetching] = useState(true);
 
-  // Fetch counterparties whenever modal opens
+  // Fetch counterparties when modal opens
   useEffect(() => {
     if (!user || !open) return;
     setFetching(true);
@@ -30,7 +30,6 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
 
     (async () => {
       try {
-        // Get all rentals involving the current user
         const { data: rentals, error: rentalError } = await supabase
           .from('rentals')
           .select('*')
@@ -38,11 +37,9 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
 
         if (rentalError) throw rentalError;
 
-        // Statuses that indicate an ongoing contractual relationship
         const activeStatuses = ['active', 'awaiting_driver_confirmation'];
         const relevant = (rentals || []).filter(r => activeStatuses.includes(r.status));
 
-        // Collect unique counterparty IDs
         const otherIds = new Set();
         for (const r of relevant) {
           const otherId = r.owner_id === user.id ? r.driver_id : r.owner_id;
@@ -56,10 +53,9 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
           return;
         }
 
-        // Fetch profiles for counterparties
         const { data: profiles, error: profileError } = await supabase
           .from('profiles')
-          .select('id, full_name, email, verified')
+          .select('id, full_name, email, verified, wallet_balance')
           .in('id', ids);
 
         if (profileError) throw profileError;
@@ -74,19 +70,43 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
     })();
   }, [user, open]);
 
-  // Get selected counterparty object
   const selectedUser = counterparties.find(c => c.id === selectedId);
 
-  // Get the rental that links the two parties (for display)
-  const linkedRental = null; // We can add this later if needed
+  const sendPayment = async () => {
+    const amt = parseFloat(amount);
+    if (!selectedId || !amt || amt <= 0) {
+      toast.error('Invalid amount');
+      return;
+    }
+    if (amt > (user?.wallet_balance || 0)) {
+      toast.error('Insufficient balance');
+      return;
+    }
 
-  const sendPayment = useMutation({
-    mutationFn: async () => {
-      const amt = parseFloat(amount);
-      if (!selectedId || !amt || amt <= 0) throw new Error('Invalid amount');
-      if (amt > (user?.wallet_balance || 0)) throw new Error('Insufficient funds');
+    try {
+      // 1. Fetch current balances
+      const [senderProfile, recipientProfile] = await Promise.all([
+        supabase.from('profiles').select('wallet_balance').eq('id', user.id).single(),
+        supabase.from('profiles').select('wallet_balance').eq('id', selectedId).single(),
+      ]);
 
-      // Insert transaction record
+      const senderBalance = (user.wallet_balance || 0) - amt;
+      const recipientBalance = (recipientProfile?.data?.wallet_balance || 0) + amt;
+
+      // 2. Update sender's balance (via auth.updateMe for immediate UI) and also profiles table
+      await Promise.all([
+        auth.updateMe({ wallet_balance: senderBalance }),
+        supabase.from('profiles').update({ wallet_balance: senderBalance }).eq('id', user.id),
+      ]);
+
+      // 3. Update recipient's balance in profiles table
+      const { error: updateRecipientError } = await supabase
+        .from('profiles')
+        .update({ wallet_balance: recipientBalance })
+        .eq('id', selectedId);
+      if (updateRecipientError) throw updateRecipientError;
+
+      // 4. Insert transaction record
       const { error: txError } = await supabase.from('transactions').insert([
         {
           from_user_id: user.id,
@@ -99,20 +119,14 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
       ]);
       if (txError) throw txError;
 
-      // Update sender's balance
-      const newBalance = (user.wallet_balance || 0) - amt;
-      await auth.updateMe({ wallet_balance: newBalance });
-    },
-    onSuccess: () => {
+      toast.success(`R ${amt.toFixed(2)} sent to ${selectedUser?.full_name || 'User'}`);
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      toast.success(`R ${parseFloat(amount).toFixed(2)} sent to ${selectedUser?.full_name || 'User'}`);
-      onSuccess?.();
+      if (onSuccess) onSuccess();
       handleClose();
-    },
-    onError: (err) => {
-      toast.error(err.message === 'Insufficient funds' ? 'Insufficient wallet balance' : 'Payment failed: ' + err.message);
-    },
-  });
+    } catch (err) {
+      toast.error('Payment failed: ' + err.message);
+    }
+  };
 
   const handleClose = () => {
     setSelectedId('');
@@ -162,7 +176,6 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
                   </SelectContent>
                 </Select>
 
-                {/* Show selected user's card */}
                 {selectedUser && (
                   <div className="flex items-center gap-3 p-3 bg-muted rounded-xl">
                     <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
@@ -252,12 +265,11 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
             <DialogFooter>
               <Button variant="outline" onClick={() => setStep('amount')}>Edit</Button>
               <Button
-                onClick={() => sendPayment.mutate()}
-                disabled={sendPayment.isPending}
+                onClick={() => sendPayment()}
                 className="gap-2"
               >
-                {sendPayment.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                {sendPayment.isPending ? 'Sending...' : 'Confirm & Send'}
+                <Send className="w-4 h-4" />
+                Confirm & Send
               </Button>
             </DialogFooter>
           </div>
