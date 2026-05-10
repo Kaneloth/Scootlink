@@ -23,6 +23,7 @@ export default function Messages() {
   const [loading, setLoading] = useState(false);
   const [newChatEmail, setNewChatEmail] = useState('');
   const [startNewChat, setStartNewChat] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true); // NEW
 
   const subscriptionRef = useRef(null);
 
@@ -34,57 +35,61 @@ export default function Messages() {
   // Fetch all messages and group by conversation, then fetch names
   const fetchConversations = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error(error);
-      return;
-    }
-
-    // Collect unique other user IDs
-    const otherIds = new Set();
-    data.forEach((msg) => {
-      const otherId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
-      otherIds.add(otherId);
-    });
-
-    // Fetch names of all other users in one query
-    const { data: profiles, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, full_name')
-      .in('id', Array.from(otherIds));
-
-    if (profileError) {
-      console.error(profileError);
-    }
-
-    // Create a name map from profiles
-    const nameMap = {};
-    if (profiles) {
-      profiles.forEach((p) => {
-        nameMap[p.id] = p.full_name || 'User';
-      });
-    }
-
-    const grouped = {};
-    data.forEach((msg) => {
-      const otherId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
-      if (!grouped[otherId]) {
-        grouped[otherId] = {
-          otherUserId: otherId,
-          otherUserName: nameMap[otherId] || 'User',
-          lastMessage: msg.body,
-          unread: !msg.read && msg.receiver_id === user.id,
-          lastTime: msg.created_at,
-        };
+      if (error) {
+        console.error(error);
+        return;
       }
-    });
 
-    setConversations(Object.values(grouped));
+      // Collect unique other user IDs
+      const otherIds = new Set();
+      data.forEach((msg) => {
+        const otherId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
+        otherIds.add(otherId);
+      });
+
+      // Fetch names of all other users in one query
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', Array.from(otherIds));
+
+      if (profileError) {
+        console.error(profileError);
+      }
+
+      // Create a name map from profiles
+      const nameMap = {};
+      if (profiles) {
+        profiles.forEach((p) => {
+          nameMap[p.id] = p.full_name || 'User';
+        });
+      }
+
+      const grouped = {};
+      data.forEach((msg) => {
+        const otherId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
+        if (!grouped[otherId]) {
+          grouped[otherId] = {
+            otherUserId: otherId,
+            otherUserName: nameMap[otherId] || 'User',
+            lastMessage: msg.body,
+            unread: !msg.read && msg.receiver_id === user.id,
+            lastTime: msg.created_at,
+          };
+        }
+      });
+
+      setConversations(Object.values(grouped));
+    } finally {
+      setInitialLoading(false); // Mark loading as done after first fetch
+    }
   }, [user]);
 
   useEffect(() => {
@@ -243,7 +248,11 @@ export default function Messages() {
         <ArrowLeft className="w-5 h-5" /> Back
       </button>
 
-      {!selectedChat ? (
+      {initialLoading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : !selectedChat ? (
         <>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-foreground">Messages</h2>
