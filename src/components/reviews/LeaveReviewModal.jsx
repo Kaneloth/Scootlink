@@ -11,7 +11,6 @@ import { toast } from 'sonner';
 const StarRating = ({ value, onChange, size = 'md' }) => {
   const stars = [1, 2, 3, 4, 5];
   const sizeClass = size === 'sm' ? 'w-4 h-4' : 'w-6 h-6';
-
   return (
     <div className="flex items-center gap-1">
       {stars.map(star => (
@@ -28,18 +27,18 @@ const StarRating = ({ value, onChange, size = 'md' }) => {
   );
 };
 
-export default function LeaveReviewModal({ open, onClose, rental, currentUser, targetEmail, targetName, targetType }) {
+export default function LeaveReviewModal({ open, onClose, rental, currentUser, targetEmail, targetName, targetType, targetId }) {
   const queryClient = useQueryClient();
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
 
   const submitReview = useMutation({
     mutationFn: async () => {
-      // 1. Fetch target user ID from email (if needed)
+      // 1. Fetch target user's profile (to get current rating/total_reviews) – optional, but we need the ID which we already have
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('id')
-        .eq('email', targetEmail)
+        .select('rating, total_reviews')
+        .eq('id', targetId)
         .single();
       if (profileError) throw new Error('Target user not found');
 
@@ -47,27 +46,26 @@ export default function LeaveReviewModal({ open, onClose, rental, currentUser, t
       const { error: reviewError } = await supabase.from('reviews').insert([{
         rental_id: rental.id,
         reviewer_id: currentUser.id,
-        target_id: profile.id,
+        target_id: targetId,
         target_type: targetType,
         rating,
         comment: comment.trim() || null,
       }]);
       if (reviewError) throw reviewError;
 
-      // 3. Update average rating on target profile
+      // 3. Recalculate average rating
       const { data: avgData, error: avgError } = await supabase
         .from('reviews')
         .select('rating')
-        .eq('target_id', profile.id);
+        .eq('target_id', targetId);
       if (avgError) throw avgError;
 
       const total = avgData.reduce((sum, r) => sum + r.rating, 0);
       const newAvg = total / avgData.length;
-      const { error: updateError } = await supabase
+      await supabase
         .from('profiles')
         .update({ rating: newAvg, total_reviews: avgData.length })
-        .eq('id', profile.id);
-      if (updateError) throw updateError;
+        .eq('id', targetId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reviews'] });
