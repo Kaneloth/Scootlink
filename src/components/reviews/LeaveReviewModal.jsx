@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Star, Loader2 } from 'lucide-react';
+import { Star, Loader2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const StarRating = ({ value, onChange, size = 'md' }) => {
@@ -31,24 +31,19 @@ export default function LeaveReviewModal({ open, onClose, rental, currentUser, t
   const queryClient = useQueryClient();
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
+  const [errorMsg, setErrorMsg] = useState(null); // visible error in the modal
 
   const submitReview = useMutation({
     mutationFn: async () => {
-      // 1. Ensure target user has a profiles row (create if missing)
-      const { data: existing } = await supabase
+      setErrorMsg(null);
+
+      // 1. Ensure target profile exists (upsert — try insert first, then update if conflict)
+      const { error: profileError } = await supabase
         .from('profiles')
-        .select('id')
-        .eq('id', targetId)
-        .maybeSingle();
+        .upsert({ id: targetId, email: targetEmail }, { onConflict: 'id' });
+      if (profileError) throw new Error('Profile upsert failed: ' + profileError.message);
 
-      if (!existing) {
-        const { error: insertProfileError } = await supabase
-          .from('profiles')
-          .insert({ id: targetId, email: targetEmail });
-        if (insertProfileError) throw new Error('Could not create target profile');
-      }
-
-      // 2. Insert the review
+      // 2. Insert review
       const { error: reviewError } = await supabase.from('reviews').insert([{
         rental_id: rental.id,
         reviewer_id: currentUser.id,
@@ -57,14 +52,14 @@ export default function LeaveReviewModal({ open, onClose, rental, currentUser, t
         rating,
         comment: comment.trim() || null,
       }]);
-      if (reviewError) throw reviewError;
+      if (reviewError) throw new Error('Review insert failed: ' + reviewError.message);
 
-      // 3. Recalculate average rating
+      // 3. Recalculate rating
       const { data: avgData, error: avgError } = await supabase
         .from('reviews')
         .select('rating')
         .eq('target_id', targetId);
-      if (avgError) throw avgError;
+      if (avgError) throw new Error('Avg calc failed: ' + avgError.message);
 
       const total = avgData.reduce((sum, r) => sum + r.rating, 0);
       const newAvg = total / avgData.length;
@@ -79,10 +74,9 @@ export default function LeaveReviewModal({ open, onClose, rental, currentUser, t
       toast.success('Review submitted!');
       onClose();
     },
-   onError: (err) => {
-  alert('DEBUG: ' + (err.message || JSON.stringify(err)));
-  toast.error('Failed to submit review: ' + err.message);
-},;
+    onError: (err) => {
+      setErrorMsg(err.message); // show in the UI
+      toast.error('Failed: ' + err.message);
     },
   });
 
@@ -101,6 +95,13 @@ export default function LeaveReviewModal({ open, onClose, rental, currentUser, t
           <DialogTitle>Rate your experience</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          {errorMsg && (
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-destructive/10 text-destructive text-sm">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
           <div>
             <Label>{targetType === 'driver' ? 'Driver' : 'Owner'}: {targetName || targetEmail}</Label>
           </div>
