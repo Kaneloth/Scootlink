@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
   Plus, Search, MapPin, Bike, Users, Car, Crown, ShieldCheck, AlertTriangle,
-  Check, X, User as UserIcon, MessageCircle
+  Check, X, User as UserIcon, MessageCircle, Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/layout/PageHeader';
@@ -22,7 +22,7 @@ import StarRating from '@/components/reviews/StarRating';
 export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
-  const [userLoading, setUserLoading] = useState(true);
+  const [balanceLoading, setBalanceLoading] = useState(true);
   const [reviewModal, setReviewModal] = useState(null);
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [loadingDriver, setLoadingDriver] = useState(false);
@@ -44,26 +44,23 @@ export default function Dashboard() {
   useEffect(() => {
     auth.me().then(u => {
       setUser(u);
-      setUserLoading(false);
-    }).catch(() => setUserLoading(false));
+      setBalanceLoading(false);
+    }).catch(() => setBalanceLoading(false));
   }, []);
 
   const queryClient = useQueryClient();
 
-  // Owner's vehicles
   const { data: vehicles = [] } = useQuery({
     queryKey: ['my-vehicles'],
     queryFn: () => Vehicle.filter({ owner_id: user?.id }),
     enabled: !!user?.id,
   });
 
-  // All available vehicles (for driver view)
   const { data: allVehicles = [] } = useQuery({
     queryKey: ['all-vehicles'],
     queryFn: () => Vehicle.filter({ status: 'available' }),
   });
 
-  // Rentals where user is owner or driver
   const { data: rentals = [] } = useQuery({
     queryKey: ['my-rentals'],
     queryFn: async () => {
@@ -76,12 +73,10 @@ export default function Dashboard() {
   const availableForMe = allVehicles.filter(v => v.owner_id !== user?.id);
   const completedRentals = rentals.filter(r => r.status === 'completed');
 
-  // Owner‑specific slices
   const ownerRentals = rentals.filter(r => r.owner_id === user?.id);
   const ownerPendingRentals = ownerRentals.filter(r => r.status === 'pending');
   const ownerActiveRentals = ownerRentals.filter(r => r.status === 'active');
 
-  // Driver‑specific slices
   const driverPendingConfRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'awaiting_driver_confirmation');
   const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
 
@@ -93,17 +88,13 @@ export default function Dashboard() {
 
   const navigateToBothSection = (tab, ref) => {
     setBothTab(tab);
-    setTimeout(() => {
-      scrollToSection(ref);
-    }, 100);
+    setTimeout(() => scrollToSection(ref), 100);
   };
 
-  // Generic proposal accept/reject (owner side)
   const handleProposalResponse = async (rentalId, action) => {
     try {
       const rental = rentals.find(r => r.id === rentalId);
       if (!rental) return;
-
       if (action === 'accept') {
         await Rental.update(rentalId, { status: 'awaiting_driver_confirmation' });
         toast.success('Proposal accepted! Awaiting driver confirmation.');
@@ -111,7 +102,6 @@ export default function Dashboard() {
         await Rental.update(rentalId, { status: 'rejected' });
         toast.success('Proposal rejected.');
       }
-
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
@@ -120,17 +110,14 @@ export default function Dashboard() {
     }
   };
 
-  // Driver confirms via contract modal
   const handleDriverConfirm = async () => {
     if (!selectedProposal) return;
     try {
       const rental = rentals.find(r => r.id === selectedProposal.id);
       if (!rental) return;
-
       await Rental.update(rental.id, { status: 'active' });
       await Vehicle.update(rental.vehicle_id, { status: 'rented' });
       toast.success('Rental confirmed! Vehicle assigned.');
-
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
@@ -141,7 +128,6 @@ export default function Dashboard() {
     }
   };
 
-  // Fetch driver profile for detail modal
   const fetchDriverDetails = async (driverId) => {
     setLoadingDriver(true);
     try {
@@ -154,28 +140,23 @@ export default function Dashboard() {
       setSelectedDriver(data);
     } catch (err) {
       toast.error('Could not load driver details');
-      console.error(err);
     } finally {
       setLoadingDriver(false);
     }
   };
 
-  // Simplified contract text generation (you can replace with the full template from earlier if needed)
   const generateContractText = (rental, vehicle, driverProfile) => {
     const ownerName = user?.full_name || 'Owner';
     const driverName = driverProfile?.full_name || rental.driver_email || 'Driver';
     const licenseNumber = driverProfile?.license_number || 'Not provided';
     const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
-
     return `VEHICLE RENTAL CONTRACT\nEffective Date: ${today}\nBetween: ${ownerName} (Owner) and ${driverName} (Driver)\nVehicle: ${vehicle?.make} ${vehicle?.model} (${vehicle?.year})\nRental Period: ${rental.start_date} – ${rental.end_date}\nWeekly Rate: R ${rental.price_per_week}\nDeposit: R ${rental.deposit}\nDriver's License: ${licenseNumber}\nBoth parties agree to the platform's terms and conditions.`;
   };
 
-  // Open contract modal (for owner or driver)
   const openContractModal = async (rental, role) => {
     setSelectedProposal(rental);
     setContractAgreed(false);
     const vehicle = vehicles.find(v => v.id === rental.vehicle_id) || allVehicles.find(v => v.id === rental.vehicle_id);
-
     if (role === 'owner' && rental.driver_id) {
       const profile = await fetchDriverDetails(rental.driver_id);
       const text = generateContractText(rental, vehicle, profile);
@@ -197,14 +178,13 @@ export default function Dashboard() {
     setContractAgreed(false);
   };
 
-  // Handler for the modal's Accept button (owner side)
   const handleAcceptWithContract = async () => {
     if (!contractAgreed || !selectedProposal) return;
     await handleProposalResponse(selectedProposal.id, 'accept');
     closeContractModal();
   };
 
-  // =============== RENDER FUNCTIONS ===============
+  // =============== RENDER HELPERS ===============
 
   const renderOwnerContent = () => (
     <>
@@ -212,20 +192,16 @@ export default function Dashboard() {
       {vehicles.length > 0 ? (
         <div className="space-y-3">
           {vehicles.map(v => (
-            <Link key={v.id} to={`/edit-vehicle?id=${v.id}`}>
-              <VehicleCard vehicle={v} />
-            </Link>
+            <Link key={v.id} to={`/edit-vehicle?id=${v.id}`}><VehicleCard vehicle={v} /></Link>
           ))}
         </div>
       ) : (
         <EmptyState icon="🚗" title="No vehicles listed" description="Add your first vehicle to start earning"
-          action={<Link to="/add-vehicle"><Button size="sm"><Plus className="w-4 h-4 mr-1" />Add Vehicle</Button></Link>}
-        />
+          action={<Link to="/add-vehicle"><Button size="sm"><Plus className="w-4 h-4 mr-1" />Add Vehicle</Button></Link>} />
       )}
 
       <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerAssignmentsRef}>Active Assignments</h3>
 
-      {/* Pending proposals */}
       {ownerPendingRentals.length > 0 && (
         <div className="mb-6">
           <p className="text-sm font-medium text-muted-foreground mb-2">PENDING PROPOSALS</p>
@@ -265,7 +241,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Active assignments */}
       {user?.subscription_active ? (
         ownerActiveRentals.length > 0 ? (
           <div className="space-y-3">
@@ -308,7 +283,6 @@ export default function Dashboard() {
         <EmptyState icon="🔍" title="No available vehicles" description="Check back later for new listings" />
       )}
 
-      {/* Pending confirmation (driver) */}
       {driverPendingConfRentals.length > 0 && (
         <div className="mt-6">
           <h3 className="text-lg font-semibold mb-3">Pending Confirmation</h3>
@@ -413,14 +387,6 @@ export default function Dashboard() {
 
   const currentYear = new Date().getFullYear();
 
-  if (userLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
       <PageHeader title={`Welcome${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`} subtitle="Manage your vehicles and rentals" />
@@ -445,7 +411,7 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <WalletCard balance={user?.wallet_balance || 0} />
+      <WalletCard balance={user?.wallet_balance ?? 0} loading={balanceLoading} />
       {renderStatCards()}
       {renderActionButtons()}
 
@@ -463,7 +429,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Completed Rentals – leave review */}
+      {/* Completed Rentals — leave review */}
       {completedRentals.length > 0 && (
         <div className="mt-8" ref={reviewsSectionRef}>
           <h3 className="text-lg font-semibold mb-3">Completed Rentals</h3>
