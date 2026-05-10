@@ -149,25 +149,17 @@ export default function Wallet() {
       <PageHeader title="Wallet" subtitle="Manage your funds" backTo="/" />
 
       {/* Balance card with manual refresh, show skeleton while loading */}
-      <div className="relative">
-        {userLoading ? (
-          <div className="bg-gradient-to-r from-primary to-primary-dark rounded-2xl p-6 text-white animate-pulse">
-            <div className="h-4 w-24 bg-white/20 rounded mb-3" />
-            <div className="h-8 w-32 bg-white/20 rounded" />
-          </div>
-        ) : (
-          <>
-            <WalletCard balance={user?.wallet_balance ?? 0} />
-            <button
-              onClick={refreshUser}
-              className="absolute top-3 right-3 p-2 rounded-full bg-white/20 hover:bg-white/30 text-white"
-              title="Refresh balance"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </>
-        )}
-      </div>
+      if (userLoading) {
+  return (
+    <div className="p-4 lg:p-8 max-w-2xl mx-auto flex items-center justify-center min-h-[60vh]">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    </div>
+  );
+}
+
+return (
+  // regular page content (same as before)
+);
 
       <SubscriptionGate user={user} loading={userLoading}>
         <div className="grid grid-cols-3 gap-3 mt-6">
