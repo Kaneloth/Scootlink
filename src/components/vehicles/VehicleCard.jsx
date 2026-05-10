@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MapPin, Star, Calendar } from 'lucide-react';
+import { supabase } from '@/api/supabaseClient';
 
 const typeIcons = { scooter: '🛵', motorcycle: '🏍️', car: '🚗' };
 
@@ -13,6 +14,21 @@ const statusStyles = {
 };
 
 export default function VehicleCard({ vehicle, onClick, showPrice = true }) {
+  const [ownerRating, setOwnerRating] = useState(null);
+
+  useEffect(() => {
+    if (!vehicle?.owner_id) return;
+    supabase
+      .from('profiles')
+      .select('rating')
+      .eq('id', vehicle.owner_id)
+      .single()
+      .then(({ data }) => {
+        if (data) setOwnerRating(data.rating);
+      })
+      .catch(() => {});
+  }, [vehicle?.owner_id]);
+
   return (
     <Card
       className="p-4 hover:shadow-lg transition-all duration-200 cursor-pointer border border-border/50 group"
@@ -44,6 +60,12 @@ export default function VehicleCard({ vehicle, onClick, showPrice = true }) {
               <span className="flex items-center gap-1">
                 <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
                 {vehicle.rating.toFixed(1)}
+              </span>
+            )}
+            {ownerRating !== null && ownerRating > 0 && (
+              <span className="flex items-center gap-1">
+                <Star className="w-3 h-3 fill-yellow-500 text-yellow-500" />
+                Owner {ownerRating.toFixed(1)}
               </span>
             )}
           </div>
