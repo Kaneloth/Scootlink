@@ -448,13 +448,16 @@ export default function Dashboard() {
                   </div>
                   <Button size="sm" variant="outline" className="gap-1.5 shrink-0"
    
-                  onClick={() => setReviewModal({
-                    rental: r,
-                    targetEmail,
-                    targetName: targetEmail,
-                    targetType,
-                    targetId           // ← this must be here
-                  })}>
+                  onClick={() => {
+  alert('targetId: ' + targetId + '\nrentalId: ' + r.id + '\ndriver_id: ' + r.driver_id + '\nowner_id: ' + r.owner_id + '\nuser.id: ' + user?.id);
+  setReviewModal({
+    rental: r,
+    targetEmail,
+    targetName: targetEmail,
+    targetType,
+    targetId
+  });
+}}>
                     <StarRating value={0} size="sm" /> Rate
                   </Button>
                 </Card>
