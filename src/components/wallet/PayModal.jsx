@@ -1,90 +1,126 @@
 import React, { useState, useEffect } from 'react';
-import { auth, Rental, Transaction, User } from '@/api/supabaseData';
+import { auth, supabase } from '@/api/supabaseData';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Search, CheckCircle2, Send, Loader2, ShieldCheck } from 'lucide-react';
+import { Send, Loader2, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function PayModal({ open, onClose, user, onSuccess }) {
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState(null);
+  const [selectedId, setSelectedId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [step, setStep] = useState('select'); // 'select' | 'amount' | 'confirm'
+  const [counterparties, setCounterparties] = useState([]);
+  const [fetching, setFetching] = useState(true);
 
-  // Load all active rentals to determine contracted parties
-  const { data: rentals = [] } = useQuery({
-    queryKey: ['my-rentals-for-pay'],
-    queryFn: async () => {
-      const all = await Rental.list();
-      return all.filter(r =>
-        (r.owner_email === user?.email || r.driver_email === user?.email) &&
-        (r.status === 'active' || r.status === 'pending')
-      );
-    },
-    enabled: !!user?.email && open,
-  });
+  // Fetch counterparties whenever modal opens
+  useEffect(() => {
+    if (!user || !open) return;
+    setFetching(true);
+    setSelectedId('');
+    setAmount('');
+    setNote('');
+    setStep('select');
 
-  const { data: allUsers = [] } = useQuery({
-    queryKey: ['all-users-for-pay'],
-    queryFn: () => User.list(),
-    enabled: open,
-  });
+    (async () => {
+      try {
+        // Get all rentals involving the current user
+        const { data: rentals, error: rentalError } = await supabase
+          .from('rentals')
+          .select('*')
+          .or(`owner_id.eq.${user.id},driver_id.eq.${user.id}`);
 
-  // Derive contracted party emails
-  const contractedEmails = new Set(
-    rentals.flatMap(r => [r.owner_email, r.driver_email]).filter(e => e !== user?.email)
-  );
+        if (rentalError) throw rentalError;
 
-  const contractedUsers = allUsers.filter(u =>
-    contractedEmails.has(u.email) &&
-    (u.full_name?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase()))
-  );
+        // Statuses that indicate an ongoing contractual relationship
+        const activeStatuses = ['active', 'awaiting_driver_confirmation'];
+        const relevant = (rentals || []).filter(r => activeStatuses.includes(r.status));
+
+        // Collect unique counterparty IDs
+        const otherIds = new Set();
+        for (const r of relevant) {
+          const otherId = r.owner_id === user.id ? r.driver_id : r.owner_id;
+          if (otherId) otherIds.add(otherId);
+        }
+
+        const ids = Array.from(otherIds);
+        if (ids.length === 0) {
+          setCounterparties([]);
+          setFetching(false);
+          return;
+        }
+
+        // Fetch profiles for counterparties
+        const { data: profiles, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, verified')
+          .in('id', ids);
+
+        if (profileError) throw profileError;
+
+        setCounterparties(profiles || []);
+      } catch (err) {
+        console.error('PayModal fetch error:', err);
+        toast.error('Could not load contacts');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, [user, open]);
+
+  // Get selected counterparty object
+  const selectedUser = counterparties.find(c => c.id === selectedId);
+
+  // Get the rental that links the two parties (for display)
+  const linkedRental = null; // We can add this later if needed
 
   const sendPayment = useMutation({
     mutationFn: async () => {
       const amt = parseFloat(amount);
-      if (!selected || !amt || amt <= 0) throw new Error('Invalid');
+      if (!selectedId || !amt || amt <= 0) throw new Error('Invalid amount');
       if (amt > (user?.wallet_balance || 0)) throw new Error('Insufficient funds');
 
-      await Transaction.create({
-        from_email: user.email,
-        to_email: selected.email,
-        amount: amt,
-        transaction_type: 'payment',
-        description: note || `Payment to ${selected.full_name || selected.email}`,
-      });
+      // Insert transaction record
+      const { error: txError } = await supabase.from('transactions').insert([
+        {
+          from_user_id: user.id,
+          to_user_id: selectedId,
+          amount: amt,
+          type: 'payment',
+          description: note || `Payment to ${selectedUser?.full_name || 'User'}`,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      if (txError) throw txError;
 
-      await auth.updateMe({ wallet_balance: (user.wallet_balance || 0) - amt });
+      // Update sender's balance
+      const newBalance = (user.wallet_balance || 0) - amt;
+      await auth.updateMe({ wallet_balance: newBalance });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      toast.success(`R ${amount} sent to ${selected?.full_name || selected?.email}`);
+      toast.success(`R ${parseFloat(amount).toFixed(2)} sent to ${selectedUser?.full_name || 'User'}`);
       onSuccess?.();
       handleClose();
     },
     onError: (err) => {
-      toast.error(err.message === 'Insufficient funds' ? 'Insufficient wallet balance' : 'Payment failed');
+      toast.error(err.message === 'Insufficient funds' ? 'Insufficient wallet balance' : 'Payment failed: ' + err.message);
     },
   });
 
   const handleClose = () => {
-    setSearch('');
-    setSelected(null);
+    setSelectedId('');
     setAmount('');
     setNote('');
     setStep('select');
     onClose();
   };
-
-  const rental = selected ? rentals.find(r =>
-    r.owner_email === selected.email || r.driver_email === selected.email
-  ) : null;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -95,63 +131,59 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
           </DialogTitle>
         </DialogHeader>
 
-        {/* Step 1: Select recipient */}
+        {/* Step 1: Select recipient (dropdown) */}
         {step === 'select' && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">You can only pay users you have an active contract with.</p>
 
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Search by name or email..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-            </div>
-
-            {contractedUsers.length === 0 ? (
+            {fetching ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+            ) : counterparties.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <p className="text-4xl mb-2">🤝</p>
                 <p className="text-sm font-medium">No contracted users found</p>
-                <p className="text-xs mt-1">You can only pay people you have an active rental with</p>
+                <p className="text-xs mt-1">Active rentals will appear here</p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {contractedUsers.map(u => {
-                  const r = rentals.find(rn => rn.owner_email === u.email || rn.driver_email === u.email);
-                  const role = r?.owner_email === u.email ? 'Owner' : 'Driver';
-                  return (
-                    <button
-                      key={u.id}
-                      onClick={() => setSelected(u)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
-                        selected?.id === u.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'
-                      }`}
-                    >
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary shrink-0">
-                        {u.full_name?.[0] || '?'}
+              <div className="space-y-3">
+                <Label>Select Recipient</Label>
+                <Select value={selectedId} onValueChange={setSelectedId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Choose a contracted user..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {counterparties.map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.full_name || c.email} ({c.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Show selected user's card */}
+                {selectedUser && (
+                  <div className="flex items-center gap-3 p-3 bg-muted rounded-xl">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
+                      {selectedUser.full_name?.[0] || '?'}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-sm">{selectedUser.full_name || selectedUser.email}</p>
+                        {selectedUser.verified && <ShieldCheck className="w-3.5 h-3.5 text-primary" />}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-sm truncate">{u.full_name || u.email}</p>
-                          {u.verified && <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />}
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <p className="text-xs text-muted-foreground truncate">{u.email}</p>
-                          <Badge variant="outline" className="text-[9px] shrink-0">{role}</Badge>
-                        </div>
-                      </div>
-                      {selected?.id === u.id && <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />}
-                    </button>
-                  );
-                })}
+                      <p className="text-xs text-muted-foreground">{selectedUser.email}</p>
+                    </div>
+                    {selectedId && <CheckCircle2 className="w-5 h-5 text-primary shrink-0 ml-auto" />}
+                  </div>
+                )}
               </div>
             )}
 
             <DialogFooter>
               <Button variant="outline" onClick={handleClose}>Cancel</Button>
-              <Button disabled={!selected} onClick={() => setStep('amount')}>
+              <Button disabled={!selectedId} onClick={() => setStep('amount')}>
                 Continue
               </Button>
             </DialogFooter>
@@ -159,15 +191,15 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
         )}
 
         {/* Step 2: Amount */}
-        {step === 'amount' && selected && (
+        {step === 'amount' && selectedUser && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 p-3 bg-muted rounded-xl">
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
-                {selected.full_name?.[0] || '?'}
+                {selectedUser.full_name?.[0] || '?'}
               </div>
               <div>
-                <p className="font-medium text-sm">{selected.full_name || selected.email}</p>
-                <p className="text-xs text-muted-foreground">{selected.email}</p>
+                <p className="font-medium text-sm">{selectedUser.full_name || selectedUser.email}</p>
+                <p className="text-xs text-muted-foreground">{selectedUser.email}</p>
               </div>
             </div>
 
@@ -191,12 +223,6 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
               <Input className="mt-1" placeholder="Weekly rental payment..." value={note} onChange={e => setNote(e.target.value)} />
             </div>
 
-            {rental && (
-              <div className="bg-primary/5 p-3 rounded-xl text-xs text-muted-foreground">
-                📋 Rental: {rental.start_date} – {rental.end_date} · R {rental.price_per_week}/week
-              </div>
-            )}
-
             <DialogFooter>
               <Button variant="outline" onClick={() => setStep('select')}>Back</Button>
               <Button
@@ -210,11 +236,11 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
         )}
 
         {/* Step 3: Confirm */}
-        {step === 'confirm' && selected && (
+        {step === 'confirm' && selectedUser && (
           <div className="space-y-4">
             <div className="bg-muted rounded-2xl p-5 text-center">
               <p className="text-muted-foreground text-sm mb-1">Sending to</p>
-              <p className="font-bold text-foreground">{selected.full_name || selected.email}</p>
+              <p className="font-bold text-foreground">{selectedUser.full_name || selectedUser.email}</p>
               <p className="text-4xl font-extrabold text-primary mt-3">R {parseFloat(amount).toFixed(2)}</p>
               {note && <p className="text-xs text-muted-foreground mt-2">"{note}"</p>}
             </div>
