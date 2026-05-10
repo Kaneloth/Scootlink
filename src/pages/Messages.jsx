@@ -23,7 +23,7 @@ export default function Messages() {
   const [loading, setLoading] = useState(false);
   const [newChatEmail, setNewChatEmail] = useState('');
   const [startNewChat, setStartNewChat] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(true); // NEW
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const subscriptionRef = useRef(null);
 
@@ -88,7 +88,7 @@ export default function Messages() {
 
       setConversations(Object.values(grouped));
     } finally {
-      setInitialLoading(false); // Mark loading as done after first fetch
+      setInitialLoading(false);
     }
   }, [user]);
 
@@ -227,10 +227,11 @@ export default function Messages() {
     setSelectedChat(null);
   };
 
-  if (!user) {
+  // Full‑page loader until user and conversations are ready
+  if (!user || initialLoading) {
     return (
-      <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-        <p className="text-muted-foreground">Loading…</p>
+      <div className="p-4 lg:p-8 max-w-5xl mx-auto flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -248,11 +249,7 @@ export default function Messages() {
         <ArrowLeft className="w-5 h-5" /> Back
       </button>
 
-      {initialLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : !selectedChat ? (
+      {!selectedChat ? (
         <>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-foreground">Messages</h2>
