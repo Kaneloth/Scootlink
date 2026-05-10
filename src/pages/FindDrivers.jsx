@@ -14,9 +14,12 @@ import StarRating from '@/components/reviews/StarRating';
 import PageHeader from '@/components/layout/PageHeader';
 import EmptyState from '@/components/common/EmptyState';
 import { toast } from 'sonner';
+import { supabase } from '@/api/supabaseClient';
 
 export default function FindDrivers() {
   const navigate = useNavigate();
+  const [driverReviews, setDriverReviews] = useState([]);
+  const [loadingReviews, setLoadingReviews] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({ location: '', minExperience: 0, minRating: 0, radius: 50 });
   const [currentUser, setCurrentUser] = useState(null);
@@ -40,6 +43,24 @@ export default function FindDrivers() {
     return true;
   });
 
+  const fetchDriverReviews = async (driverId) => {
+  setLoadingReviews(true);
+  try {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('id, rating, comment, created_at, reviewer_id')
+      .eq('target_id', driverId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) throw error;
+    setDriverReviews(data || []);
+  } catch (err) {
+    console.error('Failed to load reviews:', err);
+  } finally {
+    setLoadingReviews(false);
+  }
+};
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
       <PageHeader
