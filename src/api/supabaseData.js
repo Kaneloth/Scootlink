@@ -13,9 +13,23 @@ export const auth = {
   me: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
-    // All profile data lives in user_metadata
-    return { ...user.user_metadata, id: user.id, email: user.email };
+
+    // Fetch the wallet balance from the profiles table
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('wallet_balance')
+      .eq('id', user.id)
+      .single();
+
+    return {
+      ...user.user_metadata,
+      id: user.id,
+      email: user.email,
+      wallet_balance: profile?.wallet_balance ?? 0, // profiles table is the source of truth
+    };
   },
+  // … rest of auth object stays exactly as before
+};
   updateMe: async (updates) => {
     const { data, error } = await supabase.auth.updateUser({ data: updates });
     if (error) throw error;
