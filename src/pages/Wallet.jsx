@@ -3,7 +3,7 @@ import { auth, supabase } from '@/api/supabaseData';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowDownLeft, ArrowUpRight, Plus, Minus, Send } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Plus, Minus, Send, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import PageHeader from '@/components/layout/PageHeader';
 import WalletCard from '@/components/dashboard/WalletCard';
@@ -18,15 +18,18 @@ export default function Wallet() {
   const [userLoading, setUserLoading] = useState(true);
   const [payModal, setPayModal] = useState(false);
 
-  // Fetch latest user (with up‑to‑date wallet_balance) whenever this page mounts
-  useEffect(() => {
-    auth.me().then(setUser).catch(() => {}).finally(() => setUserLoading(false));
-  }, []);
-
-  // Refresh user after a successful payment
-  const handlePaymentSuccess = async () => {
+  // Fetch latest user (with up‑to‑date wallet_balance)
+  const refreshUser = async () => {
     const updated = await auth.me();
     setUser(updated);
+  };
+
+  useEffect(() => {
+    refreshUser().finally(() => setUserLoading(false));
+  }, []);
+
+  const handlePaymentSuccess = async () => {
+    await refreshUser(); // update sender's balance immediately
   };
 
   const { data: transactions = [], isLoading: txLoading } = useQuery({
@@ -51,7 +54,6 @@ export default function Wallet() {
         const { data: profiles } = await supabase.from('profiles').select('id, full_name, email').in('id', Array.from(ids));
         const nameMap = {};
         (profiles || []).forEach(p => { nameMap[p.id] = p.full_name || p.email || 'User'; });
-        // Attach counterparty name
         return data.map(t => ({
           ...t,
           counterpartyName: t.to_user_id === user.id
@@ -67,7 +69,18 @@ export default function Wallet() {
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <PageHeader title="Wallet" subtitle="Manage your funds" backTo="/" />
-      <WalletCard balance={user?.wallet_balance ?? 0} />
+
+      {/* Balance card with manual refresh button */}
+      <div className="relative">
+        <WalletCard balance={user?.wallet_balance ?? 0} />
+        <button
+          onClick={refreshUser}
+          className="absolute top-3 right-3 p-2 rounded-full bg-white/20 hover:bg-white/30 text-white"
+          title="Refresh balance"
+        >
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
 
       <SubscriptionGate user={user} loading={userLoading}>
         <div className="grid grid-cols-3 gap-3 mt-6">
