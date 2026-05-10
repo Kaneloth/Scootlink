@@ -28,7 +28,7 @@ const StarRating = ({ value, onChange, size = 'md' }) => {
 };
 
 export default function LeaveReviewModal({
-  open, onClose, rental, currentUser, targetEmail, targetName, targetType, targetId: propTargetId
+  open, onClose, rental, currentUser, targetEmail, targetName, targetType, targetId: propTargetId, onReviewSubmitted
 }) {
   const queryClient = useQueryClient();
   const [rating, setRating] = useState(0);
@@ -84,6 +84,7 @@ export default function LeaveReviewModal({
       queryClient.invalidateQueries({ queryKey: ['reviews'] });
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       toast.success('Review submitted!');
+      onReviewSubmitted?.();
       onClose();
     },
     onError: (err) => {
