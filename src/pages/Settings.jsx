@@ -4,23 +4,8 @@ import { auth, supabase } from '@/api/supabaseData';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
-  Moon,
-  Sun,
-  ChevronRight,
-  LogOut,
-  User,
-  Bell,
-  Globe,
-  Shield,
-  FileText,
-  Crown,
-  Bike,
-  Users,
-  CheckCircle2,
-  Loader2,
-  ArrowRight,
+  Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText, Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -85,6 +70,7 @@ export default function Settings() {
   const [selectedPlan, setSelectedPlan] = useState('owner');
   const [processingPlan, setProcessingPlan] = useState(false);
   const [user, setUser] = useState(null);
+  const [notifications, setNotifications] = useState(true);
 
   // Load initial states
   useEffect(() => {
@@ -99,15 +85,17 @@ export default function Settings() {
     const savedMethod = localStorage.getItem('scootlink_signin_method') || 'password';
     setSignInMethod(savedMethod);
 
+    // Load notifications preference
+    const savedNotifications = localStorage.getItem('scootlink_notifications');
+    setNotifications(savedNotifications !== 'false'); // default true
+
     auth.me().then(u => {
       setUser(u);
-      // pre‑select plan based on current subscription or account_type
       const currentPlan = u.subscription_plan || u.account_type || 'driver';
       setSelectedPlan(currentPlan === 'both' ? 'both' : currentPlan);
     }).catch(() => {});
   }, []);
 
-  // Dark mode toggle
   const toggleDarkMode = () => {
     const newDark = !darkMode;
     setDarkMode(newDark);
@@ -120,19 +108,23 @@ export default function Settings() {
     }
   };
 
-  // Sign‑in method toggle
+  const toggleNotifications = () => {
+    const newValue = !notifications;
+    setNotifications(newValue);
+    localStorage.setItem('scootlink_notifications', newValue);
+    toast.success(`Notifications ${newValue ? 'enabled' : 'disabled'}`);
+  };
+
   const toggleSignInMethod = () => {
     const newMethod = signInMethod === 'password' ? 'biometric' : 'password';
     setSignInMethod(newMethod);
     localStorage.setItem('scootlink_signin_method', newMethod);
-    // Update user metadata so the login page knows
     if (user) {
       supabase.auth.updateUser({ data: { sign_in_method: newMethod } });
     }
     toast.success(`Sign‑in method changed to ${newMethod === 'biometric' ? 'Biometric' : 'Password'}`);
   };
 
-  // Subscribe to plan
   const handleSubscribe = async () => {
     setProcessingPlan(true);
     try {
@@ -146,7 +138,6 @@ export default function Settings() {
         data: { subscription_plan: selectedPlan }
       });
       toast.success('Subscription updated!');
-      // Refresh user data
       const updatedUser = await auth.me();
       setUser(updatedUser);
     } catch (err) {
@@ -180,7 +171,7 @@ export default function Settings() {
               className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors"
             >
               <div className="flex items-center gap-3">
-                <User className="w-5 h-5 text-muted-foreground" />
+                <UserIcon className="w-5 h-5 text-muted-foreground" />
                 <div className="text-left">
                   <p className="text-sm font-medium text-foreground">Account Profile</p>
                   <p className="text-xs text-muted-foreground">Edit your personal details</p>
@@ -189,17 +180,30 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </button>
 
-            {/* Notifications (static) */}
-            <div className="flex items-center justify-between p-4 rounded-xl">
+            {/* Notifications Toggle */}
+            <div
+              className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors"
+              onClick={toggleNotifications}
+            >
               <div className="flex items-center gap-3">
                 <Bell className="w-5 h-5 text-muted-foreground" />
                 <div className="text-left">
                   <p className="text-sm font-medium text-foreground">Notifications</p>
-                  <p className="text-xs text-muted-foreground">Manage push and email alerts</p>
+                  <p className="text-xs text-muted-foreground">
+                    {notifications ? 'Enabled' : 'Disabled'}
+                  </p>
                 </div>
               </div>
-              <div className="h-6 w-10 bg-primary rounded-full relative cursor-pointer">
-                <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full"></div>
+              <div
+                className={`h-6 w-10 rounded-full relative transition-colors duration-200 ${
+                  notifications ? 'bg-primary' : 'bg-gray-300'
+                }`}
+              >
+                <div
+                  className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-200 ${
+                    notifications ? 'right-1' : 'left-1'
+                  }`}
+                />
               </div>
             </div>
 
@@ -350,7 +354,7 @@ export default function Settings() {
               </Button>
             </div>
 
-            {/* Other security options can go here */}
+            {/* Other security options placeholder */}
             <div className="p-4 rounded-xl bg-card border border-border/50">
               <h3 className="text-sm font-medium text-foreground mb-2">Two‑factor authentication</h3>
               <p className="text-xs text-muted-foreground">Coming soon</p>
