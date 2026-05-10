@@ -438,6 +438,7 @@ export default function Dashboard() {
               const isOwner = r.owner_id === user?.id;
               const targetEmail = isOwner ? r.driver_email : r.owner_email;
               const targetType = isOwner ? 'driver' : 'owner';
+           const targetId = isOwner ? r.driver_id : r.owner_id; // get the counterparty's ID
               const v = [...vehicles, ...allVehicles].find(v => v.id === r.vehicle_id);
               return (
                 <Card key={r.id} className="p-4 border border-border/50 flex items-center justify-between gap-3">
@@ -446,8 +447,7 @@ export default function Dashboard() {
                     <p className="text-xs text-muted-foreground">{isOwner ? 'Driver: ' : 'Owner: '}{targetEmail}</p>
                   </div>
                   <Button size="sm" variant="outline" className="gap-1.5 shrink-0"
-                    const targetId = isOwner ? r.driver_id : r.owner_id; // get the counterparty's ID
-
+   
 onClick={() => setReviewModal({ rental: r, targetEmail, targetName: targetEmail, targetType, targetId })}>
                     <StarRating value={0} size="sm" /> Rate
                   </Button>
