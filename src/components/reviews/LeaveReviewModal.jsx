@@ -31,19 +31,24 @@ export default function LeaveReviewModal({ open, onClose, rental, currentUser, t
   const queryClient = useQueryClient();
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
-  const [errorMsg, setErrorMsg] = useState(null); // visible error in the modal
+  const [errorMsg, setErrorMsg] = useState(null);
 
   const submitReview = useMutation({
     mutationFn: async () => {
       setErrorMsg(null);
 
-      // 1. Ensure target profile exists (upsert — try insert first, then update if conflict)
+      // Safety check – if targetId is missing, show a clear error
+      if (!targetId) {
+        throw new Error('Missing target user ID. The rental may not have a valid driver/owner.');
+      }
+
+      // Ensure target profile exists
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({ id: targetId, email: targetEmail }, { onConflict: 'id' });
       if (profileError) throw new Error('Profile upsert failed: ' + profileError.message);
 
-      // 2. Insert review
+      // Insert review
       const { error: reviewError } = await supabase.from('reviews').insert([{
         rental_id: rental.id,
         reviewer_id: currentUser.id,
@@ -54,7 +59,7 @@ export default function LeaveReviewModal({ open, onClose, rental, currentUser, t
       }]);
       if (reviewError) throw new Error('Review insert failed: ' + reviewError.message);
 
-      // 3. Recalculate rating
+      // Recalculate average
       const { data: avgData, error: avgError } = await supabase
         .from('reviews')
         .select('rating')
@@ -75,8 +80,7 @@ export default function LeaveReviewModal({ open, onClose, rental, currentUser, t
       onClose();
     },
     onError: (err) => {
-      setErrorMsg(err.message); // show in the UI
-      toast.error('Failed: ' + err.message);
+      setErrorMsg(err.message);
     },
   });
 
