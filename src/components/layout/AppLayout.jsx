@@ -1,135 +1,140 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Bike } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth } from '@/api/supabaseData';
 
-const TAB_ORDER = ['/', '/search-vehicles', '/messages', '/tracking', '/wallet', '/settings'];
+// Import all main tab components (these will be rendered inside the swipe container)
+import Dashboard from '@/pages/Dashboard';
+import SearchVehicles from '@/pages/SearchVehicles';
+import FindDrivers from '@/pages/FindDrivers';
+import SearchPage from '@/pages/SearchPage';
+import Tracking from '@/pages/Tracking';
+import Wallet from '@/pages/Wallet';
+import Settings from '@/pages/Settings';
+import Messages from '@/pages/Messages';
+
+// All paths that are considered "main tabs" (bottom navigation + search variants)
+const MAIN_TAB_PATHS = [
+  '/',
+  '/search-vehicles',
+  '/find-drivers',
+  '/mysearch',
+  '/messages',
+  '/tracking',
+  '/wallet',
+  '/settings',
+];
+
+// Helper: return the correct search component and path based on user's plan
+function getSearchComponent(plan) {
+  if (plan === 'owner') return <FindDrivers />;
+  if (plan === 'both') return <SearchPage />;
+  return <SearchVehicles />;
+}
+
+function getSearchPath(plan) {
+  if (plan === 'owner') return '/find-drivers';
+  if (plan === 'both') return '/mysearch';
+  return '/search-vehicles';
+}
 
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
-  const mainRef = useRef(null);
-  const dragState = useRef({ startX: 0, startY: 0, isDragging: false, offsetX: 0 });
-  const rafRef = useRef(null);
-  const prevPathRef = useRef(location.pathname);
-  const [slideClass, setSlideClass] = useState('');
+  const [activeTab, setActiveTab] = useState(0);
+  const swipeRef = useRef(null);
+  const scrollToTabRef = useRef(null); // will hold a stable reference
 
-  // Slide animation on route change
+  // Fetch user's plan
   useEffect(() => {
-    const prev = prevPathRef.current;
-    const next = location.pathname;
-    prevPathRef.current = next;
-
-    const prevIdx = TAB_ORDER.indexOf(prev);
-    const nextIdx = TAB_ORDER.indexOf(next);
-
-    if (Math.abs(nextIdx - prevIdx) === 1) {
-      setSlideClass(nextIdx > prevIdx ? 'slide-from-right' : 'slide-from-left');
-      const t = setTimeout(() => setSlideClass(''), 350);
-      return () => clearTimeout(t);
-    } else {
-      setSlideClass('');
-    }
-  }, [location.pathname]);
-
-  useEffect(() => {
-    auth.me().then(u => setAccountType(u?.subscription_plan || 'driver')).catch(() => {});
+    auth.me().then(user => setAccountType(user?.subscription_plan || 'driver')).catch(() => {});
   }, []);
 
-  const getCurrentTabIndex = useCallback(() => {
-    const path = location.pathname;
-    if (['/search-vehicles', '/find-drivers', '/mysearch'].includes(path)) return 1;
-    return TAB_ORDER.indexOf(path);
-  }, [location.pathname]);
+  // Determine if we are currently on a main tab page
+  const isMainTab = MAIN_TAB_PATHS.includes(location.pathname);
 
-  // ---------- Smooth direct‑DOM drag ----------
-  const handleTouchStart = (e) => {
-    dragState.current = {
-      startX: e.touches[0].clientX,
-      startY: e.touches[0].clientY,
-      isDragging: false,
-      offsetX: 0,
-    };
-    // Remove any transition while dragging
-    mainRef.current.style.transition = 'none';
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  // Build the tab components list (order matters for swiping)
+  const tabs = [
+    { component: <Dashboard />, path: '/' },
+    { component: getSearchComponent(accountType), path: getSearchPath(accountType) },
+    { component: <Messages />, path: '/messages' },
+    { component: <Tracking />, path: '/tracking' },
+    { component: <Wallet />, path: '/wallet' },
+    { component: <Settings />, path: '/settings' },
+  ];
+
+  // Map paths to indices for highlighting the bottom nav
+  const pathToIndex = {
+    '/': 0,
+    '/search-vehicles': 1, '/find-drivers': 1, '/mysearch': 1,
+    '/messages': 2,
+    '/tracking': 3,
+    '/wallet': 4,
+    '/settings': 5,
   };
 
-  const handleTouchMove = (e) => {
-    const { startX, startY, isDragging } = dragState.current;
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-
-    if (!isDragging && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 2) {
-      dragState.current.isDragging = true;
+  // Sync active tab from URL when on a main tab
+  useEffect(() => {
+    if (isMainTab) {
+      setActiveTab(pathToIndex[location.pathname] ?? 0);
     }
+  }, [location.pathname, isMainTab]);
 
-    if (dragState.current.isDragging) {
-      e.preventDefault();
-      dragState.current.offsetX = dx;
-      // Direct DOM update – no React state, so instant and smooth
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(() => {
-        mainRef.current.style.transform = `translateX(${dx}px)`;
+  // Scroll to a specific tab (used by MobileNav)
+  const scrollToTab = (index) => {
+    if (swipeRef.current) {
+      const containerWidth = swipeRef.current.offsetWidth;
+      swipeRef.current.scrollTo({
+        left: index * containerWidth,
+        behavior: 'smooth',
       });
     }
   };
 
-  const handleTouchEnd = () => {
-    const { isDragging, offsetX } = dragState.current;
-    if (!isDragging) {
-      mainRef.current.style.transition = 'transform 0.3s ease-out';
-      mainRef.current.style.transform = 'translateX(0)';
-      return;
+  // Keep scrollToTab reference stable
+  useEffect(() => {
+    scrollToTabRef.current = scrollToTab;
+  }, [scrollToTab]);
+
+  // Listen for scroll events to update active tab (so bottom nav highlights correctly)
+  const handleScroll = () => {
+    if (!swipeRef.current) return;
+    const containerWidth = swipeRef.current.offsetWidth;
+    const scrollLeft = swipeRef.current.scrollLeft;
+    const newIndex = Math.round(scrollLeft / containerWidth);
+    setActiveTab(newIndex);
+  };
+
+  useEffect(() => {
+    const cont = swipeRef.current;
+    if (cont && isMainTab) {
+      cont.addEventListener('scroll', handleScroll, { passive: true });
     }
+    return () => {
+      if (cont) cont.removeEventListener('scroll', handleScroll);
+    };
+  }, [isMainTab]);
 
-    const containerWidth = mainRef.current?.offsetWidth || window.innerWidth;
-    const threshold = containerWidth * 0.25;
-    const currentIndex = getCurrentTabIndex();
-
-    if (currentIndex !== -1) {
-      if (offsetX < -threshold && currentIndex < TAB_ORDER.length - 1) {
-        // Snap left → next tab
-        mainRef.current.style.transition = 'transform 0.25s ease-out';
-        mainRef.current.style.transform = `translateX(-${containerWidth}px)`;
-        setTimeout(() => {
-          navigate(TAB_ORDER[currentIndex + 1]);
-          mainRef.current.style.transition = 'none';
-          mainRef.current.style.transform = 'translateX(0)';
-        }, 200);
-        return;
-      } else if (offsetX > threshold && currentIndex > 0) {
-        // Snap right → previous tab
-        mainRef.current.style.transition = 'transform 0.25s ease-out';
-        mainRef.current.style.transform = `translateX(${containerWidth}px)`;
-        setTimeout(() => {
-          navigate(TAB_ORDER[currentIndex - 1]);
-          mainRef.current.style.transition = 'none';
-          mainRef.current.style.transform = 'translateX(0)';
-        }, 200);
-        return;
-      }
+  // When swipe scroll finishes, update the route (so Desktop & URL reflect current tab)
+  const handleSwipeEnd = () => {
+    if (!swipeRef.current) return;
+    const containerWidth = swipeRef.current.offsetWidth;
+    const scrollLeft = swipeRef.current.scrollLeft;
+    const snapIndex = Math.round(scrollLeft / containerWidth);
+    const targetPath = tabs[snapIndex]?.path;
+    if (targetPath && location.pathname !== targetPath) {
+      navigate(targetPath, { replace: true });
     }
-
-    // Not enough drag – bounce back
-    mainRef.current.style.transition = 'transform 0.3s ease-out';
-    mainRef.current.style.transform = 'translateX(0)';
   };
 
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <main
-        ref={mainRef}
-        className={`flex-1 lg:ml-64 h-screen overflow-y-auto pb-20 lg:pb-0 ${slideClass}`}
-        style={{ willChange: 'transform' }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
+      <div className="flex-1 lg:ml-64 h-screen overflow-hidden relative">
+        {/* Mobile top bar */}
         <div className="lg:hidden flex items-center px-4 py-3 border-b border-border bg-card sticky top-0 z-30">
           <Link to="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
@@ -138,9 +143,37 @@ export default function AppLayout() {
             <span className="text-base font-bold text-foreground">Scootlink</span>
           </Link>
         </div>
-        <Outlet />
-      </main>
-      <MobileNav />
+
+        {/* Desktop: normal router output */}
+        <div className="hidden lg:block h-full overflow-y-auto pb-20 lg:pb-0">
+          <Outlet />
+        </div>
+
+        {/* Mobile: swipeable tabs for main pages, otherwise Outlet */}
+        <div className="lg:hidden h-[calc(100vh-120px)]">
+          {isMainTab ? (
+            <div
+              ref={swipeRef}
+              className="swipe-container flex overflow-x-auto overflow-y-hidden h-full"
+              onTouchEnd={handleSwipeEnd}
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              {tabs.map((tab, idx) => (
+                <div key={tab.path} className="swipe-page h-full overflow-y-auto pb-20">
+                  {tab.component}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="h-full overflow-y-auto pb-20">
+              <Outlet />
+            </div>
+          )}
+        </div>
+
+        {/* Bottom navigation – always visible */}
+        <MobileNav activeTab={activeTab} onScrollToTab={(index) => scrollToTabRef.current?.(index)} />
+      </div>
     </div>
   );
 }
