@@ -1,117 +1,87 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Bike } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth } from '@/api/supabaseData';
 
-// Corrected imports (note: Tracking not Trackings)
-import Dashboard from '@/pages/Dashboard';
-import SearchVehicles from '@/pages/SearchVehicles';
-import FindDrivers from '@/pages/FindDrivers';
-import SearchPage from '@/pages/SearchPage';
-import Tracking from '@/pages/Tracking';
-import Wallet from '@/pages/Wallet';
-import Settings from '@/pages/Settings';
-import Messages from '@/pages/Messages';
+// Tab order for swipe navigation (matches bottom nav)
+const TAB_ORDER = ['/', '/search-vehicles', '/messages', '/tracking', '/wallet', '/settings'];
 
 export default function AppLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
-  const [activeTab, setActiveTab] = useState(0);
-  const scrollContainerRef = useRef(null);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
 
+  // Fetch user's plan so the Search path can be corrected if needed (for the Desktop sidebar/links)
   useEffect(() => {
     auth.me().then(user => {
       setAccountType(user?.subscription_plan || 'driver');
     }).catch(() => {});
   }, []);
 
-  const tabs = [
-    { key: 'home', component: <Dashboard />, path: '/' },
-    { key: 'search', component: getSearchComponent(accountType), path: getSearchPath(accountType) },
-    { key: 'messages', component: <Messages />, path: '/messages' },
-    { key: 'track', component: <Tracking />, path: '/tracking' },
-    { key: 'wallet', component: <Wallet />, path: '/wallet' },
-    { key: 'settings', component: <Settings />, path: '/settings' },
-  ];
-
-  const scrollToTab = (index) => {
-    if (scrollContainerRef.current) {
-      const containerWidth = scrollContainerRef.current.offsetWidth;
-      scrollContainerRef.current.scrollTo({
-        left: index * containerWidth,
-        behavior: 'smooth',
-      });
-    }
-  };
-
-  const handleScroll = () => {
-    if (!scrollContainerRef.current) return;
-    const containerWidth = scrollContainerRef.current.offsetWidth;
-    const scrollLeft = scrollContainerRef.current.scrollLeft;
-    const index = Math.round(scrollLeft / containerWidth);
-    setActiveTab(index);
-  };
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (container) {
-      container.addEventListener('scroll', handleScroll, { passive: true });
-      return () => container.removeEventListener('scroll', handleScroll);
-    }
+  // Helper to get the correct Search path for swipe (but swipe always uses default search path,
+  // the dynamic Search path for bottom nav is handled inside MobileNav)
+  const getTabPaths = useCallback(() => {
+    return TAB_ORDER; // swiping will always cycle through the base tabs
   }, []);
+
+  // Get current tab index based on URL
+  const getCurrentTabIndex = useCallback(() => {
+    const path = location.pathname;
+    // For the dynamic search path, map it to index 1 if it's any of the search variants
+    if (path === '/search-vehicles' || path === '/find-drivers' || path === '/mysearch') return 1;
+    return TAB_ORDER.indexOf(path);
+  }, [location.pathname]);
+
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+    const dx = touchEndX - touchStartX.current;
+    const dy = touchEndY - touchStartY.current;
+
+    // Only react if horizontal swipe is dominant (> 50px and more horizontal than vertical)
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      const currentIndex = getCurrentTabIndex();
+      if (currentIndex === -1) return; // not a tab page – ignore
+
+      if (dx < 0 && currentIndex < TAB_ORDER.length - 1) {
+        // Swipe left → next tab
+        navigate(TAB_ORDER[currentIndex + 1]);
+      } else if (dx > 0 && currentIndex > 0) {
+        // Swipe right → previous tab
+        navigate(TAB_ORDER[currentIndex - 1]);
+      }
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <div className="flex-1 lg:ml-64 h-screen overflow-hidden relative">
+      <main
+        className="flex-1 lg:ml-64 h-screen overflow-y-auto pb-20 lg:pb-0"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        {/* Mobile top bar */}
         <div className="lg:hidden flex items-center px-4 py-3 border-b border-border bg-card sticky top-0 z-30">
-          <Link to="https://gemini.google.com/" className="flex items-center gap-2">
+          <Link to="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <Bike className="w-4 h-4 text-white" />
             </div>
             <span className="text-base font-bold text-foreground">Scootlink</span>
           </Link>
         </div>
-
-        {/* Desktop: normal router */}
-        <div className="hidden lg:block h-full overflow-y-auto pb-20 lg:pb-0">
-          <Outlet />
-        </div>
-
-        {/* Mobile: swipeable container */}
-        <div
-          ref={scrollContainerRef}
-          className="lg:hidden h-[calc(100vh-120px)] overflow-x-auto overflow-y-hidden snap-x snap-mandatory"
-          style={{ WebkitOverflowScrolling: 'touch' }}
-        >
-          <div className="flex h-full">
-            {tabs.map((tab, index) => (
-              <div
-                key={tab.key}
-                className="snap-start w-[100vw] flex-shrink-0 h-full overflow-y-auto pb-20"
-                style={{ scrollSnapAlign: 'start' }}
-              >
-                {tab.component}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <MobileNav activeTab={activeTab} onScrollToTab={scrollToTab} />
-      </div>
+        <Outlet />
+      </main>
+      <MobileNav />
     </div>
   );
-}
-
-function getSearchComponent(accountType) {
-  if (accountType === 'owner') return <FindDrivers />;
-  if (accountType === 'both') return <SearchPage />;
-  return <SearchVehicles />;
-}
-
-function getSearchPath(accountType) {
-  if (accountType === 'owner') return '/find-drivers';
-  if (accountType === 'both') return '/mysearch';
-  return '/search-vehicles';
 }
