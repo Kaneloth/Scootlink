@@ -11,6 +11,7 @@ import {
 import { ArrowDownLeft, ArrowUpRight, Plus, Minus, Send, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import PageHeader from '@/components/layout/PageHeader';
+import WalletCard from '@/components/dashboard/WalletCard';
 import EmptyState from '@/components/common/EmptyState';
 import PayModal from '@/components/wallet/PayModal';
 import SubscriptionGate from '@/components/subscription/SubscriptionGate';
@@ -31,14 +32,16 @@ export default function Wallet() {
   };
 
   useEffect(() => {
-    refreshUser(); // no loading state needed
+    refreshUser();
   }, []);
 
   const handlePaymentSuccess = async () => {
     await refreshUser();
   };
 
-  // Deposit
+  // Deposit, Withdraw, closeDialogs, transaction query… (unchanged)
+  // I’m including the full functions below for completeness, but they are the same as before.
+
   const handleDeposit = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return; }
@@ -59,7 +62,6 @@ export default function Wallet() {
     finally { setProcessing(false); }
   };
 
-  // Withdraw
   const handleWithdraw = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return; }
@@ -124,11 +126,8 @@ export default function Wallet() {
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <PageHeader title="Wallet" subtitle="Manage your funds" backTo="/" />
 
-      {/* Simplified balance display - no tap to manage, no refresh button */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark rounded-2xl p-6 text-white text-center">
-        <p className="text-sm opacity-80">Available Balance</p>
-        <p className="text-3xl font-extrabold mt-1">R {(user?.wallet_balance ?? 0).toFixed(2)}</p>
-      </div>
+      {/* Original WalletCard – no gradient, no tap/refresh */}
+      <WalletCard balance={user?.wallet_balance ?? 0} />
 
       <SubscriptionGate user={user} loading={false}>
         <div className="grid grid-cols-3 gap-3 mt-6">
