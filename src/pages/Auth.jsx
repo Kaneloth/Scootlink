@@ -87,14 +87,14 @@ export default function Auth() {
         await triggerBiometricLogin(navigate);
         navigate('/');
       } catch (err) {
-        toast.error(err.message || 'Biometric login failed');
-        // Fall back to showing password form
-        setLoginStage('password');
+        // Stay on the biometric screen — never auto-show the password form.
+        // The user must explicitly choose to switch to password.
+        toast.error(err.message || 'Biometric login failed. Try again or use password.');
+        setLoginStage('biometric-error');
       } finally {
         setLoading(false);
       }
     } else {
-      // Reveal the password fields
       setLoginStage('password');
     }
   };
@@ -225,19 +225,49 @@ export default function Auth() {
                 </Button>
               )}
 
-              {/* ── Biometric loading state ── */}
+              {/* ── Biometric: scanning ── */}
               {loginStage === 'biometric-loading' && (
                 <div className="flex flex-col items-center gap-4 py-6">
                   <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
-                    {loading ? (
-                      <Loader2 className="w-10 h-10 text-primary animate-spin" />
-                    ) : (
-                      <Fingerprint className="w-10 h-10 text-primary" />
-                    )}
+                    <Loader2 className="w-10 h-10 text-primary animate-spin" />
                   </div>
                   <p className="text-sm text-muted-foreground text-center">
-                    {loading ? 'Waiting for fingerprint…' : 'Place your finger on the sensor'}
+                    Waiting for fingerprint…
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => setLoginStage('password')}
+                    className="text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Use password instead
+                  </button>
+                </div>
+              )}
+
+              {/* ── Biometric: error — stay here, never auto-show password ── */}
+              {loginStage === 'biometric-error' && (
+                <div className="flex flex-col items-center gap-4 py-6">
+                  <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
+                    <Fingerprint className="w-10 h-10 text-destructive" />
+                  </div>
+                  <p className="text-sm text-muted-foreground text-center">
+                    Fingerprint not recognised. Try again.
+                  </p>
+                  <Button
+                    onClick={handleSignInTap}
+                    className="w-full gap-2"
+                    disabled={loading}
+                  >
+                    <Fingerprint className="w-4 h-4" />
+                    Try Again
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setLoginStage('password')}
+                    className="text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Use password instead
+                  </button>
                 </div>
               )}
 
