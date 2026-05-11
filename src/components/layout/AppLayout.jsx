@@ -12,62 +12,116 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
 
-  // Fetch user's plan so the Search path can be corrected if needed (for the Desktop sidebar/links)
+  // Swipe gesture state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const touchStartRef = useRef({ x: 0, y: 0 });
+  const mainRef = useRef(null);
+  const prevLocationRef = useRef(location.pathname);
+  const [slideClass, setSlideClass] = useState('');
+
+  // Determine direction of navigation for slide animation
+  useEffect(() => {
+    const prevPath = prevLocationRef.current;
+    const newPath = location.pathname;
+    prevLocationRef.current = newPath;
+
+    const prevIndex = TAB_ORDER.indexOf(prevPath);
+    const newIndex = TAB_ORDER.indexOf(newPath);
+
+    // Only animate if we're moving between adjacent tabs (index difference of 1)
+    if (Math.abs(newIndex - prevIndex) === 1) {
+      setSlideClass(newIndex > prevIndex ? 'slide-from-right' : 'slide-from-left');
+      const timer = setTimeout(() => setSlideClass(''), 300); // remove after animation
+      return () => clearTimeout(timer);
+    } else {
+      setSlideClass('');
+    }
+  }, [location.pathname]);
+
   useEffect(() => {
     auth.me().then(user => {
       setAccountType(user?.subscription_plan || 'driver');
     }).catch(() => {});
   }, []);
 
-  // Helper to get the correct Search path for swipe (but swipe always uses default search path,
-  // the dynamic Search path for bottom nav is handled inside MobileNav)
-  const getTabPaths = useCallback(() => {
-    return TAB_ORDER; // swiping will always cycle through the base tabs
-  }, []);
-
-  // Get current tab index based on URL
+  // Helpers
   const getCurrentTabIndex = useCallback(() => {
     const path = location.pathname;
-    // For the dynamic search path, map it to index 1 if it's any of the search variants
+    // Map dynamic search paths to index 1
     if (path === '/search-vehicles' || path === '/find-drivers' || path === '/mysearch') return 1;
     return TAB_ORDER.indexOf(path);
   }, [location.pathname]);
 
+  // Touch handlers
   const handleTouchStart = (e) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+    setIsDragging(false);
+    setDragOffset(0);
+  };
+
+  const handleTouchMove = (e) => {
+    const { x: startX, y: startY } = touchStartRef.current;
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const dx = currentX - startX;
+    const dy = currentY - startY;
+
+    // Only start horizontal drag if horizontal movement is dominant (> 10px and ratio > 2)
+    if (!isDragging && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 2) {
+      setIsDragging(true);
+    }
+
+    if (isDragging) {
+      e.preventDefault(); // prevent vertical scrolling while dragging horizontally
+      setDragOffset(dx);
+    }
   };
 
   const handleTouchEnd = (e) => {
-    const touchEndX = e.changedTouches[0].clientX;
-    const touchEndY = e.changedTouches[0].clientY;
-    const dx = touchEndX - touchStartX.current;
-    const dy = touchEndY - touchStartY.current;
+    if (!isDragging) return;
 
-    // Only react if horizontal swipe is dominant (> 50px and more horizontal than vertical)
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      const currentIndex = getCurrentTabIndex();
-      if (currentIndex === -1) return; // not a tab page – ignore
+    const containerWidth = mainRef.current?.offsetWidth || window.innerWidth;
+    const threshold = containerWidth * 0.25; // 25% of screen width
+    const dx = dragOffset;
 
-      if (dx < 0 && currentIndex < TAB_ORDER.length - 1) {
-        // Swipe left → next tab
-        navigate(TAB_ORDER[currentIndex + 1]);
-      } else if (dx > 0 && currentIndex > 0) {
-        // Swipe right → previous tab
-        navigate(TAB_ORDER[currentIndex - 1]);
-      }
+    const currentIndex = getCurrentTabIndex();
+    if (currentIndex === -1) {
+      // Not a tab page – reset
+      setDragOffset(0);
+      setIsDragging(false);
+      return;
     }
+
+    if (dx < -threshold && currentIndex < TAB_ORDER.length - 1) {
+      // Swipe left → next tab
+      navigate(TAB_ORDER[currentIndex + 1]);
+    } else if (dx > threshold && currentIndex > 0) {
+      // Swipe right → previous tab
+      navigate(TAB_ORDER[currentIndex - 1]);
+    }
+
+    // Reset drag
+    setDragOffset(0);
+    setIsDragging(false);
   };
+
+  // Compute inline transform for the drag effect
+  const transformStyle = isDragging ? `translateX(${dragOffset}px)` : 'translateX(0)';
 
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
       <main
-        className="flex-1 lg:ml-64 h-screen overflow-y-auto pb-20 lg:pb-0"
+        ref={mainRef}
+        className={`flex-1 lg:ml-64 h-screen overflow-y-auto pb-20 lg:pb-0 main-content ${slideClass}`}
+        style={{ transform: transformStyle, transition: isDragging ? 'none' : 'transform 0.3s ease-out' }}
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
         {/* Mobile top bar */}
