@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Wallet, ArrowRight } from 'lucide-react';
+
 
 export default function WalletCard({ balance = 0 }) {
   return (
@@ -16,10 +16,7 @@ export default function WalletCard({ balance = 0 }) {
           <p className="text-3xl font-extrabold mt-2 tracking-tight">
             R {balance.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}
           </p>
-          <div className="flex items-center gap-1 mt-3 text-xs text-primary-foreground/60 font-medium">
-            Tap to manage
-            <ArrowRight className="w-3 h-3" />
-          </div>
+          
         </div>
       </div>
     </Link>
