@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Bike, LogIn, ArrowRight, Loader2, Fingerprint, Lock } from 'lucide-react';
+import { Bike, LogIn, ArrowRight, Loader2, Fingerprint, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
@@ -18,53 +18,61 @@ function base64ToBuffer(base64) {
   return bytes.buffer;
 }
 
-async function triggerBiometricLogin(navigate) {
+// Typed error so the catch block can react differently to each failure mode
+function biometricError(code, message) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
+async function triggerBiometricLogin() {
   if (!window.PublicKeyCredential) {
-    throw new Error('Your browser does not support biometric login. Please use password instead.');
+    throw biometricError('unsupported', 'Your browser does not support biometric login.');
   }
 
   const credentialId = localStorage.getItem('scootlink_biometric_credential_id');
   if (!credentialId) {
-    throw new Error('No fingerprint registered. Please sign in with your password, then enable Biometric in Settings.');
+    // No credential ever registered — must use password + re-enable biometric
+    throw biometricError('no-credential', 'No fingerprint registered on this device.');
   }
 
   // Prompt the device fingerprint reader
-  await navigator.credentials.get({
-    publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      allowCredentials: [{ id: base64ToBuffer(credentialId), type: 'public-key' }],
-      userVerification: 'required',
-      timeout: 60000,
-    },
-  });
+  try {
+    await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ id: base64ToBuffer(credentialId), type: 'public-key' }],
+        userVerification: 'required',
+        timeout: 60000,
+      },
+    });
+  } catch (e) {
+    // NotAllowedError = user cancelled or fingerprint rejected by the OS
+    throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
+  }
 
-  // Fingerprint passed — restore the Supabase session.
-  // Step 1: try the still-live session first (covers the "lock screen" case
-  // where the user navigated to /auth without fully signing out).
+  // ── Fingerprint passed. Now restore the Supabase session. ──────────────────
+
+  // Step 1: live in-memory session (user just navigated here without signing out)
   const { data: existing } = await supabase.auth.getSession();
   if (existing?.session) {
-    // Keep the stored token in sync with the latest one
     localStorage.setItem('scootlink_biometric_refresh_token', existing.session.refresh_token);
     return existing.session;
   }
 
-  // Step 2: fall back to the stored refresh token (covers a true page reload
-  // after the in-memory session was cleared, as long as the token hasn't been
-  // invalidated by a hard sign-out).
+  // Step 2: stored refresh token (page was reloaded but session not explicitly killed)
   const refreshToken = localStorage.getItem('scootlink_biometric_refresh_token');
   if (!refreshToken) {
-    throw new Error('No session found. Please sign in with your password once to set up biometric access.');
+    throw biometricError('no-session', 'session-gone');
   }
 
   const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
   if (error) {
-    // Token was invalidated (e.g. signed out on another device).
-    // Clear it so the error message is accurate next time.
     localStorage.removeItem('scootlink_biometric_refresh_token');
-    throw new Error('Your session has fully expired. Please sign in with your password once to restore biometric access.');
+    throw biometricError('session-expired', 'session-expired');
   }
 
-  // Rotate — always store the newest token
+  // Rotate — always keep the newest token
   localStorage.setItem('scootlink_biometric_refresh_token', data.session.refresh_token);
   return data.session;
 }
@@ -74,10 +82,13 @@ async function triggerBiometricLogin(navigate) {
 export default function Auth() {
   const navigate = useNavigate();
 
-  // 'idle' | 'password' | 'biometric-loading' — controls what the login section shows
+  // 'idle' | 'biometric-loading' | 'biometric-error' | 'password'
   const [loginStage, setLoginStage] = useState('idle');
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  // When biometric fails due to session expiry, show a banner in the password form
+  const [sessionBanner, setSessionBanner] = useState(false);
 
   // Login fields
   const [loginEmail, setLoginEmail] = useState('');
@@ -95,22 +106,29 @@ export default function Auth() {
   const handleSignInTap = async () => {
     const method = localStorage.getItem('scootlink_signin_method') || 'password';
 
-    if (method === 'biometric') {
-      setLoginStage('biometric-loading');
-      setLoading(true);
-      try {
-        await triggerBiometricLogin(navigate);
-        navigate('/');
-      } catch (err) {
-        // Stay on the biometric screen — never auto-show the password form.
-        // The user must explicitly choose to switch to password.
-        toast.error(err.message || 'Biometric login failed. Try again or use password.');
-        setLoginStage('biometric-error');
-      } finally {
-        setLoading(false);
-      }
-    } else {
+    if (method !== 'biometric') {
       setLoginStage('password');
+      return;
+    }
+
+    setLoginStage('biometric-loading');
+    setLoading(true);
+    try {
+      await triggerBiometricLogin();
+      navigate('/');
+    } catch (err) {
+      if (err.code === 'no-session' || err.code === 'session-expired' || err.code === 'no-credential') {
+        // Session is fully gone — fingerprint retry is pointless.
+        // Drop straight to the password form with a clear explanation banner.
+        setSessionBanner(true);
+        setLoginStage('password');
+      } else {
+        // Fingerprint hardware error or unsupported — stay on biometric screen.
+        toast.error(err.message || 'Biometric login failed.');
+        setLoginStage('biometric-error');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -129,8 +147,8 @@ export default function Auth() {
       });
       if (error) throw error;
 
-      // If biometric is enabled, keep the refresh token up to date
-      if (localStorage.getItem('scootlink_signin_method') === 'biometric' && data.session?.refresh_token) {
+      // Always refresh the stored token after a password login
+      if (data.session?.refresh_token) {
         localStorage.setItem('scootlink_biometric_refresh_token', data.session.refresh_token);
       }
 
@@ -162,12 +180,7 @@ export default function Auth() {
       const { error } = await supabase.auth.signUp({
         email: regEmail,
         password: regPassword,
-        options: {
-          data: {
-            full_name: regName,
-            account_type: 'driver',
-          },
-        },
+        options: { data: { full_name: regName, account_type: 'driver' } },
       });
       if (error) throw error;
       toast.success('Account created! Please check your email to confirm your address.');
@@ -202,6 +215,7 @@ export default function Auth() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
+
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -221,18 +235,16 @@ export default function Auth() {
                 {loginStage === 'idle' ? 'Welcome back' : 'Sign in'}
               </h2>
 
-              {/* ── Idle state: single Sign In button ── */}
+              {/* ── Idle: single Sign In button ── */}
               {loginStage === 'idle' && (
                 <Button
                   onClick={handleSignInTap}
                   className="w-full gap-2 h-12 text-base"
                   disabled={loading}
                 >
-                  {savedMethod === 'biometric' ? (
-                    <Fingerprint className="w-5 h-5" />
-                  ) : (
-                    <LogIn className="w-5 h-5" />
-                  )}
+                  {savedMethod === 'biometric'
+                    ? <Fingerprint className="w-5 h-5" />
+                    : <LogIn className="w-5 h-5" />}
                   Sign In
                   {savedMethod === 'biometric' && (
                     <span className="ml-1 text-xs opacity-70">(Fingerprint)</span>
@@ -251,7 +263,7 @@ export default function Auth() {
                   </p>
                   <button
                     type="button"
-                    onClick={() => setLoginStage('password')}
+                    onClick={() => { setSessionBanner(false); setLoginStage('password'); }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
                     Use password instead
@@ -259,7 +271,7 @@ export default function Auth() {
                 </div>
               )}
 
-              {/* ── Biometric: error — stay here, never auto-show password ── */}
+              {/* ── Biometric: hardware error (wrong finger, cancelled) ── */}
               {loginStage === 'biometric-error' && (
                 <div className="flex flex-col items-center gap-4 py-6">
                   <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -278,7 +290,7 @@ export default function Auth() {
                   </Button>
                   <button
                     type="button"
-                    onClick={() => setLoginStage('password')}
+                    onClick={() => { setSessionBanner(false); setLoginStage('password'); }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
                     Use password instead
@@ -289,6 +301,16 @@ export default function Auth() {
               {/* ── Password form ── */}
               {loginStage === 'password' && (
                 <>
+                  {/* Banner shown when biometric session expired */}
+                  {sessionBanner && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-700 dark:text-amber-400">
+                        Your biometric session expired. Sign in with your password once — biometric will work automatically from then on.
+                      </p>
+                    </div>
+                  )}
+
                   <div>
                     <Label>Email</Label>
                     <Input
@@ -328,7 +350,7 @@ export default function Auth() {
                   </Button>
                   <button
                     type="button"
-                    onClick={() => setLoginStage('idle')}
+                    onClick={() => { setSessionBanner(false); setLoginStage('idle'); }}
                     className="w-full text-sm text-muted-foreground hover:text-foreground"
                   >
                     ← Back
@@ -339,7 +361,7 @@ export default function Auth() {
               <p className="text-center text-sm text-muted-foreground pt-1">
                 Don't have an account?{' '}
                 <button
-                  onClick={() => { setIsLogin(false); setLoginStage('idle'); }}
+                  onClick={() => { setIsLogin(false); setLoginStage('idle'); setSessionBanner(false); }}
                   className="text-primary hover:underline"
                 >
                   Create one
