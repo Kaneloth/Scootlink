@@ -269,7 +269,25 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            <button onClick={() => auth.logout()} className="w-full mt-4 flex items-center justify-center gap-2 p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20">
+            <button
+              onClick={async () => {
+                if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
+                  // With biometric enabled, don't call signOut() — that would
+                  // invalidate the refresh token and break biometric login.
+                  // Instead, save the latest token and just redirect.
+                  // The fingerprint on the login screen acts as the security gate.
+                  const { data } = await supabase.auth.getSession();
+                  if (data?.session?.refresh_token) {
+                    localStorage.setItem('scootlink_biometric_refresh_token', data.session.refresh_token);
+                  }
+                  navigate('/auth');
+                } else {
+                  await auth.logout();
+                  navigate('/auth');
+                }
+              }}
+              className="w-full mt-4 flex items-center justify-center gap-2 p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20"
+            >
               <LogOut className="w-4 h-4" /> Logout
             </button>
           </div>
