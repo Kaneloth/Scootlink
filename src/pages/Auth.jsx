@@ -38,18 +38,33 @@ async function triggerBiometricLogin(navigate) {
     },
   });
 
-  // Fingerprint passed — restore the Supabase session
+  // Fingerprint passed — restore the Supabase session.
+  // Step 1: try the still-live session first (covers the "lock screen" case
+  // where the user navigated to /auth without fully signing out).
+  const { data: existing } = await supabase.auth.getSession();
+  if (existing?.session) {
+    // Keep the stored token in sync with the latest one
+    localStorage.setItem('scootlink_biometric_refresh_token', existing.session.refresh_token);
+    return existing.session;
+  }
+
+  // Step 2: fall back to the stored refresh token (covers a true page reload
+  // after the in-memory session was cleared, as long as the token hasn't been
+  // invalidated by a hard sign-out).
   const refreshToken = localStorage.getItem('scootlink_biometric_refresh_token');
   if (!refreshToken) {
-    throw new Error('Session expired. Please sign in with your password once and re-enable Biometric in Settings.');
+    throw new Error('No session found. Please sign in with your password once to set up biometric access.');
   }
 
   const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
   if (error) {
-    throw new Error('Session expired. Please sign in with your password and re-enable Biometric in Settings.');
+    // Token was invalidated (e.g. signed out on another device).
+    // Clear it so the error message is accurate next time.
+    localStorage.removeItem('scootlink_biometric_refresh_token');
+    throw new Error('Your session has fully expired. Please sign in with your password once to restore biometric access.');
   }
 
-  // Rotate the stored refresh token
+  // Rotate — always store the newest token
   localStorage.setItem('scootlink_biometric_refresh_token', data.session.refresh_token);
   return data.session;
 }
