@@ -72,11 +72,11 @@ const AuthenticatedApp = () => {
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
        <Route path="/mysearch" element={<SearchPage />} />
+        <Route path="/messages" element={<Messages />} />
       </Route>
 
       <Route path="*" element={<PageNotFound />} />
-      <Route path="/messages" element={<Messages />} />
-    </Routes>
+        </Routes>
   );
 };
 
