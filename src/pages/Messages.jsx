@@ -228,14 +228,14 @@ export default function Messages() {
 
   if (!user) {
     return (
-      <div className="p-4 lg:p-8 max-w-5xl mx-auto">
+      <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
         <p className="text-muted-foreground">Loading…</p>
       </div>
     );
   }
 
   return (
-    <div className="p-4 lg:p-8 max-w-5xl mx-auto">
+    <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
       <button
         onClick={() => {
           if (window.history.length > 1) navigate(-1);
