@@ -4,12 +4,16 @@ import { auth, supabase } from '@/api/supabaseData';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
-  Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText, Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight
+  Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
+  Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PLANS = [
+  // ... your existing PLANS array (unchanged) ...
   {
     id: 'driver',
     name: 'Driver',
@@ -72,6 +76,13 @@ export default function Settings() {
   const [user, setUser] = useState(null);
   const [notifications, setNotifications] = useState(true);
 
+  // Password change states
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+
   // Load initial states
   useEffect(() => {
     const isDark = localStorage.getItem('theme') === 'dark';
@@ -85,9 +96,8 @@ export default function Settings() {
     const savedMethod = localStorage.getItem('scootlink_signin_method') || 'password';
     setSignInMethod(savedMethod);
 
-    // Load notifications preference
     const savedNotifications = localStorage.getItem('scootlink_notifications');
-    setNotifications(savedNotifications !== 'false'); // default true
+    setNotifications(savedNotifications !== 'false');
 
     auth.me().then(u => {
       setUser(u);
@@ -147,6 +157,40 @@ export default function Settings() {
     }
   };
 
+  // Handle password change
+  const handlePasswordChange = async () => {
+    setPasswordError('');
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('Please fill in all password fields');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New passwords do not match');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      // Change password via Supabase
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      toast.success('Password updated successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      console.error(err);
+      setPasswordError(err.message || 'Failed to update password. Your session may have expired. Try logging out and using Forgot password.');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6">
@@ -164,12 +208,9 @@ export default function Settings() {
 
         {/* ───────────── General Tab ───────────── */}
         <TabsContent value="general">
+          {/* … (unchanged general tab content) … */}
           <div className="space-y-1">
-            {/* Account Profile */}
-            <button
-              onClick={() => navigate('/profile')}
-              className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors"
-            >
+            <button onClick={() => navigate('/profile')} className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors">
               <div className="flex items-center gap-3">
                 <UserIcon className="w-5 h-5 text-muted-foreground" />
                 <div className="text-left">
@@ -180,38 +221,20 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </button>
 
-            {/* Notifications Toggle */}
-            <div
-              className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors"
-              onClick={toggleNotifications}
-            >
+            <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors" onClick={toggleNotifications}>
               <div className="flex items-center gap-3">
                 <Bell className="w-5 h-5 text-muted-foreground" />
                 <div className="text-left">
                   <p className="text-sm font-medium text-foreground">Notifications</p>
-                  <p className="text-xs text-muted-foreground">
-                    {notifications ? 'Enabled' : 'Disabled'}
-                  </p>
+                  <p className="text-xs text-muted-foreground">{notifications ? 'Enabled' : 'Disabled'}</p>
                 </div>
               </div>
-              <div
-                className={`h-6 w-10 rounded-full relative transition-colors duration-200 ${
-                  notifications ? 'bg-primary' : 'bg-gray-300'
-                }`}
-              >
-                <div
-                  className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-200 ${
-                    notifications ? 'right-1' : 'left-1'
-                  }`}
-                />
+              <div className={`h-6 w-10 rounded-full relative transition-colors duration-200 ${notifications ? 'bg-primary' : 'bg-gray-300'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-200 ${notifications ? 'right-1' : 'left-1'}`} />
               </div>
             </div>
 
-            {/* Dark Mode Toggle */}
-            <div
-              className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors"
-              onClick={toggleDarkMode}
-            >
+            <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors" onClick={toggleDarkMode}>
               <div className="flex items-center gap-3">
                 {darkMode ? <Moon className="w-5 h-5 text-muted-foreground" /> : <Sun className="w-5 h-5 text-muted-foreground" />}
                 <div className="text-left">
@@ -224,7 +247,6 @@ export default function Settings() {
               </div>
             </div>
 
-            {/* Language (static) */}
             <div className="flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors cursor-pointer">
               <div className="flex items-center gap-3">
                 <Globe className="w-5 h-5 text-muted-foreground" />
@@ -236,11 +258,7 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            {/* Privacy Policy */}
-            <div
-              className="flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors cursor-pointer"
-              onClick={() => alert('Privacy Policy:\nWe collect personal information to provide our services. We never share your data without consent.')}
-            >
+            <div className="flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors cursor-pointer" onClick={() => alert('Privacy Policy:\nWe collect personal information to provide our services. We never share your data without consent.')}>
               <div className="flex items-center gap-3">
                 <Shield className="w-5 h-5 text-muted-foreground" />
                 <div className="text-left">
@@ -251,11 +269,7 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            {/* Terms of Service */}
-            <div
-              className="flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors cursor-pointer"
-              onClick={() => alert('Terms of Service:\nBy using Scootlink, you agree to our rental terms and payment policies.')}
-            >
+            <div className="flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors cursor-pointer" onClick={() => alert('Terms of Service:\nBy using Scootlink, you agree to our rental terms and payment policies.')}>
               <div className="flex items-center gap-3">
                 <FileText className="w-5 h-5 text-muted-foreground" />
                 <div className="text-left">
@@ -266,11 +280,7 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            {/* Logout */}
-            <button
-              onClick={() => auth.logout()}
-              className="w-full mt-4 flex items-center justify-center gap-2 p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors font-medium"
-            >
+            <button onClick={() => auth.logout()} className="w-full mt-4 flex items-center justify-center gap-2 p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors font-medium">
               <LogOut className="w-4 h-4" />
               Logout
             </button>
@@ -279,26 +289,18 @@ export default function Settings() {
 
         {/* ───────────── Plan Tab ───────────── */}
         <TabsContent value="plan">
+          {/* … (unchanged plan tab content) … */}
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Choose a subscription plan to unlock features.
-            </p>
-
+            <p className="text-sm text-muted-foreground">Choose a subscription plan to unlock features.</p>
             <div className="grid grid-cols-1 gap-4">
               {PLANS.map(p => {
                 const Icon = p.icon;
                 const isSelected = selectedPlan === p.id;
                 return (
-                  <Card
-                    key={p.id}
-                    onClick={() => setSelectedPlan(p.id)}
-                    className={`p-4 cursor-pointer border-2 transition-all ${isSelected ? 'border-primary shadow-lg shadow-primary/10' : 'border-border hover:border-primary/40'}`}
-                  >
+                  <Card key={p.id} onClick={() => setSelectedPlan(p.id)} className={`p-4 cursor-pointer border-2 transition-all ${isSelected ? 'border-primary shadow-lg shadow-primary/10' : 'border-border hover:border-primary/40'}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-xl ${p.color} border`}>
-                          <Icon className="w-4 h-4" />
-                        </div>
+                        <div className={`p-2 rounded-xl ${p.color} border`}><Icon className="w-4 h-4" /></div>
                         <div>
                           <h3 className="font-bold text-foreground">{p.name}</h3>
                           <p className="text-xs text-muted-foreground">R {p.price}/month</p>
@@ -320,18 +322,11 @@ export default function Settings() {
                 );
               })}
             </div>
-
-            <Button
-              onClick={handleSubscribe}
-              disabled={processingPlan || selectedPlan === (user?.subscription_plan || 'driver')}
-              className="w-full gap-2"
-            >
+            <Button onClick={handleSubscribe} disabled={processingPlan || selectedPlan === (user?.subscription_plan || 'driver')} className="w-full gap-2">
               {processingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
               {processingPlan ? 'Processing...' : 'Subscribe Now'}
             </Button>
-            <p className="text-xs text-muted-foreground text-center">
-              Your current plan: {user?.subscription_plan || 'None'}
-            </p>
+            <p className="text-xs text-muted-foreground text-center">Your current plan: {user?.subscription_plan || 'None'}</p>
           </div>
         </TabsContent>
 
@@ -344,9 +339,7 @@ export default function Settings() {
                 <Shield className="w-5 h-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium text-foreground">Sign‑in method</p>
-                  <p className="text-xs text-muted-foreground">
-                    Currently: {signInMethod === 'biometric' ? 'Biometric' : 'Password'}
-                  </p>
+                  <p className="text-xs text-muted-foreground">Currently: {signInMethod === 'biometric' ? 'Biometric' : 'Password'}</p>
                 </div>
               </div>
               <Button variant="outline" size="sm" onClick={toggleSignInMethod}>
@@ -354,7 +347,54 @@ export default function Settings() {
               </Button>
             </div>
 
-            {/* Other security options placeholder */}
+            {/* Password Change Section */}
+            <Card className="p-4 border border-border/50">
+              <div className="flex items-center gap-3 mb-4">
+                <Lock className="w-5 h-5 text-muted-foreground" />
+                <h3 className="text-sm font-medium text-foreground">Change Password</h3>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs">Current Password</Label>
+                  <Input
+                    type="password"
+                    className="mt-1"
+                    placeholder="Enter current password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">New Password</Label>
+                  <Input
+                    type="password"
+                    className="mt-1"
+                    placeholder="At least 6 characters"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Confirm New Password</Label>
+                  <Input
+                    type="password"
+                    className="mt-1"
+                    placeholder="Re-enter new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  />
+                </div>
+                {passwordError && (
+                  <p className="text-xs text-destructive">{passwordError}</p>
+                )}
+                <Button onClick={handlePasswordChange} disabled={changingPassword} className="w-full">
+                  {changingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Update Password
+                </Button>
+              </div>
+            </Card>
+
+            {/* Other security options */}
             <div className="p-4 rounded-xl bg-card border border-border/50">
               <h3 className="text-sm font-medium text-foreground mb-2">Two‑factor authentication</h3>
               <p className="text-xs text-muted-foreground">Coming soon</p>
