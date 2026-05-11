@@ -17,9 +17,41 @@ import PayModal from '@/components/wallet/PayModal';
 import SubscriptionGate from '@/components/subscription/SubscriptionGate';
 import { toast } from 'sonner';
 
+// Skeleton for the action buttons row
+function ActionButtonsSkeleton() {
+  return (
+    <div className="grid grid-cols-3 gap-3 mt-6">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />
+      ))}
+    </div>
+  );
+}
+
+// Skeleton for individual transaction rows
+function TransactionSkeleton() {
+  return (
+    <div className="space-y-2">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="p-4 rounded-xl border border-border/50 animate-pulse">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-muted shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3 bg-muted rounded w-1/2" />
+              <div className="h-3 bg-muted rounded w-1/3" />
+            </div>
+            <div className="h-4 bg-muted rounded w-16 shrink-0" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Wallet() {
   const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
+  const [userLoading, setUserLoading] = useState(true);
   const [payModal, setPayModal] = useState(false);
   const [depositModal, setDepositModal] = useState(false);
   const [withdrawModal, setWithdrawModal] = useState(false);
@@ -27,8 +59,14 @@ export default function Wallet() {
   const [amount, setAmount] = useState('');
 
   const refreshUser = async () => {
-    const updated = await auth.me();
-    setUser(updated);
+    try {
+      const updated = await auth.me();
+      setUser(updated);
+    } catch (_) {
+      // ignore
+    } finally {
+      setUserLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -38,9 +76,6 @@ export default function Wallet() {
   const handlePaymentSuccess = async () => {
     await refreshUser();
   };
-
-  // Deposit, Withdraw, closeDialogs, transaction query… (unchanged)
-  // I’m including the full functions below for completeness, but they are the same as before.
 
   const handleDeposit = async () => {
     const amt = parseFloat(amount);
@@ -126,63 +161,66 @@ export default function Wallet() {
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <PageHeader title="Wallet" subtitle="Manage your funds" backTo="/" />
 
-      {/* Original WalletCard – no gradient, no tap/refresh */}
-     <WalletCard balance={user?.wallet_balance ?? 0} showTapHint={false} />
-      
-      <SubscriptionGate user={user} loading={false}>
-        <div className="grid grid-cols-3 gap-3 mt-6">
-          <Button onClick={() => setDepositModal(true)} className="gap-2 h-auto py-3 flex-col">
-            <Plus className="w-5 h-5" />
-            <span className="text-xs">Add Funds</span>
-          </Button>
-          <Button variant="outline" onClick={() => setWithdrawModal(true)} className="gap-2 h-auto py-3 flex-col">
-            <Minus className="w-5 h-5" />
-            <span className="text-xs">Withdraw</span>
-          </Button>
-          <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => setPayModal(true)}>
-            <Send className="w-5 h-5" />
-            <span className="text-xs">Pay</span>
-          </Button>
-        </div>
+      {/* Pass loading so WalletCard shows a skeleton instead of R 0.00 */}
+      <WalletCard balance={user?.wallet_balance ?? 0} loading={userLoading} showTapHint={false} />
 
-        <h3 className="text-lg font-semibold mt-8 mb-3">Recent Transactions</h3>
-
-        {txLoading ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
-            Loading transactions...
+      {userLoading ? (
+        <ActionButtonsSkeleton />
+      ) : (
+        <SubscriptionGate user={user} loading={false}>
+          <div className="grid grid-cols-3 gap-3 mt-6">
+            <Button onClick={() => setDepositModal(true)} className="gap-2 h-auto py-3 flex-col">
+              <Plus className="w-5 h-5" />
+              <span className="text-xs">Add Funds</span>
+            </Button>
+            <Button variant="outline" onClick={() => setWithdrawModal(true)} className="gap-2 h-auto py-3 flex-col">
+              <Minus className="w-5 h-5" />
+              <span className="text-xs">Withdraw</span>
+            </Button>
+            <Button variant="outline" className="gap-2 h-auto py-3 flex-col" onClick={() => setPayModal(true)}>
+              <Send className="w-5 h-5" />
+              <span className="text-xs">Pay</span>
+            </Button>
           </div>
-        ) : transactions.length > 0 ? (
-          <div className="space-y-2">
-            {transactions.map(t => {
-              const isReceived = t.to_user_id === user?.id;
-              return (
-                <Card key={t.id} className="p-4 border border-border/50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-xl ${isReceived ? 'bg-emerald-50' : 'bg-red-50'}`}>
-                        {isReceived ? <ArrowDownLeft className="w-4 h-4 text-emerald-600" /> : <ArrowUpRight className="w-4 h-4 text-red-500" />}
+
+          <h3 className="text-lg font-semibold mt-8 mb-3">Recent Transactions</h3>
+
+          {txLoading ? (
+            <TransactionSkeleton />
+          ) : transactions.length > 0 ? (
+            <div className="space-y-2">
+              {transactions.map(t => {
+                const isReceived = t.to_user_id === user?.id;
+                return (
+                  <Card key={t.id} className="p-4 border border-border/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-xl ${isReceived ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                          {isReceived
+                            ? <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+                            : <ArrowUpRight className="w-4 h-4 text-red-500" />}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">{isReceived ? `From: ${t.counterpartyName}` : `To: ${t.counterpartyName}`}</p>
+                          <p className="text-xs text-muted-foreground">{t.description}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {t.created_at ? format(new Date(t.created_at), 'MMM d, yyyy') : ''}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium">{isReceived ? `From: ${t.counterpartyName}` : `To: ${t.counterpartyName}`}</p>
-                        <p className="text-xs text-muted-foreground">{t.description}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {t.created_at ? format(new Date(t.created_at), 'MMM d, yyyy') : ''}
-                        </p>
-                      </div>
+                      <span className={`font-bold text-sm ${isReceived ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {isReceived ? '+' : '-'} R {t.amount}
+                      </span>
                     </div>
-                    <span className={`font-bold text-sm ${isReceived ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {isReceived ? '+' : '-'} R {t.amount}
-                    </span>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        ) : (
-          <EmptyState icon="💳" title="No transactions yet" description="Your transaction history will appear here" />
-        )}
-      </SubscriptionGate>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState icon="💳" title="No transactions yet" description="Your transaction history will appear here" />
+          )}
+        </SubscriptionGate>
+      )}
 
       {/* Deposit Modal */}
       <Dialog open={depositModal} onOpenChange={setDepositModal}>
