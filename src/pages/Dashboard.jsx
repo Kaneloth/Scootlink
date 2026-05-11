@@ -410,8 +410,9 @@ export default function Dashboard() {
           <Link to="/subscription"><Button size="sm" className="shrink-0">Subscribe</Button></Link>
         </Card>
       )}
-
+    <Link to="/wallet">
       <WalletCard balance={user?.wallet_balance ?? 0} loading={balanceLoading} />
+    </link>
       {renderStatCards()}
       {renderActionButtons()}
 
