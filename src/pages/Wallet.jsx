@@ -127,8 +127,8 @@ export default function Wallet() {
       <PageHeader title="Wallet" subtitle="Manage your funds" backTo="/" />
 
       {/* Original WalletCard – no gradient, no tap/refresh */}
-      <WalletCard balance={user?.wallet_balance ?? 0} />
-
+     <WalletCard balance={user?.wallet_balance ?? 0} showTapHint={false} />
+      
       <SubscriptionGate user={user} loading={false}>
         <div className="grid grid-cols-3 gap-3 mt-6">
           <Button onClick={() => setDepositModal(true)} className="gap-2 h-auto py-3 flex-col">
