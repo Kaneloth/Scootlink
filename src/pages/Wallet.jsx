@@ -8,10 +8,9 @@ import { Label } from '@/components/ui/label';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { ArrowDownLeft, ArrowUpRight, Plus, Minus, Send, RefreshCw, Loader2 } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Plus, Minus, Send, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import PageHeader from '@/components/layout/PageHeader';
-import WalletCard from '@/components/dashboard/WalletCard';
 import EmptyState from '@/components/common/EmptyState';
 import PayModal from '@/components/wallet/PayModal';
 import SubscriptionGate from '@/components/subscription/SubscriptionGate';
@@ -20,7 +19,6 @@ import { toast } from 'sonner';
 export default function Wallet() {
   const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
-  const [userLoading, setUserLoading] = useState(true);
   const [payModal, setPayModal] = useState(false);
   const [depositModal, setDepositModal] = useState(false);
   const [withdrawModal, setWithdrawModal] = useState(false);
@@ -33,7 +31,7 @@ export default function Wallet() {
   };
 
   useEffect(() => {
-    refreshUser().finally(() => setUserLoading(false));
+    refreshUser(); // no loading state needed
   }, []);
 
   const handlePaymentSuccess = async () => {
@@ -122,28 +120,14 @@ export default function Wallet() {
     enabled: !!user?.id,
   });
 
-  // Full‑page loader until user data is ready
-  if (userLoading) {
-    return (
-      <div className="p-4 lg:p-8 max-w-2xl mx-auto flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <PageHeader title="Wallet" subtitle="Manage your funds" backTo="/" />
 
-      <div className="relative">
-        <WalletCard balance={user?.wallet_balance ?? 0} />
-        <button
-          onClick={refreshUser}
-          className="absolute top-3 right-3 p-2 rounded-full bg-white/20 hover:bg-white/30 text-white"
-          title="Refresh balance"
-        >
-          <RefreshCw className="w-4 h-4" />
-        </button>
+      {/* Simplified balance display - no tap to manage, no refresh button */}
+      <div className="bg-gradient-to-r from-primary to-primary-dark rounded-2xl p-6 text-white text-center">
+        <p className="text-sm opacity-80">Available Balance</p>
+        <p className="text-3xl font-extrabold mt-1">R {(user?.wallet_balance ?? 0).toFixed(2)}</p>
       </div>
 
       <SubscriptionGate user={user} loading={false}>
