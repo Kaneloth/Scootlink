@@ -9,6 +9,42 @@ import { Card } from '@/components/ui/card';
 import { ArrowLeft, Send, MessageCircle, User, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Skeleton row shown while conversations are loading
+function ConversationSkeleton() {
+  return (
+    <div className="space-y-2">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="p-4 rounded-xl border border-border/50 animate-pulse">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-muted shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3 bg-muted rounded w-1/3" />
+              <div className="h-3 bg-muted rounded w-2/3" />
+            </div>
+            <div className="h-3 bg-muted rounded w-10 shrink-0" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Skeleton bubbles shown while a conversation's messages are loading
+function MessagesSkeleton() {
+  return (
+    <div className="space-y-3 mb-4">
+      {[{ w: '55%', side: 'end' }, { w: '70%', side: 'start' }, { w: '45%', side: 'end' }, { w: '60%', side: 'start' }].map((s, i) => (
+        <div key={i} className={`flex justify-${s.side}`}>
+          <div
+            className="h-10 rounded-xl bg-muted animate-pulse"
+            style={{ width: s.w }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Messages() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -23,6 +59,10 @@ export default function Messages() {
   const [loading, setLoading] = useState(false);
   const [newChatEmail, setNewChatEmail] = useState('');
   const [startNewChat, setStartNewChat] = useState(false);
+
+  // Loading states
+  const [conversationsLoading, setConversationsLoading] = useState(true);
+  const [chatLoading, setChatLoading] = useState(false);
 
   const subscriptionRef = useRef(null);
 
@@ -59,11 +99,8 @@ export default function Messages() {
         .select('id, full_name')
         .in('id', Array.from(otherIds));
 
-      if (profileError) {
-        console.error(profileError);
-      }
+      if (profileError) console.error(profileError);
 
-      // Create a name map from profiles
       const nameMap = {};
       if (profiles) {
         profiles.forEach((p) => {
@@ -88,6 +125,8 @@ export default function Messages() {
       setConversations(Object.values(grouped));
     } catch (err) {
       console.error(err);
+    } finally {
+      setConversationsLoading(false);
     }
   }, [user]);
 
@@ -145,8 +184,8 @@ export default function Messages() {
 
   const openChat = async (otherUserId) => {
     if (!user) return;
+    setChatLoading(true);
 
-    // Get other user's name from profiles
     const { data: profile } = await supabase
       .from('profiles')
       .select('full_name, email')
@@ -163,6 +202,7 @@ export default function Messages() {
 
     if (error) {
       console.error(error);
+      setChatLoading(false);
       return;
     }
 
@@ -176,6 +216,7 @@ export default function Messages() {
 
     setSelectedChat({ otherUserId, otherUserName });
     setMessages(data);
+    setChatLoading(false);
   };
 
   const handleSend = async () => {
@@ -229,7 +270,7 @@ export default function Messages() {
   if (!user) {
     return (
       <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
-        <p className="text-muted-foreground">Loading…</p>
+        <ConversationSkeleton />
       </div>
     );
   }
@@ -270,7 +311,9 @@ export default function Messages() {
             </div>
           )}
 
-          {conversations.length === 0 ? (
+          {conversationsLoading ? (
+            <ConversationSkeleton />
+          ) : conversations.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <MessageCircle className="w-12 h-12 mx-auto mb-3" />
               <p>No messages yet.</p>
@@ -306,7 +349,11 @@ export default function Messages() {
       ) : (
         <>
           <div className="flex items-center gap-3 mb-4">
-            <button onClick={closeChat} className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg py-2 px-1 -ml-1" style={{ touchAction: 'manipulation', minHeight: '44px' }}>
+            <button
+              onClick={closeChat}
+              className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg py-2 px-1 -ml-1"
+              style={{ touchAction: 'manipulation', minHeight: '44px' }}
+            >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
@@ -316,15 +363,19 @@ export default function Messages() {
           </div>
 
           <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto" id="messages-container">
-            {messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.sender_id === user.id ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] p-3 rounded-xl ${msg.sender_id === user.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border/50'}`}>
-                  {msg.subject && <p className="text-xs font-medium mb-1">{msg.subject}</p>}
-                  <p className="text-sm">{msg.body}</p>
-                  <p className="text-[10px] mt-1 opacity-70">{new Date(msg.created_at).toLocaleString()}</p>
+            {chatLoading ? (
+              <MessagesSkeleton />
+            ) : (
+              messages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.sender_id === user.id ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[75%] p-3 rounded-xl ${msg.sender_id === user.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border/50'}`}>
+                    {msg.subject && <p className="text-xs font-medium mb-1">{msg.subject}</p>}
+                    <p className="text-sm">{msg.body}</p>
+                    <p className="text-[10px] mt-1 opacity-70">{new Date(msg.created_at).toLocaleString()}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           <div className="border-t border-border pt-4">
