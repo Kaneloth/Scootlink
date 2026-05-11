@@ -20,7 +20,65 @@ const TAB_META = {
   '/settings':        { label: 'Settings', icon: Settings        },
 };
 
-// Peek strip that appears on the edge being swiped toward
+// ─── Navigation progress bar ──────────────────────────────────────────────────
+// Crawls from 0 → 70% fast, then eases to 90%, then snaps to 100% and fades out.
+function useNavigationProgress(pathname) {
+  const [barState, setBarState] = useState({ width: 0, visible: false, done: false });
+  const prevPathRef = useRef(pathname);
+  const timersRef = useRef([]);
+
+  const clear = () => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+  };
+
+  useEffect(() => {
+    if (prevPathRef.current === pathname) return;
+    prevPathRef.current = pathname;
+
+    clear();
+    // Reset then start immediately
+    setBarState({ width: 0, visible: true, done: false });
+
+    const t1 = setTimeout(() => setBarState(s => ({ ...s, width: 60 })), 30);
+    const t2 = setTimeout(() => setBarState(s => ({ ...s, width: 80 })), 250);
+    const t3 = setTimeout(() => setBarState(s => ({ ...s, width: 95 })), 500);
+    // Complete
+    const t4 = setTimeout(() => setBarState(s => ({ ...s, width: 100, done: true })), 700);
+    // Fade out
+    const t5 = setTimeout(() => setBarState({ width: 0, visible: false, done: false }), 1050);
+
+    timersRef.current = [t1, t2, t3, t4, t5];
+    return clear;
+  }, [pathname]);
+
+  return barState;
+}
+
+function NavigationProgressBar({ pathname }) {
+  const { width, visible, done } = useNavigationProgress(pathname);
+
+  if (!visible) return null;
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[100] h-[3px] pointer-events-none">
+      <div
+        style={{
+          height: '100%',
+          width: `${width}%`,
+          // No transition on reset (width=0), ease-out crawl otherwise
+          transition: width === 0 ? 'none' : done ? 'width 0.2s ease-in, opacity 0.3s ease-out 0.05s' : 'width 0.4s ease-out',
+          opacity: done ? 0 : 1,
+          background: 'hsl(var(--primary))',
+          boxShadow: '0 0 8px hsl(var(--primary) / 0.6)',
+          borderRadius: '0 2px 2px 0',
+        }}
+      />
+    </div>
+  );
+}
+
+// ─── Peek strip ───────────────────────────────────────────────────────────────
 function PeekStrip({ direction, tab, progress }) {
   if (!tab) return null;
   const Icon = tab.icon;
@@ -48,6 +106,7 @@ function PeekStrip({ direction, tab, progress }) {
   );
 }
 
+// ─── Main layout ──────────────────────────────────────────────────────────────
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -115,24 +174,19 @@ export default function AppLayout() {
     const currentIndex = getCurrentTabIndex();
     if (currentIndex === -1) return null;
 
-    const progress = Math.abs(dragOffset) / threshold; // 0 → 1 at threshold
+    const progress = Math.abs(dragOffset) / threshold;
 
     if (dragOffset < -10 && currentIndex < TAB_ORDER.length - 1) {
-      // Swiping left — next tab peeks from the right edge
       const nextPath = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
       return { direction: 'right', tab: TAB_META[nextPath] || TAB_META[TAB_ORDER[currentIndex + 1]], progress };
     }
     if (dragOffset > 10 && currentIndex > 0) {
-      // Swiping right — previous tab peeks from the left edge
       return { direction: 'left', tab: TAB_META[TAB_ORDER[currentIndex - 1]], progress };
     }
     return null;
   }, [isDragging, dragOffset, getCurrentTabIndex, getSearchPath]);
 
-  // Register a NON-PASSIVE touchmove listener directly on the DOM element.
-  // React's synthetic onTouchMove is passive by default in modern browsers,
-  // which means e.preventDefault() is silently ignored and the page scrolls
-  // instead of swiping. This is the fix for that.
+  // Non-passive touchmove listener — required for e.preventDefault() to work
   useEffect(() => {
     const el = mainRef.current;
     if (!el) return;
@@ -144,20 +198,18 @@ export default function AppLayout() {
       const dx = currentX - startX;
       const dy = currentY - startY;
 
-      // Start drag only when horizontal movement is clearly dominant
       if (!isDraggingRef.current && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 2) {
         isDraggingRef.current = true;
         setIsDragging(true);
       }
 
       if (isDraggingRef.current) {
-        e.preventDefault(); // works because listener is non-passive
+        e.preventDefault();
         dragOffsetRef.current = dx;
         setDragOffset(dx);
       }
     };
 
-    // { passive: false } is required to allow e.preventDefault()
     el.addEventListener('touchmove', handleTouchMove, { passive: false });
     return () => el.removeEventListener('touchmove', handleTouchMove);
   }, []);
@@ -177,17 +229,15 @@ export default function AppLayout() {
     if (!isDraggingRef.current) return;
 
     const containerWidth = mainRef.current?.offsetWidth || window.innerWidth;
-    const threshold = containerWidth * 0.25; // 25% of screen width
+    const threshold = containerWidth * 0.25;
     const dx = dragOffsetRef.current;
     const currentIndex = getCurrentTabIndex();
 
     if (currentIndex !== -1) {
       if (dx < -threshold && currentIndex < TAB_ORDER.length - 1) {
-        // Swipe left → next tab (use dynamic search path from index 0)
         const nextPath = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
         navigate(nextPath);
       } else if (dx > threshold && currentIndex > 0) {
-        // Swipe right → previous tab
         navigate(TAB_ORDER[currentIndex - 1]);
       }
     }
@@ -198,10 +248,6 @@ export default function AppLayout() {
     setDragOffset(0);
   }, [getCurrentTabIndex, getSearchPath, navigate]);
 
-  // Inline style logic:
-  // - While dragging: apply live transform, no transition (instant feedback)
-  // - After drag ends, no navigation: snap back with a short transition
-  // - After navigation: clear inline styles so CSS animation (slideClass) runs unobstructed
   const inlineStyle = isDragging
     ? { transform: `translateX(${dragOffset}px)`, transition: 'none' }
     : slideClass
@@ -210,10 +256,13 @@ export default function AppLayout() {
 
   return (
     <div className="flex min-h-screen bg-background">
+      {/* Progress bar — fixed, sits above everything */}
+      <NavigationProgressBar pathname={location.pathname} />
+
       <Sidebar />
-      {/* Outer wrapper clips the dragging content and hosts the peek strips */}
+
+      {/* Outer wrapper clips dragging content and hosts peek strips */}
       <div className="relative flex-1 lg:ml-64 overflow-hidden">
-        {/* Peek strip — visible only while dragging */}
         {peekInfo && (
           <PeekStrip
             direction={peekInfo.direction}
@@ -241,6 +290,7 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+
       <MobileNav />
     </div>
   );
