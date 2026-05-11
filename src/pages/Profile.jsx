@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, supabase } from '@/api/supabaseData'; // supabase is exported from supabaseData
+import { auth, supabase } from '@/api/supabaseData';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -13,9 +13,67 @@ import StarRating from '@/components/reviews/StarRating';
 import ReviewsSection from '@/components/reviews/ReviewsSection';
 import { toast } from 'sonner';
 
+// ─── Skeleton components ──────────────────────────────────────────────────────
+
+function ProfileHeaderSkeleton() {
+  return (
+    <Card className="p-5 mb-4 border border-border/50 animate-pulse">
+      <div className="flex items-center gap-4">
+        {/* Avatar */}
+        <div className="w-16 h-16 rounded-full bg-muted shrink-0" />
+        <div className="flex-1 space-y-2">
+          {/* Name */}
+          <div className="h-4 bg-muted rounded w-1/3" />
+          {/* Email */}
+          <div className="h-3 bg-muted rounded w-1/2" />
+          {/* Stars */}
+          <div className="h-3 bg-muted rounded w-1/4" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function FormSkeleton() {
+  return (
+    <Card className="p-6 border border-border/50 animate-pulse">
+      <div className="space-y-4">
+        {/* Full-width fields */}
+        {[1, 2].map((i) => (
+          <div key={i} className="space-y-1.5">
+            <div className="h-3 bg-muted rounded w-20" />
+            <div className="h-9 bg-muted rounded-md w-full" />
+          </div>
+        ))}
+        {/* Two-column row */}
+        <div className="grid grid-cols-2 gap-4">
+          {[1, 2].map((i) => (
+            <div key={i} className="space-y-1.5">
+              <div className="h-3 bg-muted rounded w-16" />
+              <div className="h-9 bg-muted rounded-md w-full" />
+            </div>
+          ))}
+        </div>
+        {/* More full-width fields */}
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="space-y-1.5">
+            <div className="h-3 bg-muted rounded w-24" />
+            <div className="h-9 bg-muted rounded-md w-full" />
+          </div>
+        ))}
+        {/* Save button placeholder */}
+        <div className="h-10 bg-muted rounded-md w-full" />
+      </div>
+    </Card>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function Profile() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
+  const [userLoading, setUserLoading] = useState(true);
   const [form, setForm] = useState({
     full_name: '',
     email: '',
@@ -32,29 +90,30 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    auth.me().then(u => {
-      setUser(u);
-      setForm({
-        full_name: u.full_name || '',
-        email: u.email || '',
-        phone: u.phone || '',
-        gender: u.gender || '',
-        location: u.location || '',
-        residential_address: u.residential_address || '',
-        license_number: u.license_number || '',
-        license_year: u.license_year ? String(u.license_year) : '',
-        citizenship: u.citizenship || 'South African',
-        sa_id: u.sa_id || '',
-        passport: u.passport || '',
-      });
-    }).catch(() => {});
+    auth.me()
+      .then((u) => {
+        setUser(u);
+        setForm({
+          full_name: u.full_name || '',
+          email: u.email || '',
+          phone: u.phone || '',
+          gender: u.gender || '',
+          location: u.location || '',
+          residential_address: u.residential_address || '',
+          license_number: u.license_number || '',
+          license_year: u.license_year ? String(u.license_year) : '',
+          citizenship: u.citizenship || 'South African',
+          sa_id: u.sa_id || '',
+          passport: u.passport || '',
+        });
+      })
+      .catch(() => {})
+      .finally(() => setUserLoading(false));
   }, []);
 
   const handleSave = async () => {
     setSaving(true);
-
     try {
-      // 1. Update metadata (full_name, phone, etc.)
       const metadataUpdates = {
         full_name: form.full_name,
         phone: form.phone,
@@ -70,7 +129,6 @@ export default function Profile() {
 
       await auth.updateMe(metadataUpdates);
 
-      // 2. If email changed, initiate email change (sends confirmation)
       if (form.email !== user.email) {
         const { error } = await supabase.auth.updateUser({ email: form.email });
         if (error) throw error;
@@ -87,14 +145,16 @@ export default function Profile() {
     }
   };
 
-  const update = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+  const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <PageHeader title="My Profile" subtitle="Edit details & view your reviews" backTo="/settings" />
 
-      {/* Profile header with rating */}
-      {user && (
+      {/* Profile header */}
+      {userLoading ? (
+        <ProfileHeaderSkeleton />
+      ) : user ? (
         <Card className="p-5 mb-4 border border-border/50">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden shrink-0">
@@ -119,7 +179,7 @@ export default function Profile() {
             </div>
           </div>
         </Card>
-      )}
+      ) : null}
 
       <Tabs defaultValue="edit">
         <TabsList className="grid w-full grid-cols-3 mb-4">
@@ -129,106 +189,143 @@ export default function Profile() {
         </TabsList>
 
         <TabsContent value="edit">
-          <Card className="p-6 border border-border/50">
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <Label>Full Name</Label>
+          {userLoading ? (
+            <FormSkeleton />
+          ) : (
+            <Card className="p-6 border border-border/50">
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <Label>Full Name</Label>
+                    <Input
+                      className="mt-1"
+                      value={form.full_name}
+                      onChange={(e) => update('full_name', e.target.value)}
+                      placeholder="Your full name"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Label>Email</Label>
+                    <Input
+                      className="mt-1"
+                      value={form.email}
+                      onChange={(e) => update('email', e.target.value)}
+                      placeholder="you@example.com"
+                      type="email"
+                    />
+                    {form.email !== user?.email && (
+                      <p className="text-[11px] text-amber-600 mt-1">
+                        A confirmation email will be sent to verify your new address.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Phone</Label>
+                    <Input
+                      className="mt-1"
+                      placeholder="+27 123 456 789"
+                      value={form.phone}
+                      onChange={(e) => update('phone', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label>Gender</Label>
+                    <Select value={form.gender} onValueChange={(v) => update('gender', v)}>
+                      <SelectTrigger className="mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label>Location</Label>
                   <Input
                     className="mt-1"
-                    value={form.full_name}
-                    onChange={e => update('full_name', e.target.value)}
-                    placeholder="Your full name"
+                    placeholder="Johannesburg CBD"
+                    value={form.location}
+                    onChange={(e) => update('location', e.target.value)}
                   />
                 </div>
-                <div className="col-span-2">
-                  <Label>Email</Label>
+
+                <div>
+                  <Label>Residential Address</Label>
                   <Input
                     className="mt-1"
-                    value={form.email}
-                    onChange={e => update('email', e.target.value)}
-                    placeholder="you@example.com"
-                    type="email"
+                    placeholder="123 Main St, Johannesburg"
+                    value={form.residential_address}
+                    onChange={(e) => update('residential_address', e.target.value)}
                   />
-                  {form.email !== user?.email && (
-                    <p className="text-[11px] text-amber-600 mt-1">
-                      A confirmation email will be sent to verify your new address.
-                    </p>
-                  )}
                 </div>
-              </div>
 
-              {/* Account Type removed – role is determined by subscription plan */}
-
-              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Phone</Label>
-                  <Input className="mt-1" placeholder="+27 123 456 789" value={form.phone} onChange={e => update('phone', e.target.value)} />
-                </div>
-                <div>
-                  <Label>Gender</Label>
-                  <Select value={form.gender} onValueChange={v => update('gender', v)}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
+                  <Label>Citizenship</Label>
+                  <Select value={form.citizenship} onValueChange={(v) => update('citizenship', v)}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Male">Male</SelectItem>
-                      <SelectItem value="Female">Female</SelectItem>
+                      <SelectItem value="South African">South African</SelectItem>
                       <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
 
-              <div>
-                <Label>Location</Label>
-                <Input className="mt-1" placeholder="Johannesburg CBD" value={form.location} onChange={e => update('location', e.target.value)} />
-              </div>
+                {form.citizenship === 'South African' ? (
+                  <div>
+                    <Label>SA ID Number</Label>
+                    <Input
+                      className="mt-1"
+                      placeholder="13-digit ID"
+                      value={form.sa_id}
+                      onChange={(e) => update('sa_id', e.target.value)}
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <Label>Passport Number</Label>
+                    <Input
+                      className="mt-1"
+                      placeholder="Passport number"
+                      value={form.passport}
+                      onChange={(e) => update('passport', e.target.value)}
+                    />
+                  </div>
+                )}
 
-              <div>
-                <Label>Residential Address</Label>
-                <Input className="mt-1" placeholder="123 Main St, Johannesburg" value={form.residential_address} onChange={e => update('residential_address', e.target.value)} />
-              </div>
-
-              <div>
-                <Label>Citizenship</Label>
-                <Select value={form.citizenship} onValueChange={v => update('citizenship', v)}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="South African">South African</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {form.citizenship === 'South African' ? (
-                <div>
-                  <Label>SA ID Number</Label>
-                  <Input className="mt-1" placeholder="13-digit ID" value={form.sa_id} onChange={e => update('sa_id', e.target.value)} />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>License Number</Label>
+                    <Input
+                      className="mt-1"
+                      placeholder="DL123"
+                      value={form.license_number}
+                      onChange={(e) => update('license_number', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label>License Year</Label>
+                    <Input
+                      className="mt-1"
+                      type="number"
+                      placeholder="2018"
+                      value={form.license_year}
+                      onChange={(e) => update('license_year', e.target.value)}
+                    />
+                  </div>
                 </div>
-              ) : (
-                <div>
-                  <Label>Passport Number</Label>
-                  <Input className="mt-1" placeholder="Passport number" value={form.passport} onChange={e => update('passport', e.target.value)} />
-                </div>
-              )}
 
-              {/* License fields are shown for all users, not just drivers */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>License Number</Label>
-                  <Input className="mt-1" placeholder="DL123" value={form.license_number} onChange={e => update('license_number', e.target.value)} />
-                </div>
-                <div>
-                  <Label>License Year</Label>
-                  <Input className="mt-1" type="number" placeholder="2018" value={form.license_year} onChange={e => update('license_year', e.target.value)} />
-                </div>
+                <Button onClick={handleSave} className="w-full" disabled={saving}>
+                  {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Button>
               </div>
-
-              <Button onClick={handleSave} className="w-full" disabled={saving}>
-                {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </div>
-          </Card>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="reviews-received">
