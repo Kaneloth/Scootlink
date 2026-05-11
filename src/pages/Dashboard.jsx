@@ -411,7 +411,9 @@ export default function Dashboard() {
         </Card>
       )}
   
-      <WalletCard balance={user?.wallet_balance ?? 0} loading={balanceLoading} />
+<Link to="/wallet">
+  <WalletCard balance={user?.wallet_balance ?? 0} loading={balanceLoading} />
+</Link>
     
       {renderStatCards()}
       {renderActionButtons()}
