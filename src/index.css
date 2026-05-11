@@ -115,3 +115,27 @@ main {
     padding-bottom: 0; /* remove on desktop where nav isn't fixed */
   }
 }
+/* Smooth slide-in transition for main content */
+.main-content {
+  transition: transform 0.3s ease-out;
+}
+
+/* Animate incoming page from right */
+.slide-from-right {
+  animation: slideFromRight 0.3s ease-out;
+}
+
+@keyframes slideFromRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+/* Animate incoming page from left */
+.slide-from-left {
+  animation: slideFromLeft 0.3s ease-out;
+}
+
+@keyframes slideFromLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
