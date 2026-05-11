@@ -105,3 +105,13 @@ html, body {
   max-width: 100vw;
   overflow-x: hidden;
 }
+/* Prevent content from hiding behind the fixed bottom navigation on mobile */
+main {
+  padding-bottom: 4.5rem; /* slightly more than the nav height */
+}
+
+@media (min-width: 1024px) {
+  main {
+    padding-bottom: 0; /* remove on desktop where nav isn't fixed */
+  }
+}
