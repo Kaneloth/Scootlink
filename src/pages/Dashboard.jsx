@@ -19,6 +19,34 @@ import EmptyState from '@/components/common/EmptyState';
 import LeaveReviewModal from '@/components/reviews/LeaveReviewModal';
 import StarRating from '@/components/reviews/StarRating';
 
+// Skeleton for the stat cards row while user is loading
+function StatCardsSkeleton() {
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="p-4 rounded-xl border border-border/50 animate-pulse">
+          <div className="h-3 bg-muted rounded w-1/2 mb-3" />
+          <div className="h-6 bg-muted rounded w-1/4 mb-1" />
+          <div className="h-3 bg-muted rounded w-2/3" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Skeleton for the action buttons while user is loading
+function ActionButtonsSkeleton() {
+  return (
+    <div className="mt-6 space-y-2">
+      <div className="h-12 rounded-lg bg-muted animate-pulse" />
+      <div className="grid grid-cols-2 gap-2">
+        <div className="h-10 rounded-lg bg-muted animate-pulse" />
+        <div className="h-10 rounded-lg bg-muted animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -328,6 +356,9 @@ export default function Dashboard() {
   );
 
   const renderStatCards = () => {
+    // Show skeleton while user hasn't loaded yet
+    if (!user) return <StatCardsSkeleton />;
+
     if (accountType === 'driver') {
       return (
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
@@ -357,6 +388,9 @@ export default function Dashboard() {
   };
 
   const renderActionButtons = () => {
+    // Show skeleton while user hasn't loaded yet
+    if (!user) return <ActionButtonsSkeleton />;
+
     const rowButtonClass = "w-full gap-1.5 py-3 text-xs lg:text-sm";
     const iconClass = "w-4 h-4";
     if (accountType === 'owner' || accountType === 'both') {
@@ -410,16 +444,23 @@ export default function Dashboard() {
           <Link to="/subscription"><Button size="sm" className="shrink-0">Subscribe</Button></Link>
         </Card>
       )}
-  
-<Link to="/wallet">
-  <WalletCard balance={user?.wallet_balance ?? 0} loading={balanceLoading} />
-</Link>
-    
+
+      <Link to="/wallet">
+        <WalletCard balance={user?.wallet_balance ?? 0} loading={balanceLoading} />
+      </Link>
+
       {renderStatCards()}
       {renderActionButtons()}
 
       <div className="mt-8" ref={tabsRef}>
-        {accountType === 'both' ? (
+        {/* Don't render tabs until user is loaded — avoids flashing wrong tab content */}
+        {!user ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-20 rounded-xl border border-border/50 bg-muted animate-pulse" />
+            ))}
+          </div>
+        ) : accountType === 'both' ? (
           <Tabs value={bothTab} onValueChange={setBothTab}>
             <TabsList className="grid w-full grid-cols-2 max-w-xs"><TabsTrigger value="owner">Owner</TabsTrigger><TabsTrigger value="driver">Driver</TabsTrigger></TabsList>
             <TabsContent value="owner" className="mt-4">{renderOwnerContent()}</TabsContent>
@@ -441,7 +482,7 @@ export default function Dashboard() {
               const isOwner = r.owner_id === user?.id;
               const targetEmail = isOwner ? r.driver_email : r.owner_email;
               const targetType = isOwner ? 'driver' : 'owner';
-              const targetId = isOwner ? r.driver_id : r.owner_id;   // must be present
+              const targetId = isOwner ? r.driver_id : r.owner_id;
               const v = [...vehicles, ...allVehicles].find(v => v.id === r.vehicle_id);
               return (
                 <Card key={r.id} className="p-4 border border-border/50 flex items-center justify-between gap-3">
@@ -450,17 +491,16 @@ export default function Dashboard() {
                     <p className="text-xs text-muted-foreground">{isOwner ? 'Driver: ' : 'Owner: '}{targetEmail}</p>
                   </div>
                   <Button size="sm" variant="outline" className="gap-1.5 shrink-0"
-   
-                  onClick={() => {
-  alert('targetId: ' + targetId + '\nrentalId: ' + r.id + '\ndriver_id: ' + r.driver_id + '\nowner_id: ' + r.owner_id + '\nuser.id: ' + user?.id);
-  setReviewModal({
-    rental: r,
-    targetEmail,
-    targetName: targetEmail,
-    targetType,
-    targetId
-  });
-}}>
+                    onClick={() => {
+                      alert('targetId: ' + targetId + '\nrentalId: ' + r.id + '\ndriver_id: ' + r.driver_id + '\nowner_id: ' + r.owner_id + '\nuser.id: ' + user?.id);
+                      setReviewModal({
+                        rental: r,
+                        targetEmail,
+                        targetName: targetEmail,
+                        targetType,
+                        targetId
+                      });
+                    }}>
                     <StarRating value={0} size="sm" /> Rate
                   </Button>
                 </Card>
