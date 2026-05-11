@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Bike, LayoutDashboard, Search, MessageCircle, MapPin, Wallet, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
-import { auth } from '@/api/supabaseData';
+import { auth, supabase } from '@/api/supabaseData';
 
 // Tab order for swipe navigation (matches bottom nav order)
 const TAB_ORDER = ['/', '/search-vehicles', '/messages', '/tracking', '/wallet', '/settings'];
@@ -150,6 +150,22 @@ export default function AppLayout() {
     auth.me().then(user => {
       setAccountType(user?.subscription_plan || 'driver');
     }).catch(() => {});
+  }, []);
+
+  // Silently keep the biometric refresh token up to date.
+  // Supabase auto-renews the session roughly every hour and fires TOKEN_REFRESHED.
+  // We store the newest token each time so biometric login never uses a stale one.
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (
+        (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') &&
+        session?.refresh_token &&
+        localStorage.getItem('scootlink_signin_method') === 'biometric'
+      ) {
+        localStorage.setItem('scootlink_biometric_refresh_token', session.refresh_token);
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   // Get the correct search path based on account type
