@@ -23,7 +23,6 @@ export default function Messages() {
   const [loading, setLoading] = useState(false);
   const [newChatEmail, setNewChatEmail] = useState('');
   const [startNewChat, setStartNewChat] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(true);
 
   const subscriptionRef = useRef(null);
 
@@ -87,8 +86,8 @@ export default function Messages() {
       });
 
       setConversations(Object.values(grouped));
-    } finally {
-      setInitialLoading(false);
+    } catch (err) {
+      console.error(err);
     }
   }, [user]);
 
@@ -227,11 +226,10 @@ export default function Messages() {
     setSelectedChat(null);
   };
 
-  // Full‑page loader until user and conversations are ready
-  if (!user || initialLoading) {
+  if (!user) {
     return (
-      <div className="p-4 lg:p-8 max-w-5xl mx-auto flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="p-4 lg:p-8 max-w-5xl mx-auto">
+        <p className="text-muted-foreground">Loading…</p>
       </div>
     );
   }
