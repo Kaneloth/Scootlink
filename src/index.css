@@ -139,3 +139,13 @@ main {
   from { transform: translateX(-100%); }
   to { transform: translateX(0); }
 }
+/* Swipe container: mandatory snap on horizontal axis */
+.swipe-container {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.swipe-page {
+  scroll-snap-align: start;
+  width: 100vw;
+  flex-shrink: 0;
+}
