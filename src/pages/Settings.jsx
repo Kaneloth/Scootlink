@@ -13,6 +13,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+// ── Put your admin email(s) here ────────────────────────────────────────────
+const ADMIN_EMAILS = ['kanelothelejane@gmail.com'];
+
 const PLANS = [
   {
     id: 'driver', name: 'Driver', price: 49, icon: Bike,
@@ -150,6 +153,12 @@ export default function Settings() {
   // true = biometric failed on this domain, show password fallback
   const [biometricFallback, setBiometricFallback] = useState(false);
 
+  // ── Admin panel state ────────────────────────────────────────────────────
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
+  const [adminFilter, setAdminFilter] = useState('');
+  const [togglingId, setTogglingId] = useState(null);
+
   useEffect(() => {
     const isDark = localStorage.getItem('theme') === 'dark';
     setDarkMode(isDark);
@@ -276,6 +285,59 @@ export default function Settings() {
     }
   };
 
+  // ── Admin helpers ─────────────────────────────────────────────────────────
+
+  const isAdmin = user && ADMIN_EMAILS.includes(user.email);
+
+  const fetchAdminUsers = async () => {
+    setLoadingAdminUsers(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, verified, subscription_active, subscription_plan')
+      .order('created_at', { ascending: false });
+    if (!error) setAdminUsers(data || []);
+    else toast.error('Could not load users');
+    setLoadingAdminUsers(false);
+  };
+
+  const toggleVerified = async (userId, currentVerified) => {
+    setTogglingId(userId);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ verified: !currentVerified })
+      .eq('id', userId);
+    if (!error) {
+      setAdminUsers(prev =>
+        prev.map(u => u.id === userId ? { ...u, verified: !currentVerified } : u)
+      );
+      toast.success(currentVerified ? 'User unverified' : 'User verified ✓');
+    } else {
+      toast.error('Failed to update verification');
+    }
+    setTogglingId(null);
+  };
+
+  const toggleSubscription = async (userId, currentActive, currentPlan) => {
+    setTogglingId(userId + '_sub');
+    const nowActive = !currentActive;
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        subscription_active: nowActive,
+        subscription_plan: nowActive ? (currentPlan || 'driver') : currentPlan,
+      })
+      .eq('id', userId);
+    if (!error) {
+      setAdminUsers(prev =>
+        prev.map(u => u.id === userId ? { ...u, subscription_active: nowActive } : u)
+      );
+      toast.success(nowActive ? 'Subscription activated' : 'Subscription deactivated');
+    } else {
+      toast.error('Failed to update subscription');
+    }
+    setTogglingId(null);
+  };
+
   // ── Plan ─────────────────────────────────────────────────────────────────
 
   const handleSubscribe = async () => {
@@ -329,10 +391,11 @@ export default function Settings() {
       <h2 className="text-2xl font-bold text-foreground mb-8">Settings</h2>
 
       <Tabs defaultValue="general">
-        <TabsList className="grid w-full grid-cols-3 mb-6">
+        <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-4' : 'grid-cols-3'} mb-6`}>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="plan">Plan</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          {isAdmin && <TabsTrigger value="admin" onClick={fetchAdminUsers}>Admin</TabsTrigger>}
         </TabsList>
 
         {/* ── General tab ── */}
@@ -688,6 +751,98 @@ export default function Settings() {
 
           </div>
         </TabsContent>
+
+        {/* ── Admin tab ── */}
+        {isAdmin && (
+          <TabsContent value="admin">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold">User Management</h3>
+                  <p className="text-xs text-muted-foreground">Verify users and manage subscriptions</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={fetchAdminUsers} disabled={loadingAdminUsers} className="gap-1.5">
+                  {loadingAdminUsers ? <Loader2 className="w-3 h-3 animate-spin" /> : '↻'} Refresh
+                </Button>
+              </div>
+
+              <Input
+                placeholder="Search by email or name…"
+                value={adminFilter}
+                onChange={e => setAdminFilter(e.target.value)}
+                className="text-sm"
+              />
+
+              {loadingAdminUsers && (
+                <div className="flex items-center justify-center py-8 text-muted-foreground gap-2 text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading users…
+                </div>
+              )}
+
+              {!loadingAdminUsers && adminUsers.length === 0 && (
+                <p className="text-center text-sm text-muted-foreground py-8">
+                  No users yet. Click Refresh to load.
+                </p>
+              )}
+
+              <div className="space-y-3">
+                {adminUsers
+                  .filter(u => {
+                    const q = adminFilter.toLowerCase();
+                    return !q || (u.email || '').toLowerCase().includes(q) || (u.full_name || '').toLowerCase().includes(q);
+                  })
+                  .map(u => (
+                    <Card key={u.id} className="p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{u.full_name || '—'}</p>
+                          <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Plan: <span className="font-medium capitalize">{u.subscription_plan || 'none'}</span>
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.verified ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'}`}>
+                            {u.verified ? '✓ Verified' : '⏳ Unverified'}
+                          </span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.subscription_active ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
+                            {u.subscription_active ? '● Subscribed' : '○ No sub'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 pt-1 border-t border-border/50">
+                        <Button
+                          size="sm"
+                          variant={u.verified ? 'outline' : 'default'}
+                          className="flex-1 h-7 text-xs gap-1"
+                          disabled={togglingId === u.id}
+                          onClick={() => toggleVerified(u.id, u.verified)}
+                        >
+                          {togglingId === u.id
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <ShieldCheck className="w-3 h-3" />}
+                          {u.verified ? 'Unverify' : 'Verify'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={u.subscription_active ? 'outline' : 'secondary'}
+                          className="flex-1 h-7 text-xs gap-1"
+                          disabled={togglingId === u.id + '_sub'}
+                          onClick={() => toggleSubscription(u.id, u.subscription_active, u.subscription_plan)}
+                        >
+                          {togglingId === u.id + '_sub'
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Crown className="w-3 h-3" />}
+                          {u.subscription_active ? 'Deactivate' : 'Activate sub'}
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+              </div>
+            </div>
+          </TabsContent>
+        )}
+
       </Tabs>
     </div>
   );
