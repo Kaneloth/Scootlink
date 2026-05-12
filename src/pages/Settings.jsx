@@ -48,11 +48,11 @@ async function registerBiometric(user) {
         displayName: user?.full_name || 'Scootlink User',
       },
       pubKeyCredParams: [
-        { alg: -7, type: 'public-key' },   // ES256
-        { alg: -257, type: 'public-key' }, // RS256 fallback
+        { alg: -7, type: 'public-key' },
+        { alg: -257, type: 'public-key' },
       ],
       authenticatorSelection: {
-        authenticatorAttachment: 'platform', // built-in sensor (fingerprint / Face ID)
+        authenticatorAttachment: 'platform',
         userVerification: 'required',
         residentKey: 'preferred',
       },
@@ -60,14 +60,19 @@ async function registerBiometric(user) {
     },
   });
 
-  // Persist the credential ID so login can reference it
+  // Store only the credential ID — no token in localStorage
   localStorage.setItem('scootlink_biometric_credential_id', bufferToBase64(credential.rawId));
 
-  // Persist the current refresh token so biometric login can restore the session
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (sessionData?.session?.refresh_token) {
-    localStorage.setItem('scootlink_biometric_refresh_token', sessionData.session.refresh_token);
-  }
+  // The refresh token is already in the httpOnly cookie from login — nothing else to do.
+}
+
+// ── Logout helpers ────────────────────────────────────────────────────────────
+
+async function clearTokenCookie() {
+  await fetch('/.netlify/functions/auth-clear-token', {
+    method: 'POST',
+    credentials: 'include',
+  }).catch(() => {});
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -142,13 +147,28 @@ export default function Settings() {
         setBiometricLoading(false);
       }
     } else {
-      // Switching back to password — clear stored biometric data
+      // Switching back to password — clear the credential from localStorage
       localStorage.removeItem('scootlink_biometric_credential_id');
-      localStorage.removeItem('scootlink_biometric_refresh_token');
       setSignInMethod('password');
       localStorage.setItem('scootlink_signin_method', 'password');
       supabase.auth.updateUser({ data: { sign_in_method: 'password' } });
       toast.success('Sign-in method changed to Password.');
+    }
+  };
+
+  // ── Logout ────────────────────────────────────────────────────────────────
+
+  const handleLogout = async () => {
+    if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
+      // With biometric enabled, the httpOnly cookie already holds a valid token.
+      // Don't call signOut() — that would invalidate it. Just navigate away;
+      // the fingerprint on the login screen acts as the security gate.
+      navigate('/auth');
+    } else {
+      // Password logout: clear the cookie and fully sign out of Supabase.
+      await clearTokenCookie();
+      await auth.logout();
+      navigate('/auth');
     }
   };
 
@@ -270,22 +290,7 @@ export default function Settings() {
             </div>
 
             <button
-              onClick={async () => {
-                if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-                  // With biometric enabled, don't call signOut() — that would
-                  // invalidate the refresh token and break biometric login.
-                  // Instead, save the latest token and just redirect.
-                  // The fingerprint on the login screen acts as the security gate.
-                  const { data } = await supabase.auth.getSession();
-                  if (data?.session?.refresh_token) {
-                    localStorage.setItem('scootlink_biometric_refresh_token', data.session.refresh_token);
-                  }
-                  navigate('/auth');
-                } else {
-                  await auth.logout();
-                  navigate('/auth');
-                }
-              }}
+              onClick={handleLogout}
               className="w-full mt-4 flex items-center justify-center gap-2 p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20"
             >
               <LogOut className="w-4 h-4" /> Logout
