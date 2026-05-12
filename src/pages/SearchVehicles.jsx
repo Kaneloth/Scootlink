@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
-import { auth, Vehicle } from '@/api/supabaseData';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState } from 'react';
+import { auth, supabase } from '@/api/supabaseData';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,29 +8,26 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Card } from '@/components/ui/card';
-import { useState } from 'react';
-import { Search, SlidersHorizontal, X, Lock } from 'lucide-react';
+import { Search, SlidersHorizontal, X, Lock, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/layout/PageHeader';
 import VehicleCard from '@/components/vehicles/VehicleCard';
 import EmptyState from '@/components/common/EmptyState';
 
-// Skeleton that closely matches a VehicleCard's height and shape
+const PAGE_SIZE = 10;
+
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+
 function VehicleCardSkeleton() {
   return (
     <div className="p-4 rounded-xl border border-border/50 animate-pulse">
       <div className="flex gap-3">
-        {/* Vehicle image placeholder */}
         <div className="w-24 h-20 rounded-lg bg-muted shrink-0" />
         <div className="flex-1 space-y-2 py-1">
-          {/* Title */}
           <div className="h-3.5 bg-muted rounded w-2/5" />
-          {/* Location */}
           <div className="h-3 bg-muted rounded w-1/3" />
-          {/* Rating row */}
           <div className="h-3 bg-muted rounded w-1/4" />
         </div>
-        {/* Price badge */}
         <div className="w-16 h-7 rounded-full bg-muted shrink-0 self-start" />
       </div>
     </div>
@@ -47,6 +44,35 @@ function SearchSkeleton() {
   );
 }
 
+// ─── Server-side vehicle fetcher ──────────────────────────────────────────────
+// Filters and pagination are applied in Supabase, not the browser.
+
+async function fetchVehiclePage({ pageParam = 0, filters }) {
+  let query = supabase
+    .from('vehicles')
+    .select('*')
+    .eq('status', 'available')
+    .lte('price_per_week', filters.maxPrice)
+    .order('created_at', { ascending: false })
+    .range(pageParam * PAGE_SIZE, (pageParam + 1) * PAGE_SIZE - 1);
+
+  if (filters.type !== 'all') {
+    query = query.eq('vehicle_type', filters.type);
+  }
+  if (filters.location) {
+    query = query.ilike('location', `%${filters.location}%`);
+  }
+  if (filters.minRating > 0) {
+    query = query.gte('rating', filters.minRating);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function SearchVehicles() {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
@@ -56,36 +82,37 @@ export default function SearchVehicles() {
     minRating: 0,
   });
 
-  // Both queries are cached by React Query — navigating away and back
-  // won't re-fetch within the staleTime window, eliminating the lag.
   const { data: user } = useQuery({
     queryKey: ['current-user'],
     queryFn: () => auth.me(),
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
     retry: false,
   });
 
-  const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery({
-    queryKey: ['search-vehicles'],
-    queryFn: () => Vehicle.filter({ status: 'available' }),
-    staleTime: 60 * 1000, // 1 minute
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    fetchNextPage,
+    hasNextPage,
+  } = useInfiniteQuery({
+    // When filters change, the query resets automatically (new queryKey)
+    queryKey: ['search-vehicles', filters],
+    queryFn: ({ pageParam }) => fetchVehiclePage({ pageParam, filters }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === PAGE_SIZE ? allPages.length : undefined,
+    staleTime: 60 * 1000,
   });
 
-  // Memoised so the list doesn't recompute on every keystroke or re-render
-  const filtered = useMemo(() => {
-    if (!vehicles.length) return [];
-    return vehicles.filter((v) => {
-      if (user && v.created_by === user.email) return false;
-      if (filters.type !== 'all' && v.vehicle_type !== filters.type) return false;
-      if (v.price_per_week > filters.maxPrice) return false;
-      if (filters.location && !v.location?.toLowerCase().includes(filters.location.toLowerCase())) return false;
-      if (filters.minRating > 0 && (v.rating || 0) < filters.minRating) return false;
-      return true;
-    });
-  }, [vehicles, user, filters]);
+  // Flatten pages, then filter out the user's own listings client-side
+  const vehicles = (data?.pages.flat() ?? []).filter(
+    (v) => !user || v.created_by !== user.email
+  );
 
-  // Show skeletons while vehicles are loading (user resolves fast from cache)
-  if (vehiclesLoading) {
+  const totalLoaded = data?.pages.flat().length ?? 0;
+
+  if (isLoading) {
     return (
       <div className="p-4 lg:p-8 max-w-5xl mx-auto">
         <PageHeader
@@ -108,7 +135,11 @@ export default function SearchVehicles() {
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
       <PageHeader
         title="Find Vehicles"
-        subtitle={`${filtered.length} vehicle${filtered.length !== 1 ? 's' : ''} available`}
+        subtitle={
+          totalLoaded > 0
+            ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} loaded`
+            : 'No vehicles found'
+        }
         backTo="/"
         action={
           <Button
@@ -190,33 +221,51 @@ export default function SearchVehicles() {
         </Card>
       )}
 
-      {filtered.length > 0 ? (
-        <div className="space-y-3">
-          {filtered.map((v) => {
-            const canInteract = user?.subscription_active && user?.verified;
-            if (canInteract) {
+      {vehicles.length > 0 ? (
+        <>
+          <div className="space-y-3">
+            {vehicles.map((v) => {
+              const canInteract = user?.subscription_active && user?.verified;
+              if (canInteract) {
+                return (
+                  <Link key={v.id} to={`/rental-request?vehicleId=${v.id}`}>
+                    <VehicleCard vehicle={v} />
+                  </Link>
+                );
+              }
               return (
-                <Link key={v.id} to={`/rental-request?vehicleId=${v.id}`}>
-                  <VehicleCard vehicle={v} />
-                </Link>
-              );
-            }
-            return (
-              <div
-                key={v.id}
-                onClick={() => toast.warning('You must be subscribed and verified to request a rental')}
-                className="cursor-pointer"
-              >
-                <div className="relative">
-                  <VehicleCard vehicle={v} />
-                  <div className="absolute top-2 right-2 bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <Lock className="w-2.5 h-2.5" /> Subscribe to rent
+                <div
+                  key={v.id}
+                  onClick={() => toast.warning('You must be subscribed and verified to request a rental')}
+                  className="cursor-pointer"
+                >
+                  <div className="relative">
+                    <VehicleCard vehicle={v} />
+                    <div className="absolute top-2 right-2 bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Lock className="w-2.5 h-2.5" /> Subscribe to rent
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+
+          {/* Load more */}
+          {hasNextPage && (
+            <div className="mt-6 flex justify-center">
+              <Button
+                variant="outline"
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+                className="gap-2 min-w-[140px]"
+              >
+                {isFetchingNextPage
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</>
+                  : 'Load more'}
+              </Button>
+            </div>
+          )}
+        </>
       ) : (
         <EmptyState icon="🔍" title="No vehicles found" description="Try adjusting your filters" />
       )}
