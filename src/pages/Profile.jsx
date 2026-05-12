@@ -182,11 +182,10 @@ export default function Profile() {
       ) : null}
 
       <Tabs defaultValue="edit">
-        <TabsList className="grid w-full grid-cols-3 mb-4">
+        <TabsList className="grid w-full grid-cols-2 mb-4">
           <TabsTrigger value="edit">Edit Info</TabsTrigger>
           <TabsTrigger value="reviews-received">My Reviews</TabsTrigger>
-          <TabsTrigger value="reviews-driver">As Driver</TabsTrigger>
-        </TabsList>
+      </TabsList>
 
         <TabsContent value="edit">
           {userLoading ? (
@@ -332,9 +331,7 @@ export default function Profile() {
           <ReviewsSection targetEmail={user?.email} targetType="owner" />
         </TabsContent>
 
-        <TabsContent value="reviews-driver">
-          <ReviewsSection targetEmail={user?.email} targetType="driver" />
-        </TabsContent>
+       
       </Tabs>
     </div>
   );
