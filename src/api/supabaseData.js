@@ -21,15 +21,11 @@ export const auth = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
-    // profiles table is the source of truth for all user state
+    // profiles table is the source of truth for all user state.
+    // select('*') avoids errors from columns that may not exist yet.
     const { data: profile } = await supabase
       .from('profiles')
-      .select(
-        'wallet_balance, rating, total_reviews, ' +
-        'verified, subscription_active, subscription_plan, ' +
-        'subscription_start, subscription_expires, ' +
-        'full_name, phone, location, onboarding_completed'
-      )
+      .select('*')
       .eq('id', user.id)
       .single();
 
