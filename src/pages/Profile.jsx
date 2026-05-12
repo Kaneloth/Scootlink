@@ -19,14 +19,10 @@ function ProfileHeaderSkeleton() {
   return (
     <Card className="p-5 mb-4 border border-border/50 animate-pulse">
       <div className="flex items-center gap-4">
-        {/* Avatar */}
         <div className="w-16 h-16 rounded-full bg-muted shrink-0" />
         <div className="flex-1 space-y-2">
-          {/* Name */}
           <div className="h-4 bg-muted rounded w-1/3" />
-          {/* Email */}
           <div className="h-3 bg-muted rounded w-1/2" />
-          {/* Stars */}
           <div className="h-3 bg-muted rounded w-1/4" />
         </div>
       </div>
@@ -38,14 +34,12 @@ function FormSkeleton() {
   return (
     <Card className="p-6 border border-border/50 animate-pulse">
       <div className="space-y-4">
-        {/* Full-width fields */}
         {[1, 2].map((i) => (
           <div key={i} className="space-y-1.5">
             <div className="h-3 bg-muted rounded w-20" />
             <div className="h-9 bg-muted rounded-md w-full" />
           </div>
         ))}
-        {/* Two-column row */}
         <div className="grid grid-cols-2 gap-4">
           {[1, 2].map((i) => (
             <div key={i} className="space-y-1.5">
@@ -54,14 +48,12 @@ function FormSkeleton() {
             </div>
           ))}
         </div>
-        {/* More full-width fields */}
         {[1, 2, 3].map((i) => (
           <div key={i} className="space-y-1.5">
             <div className="h-3 bg-muted rounded w-24" />
             <div className="h-9 bg-muted rounded-md w-full" />
           </div>
         ))}
-        {/* Save button placeholder */}
         <div className="h-10 bg-muted rounded-md w-full" />
       </div>
     </Card>
@@ -74,6 +66,8 @@ export default function Profile() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [userLoading, setUserLoading] = useState(true);
+
+  // Non-sensitive fields stored in user metadata
   const [form, setForm] = useState({
     full_name: '',
     email: '',
@@ -84,14 +78,22 @@ export default function Profile() {
     license_number: '',
     license_year: '',
     citizenship: 'South African',
+  });
+
+  // Sensitive fields — loaded from the separate user_sensitive_info table
+  const [sensitiveForm, setSensitiveForm] = useState({
     sa_id: '',
     passport: '',
   });
+
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     auth.me()
-      .then((u) => {
+      .then(async (u) => {
+        if (cancelled) return;
         setUser(u);
         setForm({
           full_name: u.full_name || '',
@@ -103,17 +105,32 @@ export default function Profile() {
           license_number: u.license_number || '',
           license_year: u.license_year ? String(u.license_year) : '',
           citizenship: u.citizenship || 'South African',
-          sa_id: u.sa_id || '',
-          passport: u.passport || '',
         });
+
+        // Load sensitive fields from the isolated RLS-protected table
+        const { data: sensitive } = await supabase
+          .from('user_sensitive_info')
+          .select('sa_id, passport')
+          .eq('user_id', u.id)
+          .maybeSingle();
+
+        if (!cancelled && sensitive) {
+          setSensitiveForm({
+            sa_id: sensitive.sa_id || '',
+            passport: sensitive.passport || '',
+          });
+        }
       })
       .catch(() => {})
-      .finally(() => setUserLoading(false));
+      .finally(() => { if (!cancelled) setUserLoading(false); });
+
+    return () => { cancelled = true; };
   }, []);
 
   const handleSave = async () => {
     setSaving(true);
     try {
+      // ── 1. Update non-sensitive user metadata ──────────────────────────────
       const metadataUpdates = {
         full_name: form.full_name,
         phone: form.phone,
@@ -123,12 +140,26 @@ export default function Profile() {
         license_number: form.license_number,
         license_year: form.license_year ? parseInt(form.license_year) : null,
         citizenship: form.citizenship,
-        sa_id: form.sa_id,
-        passport: form.passport,
       };
 
       await auth.updateMe(metadataUpdates);
 
+      // ── 2. Upsert sensitive fields in the isolated table ───────────────────
+      // RLS ensures only this user's row can be written.
+      const { error: sensitiveError } = await supabase
+        .from('user_sensitive_info')
+        .upsert(
+          {
+            user_id: user.id,
+            sa_id: sensitiveForm.sa_id || null,
+            passport: sensitiveForm.passport || null,
+          },
+          { onConflict: 'user_id' }
+        );
+
+      if (sensitiveError) throw sensitiveError;
+
+      // ── 3. Handle email change separately (requires confirmation) ──────────
       if (form.email !== user.email) {
         const { error } = await supabase.auth.updateUser({ email: form.email });
         if (error) throw error;
@@ -138,7 +169,6 @@ export default function Profile() {
       toast.success('Profile updated!');
       navigate('/settings');
     } catch (err) {
-      console.error(err);
       toast.error('Update failed: ' + (err.message || 'Unknown error'));
     } finally {
       setSaving(false);
@@ -146,6 +176,7 @@ export default function Profile() {
   };
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const updateSensitive = (field, value) => setSensitiveForm((prev) => ({ ...prev, [field]: value }));
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
@@ -185,7 +216,7 @@ export default function Profile() {
         <TabsList className="grid w-full grid-cols-2 mb-4">
           <TabsTrigger value="edit">Edit Info</TabsTrigger>
           <TabsTrigger value="reviews-received">My Reviews</TabsTrigger>
-      </TabsList>
+        </TabsList>
 
         <TabsContent value="edit">
           {userLoading ? (
@@ -274,14 +305,15 @@ export default function Profile() {
                   </Select>
                 </div>
 
+                {/* Sensitive identity fields — saved to a separate RLS-protected table */}
                 {form.citizenship === 'South African' ? (
                   <div>
                     <Label>SA ID Number</Label>
                     <Input
                       className="mt-1"
                       placeholder="13-digit ID"
-                      value={form.sa_id}
-                      onChange={(e) => update('sa_id', e.target.value)}
+                      value={sensitiveForm.sa_id}
+                      onChange={(e) => updateSensitive('sa_id', e.target.value)}
                     />
                   </div>
                 ) : (
@@ -290,8 +322,8 @@ export default function Profile() {
                     <Input
                       className="mt-1"
                       placeholder="Passport number"
-                      value={form.passport}
-                      onChange={(e) => update('passport', e.target.value)}
+                      value={sensitiveForm.passport}
+                      onChange={(e) => updateSensitive('passport', e.target.value)}
                     />
                   </div>
                 )}
@@ -330,8 +362,6 @@ export default function Profile() {
         <TabsContent value="reviews-received">
           <ReviewsSection targetEmail={user?.email} targetType="owner" />
         </TabsContent>
-
-       
       </Tabs>
     </div>
   );
