@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import {
   Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
-  Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint,
+  Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -27,8 +28,6 @@ const PLANS = [
   },
 ];
 
-// ── WebAuthn helpers ──────────────────────────────────────────────────────────
-
 function bufferToBase64(buffer) {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)));
 }
@@ -37,7 +36,6 @@ async function registerBiometric(user) {
   if (!window.PublicKeyCredential) {
     throw new Error('Your device or browser does not support biometric login.');
   }
-
   const credential = await navigator.credentials.create({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
@@ -59,14 +57,8 @@ async function registerBiometric(user) {
       timeout: 60000,
     },
   });
-
-  // Store only the credential ID — no token in localStorage
   localStorage.setItem('scootlink_biometric_credential_id', bufferToBase64(credential.rawId));
-
-  // The refresh token is already in the httpOnly cookie from login — nothing else to do.
 }
-
-// ── Logout helpers ────────────────────────────────────────────────────────────
 
 async function clearTokenCookie() {
   await fetch('/.netlify/functions/auth-clear-token', {
@@ -75,7 +67,17 @@ async function clearTokenCookie() {
   }).catch(() => {});
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+async function deleteAccount(accessToken) {
+  const res = await fetch('/.netlify/functions/auth-delete-account', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Deletion failed. Please try again.');
+  }
+}
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -87,7 +89,6 @@ export default function Settings() {
   const [notifications, setNotifications] = useState(true);
   const [biometricLoading, setBiometricLoading] = useState(false);
 
-  // Password change state
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -95,14 +96,16 @@ export default function Settings() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState('');
 
+  const [showDeleteSection, setShowDeleteSection] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
   useEffect(() => {
     const isDark = localStorage.getItem('theme') === 'dark';
     setDarkMode(isDark);
     document.documentElement.classList.toggle('dark', isDark);
-
     setSignInMethod(localStorage.getItem('scootlink_signin_method') || 'password');
     setNotifications(localStorage.getItem('scootlink_notifications') !== 'false');
-
     auth.me().then((u) => {
       setUser(u);
       const plan = u?.subscription_plan || u?.account_type || 'driver';
@@ -124,11 +127,8 @@ export default function Settings() {
     toast.success(`Notifications ${val ? 'enabled' : 'disabled'}`);
   };
 
-  // ── Sign-in method toggle with WebAuthn registration ─────────────────────
-
   const toggleSignInMethod = async () => {
     const switchingTo = signInMethod === 'password' ? 'biometric' : 'password';
-
     if (switchingTo === 'biometric') {
       setBiometricLoading(true);
       try {
@@ -147,7 +147,6 @@ export default function Settings() {
         setBiometricLoading(false);
       }
     } else {
-      // Switching back to password — clear the credential from localStorage
       localStorage.removeItem('scootlink_biometric_credential_id');
       setSignInMethod('password');
       localStorage.setItem('scootlink_signin_method', 'password');
@@ -156,19 +155,34 @@ export default function Settings() {
     }
   };
 
-  // ── Logout ────────────────────────────────────────────────────────────────
-
   const handleLogout = async () => {
     if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-      // With biometric enabled, the httpOnly cookie already holds a valid token.
-      // Don't call signOut() — that would invalidate it. Just navigate away;
-      // the fingerprint on the login screen acts as the security gate.
       navigate('/auth');
     } else {
-      // Password logout: clear the cookie and fully sign out of Supabase.
       await clearTokenCookie();
       await auth.logout();
       navigate('/auth');
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') {
+      toast.error('Type DELETE in capitals to confirm.');
+      return;
+    }
+    setDeleting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Not signed in.');
+      await deleteAccount(session.access_token);
+      await clearTokenCookie();
+      localStorage.clear();
+      toast.success('Your account has been permanently deleted.');
+      navigate('/auth');
+    } catch (err) {
+      toast.error(err.message || 'Could not delete account. Please try again.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -425,11 +439,81 @@ export default function Settings() {
               )}
             </div>
 
-            {/* 2FA placeholder */}
+            {/* Two-factor placeholder */}
             <div className="p-4 rounded-xl bg-card border">
               <h3 className="text-sm font-medium">Two-factor authentication</h3>
               <p className="text-xs text-muted-foreground">Coming soon</p>
             </div>
+
+            {/* Delete account */}
+            <div className="p-4 rounded-xl bg-card border border-destructive/30">
+              <div
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => {
+                  setShowDeleteSection(!showDeleteSection);
+                  setDeleteConfirmText('');
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <Trash2 className="w-5 h-5 text-destructive" />
+                  <div>
+                    <p className="text-sm font-medium text-destructive">Delete Account</p>
+                    <p className="text-xs text-muted-foreground">Permanently remove all your data</p>
+                  </div>
+                </div>
+                <ChevronRight className={`w-4 h-4 text-destructive/60 transition-transform ${showDeleteSection ? 'rotate-90' : ''}`} />
+              </div>
+
+              {showDeleteSection && (
+                <div className="mt-4 pt-4 border-t border-destructive/20 space-y-4">
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20">
+                    <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                    <div className="text-xs text-destructive/80 space-y-1">
+                      <p className="font-semibold">This cannot be undone.</p>
+                      <p>Deleting your account will permanently erase:</p>
+                      <ul className="list-disc pl-4 space-y-0.5">
+                        <li>Your profile and all personal information</li>
+                        <li>Your ID / passport number</li>
+                        <li>Your vehicle listings</li>
+                        <li>Your rental history and reviews</li>
+                        <li>Your wallet balance</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-destructive">
+                      Type <span className="font-bold tracking-widest">DELETE</span> to confirm
+                    </Label>
+                    <Input
+                      className="mt-1 border-destructive/40 focus-visible:ring-destructive/40"
+                      placeholder="DELETE"
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck="false"
+                    />
+                  </div>
+
+                  <Button
+                    variant="destructive"
+                    className="w-full gap-2"
+                    onClick={handleDeleteAccount}
+                    disabled={deleting || deleteConfirmText !== 'DELETE'}
+                  >
+                    {deleting
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Deleting account…</>
+                      : <><Trash2 className="w-4 h-4" /> Permanently Delete My Account</>}
+                  </Button>
+
+                  <p className="text-[11px] text-center text-muted-foreground">
+                    In accordance with POPIA, all your personal data will be erased within seconds.
+                  </p>
+                </div>
+              )}
+            </div>
+
           </div>
         </TabsContent>
       </Tabs>
