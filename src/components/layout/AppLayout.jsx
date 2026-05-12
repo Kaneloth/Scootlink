@@ -1,274 +1,304 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
+import { Bike, LayoutDashboard, Search, MessageCircle, MapPin, Wallet, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import Sidebar from './Sidebar';
+import MobileNav from './MobileNav';
 import { auth, supabase } from '@/api/supabaseData';
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Slider } from '@/components/ui/slider';
-import { Card } from '@/components/ui/card';
-import { Search, SlidersHorizontal, X, Lock, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
-import PageHeader from '@/components/layout/PageHeader';
-import VehicleCard from '@/components/vehicles/VehicleCard';
-import EmptyState from '@/components/common/EmptyState';
 
-const PAGE_SIZE = 10;
+// Tab order for swipe navigation (matches bottom nav order)
+const TAB_ORDER = ['/', '/search-vehicles', '/messages', '/tracking', '/wallet', '/settings'];
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
+// Metadata for each tab — used by the peek indicator
+const TAB_META = {
+  '/':                { label: 'Home',     icon: LayoutDashboard },
+  '/search-vehicles': { label: 'Search',   icon: Search          },
+  '/find-drivers':    { label: 'Search',   icon: Search          },
+  '/mysearch':        { label: 'Search',   icon: Search          },
+  '/messages':        { label: 'Messages', icon: MessageCircle   },
+  '/tracking':        { label: 'Track',    icon: MapPin          },
+  '/wallet':          { label: 'Wallet',   icon: Wallet          },
+  '/settings':        { label: 'Settings', icon: Settings        },
+};
 
-function VehicleCardSkeleton() {
-  return (
-    <div className="p-4 rounded-xl border border-border/50 animate-pulse">
-      <div className="flex gap-3">
-        <div className="w-24 h-20 rounded-lg bg-muted shrink-0" />
-        <div className="flex-1 space-y-2 py-1">
-          <div className="h-3.5 bg-muted rounded w-2/5" />
-          <div className="h-3 bg-muted rounded w-1/3" />
-          <div className="h-3 bg-muted rounded w-1/4" />
-        </div>
-        <div className="w-16 h-7 rounded-full bg-muted shrink-0 self-start" />
-      </div>
-    </div>
-  );
+// ─── Navigation progress bar ──────────────────────────────────────────────────
+function useNavigationProgress(pathname) {
+  const [barState, setBarState] = useState({ width: 0, visible: false, done: false });
+  const prevPathRef = useRef(pathname);
+  const timersRef = useRef([]);
+
+  const clear = () => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+  };
+
+  useEffect(() => {
+    if (prevPathRef.current === pathname) return;
+    prevPathRef.current = pathname;
+
+    clear();
+    setBarState({ width: 0, visible: true, done: false });
+
+    const t1 = setTimeout(() => setBarState(s => ({ ...s, width: 60 })), 30);
+    const t2 = setTimeout(() => setBarState(s => ({ ...s, width: 80 })), 250);
+    const t3 = setTimeout(() => setBarState(s => ({ ...s, width: 95 })), 500);
+    const t4 = setTimeout(() => setBarState(s => ({ ...s, width: 100, done: true })), 700);
+    const t5 = setTimeout(() => setBarState({ width: 0, visible: false, done: false }), 1050);
+
+    timersRef.current = [t1, t2, t3, t4, t5];
+    return clear;
+  }, [pathname]);
+
+  return barState;
 }
 
-function SearchSkeleton() {
-  return (
-    <div className="space-y-3">
-      {[1, 2, 3, 4].map((i) => (
-        <VehicleCardSkeleton key={i} />
-      ))}
-    </div>
-  );
-}
+function NavigationProgressBar({ pathname }) {
+  const { width, visible, done } = useNavigationProgress(pathname);
 
-// ─── Server-side vehicle fetcher ──────────────────────────────────────────────
-// Filters and pagination are applied in Supabase, not the browser.
-
-async function fetchVehiclePage({ pageParam = 0, filters }) {
-  let query = supabase
-    .from('vehicles')
-    .select('*')
-    .eq('status', 'available')
-    .lte('price_per_week', filters.maxPrice)
-    .order('created_at', { ascending: false })
-    .range(pageParam * PAGE_SIZE, (pageParam + 1) * PAGE_SIZE - 1);
-
-  if (filters.type !== 'all') {
-    query = query.eq('vehicle_type', filters.type);
-  }
-  if (filters.location) {
-    query = query.ilike('location', `%${filters.location}%`);
-  }
-  if (filters.minRating > 0) {
-    query = query.gte('rating', filters.minRating);
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return data ?? [];
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
-
-export default function SearchVehicles() {
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({
-    type: 'all',
-    maxPrice: 2000,
-    location: '',
-    minRating: 0,
-  });
-
-  const { data: user } = useQuery({
-    queryKey: ['current-user'],
-    queryFn: () => auth.me(),
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  });
-
-  const {
-    data,
-    isLoading,
-    isFetchingNextPage,
-    fetchNextPage,
-    hasNextPage,
-  } = useInfiniteQuery({
-    // When filters change, the query resets automatically (new queryKey)
-    queryKey: ['search-vehicles', filters],
-    queryFn: ({ pageParam }) => fetchVehiclePage({ pageParam, filters }),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.length === PAGE_SIZE ? allPages.length : undefined,
-    staleTime: 60 * 1000,
-  });
-
-  // Flatten pages, then filter out the user's own listings client-side
-  const vehicles = (data?.pages.flat() ?? []).filter(
-    (v) => !user || v.created_by !== user.email
-  );
-
-  const totalLoaded = data?.pages.flat().length ?? 0;
-
-  if (isLoading) {
-    return (
-      <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-        <PageHeader
-          title="Find Vehicles"
-          subtitle="Loading…"
-          backTo="/"
-          action={
-            <Button variant="outline" size="sm" disabled className="gap-2">
-              <SlidersHorizontal className="w-4 h-4" />
-              Filters
-            </Button>
-          }
-        />
-        <SearchSkeleton />
-      </div>
-    );
-  }
+  if (!visible) return null;
 
   return (
-    <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      <PageHeader
-        title="Find Vehicles"
-        subtitle={
-          totalLoaded > 0
-            ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} loaded`
-            : 'No vehicles found'
-        }
-        backTo="/"
-        action={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowFilters(!showFilters)}
-            className="gap-2"
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-            Filters
-          </Button>
-        }
+    <div className="fixed top-0 left-0 right-0 z-[100] h-[3px] pointer-events-none">
+      <div
+        style={{
+          height: '100%',
+          width: `${width}%`,
+          transition: width === 0 ? 'none' : done ? 'width 0.2s ease-in, opacity 0.3s ease-out 0.05s' : 'width 0.4s ease-out',
+          opacity: done ? 0 : 1,
+          background: 'hsl(var(--primary))',
+          boxShadow: '0 0 8px hsl(var(--primary) / 0.6)',
+          borderRadius: '0 2px 2px 0',
+        }}
       />
+    </div>
+  );
+}
 
-      {showFilters && (
-        <Card className="p-5 mb-6 border border-border/50">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="font-semibold text-sm">Filters</h4>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setFilters({ type: 'all', maxPrice: 2000, location: '', minRating: 0 })}
-            >
-              <X className="w-3 h-3 mr-1" /> Clear
-            </Button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <Label className="text-xs">Vehicle Type</Label>
-              <Select
-                value={filters.type}
-                onValueChange={(v) => setFilters((prev) => ({ ...prev, type: v }))}
-              >
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="scooter">Scooter</SelectItem>
-                  <SelectItem value="motorcycle">Motorcycle</SelectItem>
-                  <SelectItem value="car">Car</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Location</Label>
-              <Input
-                className="mt-1"
-                placeholder="e.g. Johannesburg"
-                value={filters.location}
-                onChange={(e) => setFilters((prev) => ({ ...prev, location: e.target.value }))}
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Max Price: R {filters.maxPrice}/week</Label>
-              <Slider
-                className="mt-3"
-                value={[filters.maxPrice]}
-                max={3000}
-                min={100}
-                step={50}
-                onValueChange={([v]) => setFilters((prev) => ({ ...prev, maxPrice: v }))}
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Min Rating</Label>
-              <Select
-                value={String(filters.minRating)}
-                onValueChange={(v) => setFilters((prev) => ({ ...prev, minRating: Number(v) }))}
-              >
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">Any</SelectItem>
-                  <SelectItem value="3">3+ Stars</SelectItem>
-                  <SelectItem value="4">4+ Stars</SelectItem>
-                  <SelectItem value="5">5 Stars Only</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </Card>
-      )}
+// ─── Peek strip ───────────────────────────────────────────────────────────────
+function PeekStrip({ direction, tab, progress }) {
+  if (!tab) return null;
+  const Icon = tab.icon;
+  const opacity = Math.min(progress * 2.5, 1);
+  const isRight = direction === 'right';
 
-      {vehicles.length > 0 ? (
-        <>
-          <div className="space-y-3">
-            {vehicles.map((v) => {
-              const canInteract = user?.subscription_active && user?.verified;
-              if (canInteract) {
-                return (
-                  <Link key={v.id} to={`/rental-request?vehicleId=${v.id}`}>
-                    <VehicleCard vehicle={v} />
-                  </Link>
-                );
-              }
-              return (
-                <div
-                  key={v.id}
-                  onClick={() => toast.warning('You must be subscribed and verified to request a rental')}
-                  className="cursor-pointer"
-                >
-                  <div className="relative">
-                    <VehicleCard vehicle={v} />
-                    <div className="absolute top-2 right-2 bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <Lock className="w-2.5 h-2.5" /> Subscribe to rent
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Load more */}
-          {hasNextPage && (
-            <div className="mt-6 flex justify-center">
-              <Button
-                variant="outline"
-                onClick={() => fetchNextPage()}
-                disabled={isFetchingNextPage}
-                className="gap-2 min-w-[140px]"
-              >
-                {isFetchingNextPage
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</>
-                  : 'Load more'}
-              </Button>
-            </div>
-          )}
-        </>
+  return (
+    <div
+      className={`absolute inset-y-0 ${isRight ? 'right-0' : 'left-0'} w-20 flex flex-col items-center justify-center gap-1.5 pointer-events-none z-20`}
+      style={{
+        opacity,
+        background: isRight
+          ? 'linear-gradient(to left, hsl(var(--card)) 30%, transparent)'
+          : 'linear-gradient(to right, hsl(var(--card)) 30%, transparent)',
+      }}
+    >
+      {isRight ? (
+        <ChevronRight className="w-4 h-4 text-primary/60" />
       ) : (
-        <EmptyState icon="🔍" title="No vehicles found" description="Try adjusting your filters" />
+        <ChevronLeft className="w-4 h-4 text-primary/60" />
       )}
+      <Icon className="w-5 h-5 text-primary" />
+      <span className="text-[10px] font-semibold text-primary">{tab.label}</span>
+    </div>
+  );
+}
+
+// ─── Main layout ──────────────────────────────────────────────────────────────
+export default function AppLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [accountType, setAccountType] = useState('driver');
+
+  const isDraggingRef = useRef(false);
+  const dragOffsetRef = useRef(0);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const touchStartRef = useRef({ x: 0, y: 0 });
+  const mainRef = useRef(null);
+  const prevLocationRef = useRef(location.pathname);
+  const [slideClass, setSlideClass] = useState('');
+  const accountTypeRef = useRef('driver');
+
+  useEffect(() => {
+    accountTypeRef.current = accountType;
+  }, [accountType]);
+
+  useEffect(() => {
+    const prevPath = prevLocationRef.current;
+    const newPath = location.pathname;
+    prevLocationRef.current = newPath;
+
+    const prevIndex = TAB_ORDER.indexOf(prevPath);
+    const newIndex = TAB_ORDER.indexOf(newPath);
+
+    if (Math.abs(newIndex - prevIndex) >= 1 && prevIndex !== -1 && newIndex !== -1) {
+      setSlideClass(newIndex > prevIndex ? 'slide-from-right' : 'slide-from-left');
+      const timer = setTimeout(() => setSlideClass(''), 320);
+      return () => clearTimeout(timer);
+    } else {
+      setSlideClass('');
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    auth.me().then(user => {
+      setAccountType(user?.subscription_plan || 'driver');
+    }).catch(() => {});
+  }, []);
+
+  // Silently keep the biometric refresh token up to date.
+  // Supabase fires TOKEN_REFRESHED roughly every hour; we update the httpOnly
+  // cookie each time so the stored token never goes stale.
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (
+        (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') &&
+        session?.refresh_token &&
+        localStorage.getItem('scootlink_signin_method') === 'biometric'
+      ) {
+        fetch('/.netlify/functions/auth-set-token', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: session.refresh_token }),
+        }).catch(() => {});
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const getSearchPath = useCallback(() => {
+    const type = accountTypeRef.current;
+    if (type === 'owner') return '/find-drivers';
+    if (type === 'both') return '/mysearch';
+    return '/search-vehicles';
+  }, []);
+
+  const getCurrentTabIndex = useCallback((pathname) => {
+    const path = pathname || location.pathname;
+    if (path === '/search-vehicles' || path === '/find-drivers' || path === '/mysearch') return 1;
+    return TAB_ORDER.indexOf(path);
+  }, [location.pathname]);
+
+  const peekInfo = useMemo(() => {
+    if (!isDragging) return null;
+    const containerWidth = mainRef.current?.offsetWidth || window.innerWidth;
+    const threshold = containerWidth * 0.25;
+    const currentIndex = getCurrentTabIndex();
+    if (currentIndex === -1) return null;
+
+    const progress = Math.abs(dragOffset) / threshold;
+
+    if (dragOffset < -10 && currentIndex < TAB_ORDER.length - 1) {
+      const nextPath = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
+      return { direction: 'right', tab: TAB_META[nextPath] || TAB_META[TAB_ORDER[currentIndex + 1]], progress };
+    }
+    if (dragOffset > 10 && currentIndex > 0) {
+      return { direction: 'left', tab: TAB_META[TAB_ORDER[currentIndex - 1]], progress };
+    }
+    return null;
+  }, [isDragging, dragOffset, getCurrentTabIndex, getSearchPath]);
+
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+
+    const handleTouchMove = (e) => {
+      const { x: startX, y: startY } = touchStartRef.current;
+      const currentX = e.touches[0].clientX;
+      const currentY = e.touches[0].clientY;
+      const dx = currentX - startX;
+      const dy = currentY - startY;
+
+      if (!isDraggingRef.current && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 2) {
+        isDraggingRef.current = true;
+        setIsDragging(true);
+      }
+
+      if (isDraggingRef.current) {
+        e.preventDefault();
+        dragOffsetRef.current = dx;
+        setDragOffset(dx);
+      }
+    };
+
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', handleTouchMove);
+  }, []);
+
+  const handleTouchStart = (e) => {
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+    isDraggingRef.current = false;
+    dragOffsetRef.current = 0;
+    setIsDragging(false);
+    setDragOffset(0);
+  };
+
+  const handleTouchEnd = useCallback(() => {
+    if (!isDraggingRef.current) return;
+
+    const containerWidth = mainRef.current?.offsetWidth || window.innerWidth;
+    const threshold = containerWidth * 0.25;
+    const dx = dragOffsetRef.current;
+    const currentIndex = getCurrentTabIndex();
+
+    if (currentIndex !== -1) {
+      if (dx < -threshold && currentIndex < TAB_ORDER.length - 1) {
+        const nextPath = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
+        navigate(nextPath);
+      } else if (dx > threshold && currentIndex > 0) {
+        navigate(TAB_ORDER[currentIndex - 1]);
+      }
+    }
+
+    isDraggingRef.current = false;
+    dragOffsetRef.current = 0;
+    setIsDragging(false);
+    setDragOffset(0);
+  }, [getCurrentTabIndex, getSearchPath, navigate]);
+
+  const inlineStyle = isDragging
+    ? { transform: `translateX(${dragOffset}px)`, transition: 'none' }
+    : slideClass
+      ? {}
+      : { transform: 'translateX(0)', transition: 'transform 0.25s ease-out' };
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      <NavigationProgressBar pathname={location.pathname} />
+
+      <Sidebar />
+
+      <div className="relative flex-1 lg:ml-64 overflow-hidden">
+        {peekInfo && (
+          <PeekStrip
+            direction={peekInfo.direction}
+            tab={peekInfo.tab}
+            progress={peekInfo.progress}
+          />
+        )}
+
+        <main
+          ref={mainRef}
+          className={`h-screen overflow-y-auto pb-20 lg:pb-0 main-content ${slideClass}`}
+          style={inlineStyle}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="lg:hidden flex items-center px-4 py-3 border-b border-border bg-card sticky top-0 z-30">
+            <Link to="/" className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <Bike className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-base font-bold text-foreground">Scootlink</span>
+            </Link>
+          </div>
+          <Outlet />
+        </main>
+      </div>
+
+      <MobileNav />
     </div>
   );
 }
