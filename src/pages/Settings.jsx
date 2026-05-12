@@ -28,6 +28,8 @@ const PLANS = [
   },
 ];
 
+// ── WebAuthn helpers ──────────────────────────────────────────────────────────
+
 function bufferToBase64(buffer) {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)));
 }
@@ -64,6 +66,9 @@ async function registerBiometric(user) {
   localStorage.setItem('scootlink_biometric_credential_id', bufferToBase64(credential.rawId));
 }
 
+// Returns true if the fingerprint scan passed.
+// Throws with err.code = 'no-passkey-on-domain' when the stored credential
+// doesn't exist on this domain (e.g. registered on localhost, used on Netlify).
 async function verifyBiometric() {
   const storedId = localStorage.getItem('scootlink_biometric_credential_id');
   if (!storedId) {
@@ -82,6 +87,8 @@ async function verifyBiometric() {
     });
     if (!assertion) throw new Error('Biometric verification failed.');
   } catch (err) {
+    // NotAllowedError = user cancelled OR no matching passkey on this domain.
+    // Either way the stored credential is unusable here — signal the caller.
     if (err.name === 'NotAllowedError' || err.name === 'InvalidStateError') {
       const e = new Error('no-passkey-on-domain');
       e.code = 'no-passkey-on-domain';
@@ -91,12 +98,16 @@ async function verifyBiometric() {
   }
 }
 
+// ── Cookie helpers ────────────────────────────────────────────────────────────
+
 async function clearTokenCookie() {
   await fetch('/.netlify/functions/auth-clear-token', {
     method: 'POST',
     credentials: 'include',
   }).catch(() => {});
 }
+
+// ── Account deletion ──────────────────────────────────────────────────────────
 
 async function deleteAccount(accessToken) {
   const res = await fetch('/.netlify/functions/auth-delete-account', {
@@ -109,6 +120,8 @@ async function deleteAccount(accessToken) {
     throw new Error(body.error || 'Deletion failed. Please try again.');
   }
 }
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -127,12 +140,14 @@ export default function Settings() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState('');
 
+  // Delete account state
   const [showDeleteSection, setShowDeleteSection] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteVerified, setDeleteVerified] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  // true = biometric failed on this domain, show password fallback
   const [biometricFallback, setBiometricFallback] = useState(false);
 
   useEffect(() => {
@@ -162,6 +177,8 @@ export default function Settings() {
     toast.success(`Notifications ${val ? 'enabled' : 'disabled'}`);
   };
 
+  // ── Sign-in method toggle ────────────────────────────────────────────────
+
   const toggleSignInMethod = async () => {
     const switchingTo = signInMethod === 'password' ? 'biometric' : 'password';
     if (switchingTo === 'biometric') {
@@ -190,6 +207,8 @@ export default function Settings() {
     }
   };
 
+  // ── Logout ────────────────────────────────────────────────────────────────
+
   const handleLogout = async () => {
     if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
       navigate('/auth');
@@ -200,6 +219,8 @@ export default function Settings() {
     }
   };
 
+  // ── Delete: step 1 — verify identity ─────────────────────────────────────
+
   const handleVerifyIdentity = async () => {
     setVerifying(true);
     try {
@@ -208,6 +229,7 @@ export default function Settings() {
         setDeleteVerified(true);
         toast.success('Fingerprint verified. You can now confirm deletion.');
       } else {
+        // Password path (either always-password user, or biometric fallback)
         if (!deletePassword) { toast.error('Enter your password to continue.'); return; }
         const { error } = await supabase.auth.signInWithPassword({
           email: user?.email,
@@ -219,6 +241,8 @@ export default function Settings() {
       }
     } catch (err) {
       if (err.code === 'no-passkey-on-domain') {
+        // Fingerprint registered on a different domain — silently switch to
+        // the password fallback so the user isn't blocked.
         setBiometricFallback(true);
         toast.error('Fingerprint not registered on this browser. Enter your password instead.');
       } else if (err.name === 'NotAllowedError') {
@@ -230,6 +254,8 @@ export default function Settings() {
       setVerifying(false);
     }
   };
+
+  // ── Delete: step 2 — final deletion ──────────────────────────────────────
 
   const handleDeleteAccount = async () => {
     if (!deleteVerified) { toast.error('Verify your identity first.'); return; }
@@ -250,6 +276,8 @@ export default function Settings() {
     }
   };
 
+  // ── Plan ─────────────────────────────────────────────────────────────────
+
   const handleSubscribe = async () => {
     setProcessingPlan(true);
     try {
@@ -268,6 +296,8 @@ export default function Settings() {
       setProcessingPlan(false);
     }
   };
+
+  // ── Password change ───────────────────────────────────────────────────────
 
   const handlePasswordChange = async () => {
     setPasswordError('');
@@ -288,7 +318,10 @@ export default function Settings() {
     }
   };
 
+  // Whether the delete verify step uses the password input
   const deleteUsesPassword = signInMethod === 'password' || biometricFallback;
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
@@ -369,7 +402,10 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            <button onClick={handleLogout} className="w-full mt-4 flex items-center justify-center gap-2 p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20">
+            <button
+              onClick={handleLogout}
+              className="w-full mt-4 flex items-center justify-center gap-2 p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20"
+            >
               <LogOut className="w-4 h-4" /> Logout
             </button>
           </div>
@@ -384,7 +420,11 @@ export default function Settings() {
                 const Icon = p.icon;
                 const isSel = selectedPlan === p.id;
                 return (
-                  <Card key={p.id} onClick={() => setSelectedPlan(p.id)} className={`p-4 cursor-pointer border-2 transition-colors ${isSel ? 'border-primary' : 'border-border'}`}>
+                  <Card
+                    key={p.id}
+                    onClick={() => setSelectedPlan(p.id)}
+                    className={`p-4 cursor-pointer border-2 transition-colors ${isSel ? 'border-primary' : 'border-border'}`}
+                  >
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className="p-2 rounded-xl border"><Icon className="w-4 h-4" /></div>
@@ -423,13 +463,23 @@ export default function Settings() {
             <div className="p-4 rounded-xl bg-card border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  {signInMethod === 'biometric' ? <Fingerprint className="w-5 h-5 text-primary" /> : <Lock className="w-5 h-5 text-muted-foreground" />}
+                  {signInMethod === 'biometric'
+                    ? <Fingerprint className="w-5 h-5 text-primary" />
+                    : <Lock className="w-5 h-5 text-muted-foreground" />}
                   <div>
                     <p className="text-sm font-medium">Sign-in method</p>
-                    <p className="text-xs text-muted-foreground">Currently: {signInMethod === 'biometric' ? 'Fingerprint / Biometric' : 'Password'}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Currently: {signInMethod === 'biometric' ? 'Fingerprint / Biometric' : 'Password'}
+                    </p>
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={toggleSignInMethod} disabled={biometricLoading} className="gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleSignInMethod}
+                  disabled={biometricLoading}
+                  className="gap-1.5"
+                >
                   {biometricLoading && <Loader2 className="w-3 h-3 animate-spin" />}
                   Switch to {signInMethod === 'password' ? 'Biometric' : 'Password'}
                 </Button>
@@ -444,6 +494,7 @@ export default function Settings() {
                   Switch to Biometric to use your device fingerprint sensor at login. You'll be prompted to scan your finger once to register.
                 </p>
               )}
+              {/* Domain re-registration hint */}
               {signInMethod === 'biometric' && (
                 <div className="mt-3 ml-8 flex items-start gap-1.5">
                   <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
@@ -456,7 +507,10 @@ export default function Settings() {
 
             {/* Change password */}
             <div className="p-4 rounded-xl bg-card border">
-              <div className="flex items-center justify-between cursor-pointer" onClick={() => setShowPasswordForm(!showPasswordForm)}>
+              <div
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => setShowPasswordForm(!showPasswordForm)}
+              >
                 <div className="flex items-center gap-3">
                   <Lock className="w-5 h-5 text-muted-foreground" />
                   <div>
@@ -495,7 +549,7 @@ export default function Settings() {
               <p className="text-xs text-muted-foreground">Coming soon</p>
             </div>
 
-            {/* Delete account */}
+            {/* ── Delete account ── */}
             <div className="p-4 rounded-xl bg-card border border-destructive/30">
               <div
                 className="flex items-center justify-between cursor-pointer"
@@ -520,6 +574,7 @@ export default function Settings() {
               {showDeleteSection && (
                 <div className="mt-4 pt-4 border-t border-destructive/20 space-y-4">
 
+                  {/* Warning */}
                   <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20">
                     <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
                     <div className="text-xs text-destructive/80 space-y-1">
@@ -535,6 +590,105 @@ export default function Settings() {
                     </div>
                   </div>
 
-                  {/* Step 1 */} **...**
+                  {/* Step 1: identity verification */}
+                  <div className={`p-3 rounded-lg border space-y-3 ${deleteVerified ? 'border-green-500/40 bg-green-500/5' : 'border-border bg-muted/30'}`}>
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className={`w-4 h-4 shrink-0 ${deleteVerified ? 'text-green-600' : 'text-muted-foreground'}`} />
+                      <p className="text-xs font-semibold">
+                        {deleteVerified ? 'Identity verified' : 'Step 1 — Verify your identity'}
+                      </p>
+                    </div>
 
-_This response is too long to display in full._
+                    {!deleteVerified && (
+                      <>
+                        {/* Biometric fallback notice */}
+                        {biometricFallback && (
+                          <div className="flex items-start gap-1.5 pl-6">
+                            <Info className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                            <p className="text-xs text-amber-600 dark:text-amber-400">
+                              Your fingerprint isn't registered on this browser. Enter your password instead.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Biometric button — shown for biometric users when no fallback yet */}
+                        {signInMethod === 'biometric' && !biometricFallback && (
+                          <p className="text-xs text-muted-foreground pl-6">
+                            Scan your fingerprint to confirm it's really you before we delete anything.
+                          </p>
+                        )}
+
+                        {/* Password input — always shown for password users, or after biometric fallback */}
+                        {deleteUsesPassword && (
+                          <div className="pl-6">
+                            <Label className="text-xs">Enter your current password</Label>
+                            <Input
+                              type="password"
+                              placeholder="Your password"
+                              className="mt-1"
+                              value={deletePassword}
+                              onChange={(e) => setDeletePassword(e.target.value)}
+                            />
+                          </div>
+                        )}
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full gap-2"
+                          onClick={handleVerifyIdentity}
+                          disabled={verifying || (deleteUsesPassword && !deletePassword)}
+                        >
+                          {verifying
+                            ? <><Loader2 className="w-3 h-3 animate-spin" /> Verifying…</>
+                            : !deleteUsesPassword
+                              ? <><Fingerprint className="w-3.5 h-3.5" /> Scan Fingerprint</>
+                              : <><Lock className="w-3.5 h-3.5" /> Confirm Password</>}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Step 2: type DELETE — gated until step 1 passes */}
+                  <div className={`space-y-3 transition-opacity ${deleteVerified ? 'opacity-100' : 'opacity-40 pointer-events-none select-none'}`}>
+                    <div>
+                      <Label className="text-xs text-destructive">
+                        Step 2 — Type <span className="font-bold tracking-widest">DELETE</span> to confirm
+                      </Label>
+                      <Input
+                        className="mt-1 border-destructive/40 focus-visible:ring-destructive/40"
+                        placeholder="DELETE"
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        autoCapitalize="characters"
+                        autoCorrect="off"
+                        spellCheck="false"
+                        disabled={!deleteVerified}
+                      />
+                    </div>
+
+                    <Button
+                      variant="destructive"
+                      className="w-full gap-2"
+                      onClick={handleDeleteAccount}
+                      disabled={deleting || !deleteVerified || deleteConfirmText !== 'DELETE'}
+                    >
+                      {deleting
+                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Deleting account…</>
+                        : <><Trash2 className="w-4 h-4" /> Permanently Delete My Account</>}
+                    </Button>
+                  </div>
+
+                  <p className="text-[11px] text-center text-muted-foreground">
+                    In accordance with POPIA, all your personal data will be erased within seconds.
+                  </p>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
