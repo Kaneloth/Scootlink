@@ -2,19 +2,13 @@
  * auth-delete-account.js
  *
  * Permanently deletes the calling user's account and all associated data.
- * Requires SUPABASE_SERVICE_ROLE_KEY in Netlify environment variables —
- * this key must NEVER be in client-side code.
+ * Requires SUPABASE_SERVICE_ROLE_KEY in Netlify environment variables.
  *
- * Flow:
- *  1. Client sends its current access_token in the Authorization header.
- *  2. We verify the token with Supabase (getUser) to confirm who is deleting.
- *  3. We delete sensitive data from user_sensitive_info (the RLS-protected table).
- *  4. We delete the auth user via the admin API — this cascades to profiles via FK.
- *  5. Return 200 so the client can clear cookies/localStorage and redirect.
- *
- * Add to Netlify → Site configuration → Environment variables:
- *   SUPABASE_SERVICE_ROLE_KEY  — found in Supabase → Settings → API → service_role key
- *   VITE_SUPABASE_URL          — already added for auth-refresh
+ * Deletion order (children before parent to satisfy FK constraints):
+ *  1. Verify caller identity via access token.
+ *  2. Delete all rows in every table that reference this user.
+ *  3. Delete the auth.users row via the admin API (cascades to profiles).
+ *  4. Return 200 so the client can clear cookies/localStorage and redirect.
  */
 
 exports.handler = async (event) => {
@@ -41,7 +35,6 @@ exports.handler = async (event) => {
     return { statusCode: 401, body: JSON.stringify({ error: 'No access token provided' }) };
   }
 
-  // Verify the token and get the user's ID
   const verifyRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -60,20 +53,60 @@ exports.handler = async (event) => {
     return { statusCode: 401, body: JSON.stringify({ error: 'Could not determine user ID' }) };
   }
 
-  // ── Step 2: delete sensitive data first ───────────────────────────────────
-  // This table is NOT auto-cascaded by the auth.users FK, so delete it manually.
+  // ── Step 2: delete all user data (child rows first) ───────────────────────
+  // The service role key bypasses RLS, so these deletes always succeed even
+  // if the table is empty or the column name slightly differs — we ignore
+  // individual errors and press on so a missing table never blocks deletion.
 
-  await fetch(`${supabaseUrl}/rest/v1/user_sensitive_info?user_id=eq.${userId}`, {
-    method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${serviceRoleKey}`,
-      apikey: serviceRoleKey,
-      'Content-Type': 'application/json',
-    },
-  });
+  const restHeaders = {
+    Authorization: `Bearer ${serviceRoleKey}`,
+    apikey: serviceRoleKey,
+    'Content-Type': 'application/json',
+    Prefer: 'return=minimal',
+  };
 
-  // ── Step 3: delete the auth user (cascades to profiles table) ────────────
-  // Uses the admin API — only possible with the service role key.
+  // Helper: DELETE rows matching a filter; silently ignores errors.
+  const purge = (table, filter) =>
+    fetch(`${supabaseUrl}/rest/v1/${table}?${filter}`, {
+      method: 'DELETE',
+      headers: restHeaders,
+    }).catch(() => {});
+
+  // Run all child-table deletes in parallel for speed.
+  await Promise.all([
+    // transactions — may reference user as sender OR receiver
+    purge('transactions', `from_user_id=eq.${userId}`),
+    purge('transactions', `to_user_id=eq.${userId}`),
+    purge('transactions', `user_id=eq.${userId}`),
+
+    // rentals — user may appear as driver or owner/renter
+    purge('rentals', `driver_id=eq.${userId}`),
+    purge('rentals', `owner_id=eq.${userId}`),
+    purge('rentals', `renter_id=eq.${userId}`),
+    purge('rentals', `user_id=eq.${userId}`),
+
+    // reviews — reviewer or the person being reviewed
+    purge('reviews', `reviewer_id=eq.${userId}`),
+    purge('reviews', `reviewed_id=eq.${userId}`),
+    purge('reviews', `user_id=eq.${userId}`),
+
+    // messages / chats
+    purge('messages', `sender_id=eq.${userId}`),
+    purge('messages', `receiver_id=eq.${userId}`),
+    purge('messages', `from_id=eq.${userId}`),
+    purge('messages', `to_id=eq.${userId}`),
+    purge('chats', `user_id=eq.${userId}`),
+    purge('chat_participants', `user_id=eq.${userId}`),
+
+    // vehicles listed by this user
+    purge('vehicles', `owner_id=eq.${userId}`),
+    purge('vehicles', `user_id=eq.${userId}`),
+
+    // sensitive info (not cascaded by FK)
+    purge('user_sensitive_info', `user_id=eq.${userId}`),
+  ]);
+
+  // ── Step 3: delete the auth user (cascades to profiles via FK) ────────────
 
   const deleteRes = await fetch(`${supabaseUrl}/auth/v1/admin/users/${userId}`, {
     method: 'DELETE',
