@@ -25,6 +25,16 @@ function biometricError(code, message) {
   return err;
 }
 
+// Store the refresh token in a server-set httpOnly cookie (not localStorage)
+async function setTokenCookie(refresh_token) {
+  await fetch('/.netlify/functions/auth-set-token', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token }),
+  });
+}
+
 async function triggerBiometricLogin() {
   if (!window.PublicKeyCredential) {
     throw biometricError('unsupported', 'Your browser does not support biometric login.');
@@ -32,7 +42,6 @@ async function triggerBiometricLogin() {
 
   const credentialId = localStorage.getItem('scootlink_biometric_credential_id');
   if (!credentialId) {
-    // No credential ever registered — must use password + re-enable biometric
     throw biometricError('no-credential', 'No fingerprint registered on this device.');
   }
 
@@ -46,34 +55,38 @@ async function triggerBiometricLogin() {
         timeout: 60000,
       },
     });
-  } catch (e) {
-    // NotAllowedError = user cancelled or fingerprint rejected by the OS
+  } catch {
     throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
   }
 
   // ── Fingerprint passed. Now restore the Supabase session. ──────────────────
 
-  // Step 1: live in-memory session (user just navigated here without signing out)
+  // Step 1: live in-memory session (user navigated here without signing out)
   const { data: existing } = await supabase.auth.getSession();
   if (existing?.session) {
-    localStorage.setItem('scootlink_biometric_refresh_token', existing.session.refresh_token);
+    await setTokenCookie(existing.session.refresh_token);
     return existing.session;
   }
 
-  // Step 2: stored refresh token (page was reloaded but session not explicitly killed)
-  const refreshToken = localStorage.getItem('scootlink_biometric_refresh_token');
-  if (!refreshToken) {
-    throw biometricError('no-session', 'session-gone');
-  }
+  // Step 2: call the server function — it reads the httpOnly cookie and
+  // exchanges the stored refresh token with Supabase, then rotates the cookie.
+  const res = await fetch('/.netlify/functions/auth-refresh', {
+    method: 'POST',
+    credentials: 'include',
+  });
 
-  const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
-  if (error) {
-    localStorage.removeItem('scootlink_biometric_refresh_token');
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    if (body.error === 'no-token') throw biometricError('no-session', 'session-gone');
     throw biometricError('session-expired', 'session-expired');
   }
 
-  // Rotate — always keep the newest token
-  localStorage.setItem('scootlink_biometric_refresh_token', data.session.refresh_token);
+  const { access_token, refresh_token } = await res.json();
+
+  // Restore the Supabase in-memory session
+  const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
+  if (error) throw biometricError('session-expired', 'session-expired');
+
   return data.session;
 }
 
@@ -87,7 +100,7 @@ export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  // When biometric fails due to session expiry, show a banner in the password form
+  // Shown in the password form when biometric session expired
   const [sessionBanner, setSessionBanner] = useState(false);
 
   // Login fields
@@ -119,11 +132,11 @@ export default function Auth() {
     } catch (err) {
       if (err.code === 'no-session' || err.code === 'session-expired' || err.code === 'no-credential') {
         // Session is fully gone — fingerprint retry is pointless.
-        // Drop straight to the password form with a clear explanation banner.
+        // Drop to the password form with a clear explanation.
         setSessionBanner(true);
         setLoginStage('password');
       } else {
-        // Fingerprint hardware error or unsupported — stay on biometric screen.
+        // Fingerprint hardware error — stay on biometric screen.
         toast.error(err.message || 'Biometric login failed.');
         setLoginStage('biometric-error');
       }
@@ -147,9 +160,9 @@ export default function Auth() {
       });
       if (error) throw error;
 
-      // Always refresh the stored token after a password login
+      // Store the refresh token in an httpOnly cookie (not localStorage)
       if (data.session?.refresh_token) {
-        localStorage.setItem('scootlink_biometric_refresh_token', data.session.refresh_token);
+        await setTokenCookie(data.session.refresh_token);
       }
 
       navigate('/');
@@ -301,7 +314,6 @@ export default function Auth() {
               {/* ── Password form ── */}
               {loginStage === 'password' && (
                 <>
-                  {/* Banner shown when biometric session expired */}
                   {sessionBanner && (
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
