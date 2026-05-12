@@ -238,9 +238,10 @@ export default function SearchVehicles() {
         <>
           <div className="space-y-3">
             {vehicles.map((v) => {
+              const isAdmin = ['kanelothelejane@gmail.com'].includes(user?.email);
               const isSubscribed = user?.subscription_active;
               const isVerified = user?.verified;
-              const canInteract = isSubscribed && isVerified;
+              const canInteract = isAdmin || (isSubscribed && isVerified);
 
               const lockLabel = !isSubscribed
                 ? 'Subscribe to rent'
