@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import {
   Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
-  AlertTriangle, ShieldCheck,
+  AlertTriangle, ShieldCheck, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -66,16 +66,29 @@ async function registerBiometric(user) {
 
 async function verifyBiometric() {
   const storedId = localStorage.getItem('scootlink_biometric_credential_id');
-  if (!storedId) throw new Error('No biometric credential found on this device.');
-  const assertion = await navigator.credentials.get({
-    publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      allowCredentials: [{ type: 'public-key', id: base64ToBuffer(storedId) }],
-      userVerification: 'required',
-      timeout: 60000,
-    },
-  });
-  if (!assertion) throw new Error('Biometric verification failed.');
+  if (!storedId) {
+    const err = new Error('No biometric credential found on this device.');
+    err.code = 'no-credential';
+    throw err;
+  }
+  try {
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ type: 'public-key', id: base64ToBuffer(storedId) }],
+        userVerification: 'required',
+        timeout: 60000,
+      },
+    });
+    if (!assertion) throw new Error('Biometric verification failed.');
+  } catch (err) {
+    if (err.name === 'NotAllowedError' || err.name === 'InvalidStateError') {
+      const e = new Error('no-passkey-on-domain');
+      e.code = 'no-passkey-on-domain';
+      throw e;
+    }
+    throw err;
+  }
 }
 
 async function clearTokenCookie() {
@@ -120,6 +133,7 @@ export default function Settings() {
   const [deleting, setDeleting] = useState(false);
   const [deleteVerified, setDeleteVerified] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [biometricFallback, setBiometricFallback] = useState(false);
 
   useEffect(() => {
     const isDark = localStorage.getItem('theme') === 'dark';
@@ -189,7 +203,7 @@ export default function Settings() {
   const handleVerifyIdentity = async () => {
     setVerifying(true);
     try {
-      if (signInMethod === 'biometric') {
+      if (signInMethod === 'biometric' && !biometricFallback) {
         await verifyBiometric();
         setDeleteVerified(true);
         toast.success('Fingerprint verified. You can now confirm deletion.');
@@ -204,8 +218,11 @@ export default function Settings() {
         toast.success('Password confirmed. You can now confirm deletion.');
       }
     } catch (err) {
-      if (err.name === 'NotAllowedError') {
-        toast.error('Fingerprint scan was cancelled.');
+      if (err.code === 'no-passkey-on-domain') {
+        setBiometricFallback(true);
+        toast.error('Fingerprint not registered on this browser. Enter your password instead.');
+      } else if (err.name === 'NotAllowedError') {
+        toast.error('Fingerprint scan was cancelled. Try again or use your password.');
       } else {
         toast.error(err.message || 'Verification failed. Try again.');
       }
@@ -270,6 +287,8 @@ export default function Settings() {
       setChangingPassword(false);
     }
   };
+
+  const deleteUsesPassword = signInMethod === 'password' || biometricFallback;
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
@@ -350,10 +369,7 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            <button
-              onClick={handleLogout}
-              className="w-full mt-4 flex items-center justify-center gap-2 p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20"
-            >
+            <button onClick={handleLogout} className="w-full mt-4 flex items-center justify-center gap-2 p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20">
               <LogOut className="w-4 h-4" /> Logout
             </button>
           </div>
@@ -368,24 +384,16 @@ export default function Settings() {
                 const Icon = p.icon;
                 const isSel = selectedPlan === p.id;
                 return (
-                  <Card
-                    key={p.id}
-                    onClick={() => setSelectedPlan(p.id)}
-                    className={`p-4 cursor-pointer border-2 transition-colors ${isSel ? 'border-primary' : 'border-border'}`}
-                  >
+                  <Card key={p.id} onClick={() => setSelectedPlan(p.id)} className={`p-4 cursor-pointer border-2 transition-colors ${isSel ? 'border-primary' : 'border-border'}`}>
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl border">
-                          <Icon className="w-4 h-4" />
-                        </div>
+                        <div className="p-2 rounded-xl border"><Icon className="w-4 h-4" /></div>
                         <div>
                           <h3 className="font-bold">{p.name}</h3>
                           <p className="text-xs text-muted-foreground">R{p.price}/month</p>
                         </div>
                       </div>
-                      {p.popular && (
-                        <span className="text-[10px] bg-primary text-primary-foreground px-2 py-0.5 rounded-full">Popular</span>
-                      )}
+                      {p.popular && <span className="text-[10px] bg-primary text-primary-foreground px-2 py-0.5 rounded-full">Popular</span>}
                       {isSel && <CheckCircle2 className="w-5 h-5 text-primary" />}
                     </div>
                     <ul className="space-y-1">
@@ -415,23 +423,13 @@ export default function Settings() {
             <div className="p-4 rounded-xl bg-card border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  {signInMethod === 'biometric'
-                    ? <Fingerprint className="w-5 h-5 text-primary" />
-                    : <Lock className="w-5 h-5 text-muted-foreground" />}
+                  {signInMethod === 'biometric' ? <Fingerprint className="w-5 h-5 text-primary" /> : <Lock className="w-5 h-5 text-muted-foreground" />}
                   <div>
                     <p className="text-sm font-medium">Sign-in method</p>
-                    <p className="text-xs text-muted-foreground">
-                      Currently: {signInMethod === 'biometric' ? 'Fingerprint / Biometric' : 'Password'}
-                    </p>
+                    <p className="text-xs text-muted-foreground">Currently: {signInMethod === 'biometric' ? 'Fingerprint / Biometric' : 'Password'}</p>
                   </div>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleSignInMethod}
-                  disabled={biometricLoading}
-                  className="gap-1.5"
-                >
+                <Button variant="outline" size="sm" onClick={toggleSignInMethod} disabled={biometricLoading} className="gap-1.5">
                   {biometricLoading && <Loader2 className="w-3 h-3 animate-spin" />}
                   Switch to {signInMethod === 'password' ? 'Biometric' : 'Password'}
                 </Button>
@@ -446,14 +444,19 @@ export default function Settings() {
                   Switch to Biometric to use your device fingerprint sensor at login. You'll be prompted to scan your finger once to register.
                 </p>
               )}
+              {signInMethod === 'biometric' && (
+                <div className="mt-3 ml-8 flex items-start gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-muted-foreground">
+                    Using a new browser or device? Switch to Password and then back to Biometric to re-register your fingerprint here.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Change password */}
             <div className="p-4 rounded-xl bg-card border">
-              <div
-                className="flex items-center justify-between cursor-pointer"
-                onClick={() => setShowPasswordForm(!showPasswordForm)}
-              >
+              <div className="flex items-center justify-between cursor-pointer" onClick={() => setShowPasswordForm(!showPasswordForm)}>
                 <div className="flex items-center gap-3">
                   <Lock className="w-5 h-5 text-muted-foreground" />
                   <div>
@@ -501,6 +504,7 @@ export default function Settings() {
                   setDeleteConfirmText('');
                   setDeletePassword('');
                   setDeleteVerified(false);
+                  setBiometricFallback(false);
                 }}
               >
                 <div className="flex items-center gap-3">
@@ -516,7 +520,6 @@ export default function Settings() {
               {showDeleteSection && (
                 <div className="mt-4 pt-4 border-t border-destructive/20 space-y-4">
 
-                  {/* Warning */}
                   <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20">
                     <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
                     <div className="text-xs text-destructive/80 space-y-1">
@@ -532,91 +535,6 @@ export default function Settings() {
                     </div>
                   </div>
 
-                  {/* Step 1: identity verification */}
-                  <div className={`p-3 rounded-lg border space-y-3 ${deleteVerified ? 'border-green-500/40 bg-green-500/5' : 'border-border bg-muted/30'}`}>
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className={`w-4 h-4 shrink-0 ${deleteVerified ? 'text-green-600' : 'text-muted-foreground'}`} />
-                      <p className="text-xs font-semibold">
-                        {deleteVerified ? 'Identity verified' : 'Step 1 — Verify your identity'}
-                      </p>
-                    </div>
+                  {/* Step 1 */} **...**
 
-                    {!deleteVerified && (
-                      <>
-                        {signInMethod === 'biometric' ? (
-                          <p className="text-xs text-muted-foreground pl-6">
-                            Scan your fingerprint to confirm it's really you before we delete anything.
-                          </p>
-                        ) : (
-                          <div className="pl-6">
-                            <Label className="text-xs">Enter your current password</Label>
-                            <Input
-                              type="password"
-                              placeholder="Your password"
-                              className="mt-1"
-                              value={deletePassword}
-                              onChange={(e) => setDeletePassword(e.target.value)}
-                            />
-                          </div>
-                        )}
-
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full gap-2"
-                          onClick={handleVerifyIdentity}
-                          disabled={verifying || (signInMethod === 'password' && !deletePassword)}
-                        >
-                          {verifying
-                            ? <><Loader2 className="w-3 h-3 animate-spin" /> Verifying…</>
-                            : signInMethod === 'biometric'
-                              ? <><Fingerprint className="w-3.5 h-3.5" /> Scan Fingerprint</>
-                              : <><Lock className="w-3.5 h-3.5" /> Confirm Password</>}
-                        </Button>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Step 2: type DELETE — gated until step 1 passes */}
-                  <div className={`space-y-3 transition-opacity ${deleteVerified ? 'opacity-100' : 'opacity-40 pointer-events-none select-none'}`}>
-                    <div>
-                      <Label className="text-xs text-destructive">
-                        Step 2 — Type <span className="font-bold tracking-widest">DELETE</span> to confirm
-                      </Label>
-                      <Input
-                        className="mt-1 border-destructive/40 focus-visible:ring-destructive/40"
-                        placeholder="DELETE"
-                        value={deleteConfirmText}
-                        onChange={(e) => setDeleteConfirmText(e.target.value)}
-                        autoCapitalize="characters"
-                        autoCorrect="off"
-                        spellCheck="false"
-                        disabled={!deleteVerified}
-                      />
-                    </div>
-
-                    <Button
-                      variant="destructive"
-                      className="w-full gap-2"
-                      onClick={handleDeleteAccount}
-                      disabled={deleting || !deleteVerified || deleteConfirmText !== 'DELETE'}
-                    >
-                      {deleting
-                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Deleting account…</>
-                        : <><Trash2 className="w-4 h-4" /> Permanently Delete My Account</>}
-                    </Button>
-                  </div>
-
-                  <p className="text-[11px] text-center text-muted-foreground">
-                    In accordance with POPIA, all your personal data will be erased within seconds.
-                  </p>
-                </div>
-              )}
-            </div>
-
-          </div>
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
+_This response is too long to display in full._
