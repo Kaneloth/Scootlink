@@ -21,7 +21,6 @@ const TAB_META = {
 };
 
 // ─── Navigation progress bar ──────────────────────────────────────────────────
-// Crawls from 0 → 70% fast, then eases to 90%, then snaps to 100% and fades out.
 function useNavigationProgress(pathname) {
   const [barState, setBarState] = useState({ width: 0, visible: false, done: false });
   const prevPathRef = useRef(pathname);
@@ -37,15 +36,12 @@ function useNavigationProgress(pathname) {
     prevPathRef.current = pathname;
 
     clear();
-    // Reset then start immediately
     setBarState({ width: 0, visible: true, done: false });
 
     const t1 = setTimeout(() => setBarState(s => ({ ...s, width: 60 })), 30);
     const t2 = setTimeout(() => setBarState(s => ({ ...s, width: 80 })), 250);
     const t3 = setTimeout(() => setBarState(s => ({ ...s, width: 95 })), 500);
-    // Complete
     const t4 = setTimeout(() => setBarState(s => ({ ...s, width: 100, done: true })), 700);
-    // Fade out
     const t5 = setTimeout(() => setBarState({ width: 0, visible: false, done: false }), 1050);
 
     timersRef.current = [t1, t2, t3, t4, t5];
@@ -66,7 +62,6 @@ function NavigationProgressBar({ pathname }) {
         style={{
           height: '100%',
           width: `${width}%`,
-          // No transition on reset (width=0), ease-out crawl otherwise
           transition: width === 0 ? 'none' : done ? 'width 0.2s ease-in, opacity 0.3s ease-out 0.05s' : 'width 0.4s ease-out',
           opacity: done ? 0 : 1,
           background: 'hsl(var(--primary))',
@@ -112,7 +107,6 @@ export default function AppLayout() {
   const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
 
-  // Use refs for drag state inside event listeners to avoid stale closures
   const isDraggingRef = useRef(false);
   const dragOffsetRef = useRef(0);
   const [dragOffset, setDragOffset] = useState(0);
@@ -123,12 +117,10 @@ export default function AppLayout() {
   const [slideClass, setSlideClass] = useState('');
   const accountTypeRef = useRef('driver');
 
-  // Keep accountTypeRef in sync so touchEnd handler can read it without stale closure
   useEffect(() => {
     accountTypeRef.current = accountType;
   }, [accountType]);
 
-  // Determine slide direction when route changes
   useEffect(() => {
     const prevPath = prevLocationRef.current;
     const newPath = location.pathname;
@@ -153,8 +145,8 @@ export default function AppLayout() {
   }, []);
 
   // Silently keep the biometric refresh token up to date.
-  // Supabase auto-renews the session roughly every hour and fires TOKEN_REFRESHED.
-  // We store the newest token each time so biometric login never uses a stale one.
+  // Supabase fires TOKEN_REFRESHED roughly every hour; we update the httpOnly
+  // cookie each time so the stored token never goes stale.
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (
@@ -162,13 +154,17 @@ export default function AppLayout() {
         session?.refresh_token &&
         localStorage.getItem('scootlink_signin_method') === 'biometric'
       ) {
-        localStorage.setItem('scootlink_biometric_refresh_token', session.refresh_token);
+        fetch('/.netlify/functions/auth-set-token', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: session.refresh_token }),
+        }).catch(() => {});
       }
     });
     return () => subscription.unsubscribe();
   }, []);
 
-  // Get the correct search path based on account type
   const getSearchPath = useCallback(() => {
     const type = accountTypeRef.current;
     if (type === 'owner') return '/find-drivers';
@@ -182,7 +178,6 @@ export default function AppLayout() {
     return TAB_ORDER.indexOf(path);
   }, [location.pathname]);
 
-  // Peek strip: which adjacent tab to show and on which side
   const peekInfo = useMemo(() => {
     if (!isDragging) return null;
     const containerWidth = mainRef.current?.offsetWidth || window.innerWidth;
@@ -202,7 +197,6 @@ export default function AppLayout() {
     return null;
   }, [isDragging, dragOffset, getCurrentTabIndex, getSearchPath]);
 
-  // Non-passive touchmove listener — required for e.preventDefault() to work
   useEffect(() => {
     const el = mainRef.current;
     if (!el) return;
@@ -272,12 +266,10 @@ export default function AppLayout() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Progress bar — fixed, sits above everything */}
       <NavigationProgressBar pathname={location.pathname} />
 
       <Sidebar />
 
-      {/* Outer wrapper clips dragging content and hosts peek strips */}
       <div className="relative flex-1 lg:ml-64 overflow-hidden">
         {peekInfo && (
           <PeekStrip
@@ -294,7 +286,6 @@ export default function AppLayout() {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
-          {/* Mobile top bar */}
           <div className="lg:hidden flex items-center px-4 py-3 border-b border-border bg-card sticky top-0 z-30">
             <Link to="/" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
