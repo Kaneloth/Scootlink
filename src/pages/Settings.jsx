@@ -274,19 +274,15 @@ export default function Settings() {
     if (deleteConfirmText !== 'DELETE') { toast.error('Type DELETE in capitals to confirm.'); return; }
     setDeleting(true);
     try {
-      // Use the httpOnly-cookie refresh flow to get a guaranteed fresh token.
-      // supabase.auth.getSession() can return an expired token when sessions
-      // are managed server-side via cookies, so we call auth-refresh first.
-      const refreshRes = await fetch('/.netlify/functions/auth-refresh', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!refreshRes.ok) {
-        const rb = await refreshRes.json().catch(() => ({}));
-        throw new Error(rb.error === 'no-token' ? 'Session not found — please log in again.' : 'Session expired — please log in again.');
+      // Force a fresh access token via the Supabase client's stored refresh
+      // token (set during login via supabase.auth.setSession). This is more
+      // reliable than the httpOnly-cookie route, which can fail if the cookie
+      // has already rotated since the last page load.
+      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+      const access_token = refreshed?.session?.access_token;
+      if (refreshErr || !access_token) {
+        throw new Error('Session expired — please log out and log in again before deleting your account.');
       }
-      const { access_token } = await refreshRes.json();
-      if (!access_token) throw new Error('Could not get a valid session. Please log in again.');
 
       await deleteAccount(access_token);
       await clearTokenCookie();
