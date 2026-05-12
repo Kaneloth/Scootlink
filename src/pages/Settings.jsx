@@ -294,9 +294,12 @@ export default function Settings() {
     const { data, error } = await supabase
       .from('profiles')
       .select('id, email, full_name, verified, subscription_active, subscription_plan')
-      .order('created_at', { ascending: false });
-    if (!error) setAdminUsers(data || []);
-    else toast.error('Could not load users');
+      .order('email', { ascending: true });
+    if (!error) {
+      setAdminUsers(data || []);
+    } else {
+      toast.error('Could not load users: ' + (error.message || 'unknown error'));
+    }
     setLoadingAdminUsers(false);
   };
 
