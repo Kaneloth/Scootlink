@@ -7,6 +7,13 @@ import { supabase } from './supabaseClient';
 export { supabase };
 import { base44 } from './base44Client';
 
+// Fields that must be kept in sync between auth metadata and the profiles table.
+// profiles is the source of truth — auth metadata is secondary.
+const PROFILE_FIELDS = [
+  'subscription_active', 'subscription_plan', 'subscription_start',
+  'subscription_expires', 'verified', 'full_name', 'phone', 'location',
+];
+
 // ─── Auth helpers ────────────────────────────────────────────────────────────
 
 export const auth = {
@@ -14,31 +21,65 @@ export const auth = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
-    // Fetch latest profile data (wallet, rating, total_reviews)
+    // profiles table is the source of truth for all user state
     const { data: profile } = await supabase
       .from('profiles')
-      .select('wallet_balance, rating, total_reviews')
+      .select(
+        'wallet_balance, rating, total_reviews, ' +
+        'verified, subscription_active, subscription_plan, ' +
+        'subscription_start, subscription_expires, ' +
+        'full_name, phone, location, onboarding_completed'
+      )
       .eq('id', user.id)
       .single();
 
     return {
+      // auth metadata last (lowest priority — may be stale)
       ...user.user_metadata,
       id: user.id,
       email: user.email,
-      wallet_balance: profile?.wallet_balance ?? 0,
-      rating: profile?.rating ?? 0,
-      total_reviews: profile?.total_reviews ?? 0, // profiles table is the source of truth
+      // profiles table values always win over auth metadata
+      wallet_balance:       profile?.wallet_balance       ?? 0,
+      rating:               profile?.rating               ?? 0,
+      total_reviews:        profile?.total_reviews        ?? 0,
+      verified:             profile?.verified             ?? false,
+      subscription_active:  profile?.subscription_active  ?? user.user_metadata?.subscription_active ?? false,
+      subscription_plan:    profile?.subscription_plan    ?? user.user_metadata?.subscription_plan   ?? null,
+      subscription_start:   profile?.subscription_start   ?? user.user_metadata?.subscription_start  ?? null,
+      subscription_expires: profile?.subscription_expires ?? user.user_metadata?.subscription_expires ?? null,
+      full_name:            profile?.full_name            ?? user.user_metadata?.full_name            ?? null,
+      phone:                profile?.phone                ?? user.user_metadata?.phone                ?? null,
+      location:             profile?.location             ?? user.user_metadata?.location             ?? null,
+      onboarding_completed: profile?.onboarding_completed ?? user.user_metadata?.onboarding_completed ?? false,
     };
   },
+
   updateMe: async (updates) => {
+    // 1. Write to Supabase auth metadata (keeps auth token in sync)
     const { data, error } = await supabase.auth.updateUser({ data: updates });
     if (error) throw error;
+
+    // 2. Sync relevant fields to profiles table so auth.me() always reads
+    //    the latest values regardless of token refresh timing.
+    const profileUpdates = {};
+    PROFILE_FIELDS.forEach((k) => {
+      if (k in updates) profileUpdates[k] = updates[k];
+    });
+    if (Object.keys(profileUpdates).length > 0) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('profiles').update(profileUpdates).eq('id', user.id);
+      }
+    }
+
     return data;
   },
+
   logout: async () => {
     await supabase.auth.signOut();
     window.location.href = '/auth';
   },
+
   isAuthenticated: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     return !!user;
