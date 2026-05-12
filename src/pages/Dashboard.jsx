@@ -297,7 +297,8 @@ export default function Dashboard() {
       {availableForMe.length > 0 ? (
         <div className="space-y-3">
           {availableForMe.map(v => {
-            const canRent = user?.subscription_active && user?.verified;
+            const isAdminUser = ['kanelothelejane@gmail.com'].includes(user?.email);
+            const canRent = isAdminUser || (user?.subscription_active && user?.verified);
             return canRent ? (
               <Link key={v.id} to={`/rental-request?vehicleId=${v.id}`}><VehicleCard vehicle={v} /></Link>
             ) : (
@@ -546,7 +547,22 @@ export default function Dashboard() {
               <div className="flex justify-between"><span className="text-muted-foreground">Verified</span><span>{selectedDriver.verified ? '✅ Verified' : '⏳ Pending'}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Rating</span><span><StarRating value={Math.round(selectedDriver.rating || 0)} size="sm" showValue /></span></div>
             </div>
-            <Button className="w-full mt-6 gap-2" onClick={() => { setSelectedDriver(null); navigate(`/messages?userId=${selectedDriver.id}`); }}>
+            <Button
+              className="w-full mt-6 gap-2"
+              onClick={() => {
+                const canMsg = ['kanelothelejane@gmail.com'].includes(user?.email) || (user?.subscription_active && user?.verified);
+                if (!canMsg) {
+                  toast.warning(
+                    !user?.subscription_active
+                      ? 'You need an active subscription to message drivers'
+                      : 'Your account is awaiting verification'
+                  );
+                  return;
+                }
+                setSelectedDriver(null);
+                navigate(`/messages?userId=${selectedDriver.id}`);
+              }}
+            >
               <MessageCircle className="w-4 h-4" /> Message {selectedDriver.full_name?.split(' ')[0]}
             </Button>
           </div>

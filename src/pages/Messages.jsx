@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, Send, MessageCircle, User, Loader2, Plus } from 'lucide-react';
+import { ArrowLeft, Send, MessageCircle, User, Loader2, Plus, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Skeleton row shown while conversations are loading
@@ -219,8 +219,15 @@ export default function Messages() {
     setChatLoading(false);
   };
 
+  const isAdmin = ['kanelothelejane@gmail.com'].includes(user?.email);
+  const canMessage = isAdmin || (user?.subscription_active && user?.verified);
+
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedChat) return;
+    if (!canMessage) {
+      toast.warning('You need an active subscription and verification to send messages');
+      return;
+    }
     setLoading(true);
     const { error } = await supabase.from('messages').insert([
       {
@@ -242,6 +249,10 @@ export default function Messages() {
 
   const handleNewChat = async () => {
     if (!newChatEmail.trim()) return;
+    if (!canMessage) {
+      toast.warning('You need an active subscription and verification to start new conversations');
+      return;
+    }
     const { data, error } = await supabase
       .from('profiles')
       .select('id, full_name, email')
@@ -295,7 +306,13 @@ export default function Messages() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-foreground">Messages</h2>
             <button
-              onClick={() => setStartNewChat(!startNewChat)}
+              onClick={() => {
+                if (!canMessage) {
+                  toast.warning('Subscribe and get verified to start new conversations');
+                  return;
+                }
+                setStartNewChat(!startNewChat);
+              }}
               className="flex items-center gap-1 text-sm text-primary hover:underline"
             >
               <Plus className="w-4 h-4" /> New
@@ -380,14 +397,31 @@ export default function Messages() {
             )}
           </div>
 
-          <div className="border-t border-border pt-4">
-            <Input className="mb-2" placeholder="Subject (optional)" value={subject} onChange={(e) => setSubject(e.target.value)} />
-            <Textarea placeholder="Type your message…" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} rows={2} className="mb-2" />
-            <Button onClick={handleSend} disabled={!newMessage.trim() || loading} className="w-full gap-2">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              {loading ? 'Sending…' : 'Send'}
-            </Button>
-          </div>
+          {canMessage ? (
+            <div className="border-t border-border pt-4">
+              <Input className="mb-2" placeholder="Subject (optional)" value={subject} onChange={(e) => setSubject(e.target.value)} />
+              <Textarea placeholder="Type your message…" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} rows={2} className="mb-2" />
+              <Button onClick={handleSend} disabled={!newMessage.trim() || loading} className="w-full gap-2">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {loading ? 'Sending…' : 'Send'}
+              </Button>
+            </div>
+          ) : (
+            <div className="border-t border-border pt-5 flex flex-col items-center gap-2 text-center">
+              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                <Lock className="w-5 h-5 text-muted-foreground" />
+              </div>
+              <p className="text-sm font-medium text-foreground">Messaging locked</p>
+              <p className="text-xs text-muted-foreground">
+                {!user?.subscription_active
+                  ? 'You need an active subscription to send messages'
+                  : 'Your account is awaiting verification — messaging will unlock once approved'}
+              </p>
+              <Button size="sm" variant="outline" className="mt-1" onClick={() => navigate('/settings')}>
+                View Plans
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>
