@@ -238,7 +238,17 @@ export default function SearchVehicles() {
         <>
           <div className="space-y-3">
             {vehicles.map((v) => {
-              const canInteract = user?.subscription_active && user?.verified;
+              const isSubscribed = user?.subscription_active;
+              const isVerified = user?.verified;
+              const canInteract = isSubscribed && isVerified;
+
+              const lockLabel = !isSubscribed
+                ? 'Subscribe to rent'
+                : 'Verification pending';
+              const lockMessage = !isSubscribed
+                ? 'You need an active subscription to request a rental'
+                : 'Your account is awaiting verification — you\'ll be able to rent once approved';
+
               if (canInteract) {
                 return (
                   <Link key={v.id} to={`/rental-request?vehicleId=${v.id}`}>
@@ -249,13 +259,13 @@ export default function SearchVehicles() {
               return (
                 <div
                   key={v.id}
-                  onClick={() => toast.warning('You must be subscribed and verified to request a rental')}
+                  onClick={() => toast.warning(lockMessage)}
                   className="cursor-pointer"
                 >
                   <div className="relative">
                     <VehicleCard vehicle={v} />
-                    <div className="absolute top-2 right-2 bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <Lock className="w-2.5 h-2.5" /> Subscribe to rent
+                    <div className="absolute bottom-0 left-0 right-0 bg-amber-500/90 text-white text-[11px] font-medium px-3 py-1.5 rounded-b-xl flex items-center justify-center gap-1.5">
+                      <Lock className="w-3 h-3 shrink-0" /> {lockLabel}
                     </div>
                   </div>
                 </div>
