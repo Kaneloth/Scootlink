@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Card } from '@/components/ui/card';
-import { Search, SlidersHorizontal, X, Lock, Loader2 } from 'lucide-react';
+import { SlidersHorizontal, X, Lock, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/layout/PageHeader';
 import VehicleCard from '@/components/vehicles/VehicleCard';
@@ -44,20 +44,32 @@ function SearchSkeleton() {
   );
 }
 
+// ─── Column name mapping ───────────────────────────────────────────────────────
+// The Supabase vehicles table stores: type (not vehicle_type), price (not price_per_week).
+// vehicleFromDb converts DB rows back to the app's field names after fetching.
+
+function vehicleFromDb(v) {
+  if (!v) return v;
+  const mapped = { ...v };
+  if ('type' in mapped) { mapped.vehicle_type = mapped.type; delete mapped.type; }
+  if ('price' in mapped) { mapped.price_per_week = mapped.price; delete mapped.price; }
+  return mapped;
+}
+
 // ─── Server-side vehicle fetcher ──────────────────────────────────────────────
-// Filters and pagination are applied in Supabase, not the browser.
+// Uses the actual DB column names (type, price) for filtering.
 
 async function fetchVehiclePage({ pageParam = 0, filters }) {
   let query = supabase
     .from('vehicles')
     .select('*')
     .eq('status', 'available')
-    .lte('price_per_week', filters.maxPrice)
+    .lte('price', filters.maxPrice)          // DB column is "price"
     .order('created_at', { ascending: false })
     .range(pageParam * PAGE_SIZE, (pageParam + 1) * PAGE_SIZE - 1);
 
   if (filters.type !== 'all') {
-    query = query.eq('vehicle_type', filters.type);
+    query = query.eq('type', filters.type);  // DB column is "type"
   }
   if (filters.location) {
     query = query.ilike('location', `%${filters.location}%`);
@@ -68,7 +80,9 @@ async function fetchVehiclePage({ pageParam = 0, filters }) {
 
   const { data, error } = await query;
   if (error) throw error;
-  return data ?? [];
+
+  // Convert DB column names to app field names before returning
+  return (data ?? []).map(vehicleFromDb);
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -96,7 +110,6 @@ export default function SearchVehicles() {
     fetchNextPage,
     hasNextPage,
   } = useInfiniteQuery({
-    // When filters change, the query resets automatically (new queryKey)
     queryKey: ['search-vehicles', filters],
     queryFn: ({ pageParam }) => fetchVehiclePage({ pageParam, filters }),
     initialPageParam: 0,
@@ -250,7 +263,6 @@ export default function SearchVehicles() {
             })}
           </div>
 
-          {/* Load more */}
           {hasNextPage && (
             <div className="mt-6 flex justify-center">
               <Button
