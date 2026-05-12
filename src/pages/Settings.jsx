@@ -120,7 +120,10 @@ async function deleteAccount(accessToken) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || 'Deletion failed. Please try again.');
+    // Include server detail (e.g. "Failed to delete account" + raw Supabase reason)
+    const reason = body.error || `Request failed (${res.status})`;
+    const detail = body.detail ? ` — ${body.detail}` : '';
+    throw new Error(reason + detail);
   }
 }
 
@@ -271,9 +274,21 @@ export default function Settings() {
     if (deleteConfirmText !== 'DELETE') { toast.error('Type DELETE in capitals to confirm.'); return; }
     setDeleting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error('Not signed in.');
-      await deleteAccount(session.access_token);
+      // Use the httpOnly-cookie refresh flow to get a guaranteed fresh token.
+      // supabase.auth.getSession() can return an expired token when sessions
+      // are managed server-side via cookies, so we call auth-refresh first.
+      const refreshRes = await fetch('/.netlify/functions/auth-refresh', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!refreshRes.ok) {
+        const rb = await refreshRes.json().catch(() => ({}));
+        throw new Error(rb.error === 'no-token' ? 'Session not found — please log in again.' : 'Session expired — please log in again.');
+      }
+      const { access_token } = await refreshRes.json();
+      if (!access_token) throw new Error('Could not get a valid session. Please log in again.');
+
+      await deleteAccount(access_token);
       await clearTokenCookie();
       localStorage.clear();
       toast.success('Your account has been permanently deleted.');
