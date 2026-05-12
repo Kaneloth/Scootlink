@@ -91,7 +91,7 @@ export default function SearchVehicles() {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     type: 'all',
-    maxPrice: 2000,
+    maxPrice: 3000,   // match slider max so no vehicles are hidden on first load
     location: '',
     minRating: 0,
   });
@@ -109,6 +109,8 @@ export default function SearchVehicles() {
     isFetchingNextPage,
     fetchNextPage,
     hasNextPage,
+    isError,
+    error,
   } = useInfiniteQuery({
     queryKey: ['search-vehicles', filters],
     queryFn: ({ pageParam }) => fetchVehiclePage({ pageParam, filters }),
@@ -118,9 +120,16 @@ export default function SearchVehicles() {
     staleTime: 60 * 1000,
   });
 
-  // Flatten pages, then filter out the user's own listings client-side
+  // Surface DB errors (e.g. RLS blocking reads) as a visible toast
+  React.useEffect(() => {
+    if (isError && error) {
+      toast.error(`Could not load vehicles: ${error.message}`);
+    }
+  }, [isError, error]);
+
+  // Flatten pages, then filter out the current user's own listings by owner_id
   const vehicles = (data?.pages.flat() ?? []).filter(
-    (v) => !user || v.created_by !== user.email
+    (v) => !user || v.owner_id !== user.id
   );
 
   const totalLoaded = data?.pages.flat().length ?? 0;
@@ -290,7 +299,11 @@ export default function SearchVehicles() {
           )}
         </>
       ) : (
-        <EmptyState icon="🔍" title="No vehicles found" description="Try adjusting your filters" />
+        <EmptyState
+          icon={isError ? '⚠️' : '🔍'}
+          title={isError ? 'Could not load vehicles' : 'No vehicles found'}
+          description={isError ? 'There may be a permissions issue — check Supabase RLS policies on the vehicles table' : 'Try adjusting your filters'}
+        />
       )}
     </div>
   );
