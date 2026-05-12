@@ -9,8 +9,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Bike, LogIn, ArrowRight, Loader2, Fingerprint, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
-// ── WebAuthn helpers ──────────────────────────────────────────────────────────
-
 function base64ToBuffer(base64) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -18,14 +16,12 @@ function base64ToBuffer(base64) {
   return bytes.buffer;
 }
 
-// Typed error so the catch block can react differently to each failure mode
 function biometricError(code, message) {
   const err = new Error(message);
   err.code = code;
   return err;
 }
 
-// Store the refresh token in a server-set httpOnly cookie (not localStorage)
 async function setTokenCookie(refresh_token) {
   await fetch('/.netlify/functions/auth-set-token', {
     method: 'POST',
@@ -45,7 +41,6 @@ async function triggerBiometricLogin() {
     throw biometricError('no-credential', 'No fingerprint registered on this device.');
   }
 
-  // Prompt the device fingerprint reader
   try {
     await navigator.credentials.get({
       publicKey: {
@@ -55,21 +50,22 @@ async function triggerBiometricLogin() {
         timeout: 60000,
       },
     });
-  } catch {
+  } catch (err) {
+    // NotAllowedError covers both "user cancelled" AND "no matching passkey on
+    // this domain" (e.g. registered on localhost, now on skootlink-temp.netlify.app).
+    // WebAuthn passkeys are domain-bound — treat both cases as no-credential.
+    if (err.name === 'NotAllowedError' || err.name === 'InvalidStateError') {
+      throw biometricError('no-credential', 'no-passkey-on-domain');
+    }
     throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
   }
 
-  // ── Fingerprint passed. Now restore the Supabase session. ──────────────────
-
-  // Step 1: live in-memory session (user navigated here without signing out)
   const { data: existing } = await supabase.auth.getSession();
   if (existing?.session) {
     await setTokenCookie(existing.session.refresh_token);
     return existing.session;
   }
 
-  // Step 2: call the server function — it reads the httpOnly cookie and
-  // exchanges the stored refresh token with Supabase, then rotates the cookie.
   const res = await fetch('/.netlify/functions/auth-refresh', {
     method: 'POST',
     credentials: 'include',
@@ -82,47 +78,32 @@ async function triggerBiometricLogin() {
   }
 
   const { access_token, refresh_token } = await res.json();
-
-  // Restore the Supabase in-memory session
   const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
   if (error) throw biometricError('session-expired', 'session-expired');
 
   return data.session;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
-
 export default function Auth() {
   const navigate = useNavigate();
 
-  // 'idle' | 'biometric-loading' | 'biometric-error' | 'password'
   const [loginStage, setLoginStage] = useState('idle');
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [bannerReason, setBannerReason] = useState(null);
 
-  // Shown in the password form when biometric session expired
-  const [sessionBanner, setSessionBanner] = useState(false);
-
-  // Login fields
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
-  // Register fields
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  // ── Sign In button handler ────────────────────────────────────────────────
-
   const handleSignInTap = async () => {
     const method = localStorage.getItem('scootlink_signin_method') || 'password';
-
-    if (method !== 'biometric') {
-      setLoginStage('password');
-      return;
-    }
+    if (method !== 'biometric') { setLoginStage('password'); return; }
 
     setLoginStage('biometric-loading');
     setLoading(true);
@@ -130,13 +111,19 @@ export default function Auth() {
       await triggerBiometricLogin();
       navigate('/');
     } catch (err) {
-      if (err.code === 'no-session' || err.code === 'session-expired' || err.code === 'no-credential') {
-        // Session is fully gone — fingerprint retry is pointless.
-        // Drop to the password form with a clear explanation.
-        setSessionBanner(true);
+      if (err.code === 'no-session' || err.code === 'session-expired') {
+        setBannerReason('session-expired');
+        setLoginStage('password');
+      } else if (err.code === 'no-credential') {
+        if (err.message === 'no-passkey-on-domain') {
+          localStorage.removeItem('scootlink_biometric_credential_id');
+          localStorage.setItem('scootlink_signin_method', 'password');
+          setBannerReason('no-passkey');
+        } else {
+          setBannerReason('session-expired');
+        }
         setLoginStage('password');
       } else {
-        // Fingerprint hardware error — stay on biometric screen.
         toast.error(err.message || 'Biometric login failed.');
         setLoginStage('biometric-error');
       }
@@ -145,13 +132,8 @@ export default function Auth() {
     }
   };
 
-  // ── Password login ────────────────────────────────────────────────────────
-
   const handleLogin = async () => {
-    if (!loginEmail || !loginPassword) {
-      toast.error('Please fill in all fields');
-      return;
-    }
+    if (!loginEmail || !loginPassword) { toast.error('Please fill in all fields'); return; }
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -159,12 +141,7 @@ export default function Auth() {
         password: loginPassword,
       });
       if (error) throw error;
-
-      // Store the refresh token in an httpOnly cookie (not localStorage)
-      if (data.session?.refresh_token) {
-        await setTokenCookie(data.session.refresh_token);
-      }
-
+      if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       navigate('/');
     } catch (err) {
       toast.error(err.message || 'Login failed');
@@ -173,21 +150,10 @@ export default function Auth() {
     }
   };
 
-  // ── Register ──────────────────────────────────────────────────────────────
-
   const handleRegister = async () => {
-    if (!regName || !regEmail || !regPassword) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-    if (regPassword !== regConfirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-    if (!agreedToTerms) {
-      toast.error('You must agree to the Terms and Conditions');
-      return;
-    }
+    if (!regName || !regEmail || !regPassword) { toast.error('Please fill in all required fields'); return; }
+    if (regPassword !== regConfirmPassword) { toast.error('Passwords do not match'); return; }
+    if (!agreedToTerms) { toast.error('You must agree to the Terms and Conditions'); return; }
     setLoading(true);
     try {
       const { error } = await supabase.auth.signUp({
@@ -205,8 +171,6 @@ export default function Auth() {
     }
   };
 
-  // ── Forgot password ───────────────────────────────────────────────────────
-
   const handleForgotPassword = async () => {
     const email = prompt('Enter your email address to reset your password:');
     if (!email) return;
@@ -221,15 +185,16 @@ export default function Auth() {
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
   const savedMethod = localStorage.getItem('scootlink_signin_method') || 'password';
+
+  const bannerContent = {
+    'session-expired': 'Your biometric session expired. Sign in with your password once — biometric will work automatically from then on.',
+    'no-passkey': "Your fingerprint isn't registered on this browser or device. Sign in with your password, then go to Settings → Security → Switch to Biometric to re-register.",
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-4 shadow-lg">
             <Bike className="w-8 h-8 text-white" />
@@ -242,41 +207,28 @@ export default function Auth() {
 
         <Card className="p-6 border border-border/50">
           {isLogin ? (
-            /* ─── Login section ─── */
             <div className="space-y-4">
               <h2 className="text-lg font-semibold text-foreground">
                 {loginStage === 'idle' ? 'Welcome back' : 'Sign in'}
               </h2>
 
-              {/* ── Idle: single Sign In button ── */}
               {loginStage === 'idle' && (
-                <Button
-                  onClick={handleSignInTap}
-                  className="w-full gap-2 h-12 text-base"
-                  disabled={loading}
-                >
-                  {savedMethod === 'biometric'
-                    ? <Fingerprint className="w-5 h-5" />
-                    : <LogIn className="w-5 h-5" />}
+                <Button onClick={handleSignInTap} className="w-full gap-2 h-12 text-base" disabled={loading}>
+                  {savedMethod === 'biometric' ? <Fingerprint className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
                   Sign In
-                  {savedMethod === 'biometric' && (
-                    <span className="ml-1 text-xs opacity-70">(Fingerprint)</span>
-                  )}
+                  {savedMethod === 'biometric' && <span className="ml-1 text-xs opacity-70">(Fingerprint)</span>}
                 </Button>
               )}
 
-              {/* ── Biometric: scanning ── */}
               {loginStage === 'biometric-loading' && (
                 <div className="flex flex-col items-center gap-4 py-6">
                   <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
                     <Loader2 className="w-10 h-10 text-primary animate-spin" />
                   </div>
-                  <p className="text-sm text-muted-foreground text-center">
-                    Waiting for fingerprint…
-                  </p>
+                  <p className="text-sm text-muted-foreground text-center">Waiting for fingerprint…</p>
                   <button
                     type="button"
-                    onClick={() => { setSessionBanner(false); setLoginStage('password'); }}
+                    onClick={() => { setBannerReason(null); setLoginStage('password'); }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
                     Use password instead
@@ -284,26 +236,18 @@ export default function Auth() {
                 </div>
               )}
 
-              {/* ── Biometric: hardware error (wrong finger, cancelled) ── */}
               {loginStage === 'biometric-error' && (
                 <div className="flex flex-col items-center gap-4 py-6">
                   <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
                     <Fingerprint className="w-10 h-10 text-destructive" />
                   </div>
-                  <p className="text-sm text-muted-foreground text-center">
-                    Fingerprint not recognised. Try again.
-                  </p>
-                  <Button
-                    onClick={handleSignInTap}
-                    className="w-full gap-2"
-                    disabled={loading}
-                  >
-                    <Fingerprint className="w-4 h-4" />
-                    Try Again
+                  <p className="text-sm text-muted-foreground text-center">Fingerprint not recognised. Try again.</p>
+                  <Button onClick={handleSignInTap} className="w-full gap-2" disabled={loading}>
+                    <Fingerprint className="w-4 h-4" /> Try Again
                   </Button>
                   <button
                     type="button"
-                    onClick={() => { setSessionBanner(false); setLoginStage('password'); }}
+                    onClick={() => { setBannerReason(null); setLoginStage('password'); }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
                     Use password instead
@@ -311,58 +255,34 @@ export default function Auth() {
                 </div>
               )}
 
-              {/* ── Password form ── */}
               {loginStage === 'password' && (
                 <>
-                  {sessionBanner && (
+                  {bannerReason && (
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-700 dark:text-amber-400">
-                        Your biometric session expired. Sign in with your password once — biometric will work automatically from then on.
-                      </p>
+                      <p className="text-xs text-amber-700 dark:text-amber-400">{bannerContent[bannerReason]}</p>
                     </div>
                   )}
-
                   <div>
                     <Label>Email</Label>
-                    <Input
-                      type="email"
-                      placeholder="your@email.com"
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      autoFocus
-                    />
+                    <Input type="email" placeholder="your@email.com" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} autoFocus />
                   </div>
                   <div>
                     <Label>Password</Label>
-                    <Input
-                      type="password"
-                      placeholder="Enter your password"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                    />
+                    <Input type="password" placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
                   </div>
                   <div className="text-left">
-                    <button
-                      type="button"
-                      onClick={handleForgotPassword}
-                      className="text-sm text-primary hover:underline"
-                    >
+                    <button type="button" onClick={handleForgotPassword} className="text-sm text-primary hover:underline">
                       Forgot your password?
                     </button>
                   </div>
-                  <Button
-                    onClick={handleLogin}
-                    className="w-full gap-2"
-                    disabled={loading}
-                  >
+                  <Button onClick={handleLogin} className="w-full gap-2" disabled={loading}>
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
                     Sign In
                   </Button>
                   <button
                     type="button"
-                    onClick={() => { setSessionBanner(false); setLoginStage('idle'); }}
+                    onClick={() => { setBannerReason(null); setLoginStage('idle'); }}
                     className="w-full text-sm text-muted-foreground hover:text-foreground"
                   >
                     ← Back
@@ -373,7 +293,7 @@ export default function Auth() {
               <p className="text-center text-sm text-muted-foreground pt-1">
                 Don't have an account?{' '}
                 <button
-                  onClick={() => { setIsLogin(false); setLoginStage('idle'); setSessionBanner(false); }}
+                  onClick={() => { setIsLogin(false); setLoginStage('idle'); setBannerReason(null); }}
                   className="text-primary hover:underline"
                 >
                   Create one
@@ -381,78 +301,40 @@ export default function Auth() {
               </p>
             </div>
           ) : (
-            /* ─── Register form ─── */
             <div className="space-y-4">
               <h2 className="text-lg font-semibold text-foreground">Create Account</h2>
               <div>
                 <Label>Full Name</Label>
-                <Input
-                  placeholder="Your full name"
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                />
+                <Input placeholder="Your full name" value={regName} onChange={(e) => setRegName(e.target.value)} />
               </div>
               <div>
                 <Label>Email</Label>
-                <Input
-                  type="email"
-                  placeholder="your@email.com"
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                />
+                <Input type="email" placeholder="your@email.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
               </div>
               <div>
                 <Label>Password</Label>
-                <Input
-                  type="password"
-                  placeholder="Create a password"
-                  value={regPassword}
-                  onChange={(e) => setRegPassword(e.target.value)}
-                />
+                <Input type="password" placeholder="Create a password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
               </div>
               <div>
                 <Label>Confirm Password</Label>
-                <Input
-                  type="password"
-                  placeholder="Confirm your password"
-                  value={regConfirmPassword}
-                  onChange={(e) => setRegConfirmPassword(e.target.value)}
-                />
+                <Input type="password" placeholder="Confirm your password" value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} />
               </div>
               <div className="flex items-start gap-2">
-                <Checkbox
-                  id="terms"
-                  checked={agreedToTerms}
-                  onCheckedChange={(checked) => setAgreedToTerms(checked === true)}
-                  className="mt-0.5"
-                />
+                <Checkbox id="terms" checked={agreedToTerms} onCheckedChange={(checked) => setAgreedToTerms(checked === true)} className="mt-0.5" />
                 <label htmlFor="terms" className="text-sm text-muted-foreground">
                   I agree to the{' '}
-                  <a
-                    href="#"
-                    onClick={(e) => { e.preventDefault(); alert('Terms and Conditions will be available soon.'); }}
-                    className="text-primary hover:underline"
-                  >
+                  <a href="#" onClick={(e) => { e.preventDefault(); alert('Terms and Conditions will be available soon.'); }} className="text-primary hover:underline">
                     Terms and Conditions
                   </a>
                 </label>
               </div>
-              <Button
-                onClick={handleRegister}
-                className="w-full gap-2"
-                disabled={loading}
-              >
+              <Button onClick={handleRegister} className="w-full gap-2" disabled={loading}>
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                 Sign Up
               </Button>
               <p className="text-center text-sm text-muted-foreground">
                 Already have an account?{' '}
-                <button
-                  onClick={() => setIsLogin(true)}
-                  className="text-primary hover:underline"
-                >
-                  Sign in
-                </button>
+                <button onClick={() => setIsLogin(true)} className="text-primary hover:underline">Sign in</button>
               </p>
             </div>
           )}
