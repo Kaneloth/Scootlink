@@ -191,64 +191,153 @@ export default function Dashboard() {
   };
 
   const generateContractText = (rental, vehicle, driverProfile) => {
-    const ownerName = user?.full_name || '____________________';
-    const driverName = driverProfile?.full_name || '____________________';
-    const licenseNumber = driverProfile?.license_number || '_______________';
+    const ownerName = user?.full_name || '__________________________________________';
+    const driverName = driverProfile?.full_name || '__________________________________________';
+    const licenseNumber = driverProfile?.license_number || '___________________';
     const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
-    const vType = vehicle?.vehicle_type || vehicle?.type || '____________________';
-    const vMake = vehicle?.make || '____________________';
-    const vModel = vehicle?.model || '____________________';
-    const vYear = vehicle?.year || '____________________';
-    return `VEHICLE RENTAL CONTRACT
+    const vType = vehicle?.vehicle_type || vehicle?.type || '__________________________';
+    const vMake = vehicle?.make || '_________________________';
+    const vModel = vehicle?.model || '________________________';
+    const vYear = vehicle?.year || '_________________________';
+    return `VEHICLE RENTAL AGREEMENT
 
-This vehicle rental contract is entered into on ${today} (Effective date)
+This Vehicle Rental Agreement ("Agreement") is entered into on ${today} (Effective Date),
 
-BETWEEN: ${ownerName} (The owner)
+BETWEEN:
 
-AND: ${driverName} (Driver)
+Owner: ${ownerName}
+ID/Passport No: ___________________________________
+
+AND
+
+Driver (Renter): ${driverName}
+ID/Passport No: ___________________________________
 
 
-1. Vehicle Specifications
+1. VEHICLE DETAILS
 
 Type: ${vType}
 Make: ${vMake}
 Model: ${vModel}
 Year: ${vYear}
-Current Odometer: ____________________
+Current Odometer Reading: __________________
 
 
-2. Rental Terms
+2. RENTAL TERMS
 
-Start date: ${rental.start_date || '________________'}
-End date: ${rental.end_date || '________________'}
-Weekly rate: R ${rental.price_per_week || '____________________'}
-Deposit: R ${rental.deposit || '____________________'}
+Rental Start Date: ${rental.start_date || '__________________'}
+Rental End Date: ${rental.end_date || '__________________'}
+Weekly Rate: R ${rental.price_per_week || '_______________________'}
+Security Deposit: R ${rental.deposit || '__________________'}
 
-
-3. Driver Requirements
-
-The driver must be at least 18 years of age with a valid driver's licence. Must demonstrate the ability to operate the vehicle safely. If the vehicle is a motorbike or scooter, the helmet provided by the owner must be worn at all times and maximum of one rider unless designed for two.
-
-Driver's licence number: ${licenseNumber}
+The security deposit shall be refundable upon return of the vehicle, subject to inspection.
+Any damages, fines, or additional charges will be deducted from the deposit.
 
 
-4. Operating Guidelines
+3. DRIVER REQUIREMENTS
 
-The driver shall at all times observe all the traffic laws and speeding limits. No highway or freeway use for vehicles that are prohibited. Park only in designated areas. No driving/riding under the influence of alcohol. Report accidents or damages immediately.
+The Driver confirms that:
+• They are at least 18 years of age.
+• They hold a valid and legal driver's licence.
+• They are capable of operating the vehicle safely.
 
-Fuel level at start: ____________________
+Driver's Licence Number: ${licenseNumber}
+
+For motorcycles or scooters:
+• A helmet must be worn at all times.
+• Only one rider is permitted unless the vehicle is designed for two riders.
 
 
-5. Owner's Responsibility
+4. USE AND OPERATING CONDITIONS
 
-It is the responsibility of the owner of the vehicle to ensure that the rented vehicle meets all the roadworthiness and safety requirements.
+The Driver agrees to:
+• Comply with all traffic laws and regulations.
+• Observe all speed limits.
+• Not operate the vehicle under the influence of alcohol or drugs.
+• Not use the vehicle on restricted roads where prohibited.
+• Park only in designated and lawful areas.
+• Immediately report any accident, damage, or mechanical issue.
+• Not allow any unauthorised person to operate the vehicle.
+• Not use the vehicle for illegal purposes.
 
-It is the responsibility of the owner to ensure that the rented vehicle is adequately insured and fitted with a functional tracking device.
+
+5. OWNER'S RESPONSIBILITIES
+
+The Owner agrees to:
+• Ensure the vehicle is roadworthy and complies with all legal safety requirements.
+• Provide necessary safety equipment (e.g., helmet where applicable).
+• Maintain valid insurance coverage for the vehicle.
+• Ensure the vehicle is fitted with a functional tracking device (where applicable).
 
 
-6. Liability
+6. LIABILITY AND DAMAGES
 
-The owner of the rented vehicle is not liable for injuries or damages resulting from the use of the vehicle. The driver shall be liable for any traffic fines that may be incurred as a result of his/her failure to adhere to traffic laws. All damages beyond normal wear and tear shall be the responsibility of the driver. This excludes accident damages for which the owner has a responsibility to provide valid insurance coverage.
+• The Driver assumes responsibility for the vehicle during the rental period.
+• The Driver is liable for:
+    – Traffic fines, penalties, and violations;
+    – Damage beyond normal wear and tear.
+• The Owner shall not be liable for injury, loss, or damage resulting from use of the vehicle, except where required by law.
+• Insurance shall cover applicable risks; however, any excess, exclusions, or uncovered costs shall be borne by the Driver.
+
+
+7. RETURN OF VEHICLE
+
+• The vehicle must be returned on or before the rental end date.
+• The vehicle must be returned in the same condition as received, excluding normal wear and tear.
+• Late returns may incur additional charges.
+• The Owner reserves the right to inspect the vehicle upon return.
+
+
+8. TERMINATION
+
+8.1 Termination for Breach
+Either party may terminate this Agreement immediately by written notice if the other party:
+• Breaches any material term; and
+• Fails to remedy such breach within a reasonable period (not exceeding 48 hours) after written notice.
+
+8.2 Owner's Right to Terminate
+The Owner may terminate immediately and reclaim the vehicle if:
+• The vehicle is used illegally or recklessly;
+• The Driver commits serious traffic violations;
+• There is a risk of damage, loss, or theft;
+• The Driver provides false or misleading information.
+
+8.3 Driver's Right to Terminate
+The Driver may terminate immediately if:
+• The vehicle is not roadworthy or safe;
+• The Owner fails to provide valid insurance;
+• The vehicle does not match its description;
+• The Owner fails to fulfil a material obligation.
+
+8.4 Termination for Convenience (No Breach)
+Either party may terminate this Agreement without cause by giving written notice of _______ hours/days.
+• The Driver must return the vehicle by the termination date.
+
+8.5 Financial Consequences of Termination
+• The Owner shall refund any unused rental fees on a pro-rata basis.
+• The deposit shall be refunded subject to deductions for:
+    – Damages;
+    – Outstanding fees or penalties;
+    – Reasonable early termination costs.
+• An early termination fee of __________ (if applicable) may apply.
+
+8.6 Exceptional Circumstances
+Either party may terminate immediately without penalty due to:
+• Medical emergencies;
+• Safety risks;
+• Events beyond reasonable control (force majeure).
+
+8.7 Effects of Termination
+• The vehicle must be returned immediately upon termination.
+• A joint inspection is recommended upon return.
+• Any outstanding liabilities shall remain enforceable after termination.
+
+
+9. GENERAL TERMS
+
+• This Agreement constitutes the entire agreement between the parties.
+• Any amendments must be in writing and agreed to by both parties.
+• This Agreement shall be governed by the laws of ___________________.
 
 
 ___________________________          ___________________________
