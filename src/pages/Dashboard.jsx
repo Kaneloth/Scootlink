@@ -60,6 +60,7 @@ export default function Dashboard() {
   const [contractModal, setContractModal] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState(null);
   const [contractAgreed, setContractAgreed] = useState(false);
+  const [editableContractText, setEditableContractText] = useState('');
 
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
@@ -144,7 +145,7 @@ export default function Dashboard() {
     try {
       const rental = rentals.find(r => r.id === selectedProposal.id);
       if (!rental) return;
-      await Rental.update(rental.id, { status: 'active' });
+      await Rental.update(rental.id, { status: 'active', contract_text: editableContractText });
       await Vehicle.update(rental.vehicle_id, { status: 'rented' });
       toast.success('Rental confirmed! Vehicle assigned.');
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
@@ -190,29 +191,98 @@ export default function Dashboard() {
   };
 
   const generateContractText = (rental, vehicle, driverProfile) => {
-    const ownerName = user?.full_name || 'Owner';
-    const driverName = driverProfile?.full_name || rental.driver_email || 'Driver';
-    const licenseNumber = driverProfile?.license_number || 'Not provided';
+    const ownerName = user?.full_name || '____________________';
+    const driverName = driverProfile?.full_name || '____________________';
+    const licenseNumber = driverProfile?.license_number || '_______________';
     const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
-    return `VEHICLE RENTAL CONTRACT\nEffective Date: ${today}\nBetween: ${ownerName} (Owner) and ${driverName} (Driver)\nVehicle: ${vehicle?.make} ${vehicle?.model} (${vehicle?.year})\nRental Period: ${rental.start_date} – ${rental.end_date}\nWeekly Rate: R ${rental.price_per_week}\nDeposit: R ${rental.deposit}\nDriver's License: ${licenseNumber}\nBoth parties agree to the platform's terms and conditions.`;
+    const vType = vehicle?.vehicle_type || vehicle?.type || '____________________';
+    const vMake = vehicle?.make || '____________________';
+    const vModel = vehicle?.model || '____________________';
+    const vYear = vehicle?.year || '____________________';
+    return `VEHICLE RENTAL CONTRACT
+
+This vehicle rental contract is entered into on ${today} (Effective date)
+
+BETWEEN: ${ownerName} (The owner)
+
+AND: ${driverName} (Driver)
+
+
+1. Vehicle Specifications
+
+Type: ${vType}
+Make: ${vMake}
+Model: ${vModel}
+Year: ${vYear}
+Current Odometer: ____________________
+
+
+2. Rental Terms
+
+Start date: ${rental.start_date || '________________'}
+End date: ${rental.end_date || '________________'}
+Weekly rate: R ${rental.price_per_week || '____________________'}
+Deposit: R ${rental.deposit || '____________________'}
+
+
+3. Driver Requirements
+
+The driver must be at least 18 years of age with a valid driver's licence. Must demonstrate the ability to operate the vehicle safely. If the vehicle is a motorbike or scooter, the helmet provided by the owner must be worn at all times and maximum of one rider unless designed for two.
+
+Driver's licence number: ${licenseNumber}
+
+
+4. Operating Guidelines
+
+The driver shall at all times observe all the traffic laws and speeding limits. No highway or freeway use for vehicles that are prohibited. Park only in designated areas. No driving/riding under the influence of alcohol. Report accidents or damages immediately.
+
+Fuel level at start: ____________________
+
+
+5. Owner's Responsibility
+
+It is the responsibility of the owner of the vehicle to ensure that the rented vehicle meets all the roadworthiness and safety requirements.
+
+It is the responsibility of the owner to ensure that the rented vehicle is adequately insured and fitted with a functional tracking device.
+
+
+6. Liability
+
+The owner of the rented vehicle is not liable for injuries or damages resulting from the use of the vehicle. The driver shall be liable for any traffic fines that may be incurred as a result of his/her failure to adhere to traffic laws. All damages beyond normal wear and tear shall be the responsibility of the driver. This excludes accident damages for which the owner has a responsibility to provide valid insurance coverage.
+
+
+___________________________          ___________________________
+Owner Signature                        Driver Signature
+
+Date: ____________________            Date: ____________________`;
   };
 
   const openContractModal = async (rental, role) => {
     setSelectedProposal(rental);
     setContractAgreed(false);
+
+    // If the rental already has a saved contract draft, load it directly —
+    // no need to regenerate, preserving any edits either party made previously.
+    if (rental.contract_text) {
+      setEditableContractText(rental.contract_text);
+      setSelectedProposal({ ...rental, contractText: rental.contract_text });
+      setContractModal(true);
+      return;
+    }
+
     const vehicle = vehicles.find(v => v.id === rental.vehicle_id) || allVehicles.find(v => v.id === rental.vehicle_id);
+    let text;
     if (role === 'owner' && rental.driver_id) {
       const profile = await fetchDriverProfile(rental.driver_id);
-      const text = generateContractText(rental, vehicle, profile);
-      setSelectedProposal({ ...rental, contractText: text });
+      text = generateContractText(rental, vehicle, profile);
     } else if (role === 'driver') {
       const driverProfile = { full_name: user?.full_name, license_number: user?.license_number };
-      const text = generateContractText(rental, vehicle, driverProfile);
-      setSelectedProposal({ ...rental, contractText: text });
+      text = generateContractText(rental, vehicle, driverProfile);
     } else {
-      const text = generateContractText(rental, vehicle, null);
-      setSelectedProposal({ ...rental, contractText: text });
+      text = generateContractText(rental, vehicle, null);
     }
+    setEditableContractText(text);
+    setSelectedProposal({ ...rental, contractText: text });
     setContractModal(true);
   };
 
@@ -224,6 +294,10 @@ export default function Dashboard() {
 
   const handleAcceptWithContract = async () => {
     if (!contractAgreed || !selectedProposal) return;
+    // Save the (possibly edited) contract text to the rental before accepting
+    try {
+      await Rental.update(selectedProposal.id, { contract_text: editableContractText });
+    } catch { /* non-fatal — acceptance still proceeds */ }
     await handleProposalResponse(selectedProposal.id, 'accept');
     closeContractModal();
   };
@@ -597,20 +671,32 @@ export default function Dashboard() {
       {/* Contract Modal — portal so AppLayout transform/overflow can't clip it */}
       {contractModal && selectedProposal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
-          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border min-h-[70vh] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1 shrink-0">
               <h2 className="text-xl font-bold">Rental Agreement</h2>
               <button onClick={closeContractModal} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
-            <div className="bg-muted p-4 rounded-xl whitespace-pre-wrap text-sm font-mono mb-6">{selectedProposal.contractText}</div>
-            <div className="flex items-start gap-3 mb-4">
+            <p className="text-xs text-muted-foreground mb-3 shrink-0">
+              Both parties can edit this contract freely. Discuss any changes via Messages, then sign once you both agree.
+            </p>
+
+            {/* Editable contract body */}
+            <div className="bg-muted rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0">
+              <textarea
+                className="w-full h-full min-h-[38vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
+                value={editableContractText}
+                onChange={e => setEditableContractText(e.target.value)}
+              />
+            </div>
+
+            <div className="flex items-start gap-3 mb-4 shrink-0">
               <input type="checkbox" id="agree-contract" checked={contractAgreed} onChange={e => setContractAgreed(e.target.checked)}
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
               <label htmlFor="agree-contract" className="text-sm text-muted-foreground">
                 I confirm I have read, understood, and agree to be bound by this Rental Agreement and all its terms.
               </label>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 shrink-0">
               <Button variant="outline" className="flex-1" onClick={closeContractModal}>Cancel</Button>
               <Button className="flex-1" disabled={!contractAgreed}
                 onClick={() => {
