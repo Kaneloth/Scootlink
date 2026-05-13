@@ -1,36 +1,33 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { auth } from '@/api/supabaseData';
-import { supabase } from '@/api/supabaseClient';
+import { auth, supabase } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, Send, MessageCircle, User, Loader2, Plus, Lock, Copy, Trash2, Trash } from 'lucide-react';
+import {
+  ArrowLeft, Send, MessageCircle, User, Loader2, Plus, Lock,
+  Copy, Trash2, Trash, Check, CheckCheck, Clock, AlertCircle,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 // ── localStorage helpers for client-side "delete for me" ─────────────────────
-const HIDDEN_KEY = (userId) => `scootlink_hidden_msgs_${userId}`;
-const HIDDEN_CHATS_KEY = (userId) => `scootlink_hidden_chats_${userId}`;
+const HIDDEN_KEY       = (uid) => `scootlink_hidden_msgs_${uid}`;
+const HIDDEN_CHATS_KEY = (uid) => `scootlink_hidden_chats_${uid}`;
 
-const getHiddenMsgs = (userId) => {
-  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY(userId)) || '[]')); }
-  catch { return new Set(); }
-};
-const addHiddenMsg = (userId, msgId) => {
-  const s = getHiddenMsgs(userId);
-  s.add(msgId);
-  localStorage.setItem(HIDDEN_KEY(userId), JSON.stringify([...s]));
-};
-const getHiddenChats = (userId) => {
-  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_CHATS_KEY(userId)) || '[]')); }
-  catch { return new Set(); }
-};
-const addHiddenChat = (userId, otherUserId) => {
-  const s = getHiddenChats(userId);
-  s.add(otherUserId);
-  localStorage.setItem(HIDDEN_CHATS_KEY(userId), JSON.stringify([...s]));
-};
+const getHiddenMsgs   = (uid) => { try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY(uid))       || '[]')); } catch { return new Set(); } };
+const getHiddenChats  = (uid) => { try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_CHATS_KEY(uid)) || '[]')); } catch { return new Set(); } };
+const addHiddenMsg    = (uid, id)  => { const s = getHiddenMsgs(uid);  s.add(id);  localStorage.setItem(HIDDEN_KEY(uid),       JSON.stringify([...s])); };
+const addHiddenChat   = (uid, oid) => { const s = getHiddenChats(uid); s.add(oid); localStorage.setItem(HIDDEN_CHATS_KEY(uid), JSON.stringify([...s])); };
+
+// ── Status icon shown on sent messages ───────────────────────────────────────
+function MsgStatus({ status }) {
+  if (status === 'sending') return <Clock     className="w-3 h-3 opacity-60 inline ml-1" />;
+  if (status === 'failed')  return <AlertCircle className="w-3 h-3 text-red-400 inline ml-1" />;
+  if (status === 'sent')    return <Check      className="w-3 h-3 opacity-70 inline ml-1" />;
+  // delivered (real DB message, no temp status)
+  return                           <CheckCheck  className="w-3 h-3 opacity-70 inline ml-1" />;
+}
 
 // ── Skeletons ─────────────────────────────────────────────────────────────────
 function ConversationSkeleton() {
@@ -56,7 +53,7 @@ function MessagesSkeleton() {
   return (
     <div className="space-y-3 mb-4">
       {[{ w: '55%', side: 'end' }, { w: '70%', side: 'start' }, { w: '45%', side: 'end' }, { w: '60%', side: 'start' }].map((s, i) => (
-        <div key={i} className={`flex justify-${s.side}`}>
+        <div key={i} className={`flex w-full justify-${s.side}`}>
           <div className="h-10 rounded-xl bg-muted animate-pulse" style={{ width: s.w }} />
         </div>
       ))}
@@ -64,34 +61,23 @@ function MessagesSkeleton() {
   );
 }
 
-// ── Context menu (bottom sheet) ───────────────────────────────────────────────
+// ── Context menu bottom sheet ─────────────────────────────────────────────────
 function ContextMenu({ menu, onClose, onAction }) {
   if (!menu) return null;
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40"
-      onClick={onClose}
-    >
-      <div
-        className="bg-card rounded-t-2xl w-full max-w-lg p-2 pb-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-card rounded-t-2xl w-full max-w-lg p-2 pb-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         {menu.options.map((opt) => (
           <button
             key={opt.action}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium transition-colors hover:bg-accent active:bg-accent ${
-              opt.destructive ? 'text-destructive' : 'text-foreground'
-            }`}
+            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium transition-colors hover:bg-accent active:bg-accent ${opt.destructive ? 'text-destructive' : 'text-foreground'}`}
             onClick={() => { onAction(opt.action); onClose(); }}
           >
             {opt.icon}
             {opt.label}
           </button>
         ))}
-        <button
-          className="w-full mt-1 px-4 py-3.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-accent"
-          onClick={onClose}
-        >
+        <button className="w-full mt-1 px-4 py-3.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-accent" onClick={onClose}>
           Cancel
         </button>
       </div>
@@ -101,29 +87,38 @@ function ContextMenu({ menu, onClose, onAction }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Messages() {
-  const navigate = useNavigate();
+  const navigate       = useNavigate();
   const [searchParams] = useSearchParams();
-  const urlUserId = searchParams.get('userId');
+  const urlUserId      = searchParams.get('userId');
 
-  const [user, setUser]                         = useState(null);
-  const [conversations, setConversations]       = useState([]);
-  const [selectedChat, setSelectedChat]         = useState(null);
-  const [messages, setMessages]                 = useState([]);
-  const [newMessage, setNewMessage]             = useState('');
-  const [subject, setSubject]                   = useState('');
-  const [loading, setLoading]                   = useState(false);
-  const [newChatEmail, setNewChatEmail]         = useState('');
-  const [startNewChat, setStartNewChat]         = useState(false);
+  const [user, setUser]                               = useState(null);
+  const [conversations, setConversations]             = useState([]);
+  const [selectedChat, setSelectedChat]               = useState(null);
+  const [messages, setMessages]                       = useState([]);
+  const [newMessage, setNewMessage]                   = useState('');
+  const [subject, setSubject]                         = useState('');
+  const [loading, setLoading]                         = useState(false);
+  const [newChatEmail, setNewChatEmail]               = useState('');
+  const [startNewChat, setStartNewChat]               = useState(false);
   const [conversationsLoading, setConversationsLoading] = useState(true);
-  const [chatLoading, setChatLoading]           = useState(false);
-  const [contextMenu, setContextMenu]           = useState(null); // { options: [], target }
-  const [hiddenMsgs, setHiddenMsgs]             = useState(new Set());
-  const [hiddenChats, setHiddenChats]           = useState(new Set());
+  const [chatLoading, setChatLoading]                 = useState(false);
+  const [contextMenu, setContextMenu]                 = useState(null);
+  const [hiddenMsgs, setHiddenMsgs]                   = useState(new Set());
+  const [hiddenChats, setHiddenChats]                 = useState(new Set());
 
-  const subscriptionRef = useRef(null);
+  // Refs so realtime callbacks always see the current values (fixes stale closure)
+  const userRef         = useRef(null);
+  const selectedChatRef = useRef(null);
   const longPressTimer  = useRef(null);
+  const messagesEndRef  = useRef(null);
 
-  // ── Load user + hidden lists ─────────────────────────────────────────────
+  useEffect(() => { userRef.current = user; },         [user]);
+  useEffect(() => { selectedChatRef.current = selectedChat; }, [selectedChat]);
+
+  // Auto-scroll to latest message
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  // ── Load user ────────────────────────────────────────────────────────────
   useEffect(() => {
     auth.me().then((u) => {
       setUser(u);
@@ -136,113 +131,130 @@ export default function Messages() {
 
   // ── Conversations ────────────────────────────────────────────────────────
   const fetchConversations = useCallback(async () => {
-    if (!user) return;
+    const u = userRef.current;
+    if (!u) return;
     try {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
-        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .or(`sender_id.eq.${u.id},receiver_id.eq.${u.id}`)
         .order('created_at', { ascending: false });
 
       if (error) { console.error(error); return; }
 
       const otherIds = new Set();
       data.forEach((msg) => {
-        const otherId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
-        otherIds.add(otherId);
+        otherIds.add(msg.sender_id === u.id ? msg.receiver_id : msg.sender_id);
       });
 
       const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', Array.from(otherIds));
+        .from('profiles').select('id, full_name').in('id', Array.from(otherIds));
 
       const nameMap = {};
       profiles?.forEach((p) => { nameMap[p.id] = p.full_name || 'User'; });
 
       const grouped = {};
       data.forEach((msg) => {
-        const otherId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
+        const otherId = msg.sender_id === u.id ? msg.receiver_id : msg.sender_id;
         if (!grouped[otherId]) {
           grouped[otherId] = {
-            otherUserId: otherId,
+            otherUserId:  otherId,
             otherUserName: nameMap[otherId] || 'User',
-            lastMessage: msg.body,
-            unread: !msg.read && msg.receiver_id === user.id,
-            lastTime: msg.created_at,
+            lastMessage:  msg.body,
+            unread:       !msg.read && msg.receiver_id === u.id,
+            lastTime:     msg.created_at,
           };
         }
       });
 
-      const currentHiddenChats = getHiddenChats(user.id);
-      setConversations(
-        Object.values(grouped).filter((c) => !currentHiddenChats.has(c.otherUserId))
-      );
+      const currentHiddenChats = getHiddenChats(u.id);
+      setConversations(Object.values(grouped).filter((c) => !currentHiddenChats.has(c.otherUserId)));
     } catch (err) {
       console.error(err);
     } finally {
       setConversationsLoading(false);
     }
-  }, [user]);
+  }, []); // intentionally empty — uses userRef to avoid stale closure
 
-  useEffect(() => { fetchConversations(); }, [fetchConversations]);
+  useEffect(() => { if (user) fetchConversations(); }, [user, fetchConversations]);
 
   // Auto-open from URL param
   useEffect(() => {
     if (urlUserId && user && user.id !== urlUserId) openChat(urlUserId);
   }, [urlUserId, user]);
 
-  // ── Realtime ─────────────────────────────────────────────────────────────
+  // ── Realtime subscription — uses refs to avoid stale closures ────────────
   useEffect(() => {
     if (!user) return;
-    const subscription = supabase
-      .channel('messages-channel')
+
+    const channel = supabase
+      .channel(`messages-channel-${user.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
-        (payload) => handleRealtimeMessage(payload.new))
+        (payload) => handleRealtimeInsert(payload.new))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
-        (payload) => handleRealtimeMessage(payload.new))
+        (payload) => handleRealtimeInsert(payload.new))
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' },
-        () => { fetchConversations(); setMessages((prev) => prev.filter(() => true)); })
+        () => fetchConversations())
       .subscribe();
 
-    subscriptionRef.current = subscription;
-    return () => supabase.removeChannel(subscription);
+    return () => supabase.removeChannel(channel);
   }, [user]);
 
-  const handleRealtimeMessage = async (msg) => {
-    if (selectedChat) {
-      if (
-        (msg.sender_id === user.id && msg.receiver_id === selectedChat.otherUserId) ||
-        (msg.receiver_id === user.id && msg.sender_id === selectedChat.otherUserId)
-      ) {
-        setMessages((prev) => [...prev, msg]);
-        if (msg.receiver_id === user.id) {
+  const handleRealtimeInsert = async (msg) => {
+    const u    = userRef.current;
+    const chat = selectedChatRef.current;
+
+    if (chat) {
+      const belongsToChat =
+        (msg.sender_id === u?.id && msg.receiver_id === chat.otherUserId) ||
+        (msg.receiver_id === u?.id && msg.sender_id === chat.otherUserId);
+
+      if (belongsToChat) {
+        setMessages((prev) => {
+          // Replace matching optimistic message (same body + no real id yet)
+          // or skip if exact id already present (dedup)
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          // Replace optimistic temp message if it matches
+          const tempIdx = prev.findIndex(
+            (m) => m._temp && m.sender_id === u?.id && m.body === msg.body && m.receiver_id === chat.otherUserId
+          );
+          if (tempIdx !== -1) {
+            const next = [...prev];
+            next[tempIdx] = msg; // swap temp for real
+            return next;
+          }
+          return [...prev, msg];
+        });
+
+        // Mark as read if we're the receiver
+        if (msg.receiver_id === u?.id) {
           await supabase.from('messages').update({ read: true }).eq('id', msg.id);
         }
       }
     }
+
     fetchConversations();
   };
 
   // ── Open chat ────────────────────────────────────────────────────────────
   const openChat = async (otherUserId) => {
-    if (!user) return;
+    const u = userRef.current;
+    if (!u) return;
     setChatLoading(true);
 
     const { data: profile } = await supabase
       .from('profiles').select('full_name, email').eq('id', otherUserId).single();
-
     const otherUserName = profile?.full_name || profile?.email || 'User';
 
     const { data, error } = await supabase
       .from('messages')
       .select('*')
-      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`)
+      .or(`and(sender_id.eq.${u.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${u.id})`)
       .order('created_at', { ascending: true });
 
     if (error) { console.error(error); setChatLoading(false); return; }
 
-    const unreadIds = data.filter((m) => m.receiver_id === user.id && !m.read).map((m) => m.id);
+    const unreadIds = data.filter((m) => m.receiver_id === u.id && !m.read).map((m) => m.id);
     if (unreadIds.length > 0) {
       await supabase.from('messages').update({ read: true }).in('id', unreadIds);
     }
@@ -254,23 +266,57 @@ export default function Messages() {
 
   const closeChat = () => setSelectedChat(null);
 
-  // ── Send ─────────────────────────────────────────────────────────────────
-  const isAdmin  = ['kanelothelejane@gmail.com'].includes(user?.email);
+  // ── Send — with optimistic update ────────────────────────────────────────
+  const isAdmin    = ['kanelothelejane@gmail.com'].includes(user?.email);
   const canMessage = isAdmin || (user?.subscription_active && user?.verified);
 
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedChat) return;
     if (!canMessage) { toast.warning('You need an active subscription and verification to send messages'); return; }
-    setLoading(true);
-    const { error } = await supabase.from('messages').insert([{
-      sender_id: user.id,
+
+    const tempId      = `temp-${Date.now()}`;
+    const msgBody     = newMessage.trim();
+    const msgSubject  = subject || null;
+
+    // Optimistically add message immediately so the user sees it right away
+    const optimistic = {
+      id:          tempId,
+      _temp:       true,
+      _status:     'sending',
+      sender_id:   user.id,
       receiver_id: selectedChat.otherUserId,
-      subject: subject || null,
-      body: newMessage.trim(),
-    }]);
-    if (error) toast.error('Failed to send message');
-    else { setNewMessage(''); setSubject(''); }
+      subject:     msgSubject,
+      body:        msgBody,
+      created_at:  new Date().toISOString(),
+      read:        false,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    setNewMessage('');
+    setSubject('');
+
+    setLoading(true);
+    const { data: inserted, error } = await supabase
+      .from('messages')
+      .insert([{ sender_id: user.id, receiver_id: selectedChat.otherUserId, subject: msgSubject, body: msgBody }])
+      .select()
+      .single();
     setLoading(false);
+
+    if (error) {
+      // Mark optimistic as failed
+      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, _status: 'failed' } : m));
+      toast.error('Message failed to send. Check your connection.');
+    } else if (inserted) {
+      // Replace optimistic with real DB message
+      setMessages((prev) => prev.map((m) => m.id === tempId ? inserted : m));
+    }
+  };
+
+  // Retry a failed message
+  const handleRetry = async (failedMsg) => {
+    setMessages((prev) => prev.filter((m) => m.id !== failedMsg.id));
+    setNewMessage(failedMsg.body);
+    if (failedMsg.subject) setSubject(failedMsg.subject);
   };
 
   // ── New chat ──────────────────────────────────────────────────────────────
@@ -309,62 +355,47 @@ export default function Messages() {
   };
 
   const handleCopy = (text) => {
-    navigator.clipboard?.writeText(text).then(() => toast.success('Copied!')).catch(() => toast.error('Copy failed'));
+    navigator.clipboard?.writeText(text)
+      .then(() => toast.success('Copied!'))
+      .catch(() => toast.error('Copy failed'));
   };
 
   // ── Long-press helpers ────────────────────────────────────────────────────
-  const startLongPress = (callback) => (e) => {
-    e.preventDefault();
-    longPressTimer.current = setTimeout(callback, 480);
+  const startLongPress = (cb) => (e) => {
+    longPressTimer.current = setTimeout(cb, 480);
   };
   const cancelLongPress = () => clearTimeout(longPressTimer.current);
 
   const showMessageMenu = (msg) => {
     const isMine = msg.sender_id === user.id;
-    const options = [
-      {
-        action: 'copy',
-        label: 'Copy message',
-        icon: <Copy className="w-4 h-4" />,
-        destructive: false,
-      },
-      {
-        action: 'delete_for_me',
-        label: 'Delete for me',
-        icon: <Trash className="w-4 h-4" />,
-        destructive: true,
-      },
-      ...(isMine ? [{
-        action: 'delete_for_everyone',
-        label: 'Delete for everyone',
-        icon: <Trash2 className="w-4 h-4" />,
-        destructive: true,
-      }] : []),
-    ];
-    setContextMenu({ type: 'message', msg, options });
+    setContextMenu({
+      type: 'message', msg,
+      options: [
+        { action: 'copy',                label: 'Copy message',         icon: <Copy     className="w-4 h-4" />, destructive: false },
+        { action: 'delete_for_me',       label: 'Delete for me',        icon: <Trash    className="w-4 h-4" />, destructive: true  },
+        ...(isMine ? [{ action: 'delete_for_everyone', label: 'Delete for everyone', icon: <Trash2   className="w-4 h-4" />, destructive: true }] : []),
+      ],
+    });
   };
 
   const showConvMenu = (conv) => {
-    const options = [
-      {
-        action: 'delete_chat',
-        label: 'Delete chat',
-        icon: <Trash2 className="w-4 h-4" />,
-        destructive: true,
-      },
-    ];
-    setContextMenu({ type: 'conversation', conv, options });
+    setContextMenu({
+      type: 'conversation', conv,
+      options: [
+        { action: 'delete_chat', label: 'Delete chat', icon: <Trash2 className="w-4 h-4" />, destructive: true },
+      ],
+    });
   };
 
   const handleMenuAction = (action) => {
     if (!contextMenu) return;
-    if (action === 'copy')               handleCopy(contextMenu.msg?.body);
-    if (action === 'delete_for_me')      handleDeleteForMe(contextMenu.msg?.id);
+    if (action === 'copy')                handleCopy(contextMenu.msg?.body);
+    if (action === 'delete_for_me')       handleDeleteForMe(contextMenu.msg?.id);
     if (action === 'delete_for_everyone') handleDeleteForEveryone(contextMenu.msg?.id);
-    if (action === 'delete_chat')        handleDeleteChat(contextMenu.conv?.otherUserId);
+    if (action === 'delete_chat')         handleDeleteChat(contextMenu.conv?.otherUserId);
   };
 
-  // ── Visible messages (filter hidden) ─────────────────────────────────────
+  // ── Visible messages ──────────────────────────────────────────────────────
   const visibleMessages = messages.filter((m) => !hiddenMsgs.has(m.id));
 
   if (!user) {
@@ -377,12 +408,7 @@ export default function Messages() {
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
-      {/* Context menu bottom sheet */}
-      <ContextMenu
-        menu={contextMenu}
-        onClose={() => setContextMenu(null)}
-        onAction={handleMenuAction}
-      />
+      <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} onAction={handleMenuAction} />
 
       {!selectedChat && (
         <button
@@ -465,13 +491,12 @@ export default function Messages() {
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div>
+            <div className="flex-1">
               <h2 className="text-xl font-bold text-foreground">Chat</h2>
               <p className="text-xs text-muted-foreground">{selectedChat.otherUserName}</p>
             </div>
-            {/* Delete whole chat from within conversation */}
             <button
-              className="ml-auto text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 py-2 px-2 rounded-lg hover:bg-destructive/10"
+              className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 py-2 px-2 rounded-lg hover:bg-destructive/10"
               onClick={() => {
                 if (window.confirm('Delete this chat from your inbox?')) {
                   handleDeleteChat(selectedChat.otherUserId);
@@ -487,29 +512,59 @@ export default function Messages() {
             {chatLoading ? (
               <MessagesSkeleton />
             ) : (
-              visibleMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex select-none ${msg.sender_id === user.id ? 'justify-end' : 'justify-start'}`}
-                  onContextMenu={(e) => { e.preventDefault(); showMessageMenu(msg); }}
-                  onTouchStart={startLongPress(() => showMessageMenu(msg))}
-                  onTouchEnd={cancelLongPress}
-                  onTouchMove={cancelLongPress}
-                >
-                  <div className={`max-w-[75%] p-3 rounded-xl ${msg.sender_id === user.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border/50'}`}>
-                    {msg.subject && <p className="text-xs font-medium mb-1">{msg.subject}</p>}
-                    <p className="text-sm">{msg.body}</p>
-                    <p className="text-[10px] mt-1 opacity-70">{new Date(msg.created_at).toLocaleString()}</p>
+              visibleMessages.map((msg) => {
+                const isMine  = msg.sender_id === user.id;
+                const isFailed = msg._status === 'failed';
+
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex w-full select-none ${isMine ? 'justify-end' : 'justify-start'}`}
+                    onContextMenu={(e) => { e.preventDefault(); if (!msg._temp) showMessageMenu(msg); }}
+                    onTouchStart={startLongPress(() => { if (!msg._temp) showMessageMenu(msg); })}
+                    onTouchEnd={cancelLongPress}
+                    onTouchMove={cancelLongPress}
+                  >
+                    <div className={`max-w-[75%] p-3 rounded-xl ${
+                      isMine
+                        ? isFailed
+                          ? 'bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700'
+                          : 'bg-primary text-primary-foreground opacity-' + (msg._status === 'sending' ? '60' : '100')
+                        : 'bg-card border border-border/50'
+                    }`}>
+                      {msg.subject && <p className="text-xs font-medium mb-1">{msg.subject}</p>}
+                      <p className="text-sm">{msg.body}</p>
+                      <div className={`flex items-center justify-end gap-1 mt-1 ${isMine ? 'opacity-70' : 'opacity-50'}`}>
+                        <span className="text-[10px]">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        {isMine && <MsgStatus status={msg._status} />}
+                      </div>
+                      {isFailed && (
+                        <button
+                          className="text-[10px] text-red-500 underline mt-1"
+                          onClick={() => handleRetry(msg)}
+                        >
+                          Tap to retry
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
+            <div ref={messagesEndRef} />
           </div>
 
           {canMessage ? (
             <div className="border-t border-border pt-4">
               <Input className="mb-2" placeholder="Subject (optional)" value={subject} onChange={(e) => setSubject(e.target.value)} />
-              <Textarea placeholder="Type your message…" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} rows={2} className="mb-2" />
+              <Textarea
+                placeholder="Type your message…"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                rows={2}
+                className="mb-2"
+              />
               <Button onClick={handleSend} disabled={!newMessage.trim() || loading} className="w-full gap-2">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 {loading ? 'Sending…' : 'Send'}
