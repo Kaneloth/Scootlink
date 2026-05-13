@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
 import { auth, Vehicle, Rental, supabase } from '@/api/supabaseData';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -545,9 +546,10 @@ export default function Dashboard() {
         />
       )}
 
-      {/* Driver Detail Modal */}
-      {selectedDriver && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setSelectedDriver(null)}>
+      {/* Driver Detail Modal — rendered via portal so the AppLayout transform/overflow
+          never clips or repositions it. Portals attach directly to document.body. */}
+      {selectedDriver && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={() => setSelectedDriver(null)}>
           <div className="bg-card rounded-2xl shadow-xl max-w-md w-full p-6 border border-border" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Driver Profile</h2>
@@ -588,7 +590,8 @@ export default function Dashboard() {
               <MessageCircle className="w-4 h-4" /> Message {selectedDriver.full_name?.split(' ')[0]}
             </Button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Contract Modal */}
