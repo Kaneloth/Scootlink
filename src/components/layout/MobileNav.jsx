@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Search, MapPin, Wallet, Settings, MessageCircle } from 'lucide-react';
-import { auth, supabase } from '@/api/supabaseData';
+import { supabase } from '@/api/supabaseClient';
 
 const baseItems = [
   { label: 'Home',     icon: LayoutDashboard, path: '/'                },
@@ -13,60 +13,65 @@ const baseItems = [
 ];
 
 export default function MobileNav() {
-  const location = useLocation();
-  const [accountType, setAccountType]   = useState('driver');
-  const [unreadCount, setUnreadCount]   = useState(0);
-  const userIdRef                        = useRef(null);
+  const location                          = useLocation();
+  const [accountType, setAccountType]     = useState('driver');
+  const [unreadCount, setUnreadCount]     = useState(0);
+  const userIdRef                          = useRef(null);
 
-  // ── Resolve account type ───────────────────────────────────────────────────
+  // ── Resolve user ID and account type from Supabase auth directly ──────────
   useEffect(() => {
-    auth.me().then(user => {
-      setAccountType(user?.subscription_plan || 'driver');
-      userIdRef.current = user?.id ?? null;
-      if (user?.id) fetchUnreadCount(user.id);
-    }).catch(() => {});
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      userIdRef.current = user.id;
+      const plan = user.user_metadata?.subscription_plan;
+      if (plan) setAccountType(plan);
+      fetchUnreadCount(user.id);
+    });
   }, []);
 
+  // Keep account type in sync with auth state changes
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
+        userIdRef.current = session.user.id;
         const plan = session.user.user_metadata?.subscription_plan;
         if (plan) setAccountType(plan);
-        userIdRef.current = session.user.id;
         fetchUnreadCount(session.user.id);
       }
     });
     return () => subscription?.unsubscribe();
   }, []);
 
-  // ── Unread count: initial fetch ────────────────────────────────────────────
+  // ── Unread count fetch ────────────────────────────────────────────────────
   const fetchUnreadCount = async (userId) => {
     if (!userId) return;
-    const { count, error } = await supabase
+    const { data, error } = await supabase
       .from('messages')
-      .select('id', { count: 'exact', head: true })
+      .select('id')
       .eq('receiver_id', userId)
       .eq('read', false);
-    if (!error) setUnreadCount(count ?? 0);
+    if (!error) setUnreadCount(data?.length ?? 0);
   };
 
-  // ── Unread count: realtime subscription ───────────────────────────────────
+  // ── Realtime: refresh count on any message insert or update ──────────────
   useEffect(() => {
     const channel = supabase
-      .channel('unread-messages-badge')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'messages' },
-        () => {
-          if (userIdRef.current) fetchUnreadCount(userIdRef.current);
-        }
-      )
+      .channel('mobilenav-unread-badge')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+        if (userIdRef.current) fetchUnreadCount(userIdRef.current);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, () => {
+        if (userIdRef.current) fetchUnreadCount(userIdRef.current);
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, () => {
+        if (userIdRef.current) fetchUnreadCount(userIdRef.current);
+      })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // ── Re-fetch when navigating away from /messages (marks as read there) ────
+  // ── Re-fetch whenever route changes (opening /messages marks as read) ─────
   useEffect(() => {
     if (userIdRef.current) fetchUnreadCount(userIdRef.current);
   }, [location.pathname]);
@@ -84,8 +89,8 @@ export default function MobileNav() {
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-lg border-t border-border z-50 safe-area-bottom">
       <div className="flex justify-around items-center py-2 px-2">
         {navItems.map((item) => {
-          const isActive   = location.pathname === item.path;
-          const showBadge  = item.label === 'Messages' && unreadCount > 0;
+          const isActive  = location.pathname === item.path;
+          const showBadge = item.label === 'Messages' && unreadCount > 0;
 
           return (
             <Link
@@ -98,7 +103,7 @@ export default function MobileNav() {
               <span className="relative">
                 <item.icon className={`w-5 h-5 ${isActive ? 'stroke-[2.5]' : ''}`} />
                 {showBadge && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-0.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold leading-none">
+                  <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-0.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold leading-none">
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}
