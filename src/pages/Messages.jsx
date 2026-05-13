@@ -6,10 +6,33 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, Send, MessageCircle, User, Loader2, Plus, Lock } from 'lucide-react';
+import { ArrowLeft, Send, MessageCircle, User, Loader2, Plus, Lock, Copy, Trash2, Trash } from 'lucide-react';
 import { toast } from 'sonner';
 
-// Skeleton row shown while conversations are loading
+// ── localStorage helpers for client-side "delete for me" ─────────────────────
+const HIDDEN_KEY = (userId) => `scootlink_hidden_msgs_${userId}`;
+const HIDDEN_CHATS_KEY = (userId) => `scootlink_hidden_chats_${userId}`;
+
+const getHiddenMsgs = (userId) => {
+  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY(userId)) || '[]')); }
+  catch { return new Set(); }
+};
+const addHiddenMsg = (userId, msgId) => {
+  const s = getHiddenMsgs(userId);
+  s.add(msgId);
+  localStorage.setItem(HIDDEN_KEY(userId), JSON.stringify([...s]));
+};
+const getHiddenChats = (userId) => {
+  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_CHATS_KEY(userId)) || '[]')); }
+  catch { return new Set(); }
+};
+const addHiddenChat = (userId, otherUserId) => {
+  const s = getHiddenChats(userId);
+  s.add(otherUserId);
+  localStorage.setItem(HIDDEN_CHATS_KEY(userId), JSON.stringify([...s]));
+};
+
+// ── Skeletons ─────────────────────────────────────────────────────────────────
 function ConversationSkeleton() {
   return (
     <div className="space-y-2">
@@ -29,49 +52,89 @@ function ConversationSkeleton() {
   );
 }
 
-// Skeleton bubbles shown while a conversation's messages are loading
 function MessagesSkeleton() {
   return (
     <div className="space-y-3 mb-4">
       {[{ w: '55%', side: 'end' }, { w: '70%', side: 'start' }, { w: '45%', side: 'end' }, { w: '60%', side: 'start' }].map((s, i) => (
         <div key={i} className={`flex justify-${s.side}`}>
-          <div
-            className="h-10 rounded-xl bg-muted animate-pulse"
-            style={{ width: s.w }}
-          />
+          <div className="h-10 rounded-xl bg-muted animate-pulse" style={{ width: s.w }} />
         </div>
       ))}
     </div>
   );
 }
 
+// ── Context menu (bottom sheet) ───────────────────────────────────────────────
+function ContextMenu({ menu, onClose, onAction }) {
+  if (!menu) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card rounded-t-2xl w-full max-w-lg p-2 pb-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {menu.options.map((opt) => (
+          <button
+            key={opt.action}
+            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium transition-colors hover:bg-accent active:bg-accent ${
+              opt.destructive ? 'text-destructive' : 'text-foreground'
+            }`}
+            onClick={() => { onAction(opt.action); onClose(); }}
+          >
+            {opt.icon}
+            {opt.label}
+          </button>
+        ))}
+        <button
+          className="w-full mt-1 px-4 py-3.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-accent"
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export default function Messages() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const urlUserId = searchParams.get('userId');
 
-  const [user, setUser] = useState(null);
-  const [conversations, setConversations] = useState([]);
-  const [selectedChat, setSelectedChat] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [subject, setSubject] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [newChatEmail, setNewChatEmail] = useState('');
-  const [startNewChat, setStartNewChat] = useState(false);
-
-  // Loading states
+  const [user, setUser]                         = useState(null);
+  const [conversations, setConversations]       = useState([]);
+  const [selectedChat, setSelectedChat]         = useState(null);
+  const [messages, setMessages]                 = useState([]);
+  const [newMessage, setNewMessage]             = useState('');
+  const [subject, setSubject]                   = useState('');
+  const [loading, setLoading]                   = useState(false);
+  const [newChatEmail, setNewChatEmail]         = useState('');
+  const [startNewChat, setStartNewChat]         = useState(false);
   const [conversationsLoading, setConversationsLoading] = useState(true);
-  const [chatLoading, setChatLoading] = useState(false);
+  const [chatLoading, setChatLoading]           = useState(false);
+  const [contextMenu, setContextMenu]           = useState(null); // { options: [], target }
+  const [hiddenMsgs, setHiddenMsgs]             = useState(new Set());
+  const [hiddenChats, setHiddenChats]           = useState(new Set());
 
   const subscriptionRef = useRef(null);
+  const longPressTimer  = useRef(null);
 
-  // Get current user
+  // ── Load user + hidden lists ─────────────────────────────────────────────
   useEffect(() => {
-    auth.me().then(setUser).catch(() => {});
+    auth.me().then((u) => {
+      setUser(u);
+      if (u?.id) {
+        setHiddenMsgs(getHiddenMsgs(u.id));
+        setHiddenChats(getHiddenChats(u.id));
+      }
+    }).catch(() => {});
   }, []);
 
-  // Fetch all messages and group by conversation, then fetch names
+  // ── Conversations ────────────────────────────────────────────────────────
   const fetchConversations = useCallback(async () => {
     if (!user) return;
     try {
@@ -81,32 +144,21 @@ export default function Messages() {
         .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error(error);
-        return;
-      }
+      if (error) { console.error(error); return; }
 
-      // Collect unique other user IDs
       const otherIds = new Set();
       data.forEach((msg) => {
         const otherId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
         otherIds.add(otherId);
       });
 
-      // Fetch names of all other users in one query
-      const { data: profiles, error: profileError } = await supabase
+      const { data: profiles } = await supabase
         .from('profiles')
         .select('id, full_name')
         .in('id', Array.from(otherIds));
 
-      if (profileError) console.error(profileError);
-
       const nameMap = {};
-      if (profiles) {
-        profiles.forEach((p) => {
-          nameMap[p.id] = p.full_name || 'User';
-        });
-      }
+      profiles?.forEach((p) => { nameMap[p.id] = p.full_name || 'User'; });
 
       const grouped = {};
       data.forEach((msg) => {
@@ -122,7 +174,10 @@ export default function Messages() {
         }
       });
 
-      setConversations(Object.values(grouped));
+      const currentHiddenChats = getHiddenChats(user.id);
+      setConversations(
+        Object.values(grouped).filter((c) => !currentHiddenChats.has(c.otherUserId))
+      );
     } catch (err) {
       console.error(err);
     } finally {
@@ -130,40 +185,28 @@ export default function Messages() {
     }
   }, [user]);
 
-  useEffect(() => {
-    fetchConversations();
-  }, [fetchConversations]);
+  useEffect(() => { fetchConversations(); }, [fetchConversations]);
 
-  // Auto-open chat from URL parameter
+  // Auto-open from URL param
   useEffect(() => {
-    if (urlUserId && user && user.id !== urlUserId) {
-      openChat(urlUserId);
-    }
+    if (urlUserId && user && user.id !== urlUserId) openChat(urlUserId);
   }, [urlUserId, user]);
 
-  // Real-time subscription
+  // ── Realtime ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
-
     const subscription = supabase
       .channel('messages-channel')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
-        (payload) => handleRealtimeMessage(payload.new)
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
-        (payload) => handleRealtimeMessage(payload.new)
-      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
+        (payload) => handleRealtimeMessage(payload.new))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
+        (payload) => handleRealtimeMessage(payload.new))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' },
+        () => { fetchConversations(); setMessages((prev) => prev.filter(() => true)); })
       .subscribe();
 
     subscriptionRef.current = subscription;
-
-    return () => {
-      supabase.removeChannel(subscription);
-    };
+    return () => supabase.removeChannel(subscription);
   }, [user]);
 
   const handleRealtimeMessage = async (msg) => {
@@ -173,7 +216,6 @@ export default function Messages() {
         (msg.receiver_id === user.id && msg.sender_id === selectedChat.otherUserId)
       ) {
         setMessages((prev) => [...prev, msg]);
-
         if (msg.receiver_id === user.id) {
           await supabase.from('messages').update({ read: true }).eq('id', msg.id);
         }
@@ -182,15 +224,13 @@ export default function Messages() {
     fetchConversations();
   };
 
+  // ── Open chat ────────────────────────────────────────────────────────────
   const openChat = async (otherUserId) => {
     if (!user) return;
     setChatLoading(true);
 
     const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name, email')
-      .eq('id', otherUserId)
-      .single();
+      .from('profiles').select('full_name, email').eq('id', otherUserId).single();
 
     const otherUserName = profile?.full_name || profile?.email || 'User';
 
@@ -200,16 +240,9 @@ export default function Messages() {
       .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`)
       .order('created_at', { ascending: true });
 
-    if (error) {
-      console.error(error);
-      setChatLoading(false);
-      return;
-    }
+    if (error) { console.error(error); setChatLoading(false); return; }
 
-    const unreadIds = data
-      .filter((m) => m.receiver_id === user.id && !m.read)
-      .map((m) => m.id);
-
+    const unreadIds = data.filter((m) => m.receiver_id === user.id && !m.read).map((m) => m.id);
     if (unreadIds.length > 0) {
       await supabase.from('messages').update({ read: true }).in('id', unreadIds);
     }
@@ -219,64 +252,120 @@ export default function Messages() {
     setChatLoading(false);
   };
 
-  const isAdmin = ['kanelothelejane@gmail.com'].includes(user?.email);
+  const closeChat = () => setSelectedChat(null);
+
+  // ── Send ─────────────────────────────────────────────────────────────────
+  const isAdmin  = ['kanelothelejane@gmail.com'].includes(user?.email);
   const canMessage = isAdmin || (user?.subscription_active && user?.verified);
 
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedChat) return;
-    if (!canMessage) {
-      toast.warning('You need an active subscription and verification to send messages');
-      return;
-    }
+    if (!canMessage) { toast.warning('You need an active subscription and verification to send messages'); return; }
     setLoading(true);
-    const { error } = await supabase.from('messages').insert([
-      {
-        sender_id: user.id,
-        receiver_id: selectedChat.otherUserId,
-        subject: subject || null,
-        body: newMessage.trim(),
-      },
-    ]);
-
-    if (error) {
-      toast.error('Failed to send message');
-    } else {
-      setNewMessage('');
-      setSubject('');
-    }
+    const { error } = await supabase.from('messages').insert([{
+      sender_id: user.id,
+      receiver_id: selectedChat.otherUserId,
+      subject: subject || null,
+      body: newMessage.trim(),
+    }]);
+    if (error) toast.error('Failed to send message');
+    else { setNewMessage(''); setSubject(''); }
     setLoading(false);
   };
 
+  // ── New chat ──────────────────────────────────────────────────────────────
   const handleNewChat = async () => {
     if (!newChatEmail.trim()) return;
-    if (!canMessage) {
-      toast.warning('You need an active subscription and verification to start new conversations');
-      return;
-    }
+    if (!canMessage) { toast.warning('Subscribe and get verified to start new conversations'); return; }
     const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, email')
-      .eq('email', newChatEmail.trim())
-      .single();
-
-    if (error || !data) {
-      toast.error('User not found');
-      return;
-    }
-
-    if (data.id === user.id) {
-      toast.error('Cannot message yourself');
-      return;
-    }
-
+      .from('profiles').select('id, full_name, email').eq('email', newChatEmail.trim()).single();
+    if (error || !data) { toast.error('User not found'); return; }
+    if (data.id === user.id) { toast.error('Cannot message yourself'); return; }
     openChat(data.id);
     setStartNewChat(false);
     setNewChatEmail('');
   };
 
-  const closeChat = () => {
-    setSelectedChat(null);
+  // ── Delete actions ────────────────────────────────────────────────────────
+  const handleDeleteForMe = (msgId) => {
+    addHiddenMsg(user.id, msgId);
+    setHiddenMsgs((prev) => new Set([...prev, msgId]));
+    toast.success('Message deleted for you.');
   };
+
+  const handleDeleteForEveryone = async (msgId) => {
+    const { error } = await supabase.from('messages').delete().eq('id', msgId).eq('sender_id', user.id);
+    if (error) { toast.error('Could not delete message.'); return; }
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    fetchConversations();
+    toast.success('Message deleted for everyone.');
+  };
+
+  const handleDeleteChat = (otherUserId) => {
+    addHiddenChat(user.id, otherUserId);
+    setHiddenChats((prev) => new Set([...prev, otherUserId]));
+    setConversations((prev) => prev.filter((c) => c.otherUserId !== otherUserId));
+    toast.success('Chat removed from your inbox.');
+  };
+
+  const handleCopy = (text) => {
+    navigator.clipboard?.writeText(text).then(() => toast.success('Copied!')).catch(() => toast.error('Copy failed'));
+  };
+
+  // ── Long-press helpers ────────────────────────────────────────────────────
+  const startLongPress = (callback) => (e) => {
+    e.preventDefault();
+    longPressTimer.current = setTimeout(callback, 480);
+  };
+  const cancelLongPress = () => clearTimeout(longPressTimer.current);
+
+  const showMessageMenu = (msg) => {
+    const isMine = msg.sender_id === user.id;
+    const options = [
+      {
+        action: 'copy',
+        label: 'Copy message',
+        icon: <Copy className="w-4 h-4" />,
+        destructive: false,
+      },
+      {
+        action: 'delete_for_me',
+        label: 'Delete for me',
+        icon: <Trash className="w-4 h-4" />,
+        destructive: true,
+      },
+      ...(isMine ? [{
+        action: 'delete_for_everyone',
+        label: 'Delete for everyone',
+        icon: <Trash2 className="w-4 h-4" />,
+        destructive: true,
+      }] : []),
+    ];
+    setContextMenu({ type: 'message', msg, options });
+  };
+
+  const showConvMenu = (conv) => {
+    const options = [
+      {
+        action: 'delete_chat',
+        label: 'Delete chat',
+        icon: <Trash2 className="w-4 h-4" />,
+        destructive: true,
+      },
+    ];
+    setContextMenu({ type: 'conversation', conv, options });
+  };
+
+  const handleMenuAction = (action) => {
+    if (!contextMenu) return;
+    if (action === 'copy')               handleCopy(contextMenu.msg?.body);
+    if (action === 'delete_for_me')      handleDeleteForMe(contextMenu.msg?.id);
+    if (action === 'delete_for_everyone') handleDeleteForEveryone(contextMenu.msg?.id);
+    if (action === 'delete_chat')        handleDeleteChat(contextMenu.conv?.otherUserId);
+  };
+
+  // ── Visible messages (filter hidden) ─────────────────────────────────────
+  const visibleMessages = messages.filter((m) => !hiddenMsgs.has(m.id));
 
   if (!user) {
     return (
@@ -288,12 +377,16 @@ export default function Messages() {
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
+      {/* Context menu bottom sheet */}
+      <ContextMenu
+        menu={contextMenu}
+        onClose={() => setContextMenu(null)}
+        onAction={handleMenuAction}
+      />
+
       {!selectedChat && (
         <button
-          onClick={() => {
-            if (window.history.length > 1) navigate(-1);
-            else navigate('/');
-          }}
+          onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/'); }}
           className="relative z-30 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 py-3 px-2 -ml-2 rounded-lg active:bg-accent"
           style={{ touchAction: 'manipulation', minHeight: '44px' }}
         >
@@ -307,10 +400,7 @@ export default function Messages() {
             <h2 className="text-2xl font-bold text-foreground">Messages</h2>
             <button
               onClick={() => {
-                if (!canMessage) {
-                  toast.warning('Subscribe and get verified to start new conversations');
-                  return;
-                }
+                if (!canMessage) { toast.warning('Subscribe and get verified to start new conversations'); return; }
                 setStartNewChat(!startNewChat);
               }}
               className="flex items-center gap-1 text-sm text-primary hover:underline"
@@ -321,11 +411,7 @@ export default function Messages() {
 
           {startNewChat && (
             <div className="mb-4 flex gap-2">
-              <Input
-                placeholder="Enter email address"
-                value={newChatEmail}
-                onChange={(e) => setNewChatEmail(e.target.value)}
-              />
+              <Input placeholder="Enter email address" value={newChatEmail} onChange={(e) => setNewChatEmail(e.target.value)} />
               <Button onClick={handleNewChat} size="sm">Start</Button>
             </div>
           )}
@@ -342,8 +428,12 @@ export default function Messages() {
               {conversations.map((conv) => (
                 <Card
                   key={conv.otherUserId}
-                  className={`p-4 cursor-pointer hover:bg-accent transition-colors ${conv.unread ? 'border-primary' : 'border-border/50'}`}
+                  className={`p-4 cursor-pointer hover:bg-accent transition-colors select-none ${conv.unread ? 'border-primary' : 'border-border/50'}`}
                   onClick={() => openChat(conv.otherUserId)}
+                  onContextMenu={(e) => { e.preventDefault(); showConvMenu(conv); }}
+                  onTouchStart={startLongPress(() => showConvMenu(conv))}
+                  onTouchEnd={cancelLongPress}
+                  onTouchMove={cancelLongPress}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -356,7 +446,7 @@ export default function Messages() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {conv.unread && <span className="w-2 h-2 bg-primary rounded-full"></span>}
+                      {conv.unread && <span className="w-2 h-2 bg-primary rounded-full" />}
                       <span className="text-xs text-muted-foreground">{new Date(conv.lastTime).toLocaleDateString()}</span>
                     </div>
                   </div>
@@ -379,14 +469,33 @@ export default function Messages() {
               <h2 className="text-xl font-bold text-foreground">Chat</h2>
               <p className="text-xs text-muted-foreground">{selectedChat.otherUserName}</p>
             </div>
+            {/* Delete whole chat from within conversation */}
+            <button
+              className="ml-auto text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 py-2 px-2 rounded-lg hover:bg-destructive/10"
+              onClick={() => {
+                if (window.confirm('Delete this chat from your inbox?')) {
+                  handleDeleteChat(selectedChat.otherUserId);
+                  closeChat();
+                }
+              }}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
 
           <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto" id="messages-container">
             {chatLoading ? (
               <MessagesSkeleton />
             ) : (
-              messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.sender_id === user.id ? 'justify-end' : 'justify-start'}`}>
+              visibleMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex select-none ${msg.sender_id === user.id ? 'justify-end' : 'justify-start'}`}
+                  onContextMenu={(e) => { e.preventDefault(); showMessageMenu(msg); }}
+                  onTouchStart={startLongPress(() => showMessageMenu(msg))}
+                  onTouchEnd={cancelLongPress}
+                  onTouchMove={cancelLongPress}
+                >
                   <div className={`max-w-[75%] p-3 rounded-xl ${msg.sender_id === user.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border/50'}`}>
                     {msg.subject && <p className="text-xs font-medium mb-1">{msg.subject}</p>}
                     <p className="text-sm">{msg.body}</p>
