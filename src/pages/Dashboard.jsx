@@ -156,8 +156,9 @@ export default function Dashboard() {
     }
   };
 
-  const fetchDriverDetails = async (driverId) => {
-    setLoadingDriver(true);
+  // Pure fetch — returns the profile without touching selectedDriver state.
+  // Used by openContractModal so it doesn't accidentally open the driver panel.
+  const fetchDriverProfile = async (driverId) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -165,8 +166,20 @@ export default function Dashboard() {
         .eq('id', driverId)
         .single();
       if (error) throw error;
+      return data;
+    } catch {
+      return null;
+    }
+  };
+
+  // Opens the driver details panel (the "View driver details" button).
+  const fetchDriverDetails = async (driverId) => {
+    setLoadingDriver(true);
+    try {
+      const data = await fetchDriverProfile(driverId);
+      if (!data) throw new Error('Not found');
       setSelectedDriver(data);
-    } catch (err) {
+    } catch {
       toast.error('Could not load driver details');
     } finally {
       setLoadingDriver(false);
@@ -186,7 +199,7 @@ export default function Dashboard() {
     setContractAgreed(false);
     const vehicle = vehicles.find(v => v.id === rental.vehicle_id) || allVehicles.find(v => v.id === rental.vehicle_id);
     if (role === 'owner' && rental.driver_id) {
-      const profile = await fetchDriverDetails(rental.driver_id);
+      const profile = await fetchDriverProfile(rental.driver_id);
       const text = generateContractText(rental, vehicle, profile);
       setSelectedProposal({ ...rental, contractText: text });
     } else if (role === 'driver') {
@@ -240,27 +253,34 @@ export default function Dashboard() {
               const driverName = r.driver_email || 'Driver';
               return (
                 <Card key={r.id} className="p-4 border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
-                  <div className="flex flex-col sm:flex-row justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
-                      <p className="text-xs text-muted-foreground">Driver: {driverName}</p>
-                      <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
-                      <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
-                      {r.message && <p className="text-xs italic mt-1">"{r.message}"</p>}
-                      {r.driver_id && (
-                        <button onClick={() => fetchDriverDetails(r.driver_id)} className="text-xs text-primary mt-1 underline" disabled={loadingDriver}>
-                          View driver details
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex gap-2 sm:flex-row flex-col">
-                      <Button size="sm" variant="default" className="gap-1" onClick={(e) => { e.stopPropagation(); openContractModal(r, 'owner'); }}>
-                        <Check className="w-3.5 h-3.5" /> Accept
-                      </Button>
-                      <Button size="sm" variant="outline" className="gap-1" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'reject'); }}>
-                        <X className="w-3.5 h-3.5" /> Reject
-                      </Button>
-                    </div>
+                  {/* Vehicle + driver info */}
+                  <div className="mb-3">
+                    <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
+                    <p className="text-xs text-muted-foreground">Driver: {driverName}</p>
+                    <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
+                    <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
+                    {r.message && <p className="text-xs italic mt-1">"{r.message}"</p>}
+                  </div>
+
+                  {/* View driver details — full-width, clearly separate from action buttons */}
+                  {r.driver_id && (
+                    <button
+                      onClick={() => fetchDriverDetails(r.driver_id)}
+                      disabled={loadingDriver}
+                      className="w-full text-xs text-primary border border-primary/30 rounded-lg py-2 mb-3 hover:bg-primary/5 active:bg-primary/10 transition-colors disabled:opacity-50"
+                    >
+                      {loadingDriver ? 'Loading…' : '👤 View driver details'}
+                    </button>
+                  )}
+
+                  {/* Accept / Reject — separated by a visible divider */}
+                  <div className="flex gap-2 pt-2 border-t border-amber-200 dark:border-amber-800">
+                    <Button size="sm" variant="default" className="flex-1 gap-1" onClick={(e) => { e.stopPropagation(); openContractModal(r, 'owner'); }}>
+                      <Check className="w-3.5 h-3.5" /> Accept
+                    </Button>
+                    <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'reject'); }}>
+                      <X className="w-3.5 h-3.5" /> Reject
+                    </Button>
                   </div>
                 </Card>
               );
