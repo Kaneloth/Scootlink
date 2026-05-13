@@ -191,14 +191,14 @@ export default function Dashboard() {
   };
 
   const generateContractText = (rental, vehicle, driverProfile) => {
-    const ownerName = user?.full_name || '__________________________________________';
-    const driverName = driverProfile?.full_name || '__________________________________________';
-    const licenseNumber = driverProfile?.license_number || '___________________';
+    const ownerName = user?.full_name || '';
+    const driverName = driverProfile?.full_name || '';
+    const licenseNumber = driverProfile?.license_number || '';
     const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
-    const vType = vehicle?.vehicle_type || vehicle?.type || '__________________________';
-    const vMake = vehicle?.make || '_________________________';
-    const vModel = vehicle?.model || '________________________';
-    const vYear = vehicle?.year || '_________________________';
+    const vType = vehicle?.vehicle_type || vehicle?.type || '';
+    const vMake = vehicle?.make || '';
+    const vModel = vehicle?.model || '';
+    const vYear = vehicle?.year || '';
     return `VEHICLE RENTAL AGREEMENT
 
 This Vehicle Rental Agreement ("Agreement") is entered into on ${today} (Effective Date),
@@ -206,12 +206,12 @@ This Vehicle Rental Agreement ("Agreement") is entered into on ${today} (Effecti
 BETWEEN:
 
 Owner: ${ownerName}
-ID/Passport No: ___________________________________
+ID/Passport No: 
 
 AND
 
 Driver (Renter): ${driverName}
-ID/Passport No: ___________________________________
+ID/Passport No: 
 
 
 1. VEHICLE DETAILS
@@ -220,15 +220,15 @@ Type: ${vType}
 Make: ${vMake}
 Model: ${vModel}
 Year: ${vYear}
-Current Odometer Reading: __________________
+Current Odometer Reading: 
 
 
 2. RENTAL TERMS
 
-Rental Start Date: ${rental.start_date || '__________________'}
-Rental End Date: ${rental.end_date || '__________________'}
-Weekly Rate: R ${rental.price_per_week || '_______________________'}
-Security Deposit: R ${rental.deposit || '__________________'}
+Rental Start Date: ${rental.start_date || ''}
+Rental End Date: ${rental.end_date || ''}
+Weekly Rate: R ${rental.price_per_week || ''}
+Security Deposit: R ${rental.deposit || ''}
 
 The security deposit shall be refundable upon return of the vehicle, subject to inspection.
 Any damages, fines, or additional charges will be deducted from the deposit.
@@ -310,7 +310,7 @@ The Driver may terminate immediately if:
 • The Owner fails to fulfil a material obligation.
 
 8.4 Termination for Convenience (No Breach)
-Either party may terminate this Agreement without cause by giving written notice of _______ hours/days.
+Either party may terminate this Agreement without cause by giving written notice of  hours/days.
 • The Driver must return the vehicle by the termination date.
 
 8.5 Financial Consequences of Termination
@@ -319,7 +319,7 @@ Either party may terminate this Agreement without cause by giving written notice
     – Damages;
     – Outstanding fees or penalties;
     – Reasonable early termination costs.
-• An early termination fee of __________ (if applicable) may apply.
+• An early termination fee of  (if applicable) may apply.
 
 8.6 Exceptional Circumstances
 Either party may terminate immediately without penalty due to:
@@ -337,13 +337,9 @@ Either party may terminate immediately without penalty due to:
 
 • This Agreement constitutes the entire agreement between the parties.
 • Any amendments must be in writing and agreed to by both parties.
-• This Agreement shall be governed by the laws of ___________________.
+• This Agreement shall be governed by the laws of 
 
-
-___________________________          ___________________________
-Owner Signature                        Driver Signature
-
-Date: ____________________            Date: ____________________`;
+By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize Rental", both parties confirm they have read, understood, and agreed to this Agreement. This constitutes a valid digital signature.`;
   };
 
   const openContractModal = async (rental, role) => {
