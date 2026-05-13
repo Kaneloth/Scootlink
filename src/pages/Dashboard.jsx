@@ -190,51 +190,12 @@ export default function Dashboard() {
     }
   };
 
+  // Generates only the negotiable clauses (sections 3–9).
+  // Sections 1 & 2 (Vehicle Details and Rental Terms) are shown as a locked,
+  // read-only header in the modal so neither party can alter the financial terms.
   const generateContractText = (rental, vehicle, driverProfile) => {
-    const ownerName = user?.full_name || '';
-    const driverName = driverProfile?.full_name || '';
     const licenseNumber = driverProfile?.license_number || '';
-    const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
-    const vType = vehicle?.vehicle_type || vehicle?.type || '';
-    const vMake = vehicle?.make || '';
-    const vModel = vehicle?.model || '';
-    const vYear = vehicle?.year || '';
-    return `VEHICLE RENTAL AGREEMENT
-
-This Vehicle Rental Agreement ("Agreement") is entered into on ${today} (Effective Date),
-
-BETWEEN:
-
-Owner: ${ownerName}
-ID/Passport No: 
-
-AND
-
-Driver (Renter): ${driverName}
-ID/Passport No: 
-
-
-1. VEHICLE DETAILS
-
-Type: ${vType}
-Make: ${vMake}
-Model: ${vModel}
-Year: ${vYear}
-Current Odometer Reading: 
-
-
-2. RENTAL TERMS
-
-Rental Start Date: ${rental.start_date || ''}
-Rental End Date: ${rental.end_date || ''}
-Weekly Rate: R ${rental.price_per_week || ''}
-Security Deposit: R ${rental.deposit || ''}
-
-The security deposit shall be refundable upon return of the vehicle, subject to inspection.
-Any damages, fines, or additional charges will be deducted from the deposit.
-
-
-3. DRIVER REQUIREMENTS
+    return `3. DRIVER REQUIREMENTS
 
 The Driver confirms that:
 • They are at least 18 years of age.
@@ -675,7 +636,6 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                   </div>
                   <Button size="sm" variant="outline" className="gap-1.5 shrink-0"
                     onClick={() => {
-                      alert('targetId: ' + targetId + '\nrentalId: ' + r.id + '\ndriver_id: ' + r.driver_id + '\nowner_id: ' + r.owner_id + '\nuser.id: ' + user?.id);
                       setReviewModal({
                         rental: r,
                         targetEmail,
@@ -757,20 +717,49 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       {contractModal && selectedProposal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
           <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-1 shrink-0">
+            <div className="flex items-center justify-between mb-3 shrink-0">
               <h2 className="text-xl font-bold">Rental Agreement</h2>
               <button onClick={closeContractModal} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
-            <p className="text-xs text-muted-foreground mb-3 shrink-0">
-              Both parties can edit this contract freely. Discuss any changes via Messages, then sign once you both agree.
-            </p>
 
-            {/* Editable contract body */}
+            {/* Locked financial terms — sourced directly from the database record.
+                Neither party can edit these; they reflect exactly what was proposed. */}
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 mb-3 shrink-0">
+              <div className="flex items-center gap-2 mb-2">
+                <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Binding Terms — cannot be edited</p>
+              </div>
+              {(() => {
+                const v = vehicles.find(x => x.id === selectedProposal.vehicle_id) || allVehicles.find(x => x.id === selectedProposal.vehicle_id);
+                return (
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono">
+                    <span className="text-muted-foreground">Vehicle:</span>
+                    <span className="font-medium">{v ? `${v.make} ${v.model} (${v.year || ''})` : `#${selectedProposal.vehicle_id}`}</span>
+                    <span className="text-muted-foreground">Start date:</span>
+                    <span className="font-medium">{selectedProposal.start_date}</span>
+                    <span className="text-muted-foreground">End date:</span>
+                    <span className="font-medium">{selectedProposal.end_date}</span>
+                    <span className="text-muted-foreground">Weekly rate:</span>
+                    <span className="font-medium">R {selectedProposal.price_per_week}</span>
+                    <span className="text-muted-foreground">Security deposit:</span>
+                    <span className="font-medium">R {selectedProposal.deposit}</span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Clauses — owner can edit freely; driver is read-only */}
+            <p className="text-xs text-muted-foreground mb-2 shrink-0">
+              {selectedProposal.driver_id === user?.id
+                ? 'Review the terms below. If you want changes, request them via Messages — only the owner can edit the contract.'
+                : 'Edit the clauses below as needed. The driver will review and either confirm or request changes via Messages.'}
+            </p>
             <div className="bg-muted rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0">
               <textarea
-                className="w-full h-full min-h-[38vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
+                className="w-full h-full min-h-[30vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed disabled:cursor-default"
                 value={editableContractText}
                 onChange={e => setEditableContractText(e.target.value)}
+                readOnly={selectedProposal.driver_id === user?.id}
               />
             </div>
 
