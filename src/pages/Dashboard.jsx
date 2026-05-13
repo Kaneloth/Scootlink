@@ -390,6 +390,30 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     setContractAgreed(false);
   };
 
+  // Owner withdraws the contract they sent — sets status back to pending
+  const handleWithdrawContract = async (rental) => {
+    if (!window.confirm('Withdraw this contract? The rental will return to pending status and the driver will no longer see it for confirmation.')) return;
+    try {
+      await Rental.update(rental.id, { status: 'pending', contract_text: null });
+      toast.success('Contract withdrawn. The rental is now back to pending.');
+      refetchRentals?.();
+    } catch (err) {
+      toast.error('Failed to withdraw contract.');
+    }
+  };
+
+  // Driver rejects a contract — sets status to rejected so it disappears from both views
+  const handleRejectContract = async (rental) => {
+    if (!window.confirm('Reject this contract? This will remove it from your dashboard. Let the owner know via Messages if you want to renegotiate.')) return;
+    try {
+      await Rental.update(rental.id, { status: 'rejected' });
+      toast.success('Contract rejected. Use Messages to discuss any changes with the owner.');
+      refetchRentals?.();
+    } catch (err) {
+      toast.error('Failed to reject contract.');
+    }
+  };
+
   // Owner saves edits to an already-accepted contract without changing its status
   const handleSaveContractEdits = async () => {
     if (!selectedProposal) return;
@@ -490,11 +514,16 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                     <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                   </div>
                   <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
-                    Contract sent — waiting for driver to confirm. Edit below if changes were agreed via Messages.
+                    Contract sent — waiting for driver to confirm. Edit if changes were agreed via Messages, or withdraw to cancel.
                   </p>
-                  <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={() => openContractModal(r, 'edit')}>
-                    ✏️ Edit Contract
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="flex-1 gap-1.5" onClick={() => openContractModal(r, 'edit')}>
+                      ✏️ Edit Contract
+                    </Button>
+                    <Button size="sm" variant="outline" className="flex-1 gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => handleWithdrawContract(r)}>
+                      ✕ Withdraw
+                    </Button>
+                  </div>
                 </Card>
               );
             })}
@@ -561,9 +590,12 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                       <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
                       <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                     </div>
-                    <div>
+                    <div className="flex flex-col gap-2">
                       <Button size="sm" className="gap-1" onClick={() => openContractModal(r, 'review')}>
                         <Check className="w-3.5 h-3.5" /> Review & Confirm
+                      </Button>
+                      <Button size="sm" variant="outline" className="gap-1 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => handleRejectContract(r)}>
+                        ✕ Reject Contract
                       </Button>
                     </div>
                   </div>
