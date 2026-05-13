@@ -357,23 +357,28 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     setContractAgreed(false);
     setContractEditMode(mode);
 
-    // Load saved draft if one exists — preserves all prior edits
-    if (rental.contract_text) {
-      setEditableContractText(rental.contract_text);
-      setSelectedProposal({ ...rental, contractText: rental.contract_text });
-      setContractModal(true);
-      return;
-    }
-
     const vehicle = vehicles.find(v => v.id === rental.vehicle_id) || allVehicles.find(v => v.id === rental.vehicle_id);
+
+    // Always fetch driver profile so names/IDs populate correctly for both parties
     let driverProfileData = null;
     if (rental.driver_id) {
       driverProfileData = await fetchDriverProfile(rental.driver_id);
     }
+    // If we're the driver opening our own review, use our own profile
     if (!driverProfileData && mode === 'review') {
-      driverProfileData = { full_name: user?.full_name, id_number: user?.id_number, passport_number: user?.passport_number, license_number: user?.license_number };
+      driverProfileData = {
+        full_name: user?.full_name,
+        id_number: user?.id_number,
+        passport_number: user?.passport_number,
+        license_number: user?.license_number,
+      };
     }
-    const text = generateContractText(rental, vehicle, driverProfileData);
+
+    // Use saved contract_text only when it is a complete contract (contains the header).
+    // Old saves only stored clauses 3–9 and lack the header — regenerate those from scratch.
+    const isComplete = rental.contract_text && rental.contract_text.trimStart().startsWith('VEHICLE RENTAL AGREEMENT');
+    const text = isComplete ? rental.contract_text : generateContractText(rental, vehicle, driverProfileData);
+
     setEditableContractText(text);
     setSelectedProposal({ ...rental, contractText: text });
     setContractModal(true);
