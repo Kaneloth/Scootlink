@@ -513,29 +513,34 @@ export default function Messages() {
               <MessagesSkeleton />
             ) : (
               visibleMessages.map((msg) => {
-                const isMine  = msg.sender_id === user.id;
+                // Defensive: only true when user.id is known AND matches sender
+                const userId   = user?.id ?? null;
+                const isMine   = userId !== null && msg.sender_id === userId;
                 const isFailed = msg._status === 'failed';
 
                 return (
                   <div
                     key={msg.id}
-                    className={`flex w-full select-none ${isMine ? 'justify-end' : 'justify-start'}`}
+                    className="w-full flex select-none"
                     onContextMenu={(e) => { e.preventDefault(); if (!msg._temp) showMessageMenu(msg); }}
                     onTouchStart={startLongPress(() => { if (!msg._temp) showMessageMenu(msg); })}
                     onTouchEnd={cancelLongPress}
                     onTouchMove={cancelLongPress}
                   >
-                    <div className={`max-w-[75%] p-3 rounded-xl ${
+                    <div className={`max-w-[75%] p-3 rounded-xl ${isMine ? 'ml-auto' : 'mr-auto'} ${
                       isMine
                         ? isFailed
                           ? 'bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700'
-                          : 'bg-primary text-primary-foreground opacity-' + (msg._status === 'sending' ? '60' : '100')
+                          : msg._status === 'sending'
+                            ? 'bg-primary/60 text-primary-foreground'
+                            : 'bg-primary text-primary-foreground'
                         : 'bg-card border border-border/50'
                     }`}>
                       {msg.subject && <p className="text-xs font-medium mb-1">{msg.subject}</p>}
                       <p className="text-sm">{msg.body}</p>
-                      <div className={`flex items-center justify-end gap-1 mt-1 ${isMine ? 'opacity-70' : 'opacity-50'}`}>
+                      <div className="flex items-center justify-end gap-1 mt-1 opacity-70">
                         <span className="text-[10px]">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        {/* Status ticks only on messages I sent */}
                         {isMine && <MsgStatus status={msg._status} />}
                       </div>
                       {isFailed && (
