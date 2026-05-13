@@ -53,7 +53,7 @@ export default function Dashboard() {
   const [balanceLoading, setBalanceLoading] = useState(true);
   const [reviewModal, setReviewModal] = useState(null);
   const [selectedDriver, setSelectedDriver] = useState(null);
-  const [loadingDriver, setLoadingDriver] = useState(false);
+  const [loadingDriverId, setLoadingDriverId] = useState(null); // tracks which card is loading
 
   // Contract modal states
   const [contractModal, setContractModal] = useState(false);
@@ -172,17 +172,19 @@ export default function Dashboard() {
     }
   };
 
-  // Opens the driver details panel (the "View driver details" button).
-  const fetchDriverDetails = async (driverId) => {
-    setLoadingDriver(true);
+  // Opens the driver details panel. Always opens even if the profile fetch fails —
+  // falls back to the rental's driver_email so the owner sees something useful.
+  // Uses loadingDriverId (not a boolean) so each card tracks its own loading state.
+  const fetchDriverDetails = async (driverId, fallbackEmail = '') => {
+    setLoadingDriverId(driverId);
     try {
       const data = await fetchDriverProfile(driverId);
-      if (!data) throw new Error('Not found');
-      setSelectedDriver(data);
+      // If RLS blocks the read or the profile row doesn't exist, show what we know
+      setSelectedDriver(data || { id: driverId, email: fallbackEmail, full_name: fallbackEmail || 'Driver' });
     } catch {
-      toast.error('Could not load driver details');
+      setSelectedDriver({ id: driverId, email: fallbackEmail, full_name: fallbackEmail || 'Driver' });
     } finally {
-      setLoadingDriver(false);
+      setLoadingDriverId(null);
     }
   };
 
@@ -265,11 +267,11 @@ export default function Dashboard() {
                   {/* View driver details — full-width, clearly separate from action buttons */}
                   {r.driver_id && (
                     <button
-                      onClick={() => fetchDriverDetails(r.driver_id)}
-                      disabled={loadingDriver}
+                      onClick={() => fetchDriverDetails(r.driver_id, r.driver_email)}
+                      disabled={loadingDriverId === r.driver_id}
                       className="w-full text-xs text-primary border border-primary/30 rounded-lg py-2 mb-3 hover:bg-primary/5 active:bg-primary/10 transition-colors disabled:opacity-50"
                     >
-                      {loadingDriver ? 'Loading…' : '👤 View driver details'}
+                      {loadingDriverId === r.driver_id ? 'Loading…' : '👤 View driver details'}
                     </button>
                   )}
 
