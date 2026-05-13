@@ -20,12 +20,11 @@ const getHiddenChats  = (uid) => { try { return new Set(JSON.parse(localStorage.
 const addHiddenMsg    = (uid, id)  => { const s = getHiddenMsgs(uid);  s.add(id);  localStorage.setItem(HIDDEN_KEY(uid),       JSON.stringify([...s])); };
 const addHiddenChat   = (uid, oid) => { const s = getHiddenChats(uid); s.add(oid); localStorage.setItem(HIDDEN_CHATS_KEY(uid), JSON.stringify([...s])); };
 
-// ── Status icon shown on sent messages ───────────────────────────────────────
+// ── Status icon shown on sent messages only ───────────────────────────────────
 function MsgStatus({ status }) {
-  if (status === 'sending') return <Clock     className="w-3 h-3 opacity-60 inline ml-1" />;
+  if (status === 'sending') return <Clock      className="w-3 h-3 opacity-60 inline ml-1" />;
   if (status === 'failed')  return <AlertCircle className="w-3 h-3 text-red-400 inline ml-1" />;
-  if (status === 'sent')    return <Check      className="w-3 h-3 opacity-70 inline ml-1" />;
-  // delivered (real DB message, no temp status)
+  if (status === 'sent')    return <Check       className="w-3 h-3 opacity-70 inline ml-1" />;
   return                           <CheckCheck  className="w-3 h-3 opacity-70 inline ml-1" />;
 }
 
@@ -52,9 +51,9 @@ function ConversationSkeleton() {
 function MessagesSkeleton() {
   return (
     <div className="space-y-3 mb-4">
-      {[{ w: '55%', side: 'end' }, { w: '70%', side: 'start' }, { w: '45%', side: 'end' }, { w: '60%', side: 'start' }].map((s, i) => (
-        <div key={i} className={`flex w-full justify-${s.side}`}>
-          <div className="h-10 rounded-xl bg-muted animate-pulse" style={{ width: s.w }} />
+      {[{ w: '55%', ml: 'auto' }, { w: '70%', mr: 'auto' }, { w: '45%', ml: 'auto' }, { w: '60%', mr: 'auto' }].map((s, i) => (
+        <div key={i} className="w-full flex">
+          <div className="h-10 rounded-xl bg-muted animate-pulse" style={{ width: s.w, marginLeft: s.ml, marginRight: s.mr }} />
         </div>
       ))}
     </div>
@@ -106,16 +105,13 @@ export default function Messages() {
   const [hiddenMsgs, setHiddenMsgs]                   = useState(new Set());
   const [hiddenChats, setHiddenChats]                 = useState(new Set());
 
-  // Refs so realtime callbacks always see the current values (fixes stale closure)
   const userRef         = useRef(null);
   const selectedChatRef = useRef(null);
   const longPressTimer  = useRef(null);
   const messagesEndRef  = useRef(null);
 
-  useEffect(() => { userRef.current = user; },         [user]);
+  useEffect(() => { userRef.current = user; },                 [user]);
   useEffect(() => { selectedChatRef.current = selectedChat; }, [selectedChat]);
-
-  // Auto-scroll to latest message
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   // ── Load user ────────────────────────────────────────────────────────────
@@ -158,11 +154,11 @@ export default function Messages() {
         const otherId = msg.sender_id === u.id ? msg.receiver_id : msg.sender_id;
         if (!grouped[otherId]) {
           grouped[otherId] = {
-            otherUserId:  otherId,
+            otherUserId:   otherId,
             otherUserName: nameMap[otherId] || 'User',
-            lastMessage:  msg.body,
-            unread:       !msg.read && msg.receiver_id === u.id,
-            lastTime:     msg.created_at,
+            lastMessage:   msg.body,
+            unread:        !msg.read && msg.receiver_id === u.id,
+            lastTime:      msg.created_at,
           };
         }
       });
@@ -174,19 +170,17 @@ export default function Messages() {
     } finally {
       setConversationsLoading(false);
     }
-  }, []); // intentionally empty — uses userRef to avoid stale closure
+  }, []);
 
   useEffect(() => { if (user) fetchConversations(); }, [user, fetchConversations]);
 
-  // Auto-open from URL param
   useEffect(() => {
     if (urlUserId && user && user.id !== urlUserId) openChat(urlUserId);
   }, [urlUserId, user]);
 
-  // ── Realtime subscription — uses refs to avoid stale closures ────────────
+  // ── Realtime ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
-
     const channel = supabase
       .channel(`messages-channel-${user.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
@@ -196,7 +190,6 @@ export default function Messages() {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' },
         () => fetchConversations())
       .subscribe();
-
     return () => supabase.removeChannel(channel);
   }, [user]);
 
@@ -211,28 +204,23 @@ export default function Messages() {
 
       if (belongsToChat) {
         setMessages((prev) => {
-          // Replace matching optimistic message (same body + no real id yet)
-          // or skip if exact id already present (dedup)
           if (prev.some((m) => m.id === msg.id)) return prev;
-          // Replace optimistic temp message if it matches
           const tempIdx = prev.findIndex(
             (m) => m._temp && m.sender_id === u?.id && m.body === msg.body && m.receiver_id === chat.otherUserId
           );
           if (tempIdx !== -1) {
             const next = [...prev];
-            next[tempIdx] = msg; // swap temp for real
+            next[tempIdx] = msg;
             return next;
           }
           return [...prev, msg];
         });
 
-        // Mark as read if we're the receiver
         if (msg.receiver_id === u?.id) {
           await supabase.from('messages').update({ read: true }).eq('id', msg.id);
         }
       }
     }
-
     fetchConversations();
   };
 
@@ -266,7 +254,7 @@ export default function Messages() {
 
   const closeChat = () => setSelectedChat(null);
 
-  // ── Send — with optimistic update ────────────────────────────────────────
+  // ── Send ──────────────────────────────────────────────────────────────────
   const isAdmin    = ['kanelothelejane@gmail.com'].includes(user?.email);
   const canMessage = isAdmin || (user?.subscription_active && user?.verified);
 
@@ -274,11 +262,10 @@ export default function Messages() {
     if (!newMessage.trim() || !selectedChat) return;
     if (!canMessage) { toast.warning('You need an active subscription and verification to send messages'); return; }
 
-    const tempId      = `temp-${Date.now()}`;
-    const msgBody     = newMessage.trim();
-    const msgSubject  = subject || null;
+    const tempId     = `temp-${Date.now()}`;
+    const msgBody    = newMessage.trim();
+    const msgSubject = subject || null;
 
-    // Optimistically add message immediately so the user sees it right away
     const optimistic = {
       id:          tempId,
       _temp:       true,
@@ -303,16 +290,13 @@ export default function Messages() {
     setLoading(false);
 
     if (error) {
-      // Mark optimistic as failed
       setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, _status: 'failed' } : m));
       toast.error('Message failed to send. Check your connection.');
     } else if (inserted) {
-      // Replace optimistic with real DB message
       setMessages((prev) => prev.map((m) => m.id === tempId ? inserted : m));
     }
   };
 
-  // Retry a failed message
   const handleRetry = async (failedMsg) => {
     setMessages((prev) => prev.filter((m) => m.id !== failedMsg.id));
     setNewMessage(failedMsg.body);
@@ -360,20 +344,18 @@ export default function Messages() {
       .catch(() => toast.error('Copy failed'));
   };
 
-  // ── Long-press helpers ────────────────────────────────────────────────────
-  const startLongPress = (cb) => (e) => {
-    longPressTimer.current = setTimeout(cb, 480);
-  };
+  // ── Long-press ────────────────────────────────────────────────────────────
+  const startLongPress = (cb) => () => { longPressTimer.current = setTimeout(cb, 480); };
   const cancelLongPress = () => clearTimeout(longPressTimer.current);
 
   const showMessageMenu = (msg) => {
-    const isMine = msg.sender_id === user.id;
+    const isMine = msg.sender_id === user?.id;
     setContextMenu({
       type: 'message', msg,
       options: [
-        { action: 'copy',                label: 'Copy message',         icon: <Copy     className="w-4 h-4" />, destructive: false },
-        { action: 'delete_for_me',       label: 'Delete for me',        icon: <Trash    className="w-4 h-4" />, destructive: true  },
-        ...(isMine ? [{ action: 'delete_for_everyone', label: 'Delete for everyone', icon: <Trash2   className="w-4 h-4" />, destructive: true }] : []),
+        { action: 'copy',            label: 'Copy message',         icon: <Copy   className="w-4 h-4" />, destructive: false },
+        { action: 'delete_for_me',   label: 'Delete for me',        icon: <Trash  className="w-4 h-4" />, destructive: true  },
+        ...(isMine ? [{ action: 'delete_for_everyone', label: 'Delete for everyone', icon: <Trash2 className="w-4 h-4" />, destructive: true }] : []),
       ],
     });
   };
@@ -513,9 +495,8 @@ export default function Messages() {
               <MessagesSkeleton />
             ) : (
               visibleMessages.map((msg) => {
-                // Defensive: only true when user.id is known AND matches sender
-                const userId   = user?.id ?? null;
-                const isMine   = userId !== null && msg.sender_id === userId;
+                const userId  = user?.id ?? null;
+                const isMine  = userId !== null && msg.sender_id === userId;
                 const isFailed = msg._status === 'failed';
 
                 return (
@@ -540,7 +521,6 @@ export default function Messages() {
                       <p className="text-sm">{msg.body}</p>
                       <div className="flex items-center justify-end gap-1 mt-1 opacity-70">
                         <span className="text-[10px]">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        {/* Status ticks only on messages I sent */}
                         {isMine && <MsgStatus status={msg._status} />}
                       </div>
                       {isFailed && (
