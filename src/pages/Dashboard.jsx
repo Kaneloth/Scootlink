@@ -594,9 +594,9 @@ export default function Dashboard() {
         document.body
       )}
 
-      {/* Contract Modal */}
-      {contractModal && selectedProposal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
+      {/* Contract Modal — portal so AppLayout transform/overflow can't clip it */}
+      {contractModal && selectedProposal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
           <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border min-h-[70vh] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Rental Agreement</h2>
@@ -621,7 +621,8 @@ export default function Dashboard() {
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
