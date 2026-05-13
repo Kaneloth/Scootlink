@@ -53,7 +53,7 @@ export default function MobileNav() {
     if (!error) setUnreadCount(data?.length ?? 0);
   };
 
-  // ── Realtime: refresh count on any message insert or update ──────────────
+  // ── Realtime: refresh count on any message change ────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel('mobilenav-unread-badge')
@@ -69,6 +69,14 @@ export default function MobileNav() {
       .subscribe();
 
     return () => supabase.removeChannel(channel);
+  }, []);
+
+  // ── Polling fallback: refresh every 20 s in case realtime is unavailable ──
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (userIdRef.current) fetchUnreadCount(userIdRef.current);
+    }, 20000);
+    return () => clearInterval(interval);
   }, []);
 
   // ── Re-fetch whenever route changes (opening /messages marks as read) ─────
