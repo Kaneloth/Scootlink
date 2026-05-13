@@ -367,7 +367,8 @@ export default function Messages() {
   const cancelLongPress = () => clearTimeout(longPressTimer.current);
 
   const showMessageMenu = (msg) => {
-    const isMine = msg.sender_id === user.id;
+   const userId   = user?.id ?? null;
+const isMine   = userId !== null && msg.sender_id === userId;
     setContextMenu({
       type: 'message', msg,
       options: [
