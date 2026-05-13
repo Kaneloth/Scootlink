@@ -390,27 +390,27 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     setContractAgreed(false);
   };
 
-  // Owner withdraws the contract they sent — sets status back to pending
+  // Owner withdraws the contract they sent — cancelled removes it from both views
   const handleWithdrawContract = async (rental) => {
-    if (!window.confirm('Withdraw this contract? The rental will return to pending status and the driver will no longer see it for confirmation.')) return;
+    if (!window.confirm('Withdraw this contract? It will be removed from both your dashboard and the driver\'s. You can send a new proposal at any time.')) return;
     try {
-      await Rental.update(rental.id, { status: 'pending', contract_text: null });
-      toast.success('Contract withdrawn. The rental is now back to pending.');
-      refetchRentals?.();
+      await Rental.update(rental.id, { status: 'cancelled', contract_text: null });
+      toast.success('Contract withdrawn and removed from both dashboards.');
+      queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
     } catch (err) {
-      toast.error('Failed to withdraw contract.');
+      toast.error(`Could not withdraw contract: ${err?.message || 'please try again.'}`);
     }
   };
 
-  // Driver rejects a contract — sets status to rejected so it disappears from both views
+  // Driver rejects a contract — cancelled removes it from both views
   const handleRejectContract = async (rental) => {
-    if (!window.confirm('Reject this contract? This will remove it from your dashboard. Let the owner know via Messages if you want to renegotiate.')) return;
+    if (!window.confirm('Reject this contract? It will be removed from both your dashboard and the owner\'s. Message the owner if you want to renegotiate.')) return;
     try {
-      await Rental.update(rental.id, { status: 'rejected' });
-      toast.success('Contract rejected. Use Messages to discuss any changes with the owner.');
-      refetchRentals?.();
+      await Rental.update(rental.id, { status: 'cancelled' });
+      toast.success('Contract rejected and removed from both dashboards. Use Messages to renegotiate.');
+      queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
     } catch (err) {
-      toast.error('Failed to reject contract.');
+      toast.error(`Could not reject contract: ${err?.message || 'please try again.'}`);
     }
   };
 
