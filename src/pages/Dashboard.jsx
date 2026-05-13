@@ -61,6 +61,10 @@ export default function Dashboard() {
   const [selectedProposal, setSelectedProposal] = useState(null);
   const [contractAgreed, setContractAgreed] = useState(false);
   const [editableContractText, setEditableContractText] = useState('');
+  // 'accept' = owner signing a fresh proposal
+  // 'edit'   = owner updating an already-accepted contract
+  // 'review' = driver reading and confirming
+  const [contractEditMode, setContractEditMode] = useState('accept');
 
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
@@ -105,6 +109,7 @@ export default function Dashboard() {
 
   const ownerRentals = rentals.filter(r => r.owner_id === user?.id);
   const ownerPendingRentals = ownerRentals.filter(r => r.status === 'pending');
+  const ownerAwaitingRentals = ownerRentals.filter(r => r.status === 'awaiting_driver_confirmation');
   const ownerActiveRentals = ownerRentals.filter(r => r.status === 'active');
 
   const driverPendingConfRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'awaiting_driver_confirmation');
@@ -190,12 +195,55 @@ export default function Dashboard() {
     }
   };
 
-  // Generates only the negotiable clauses (sections 3–9).
-  // Sections 1 & 2 (Vehicle Details and Rental Terms) are shown as a locked,
-  // read-only header in the modal so neither party can alter the financial terms.
+  // Generates the full contract (all 9 sections).
+  // Owner can edit everything freely; driver sees it read-only and confirms when satisfied.
   const generateContractText = (rental, vehicle, driverProfile) => {
+    const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
+    const ownerName = user?.full_name || '';
+    const ownerIdNo = user?.id_number || user?.passport_number || '';
+    const driverName = driverProfile?.full_name || '';
+    const driverIdNo = driverProfile?.id_number || driverProfile?.passport_number || '';
     const licenseNumber = driverProfile?.license_number || '';
-    return `3. DRIVER REQUIREMENTS
+    const vType = vehicle?.vehicle_type || vehicle?.type || '';
+    const vMake = vehicle?.make || '';
+    const vModel = vehicle?.model || '';
+    const vYear = vehicle?.year || '';
+    return `VEHICLE RENTAL AGREEMENT
+
+This Vehicle Rental Agreement ("Agreement") is entered into on ${today} (Effective Date),
+
+BETWEEN:
+
+Owner: ${ownerName}
+ID/Passport No: ${ownerIdNo}
+
+AND
+
+Driver (Renter): ${driverName}
+ID/Passport No: ${driverIdNo}
+
+
+1. VEHICLE DETAILS
+
+Type: ${vType}
+Make: ${vMake}
+Model: ${vModel}
+Year: ${vYear}
+Current Odometer Reading: 
+
+
+2. RENTAL TERMS
+
+Rental Start Date: ${rental.start_date || ''}
+Rental End Date: ${rental.end_date || ''}
+Weekly Rate: R ${rental.price_per_week || ''}
+Security Deposit: R ${rental.deposit || ''}
+
+The security deposit shall be refundable upon return of the vehicle, subject to inspection.
+Any damages, fines, or additional charges will be deducted from the deposit.
+
+
+3. DRIVER REQUIREMENTS
 
 The Driver confirms that:
 • They are at least 18 years of age.
@@ -303,12 +351,13 @@ Either party may terminate immediately without penalty due to:
 By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize Rental", both parties confirm they have read, understood, and agreed to this Agreement. This constitutes a valid digital signature.`;
   };
 
-  const openContractModal = async (rental, role) => {
+  // mode: 'accept' (owner, fresh proposal) | 'edit' (owner, already accepted) | 'review' (driver)
+  const openContractModal = async (rental, mode) => {
     setSelectedProposal(rental);
     setContractAgreed(false);
+    setContractEditMode(mode);
 
-    // If the rental already has a saved contract draft, load it directly —
-    // no need to regenerate, preserving any edits either party made previously.
+    // Load saved draft if one exists — preserves all prior edits
     if (rental.contract_text) {
       setEditableContractText(rental.contract_text);
       setSelectedProposal({ ...rental, contractText: rental.contract_text });
@@ -317,16 +366,14 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     }
 
     const vehicle = vehicles.find(v => v.id === rental.vehicle_id) || allVehicles.find(v => v.id === rental.vehicle_id);
-    let text;
-    if (role === 'owner' && rental.driver_id) {
-      const profile = await fetchDriverProfile(rental.driver_id);
-      text = generateContractText(rental, vehicle, profile);
-    } else if (role === 'driver') {
-      const driverProfile = { full_name: user?.full_name, license_number: user?.license_number };
-      text = generateContractText(rental, vehicle, driverProfile);
-    } else {
-      text = generateContractText(rental, vehicle, null);
+    let driverProfileData = null;
+    if (rental.driver_id) {
+      driverProfileData = await fetchDriverProfile(rental.driver_id);
     }
+    if (!driverProfileData && mode === 'review') {
+      driverProfileData = { full_name: user?.full_name, id_number: user?.id_number, passport_number: user?.passport_number, license_number: user?.license_number };
+    }
+    const text = generateContractText(rental, vehicle, driverProfileData);
     setEditableContractText(text);
     setSelectedProposal({ ...rental, contractText: text });
     setContractModal(true);
@@ -338,12 +385,23 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     setContractAgreed(false);
   };
 
-  const handleAcceptWithContract = async () => {
-    if (!contractAgreed || !selectedProposal) return;
-    // Save the (possibly edited) contract text to the rental before accepting
+  // Owner saves edits to an already-accepted contract without changing its status
+  const handleSaveContractEdits = async () => {
+    if (!selectedProposal) return;
     try {
       await Rental.update(selectedProposal.id, { contract_text: editableContractText });
-    } catch { /* non-fatal — acceptance still proceeds */ }
+      toast.success('Contract updated. Driver will see the new version.');
+      closeContractModal();
+    } catch (err) {
+      toast.error('Failed to save: ' + err.message);
+    }
+  };
+
+  const handleAcceptWithContract = async () => {
+    if (!contractAgreed || !selectedProposal) return;
+    try {
+      await Rental.update(selectedProposal.id, { contract_text: editableContractText });
+    } catch { /* non-fatal */ }
     await handleProposalResponse(selectedProposal.id, 'accept');
     closeContractModal();
   };
@@ -398,13 +456,40 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
 
                   {/* Accept / Reject — separated by a visible divider */}
                   <div className="flex gap-2 pt-2 border-t border-amber-200 dark:border-amber-800">
-                    <Button size="sm" variant="default" className="flex-1 gap-1" onClick={(e) => { e.stopPropagation(); openContractModal(r, 'owner'); }}>
+                    <Button size="sm" variant="default" className="flex-1 gap-1" onClick={(e) => { e.stopPropagation(); openContractModal(r, 'accept'); }}>
                       <Check className="w-3.5 h-3.5" /> Accept
                     </Button>
                     <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={(e) => { e.stopPropagation(); handleProposalResponse(r.id, 'reject'); }}>
                       <X className="w-3.5 h-3.5" /> Reject
                     </Button>
                   </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {ownerAwaitingRentals.length > 0 && (
+        <div className="mb-6">
+          <p className="text-sm font-medium text-muted-foreground mb-2">AWAITING DRIVER CONFIRMATION</p>
+          <div className="space-y-3">
+            {ownerAwaitingRentals.map(r => {
+              const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
+              return (
+                <Card key={r.id} className="p-4 border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800">
+                  <div className="mb-3">
+                    <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
+                    <p className="text-xs text-muted-foreground">Driver: {r.driver_email || 'Driver'}</p>
+                    <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
+                    <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
+                  </div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
+                    Contract sent — waiting for driver to confirm. Edit below if changes were agreed via Messages.
+                  </p>
+                  <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={() => openContractModal(r, 'edit')}>
+                    ✏️ Edit Contract
+                  </Button>
                 </Card>
               );
             })}
@@ -472,7 +557,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                       <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                     </div>
                     <div>
-                      <Button size="sm" className="gap-1" onClick={() => openContractModal(r, 'driver')}>
+                      <Button size="sm" className="gap-1" onClick={() => openContractModal(r, 'review')}>
                         <Check className="w-3.5 h-3.5" /> Review & Confirm
                       </Button>
                     </div>
@@ -717,68 +802,58 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       {contractModal && selectedProposal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
           <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3 shrink-0">
+            <div className="flex items-center justify-between mb-1 shrink-0">
               <h2 className="text-xl font-bold">Rental Agreement</h2>
               <button onClick={closeContractModal} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
 
-            {/* Locked financial terms — sourced directly from the database record.
-                Neither party can edit these; they reflect exactly what was proposed. */}
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 mb-3 shrink-0">
-              <div className="flex items-center gap-2 mb-2">
-                <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Binding Terms — cannot be edited</p>
-              </div>
-              {(() => {
-                const v = vehicles.find(x => x.id === selectedProposal.vehicle_id) || allVehicles.find(x => x.id === selectedProposal.vehicle_id);
-                return (
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono">
-                    <span className="text-muted-foreground">Vehicle:</span>
-                    <span className="font-medium">{v ? `${v.make} ${v.model} (${v.year || ''})` : `#${selectedProposal.vehicle_id}`}</span>
-                    <span className="text-muted-foreground">Start date:</span>
-                    <span className="font-medium">{selectedProposal.start_date}</span>
-                    <span className="text-muted-foreground">End date:</span>
-                    <span className="font-medium">{selectedProposal.end_date}</span>
-                    <span className="text-muted-foreground">Weekly rate:</span>
-                    <span className="font-medium">R {selectedProposal.price_per_week}</span>
-                    <span className="text-muted-foreground">Security deposit:</span>
-                    <span className="font-medium">R {selectedProposal.deposit}</span>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Clauses — owner can edit freely; driver is read-only */}
-            <p className="text-xs text-muted-foreground mb-2 shrink-0">
-              {selectedProposal.driver_id === user?.id
-                ? 'Review the terms below. If you want changes, request them via Messages — only the owner can edit the contract.'
-                : 'Edit the clauses below as needed. The driver will review and either confirm or request changes via Messages.'}
+            <p className="text-xs text-muted-foreground mb-3 shrink-0">
+              {contractEditMode === 'review'
+                ? 'Read the full agreement below. If you want any changes, request them via Messages — the owner will update the contract. Confirm only when you are fully satisfied.'
+                : contractEditMode === 'edit'
+                  ? 'Edit the contract below to reflect any changes agreed via Messages, then save. The driver will see the updated version.'
+                  : 'Review and edit all details below before sending to the driver. Once you accept, the driver will confirm to finalise the rental.'}
             </p>
+
+            {/* Full contract textarea — editable for owner (accept/edit modes), read-only for driver (review) */}
             <div className="bg-muted rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0">
               <textarea
-                className="w-full h-full min-h-[30vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed disabled:cursor-default"
+                className="w-full h-full min-h-[40vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
                 value={editableContractText}
                 onChange={e => setEditableContractText(e.target.value)}
-                readOnly={selectedProposal.driver_id === user?.id}
+                readOnly={contractEditMode === 'review'}
               />
             </div>
 
-            <div className="flex items-start gap-3 mb-4 shrink-0">
-              <input type="checkbox" id="agree-contract" checked={contractAgreed} onChange={e => setContractAgreed(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
-              <label htmlFor="agree-contract" className="text-sm text-muted-foreground">
-                I confirm I have read, understood, and agree to be bound by this Rental Agreement and all its terms.
-              </label>
-            </div>
+            {/* Checkbox only shown for accept and review (actual signing steps) */}
+            {contractEditMode !== 'edit' && (
+              <div className="flex items-start gap-3 mb-4 shrink-0">
+                <input type="checkbox" id="agree-contract" checked={contractAgreed} onChange={e => setContractAgreed(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                <label htmlFor="agree-contract" className="text-sm text-muted-foreground">
+                  I confirm I have read, understood, and agree to be bound by this Rental Agreement and all its terms.
+                </label>
+              </div>
+            )}
+
             <div className="flex gap-3 shrink-0">
               <Button variant="outline" className="flex-1" onClick={closeContractModal}>Cancel</Button>
-              <Button className="flex-1" disabled={!contractAgreed}
-                onClick={() => {
-                  if (selectedProposal.driver_id === user?.id) handleDriverConfirm();
-                  else handleAcceptWithContract();
-                }}>
-                {selectedProposal.driver_id === user?.id ? 'Confirm & Finalize Rental' : 'Accept & Sign Agreement'}
-              </Button>
+
+              {contractEditMode === 'accept' && (
+                <Button className="flex-1" disabled={!contractAgreed} onClick={handleAcceptWithContract}>
+                  Accept & Send to Driver
+                </Button>
+              )}
+              {contractEditMode === 'edit' && (
+                <Button className="flex-1" onClick={handleSaveContractEdits}>
+                  Save Contract Changes
+                </Button>
+              )}
+              {contractEditMode === 'review' && (
+                <Button className="flex-1" disabled={!contractAgreed} onClick={handleDriverConfirm}>
+                  Confirm & Finalise Rental
+                </Button>
+              )}
             </div>
           </div>
         </div>,
