@@ -254,7 +254,7 @@ const newIndex  = TAB_ORDER.indexOf(normalize(newPath));
       ? { transform: `translateX(${dragOffset}px)`, transition: 'none' }
       : slideClass
         ? {}
-        : { transform: 'translateX(0)', transition: 'transform 0.25s ease-out' }),
+        : { transform: 'translateX(0)', transition: 'none' }),
   };
 
   return (
