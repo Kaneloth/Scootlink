@@ -1,24 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
-import { Bike, LayoutDashboard, Search, MessageCircle, MapPin, Wallet, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Bike } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase } from '@/api/supabaseData';
 
 // Tab order for swipe navigation (matches bottom nav order)
 const TAB_ORDER = ['/', '/search-vehicles', '/messages', '/tracking', '/wallet', '/settings'];
-
-// Metadata for each tab — used by the peek indicator
-const TAB_META = {
-  '/':                { label: 'Home',     icon: LayoutDashboard },
-  '/search-vehicles': { label: 'Search',   icon: Search          },
-  '/find-drivers':    { label: 'Search',   icon: Search          },
-  '/mysearch':        { label: 'Search',   icon: Search          },
-  '/messages':        { label: 'Messages', icon: MessageCircle   },
-  '/tracking':        { label: 'Track',    icon: MapPin          },
-  '/wallet':          { label: 'Wallet',   icon: Wallet          },
-  '/settings':        { label: 'Settings', icon: Settings        },
-};
 
 // ─── Navigation progress bar ──────────────────────────────────────────────────
 function useNavigationProgress(pathname) {
@@ -57,7 +45,9 @@ function NavigationProgressBar({ pathname }) {
         style={{
           height: '100%',
           width: `${width}%`,
-          transition: width === 0 ? 'none' : done ? 'width 0.2s ease-in, opacity 0.3s ease-out 0.05s' : 'width 0.4s ease-out',
+          transition: width === 0 ? 'none' : done
+            ? 'width 0.2s ease-in, opacity 0.3s ease-out 0.05s'
+            : 'width 0.4s ease-out',
           opacity: done ? 0 : 1,
           background: 'hsl(var(--primary))',
           boxShadow: '0 0 8px hsl(var(--primary) / 0.6)',
@@ -68,58 +58,30 @@ function NavigationProgressBar({ pathname }) {
   );
 }
 
-// ─── Peek strip ───────────────────────────────────────────────────────────────
-function PeekStrip({ direction, tab, progress }) {
-  if (!tab) return null;
-  const Icon = tab.icon;
-  const opacity = Math.min(progress * 2.5, 1);
-  const isRight = direction === 'right';
-  return (
-    <div
-      className={`absolute inset-y-0 ${isRight ? 'right-0' : 'left-0'} w-20 flex flex-col items-center justify-center gap-1.5 pointer-events-none z-20`}
-      style={{
-        opacity,
-        background: isRight
-          ? 'linear-gradient(to left, hsl(var(--card)) 30%, transparent)'
-          : 'linear-gradient(to right, hsl(var(--card)) 30%, transparent)',
-      }}
-    >
-      {isRight ? (
-        <ChevronRight className="w-4 h-4 text-primary/60" />
-      ) : (
-        <ChevronLeft className="w-4 h-4 text-primary/60" />
-      )}
-      <Icon className="w-5 h-5 text-primary" />
-      <span className="text-[10px] font-semibold text-primary">{tab.label}</span>
-    </div>
-  );
-}
-
 // ─── Main layout ──────────────────────────────────────────────────────────────
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
+  const [slideClass, setSlideClass] = useState('');
 
-  const isDraggingRef = useRef(false);
-  const dragOffsetRef = useRef(0);
-  const [dragOffset, setDragOffset] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const touchStartRef = useRef({ x: 0, y: 0 });
   const mainRef = useRef(null);
   const prevLocationRef = useRef(location.pathname);
-  const [slideClass, setSlideClass] = useState('');
   const accountTypeRef = useRef('driver');
+
+  // Swipe gesture state — only start/end coords, no live drag
+  const swipeRef = useRef({ x: 0, y: 0, active: false });
 
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
+  // Slide animation on route change
   useEffect(() => {
     const prevPath = prevLocationRef.current;
     const newPath = location.pathname;
     prevLocationRef.current = newPath;
 
-    // Normalize search aliases so /find-drivers and /mysearch get the same
-    // slide animation as /search-vehicles (which IS in TAB_ORDER).
+    // Normalize search aliases (/find-drivers, /mysearch) to the canonical
+    // TAB_ORDER entry so they get the correct slide direction.
     const normalize = (p) =>
       (p === '/find-drivers' || p === '/mysearch') ? '/search-vehicles' : p;
 
@@ -128,7 +90,7 @@ export default function AppLayout() {
 
     if (Math.abs(newIndex - prevIndex) >= 1 && prevIndex !== -1 && newIndex !== -1) {
       setSlideClass(newIndex > prevIndex ? 'slide-from-right' : 'slide-from-left');
-      const timer = setTimeout(() => setSlideClass(''), 320);
+      const timer = setTimeout(() => setSlideClass(''), 350);
       return () => clearTimeout(timer);
     } else {
       setSlideClass('');
@@ -172,118 +134,68 @@ export default function AppLayout() {
     return TAB_ORDER.indexOf(path);
   }, [location.pathname]);
 
-  const peekInfo = useMemo(() => {
-    if (!isDragging) return null;
-    const containerWidth = mainRef.current?.offsetWidth || window.innerWidth;
-    const threshold = containerWidth * 0.25;
-    const currentIndex = getCurrentTabIndex();
-    if (currentIndex === -1) return null;
-    const progress = Math.abs(dragOffset) / threshold;
-    if (dragOffset < -10 && currentIndex < TAB_ORDER.length - 1) {
-      const nextPath = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
-      return { direction: 'right', tab: TAB_META[nextPath] || TAB_META[TAB_ORDER[currentIndex + 1]], progress };
-    }
-    if (dragOffset > 10 && currentIndex > 0) {
-      return { direction: 'left', tab: TAB_META[TAB_ORDER[currentIndex - 1]], progress };
-    }
-    return null;
-  }, [isDragging, dragOffset, getCurrentTabIndex, getSearchPath]);
-
-  // ── Touch handling ──────────────────────────────────────────────────────────
-  // Listeners are on `window` (not just `main`) so that scrollable children
-  // inside Dashboard, Search, and Messages cannot silently consume the touch
-  // before we can decide it's a horizontal swipe.
+  // ── Swipe gesture detection ─────────────────────────────────────────────────
+  // Approach: track start/end points only — no live drag transform.
+  // This avoids ALL snap-back bounce issues caused by resetting translateX
+  // mid-gesture. The CSS slide animation handles 100% of the visual.
+  //
+  // Listeners are on `window` so scrollable children (Dashboard rental list,
+  // Search results, Messages chat) cannot silently consume the touch event
+  // before we see it.
   useEffect(() => {
-    const handleTouchStart = (e) => {
-      // Only track touches that originate inside the main swipe area.
+    const onTouchStart = (e) => {
+      // Only handle touches that start inside the main content pane.
       if (!mainRef.current?.contains(e.target)) return;
-      touchStartRef.current = {
+      swipeRef.current = {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY,
+        active: true,
       };
-      isDraggingRef.current = false;
-      dragOffsetRef.current = 0;
     };
 
-    const handleTouchMove = (e) => {
-      const { x: startX, y: startY } = touchStartRef.current;
-      if (startX === 0 && startY === 0) return;
+    const onTouchEnd = (e) => {
+      if (!swipeRef.current.active) return;
+      swipeRef.current.active = false;
 
-      const dx = e.touches[0].clientX - startX;
-      const dy = e.touches[0].clientY - startY;
+      const dx = e.changedTouches[0].clientX - swipeRef.current.x;
+      const dy = e.changedTouches[0].clientY - swipeRef.current.y;
 
-      if (!isDraggingRef.current) {
-        // Require clear horizontal intent before claiming the gesture.
-        if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 0.8) {
-          isDraggingRef.current = true;
-          setIsDragging(true);
-        } else if (Math.abs(dy) > 10) {
-          // Clearly vertical — reset so we stop checking this touch sequence.
-          touchStartRef.current = { x: 0, y: 0 };
-          return;
-        }
-      }
+      // Require a clearly horizontal gesture: at least 60 px wide and more
+      // horizontal than vertical. Keeps vertical scrolling from firing nav.
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
 
-      if (isDraggingRef.current) {
-        // preventDefault stops the page from also scrolling while we animate.
-        e.preventDefault();
-        dragOffsetRef.current = dx;
-        setDragOffset(dx);
-      }
-    };
-
-    const handleTouchEnd = () => {
-      if (!isDraggingRef.current) {
-        touchStartRef.current = { x: 0, y: 0 };
-        return;
-      }
-
-      const containerWidth = mainRef.current?.offsetWidth || window.innerWidth;
-      const threshold = containerWidth * 0.25;
-      const dx = dragOffsetRef.current;
       const currentIndex = getCurrentTabIndex();
+      if (currentIndex === -1) return;
 
-      if (currentIndex !== -1) {
-        if (dx < -threshold && currentIndex < TAB_ORDER.length - 1) {
-          const nextPath = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
-          navigate(nextPath);
-        } else if (dx > threshold && currentIndex > 0) {
-          navigate(TAB_ORDER[currentIndex - 1]);
-        }
+      if (dx < 0 && currentIndex < TAB_ORDER.length - 1) {
+        // Left swipe → go forward
+        const next = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
+        navigate(next);
+      } else if (dx > 0 && currentIndex > 0) {
+        // Right swipe → go back
+        navigate(TAB_ORDER[currentIndex - 1]);
       }
-
-      isDraggingRef.current = false;
-      dragOffsetRef.current = 0;
-      touchStartRef.current = { x: 0, y: 0 };
-      setIsDragging(false);
-      setDragOffset(0);
     };
 
-    window.addEventListener('touchstart', handleTouchStart, { passive: false });
-    window.addEventListener('touchmove',  handleTouchMove,  { passive: false });
-    window.addEventListener('touchend',   handleTouchEnd);
-    window.addEventListener('touchcancel', handleTouchEnd);
+    const onTouchCancel = () => { swipeRef.current.active = false; };
+
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchend',   onTouchEnd,   { passive: true });
+    window.addEventListener('touchcancel', onTouchCancel);
 
     return () => {
-      window.removeEventListener('touchstart', handleTouchStart);
-      window.removeEventListener('touchmove',  handleTouchMove);
-      window.removeEventListener('touchend',   handleTouchEnd);
-      window.removeEventListener('touchcancel', handleTouchEnd);
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchend',   onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchCancel);
     };
   }, [getCurrentTabIndex, getSearchPath, navigate]);
-
-  const inlineStyle = isDragging
-    ? { transform: `translateX(${dragOffset}px)`, touchAction: 'none' }
-    : {};
 
   return (
     <div className="flex min-h-screen bg-background">
       {/*
-        Override the global `.main-content { transition: transform 0.3s ease-out }`
-        rule that was causing the bounce. We manage all transform animation
-        ourselves (JS drag + CSS keyframe slide classes), so that CSS transition
-        must never fire. The `!important` beats the stylesheet rule without
-        needing to edit the CSS file.
+        Neutralise the global `.main-content { transition: transform 0.3s ease-out }`
+        rule that caused the snap-back bounce. All visual transitions are now
+        handled by the slide-from-right / slide-from-left keyframe animations.
       */}
       <style>{`
         .main-content { transition: none !important; }
@@ -304,18 +216,9 @@ export default function AppLayout() {
       <Sidebar />
 
       <div className="relative flex-1 lg:ml-64 overflow-hidden">
-        {peekInfo && (
-          <PeekStrip
-            direction={peekInfo.direction}
-            tab={peekInfo.tab}
-            progress={peekInfo.progress}
-          />
-        )}
-
         <main
           ref={mainRef}
           className={`h-screen overflow-y-auto pb-20 lg:pb-0 main-content ${slideClass}`}
-          style={inlineStyle}
         >
           <div className="lg:hidden flex items-center px-4 py-3 border-b border-border bg-card sticky top-0 z-30">
             <Link to="/" className="flex items-center gap-2">
