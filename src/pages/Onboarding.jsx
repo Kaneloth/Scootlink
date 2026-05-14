@@ -217,8 +217,10 @@ export default function Onboarding() {
       const { supabase } = await import('@/api/supabaseClient');
       const { data: { user } } = await supabase.auth.getUser();
       const blob     = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
-      const filePath = `${user.id}/selfie.jpg`;
-      const { error } = await supabase.storage.from('profile-images').upload(filePath, blob, { upsert: true, contentType: 'image/jpeg' });
+      // Use a unique filename each time so the upload is always an INSERT
+      // (upsert/UPDATE can fail when the RLS policy only permits INSERT)
+      const filePath = `${user.id}/selfie_${Date.now()}.jpg`;
+      const { error } = await supabase.storage.from('profile-images').upload(filePath, blob, { contentType: 'image/jpeg' });
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from('profile-images').getPublicUrl(filePath);
       setSelfieUrl(publicUrl);
