@@ -5,7 +5,6 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase } from '@/api/supabaseData';
 
-// Tab order for swipe navigation (matches bottom nav order)
 const TAB_ORDER = ['/', '/search-vehicles', '/messages', '/tracking', '/wallet', '/settings'];
 
 // ─── Navigation progress bar ──────────────────────────────────────────────────
@@ -13,11 +12,7 @@ function useNavigationProgress(pathname) {
   const [barState, setBarState] = useState({ width: 0, visible: false, done: false });
   const prevPathRef = useRef(pathname);
   const timersRef = useRef([]);
-
-  const clear = () => {
-    timersRef.current.forEach(clearTimeout);
-    timersRef.current = [];
-  };
+  const clear = () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
 
   useEffect(() => {
     if (prevPathRef.current === pathname) return;
@@ -41,19 +36,16 @@ function NavigationProgressBar({ pathname }) {
   if (!visible) return null;
   return (
     <div className="fixed top-0 left-0 right-0 z-[100] h-[3px] pointer-events-none">
-      <div
-        style={{
-          height: '100%',
-          width: `${width}%`,
-          transition: width === 0 ? 'none' : done
-            ? 'width 0.2s ease-in, opacity 0.3s ease-out 0.05s'
-            : 'width 0.4s ease-out',
-          opacity: done ? 0 : 1,
-          background: 'hsl(var(--primary))',
-          boxShadow: '0 0 8px hsl(var(--primary) / 0.6)',
-          borderRadius: '0 2px 2px 0',
-        }}
-      />
+      <div style={{
+        height: '100%', width: `${width}%`,
+        transition: width === 0 ? 'none' : done
+          ? 'width 0.2s ease-in, opacity 0.3s ease-out 0.05s'
+          : 'width 0.4s ease-out',
+        opacity: done ? 0 : 1,
+        background: 'hsl(var(--primary))',
+        boxShadow: '0 0 8px hsl(var(--primary) / 0.6)',
+        borderRadius: '0 2px 2px 0',
+      }} />
     </div>
   );
 }
@@ -69,19 +61,16 @@ export default function AppLayout() {
   const prevLocationRef = useRef(location.pathname);
   const accountTypeRef = useRef('driver');
 
-  // Swipe gesture state — only start/end coords, no live drag
-  const swipeRef = useRef({ x: 0, y: 0, active: false });
+  // Swipe state: tracks one touch gesture from start to end
+  const swipeRef = useRef({ x: 0, y: 0, active: false, isHorizontal: null });
 
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
-  // Slide animation on route change
   useEffect(() => {
     const prevPath = prevLocationRef.current;
     const newPath = location.pathname;
     prevLocationRef.current = newPath;
 
-    // Normalize search aliases (/find-drivers, /mysearch) to the canonical
-    // TAB_ORDER entry so they get the correct slide direction.
     const normalize = (p) =>
       (p === '/find-drivers' || p === '/mysearch') ? '/search-vehicles' : p;
 
@@ -90,8 +79,8 @@ export default function AppLayout() {
 
     if (Math.abs(newIndex - prevIndex) >= 1 && prevIndex !== -1 && newIndex !== -1) {
       setSlideClass(newIndex > prevIndex ? 'slide-from-right' : 'slide-from-left');
-      const timer = setTimeout(() => setSlideClass(''), 350);
-      return () => clearTimeout(timer);
+      const t = setTimeout(() => setSlideClass(''), 350);
+      return () => clearTimeout(t);
     } else {
       setSlideClass('');
     }
@@ -134,58 +123,98 @@ export default function AppLayout() {
     return TAB_ORDER.indexOf(path);
   }, [location.pathname]);
 
-  // ── Swipe gesture detection ─────────────────────────────────────────────────
-  // Approach: track start/end points only — no live drag transform.
-  // This avoids ALL snap-back bounce issues caused by resetting translateX
-  // mid-gesture. The CSS slide animation handles 100% of the visual.
+  // ── Touch / swipe handling ──────────────────────────────────────────────────
   //
-  // Listeners are on `window` so scrollable children (Dashboard rental list,
-  // Search results, Messages chat) cannot silently consume the touch event
-  // before we see it.
+  // Strategy: determine swipe direction on the first few pixels of touchmove
+  // and immediately call e.preventDefault() if it's horizontal. This kills
+  // the iOS rubber-band bounce that fires on interactive elements (Links,
+  // onClick divs) BEFORE our threshold distance is reached. The bounce the
+  // user was seeing on the Dashboard was 100% iOS rubber-banding triggered by
+  // WalletCard (inside a <Link>) and the stat card onClick divs.
+  //
+  // Listeners are on `window` so scrollable-child elements (messages list,
+  // search results) cannot silently consume the touch before we see it.
   useEffect(() => {
     const onTouchStart = (e) => {
-      // Only handle touches that start inside the main content pane.
       if (!mainRef.current?.contains(e.target)) return;
       swipeRef.current = {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY,
         active: true,
+        isHorizontal: null, // null = not yet determined
       };
     };
 
+    const onTouchMove = (e) => {
+      const s = swipeRef.current;
+      if (!s.active) return;
+
+      // Wait until we have enough movement to determine direction
+      if (s.isHorizontal !== null) {
+        // Direction already locked — if horizontal, keep blocking default
+        if (s.isHorizontal) e.preventDefault();
+        return;
+      }
+
+      const dx = e.touches[0].clientX - s.x;
+      const dy = e.touches[0].clientY - s.y;
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
+
+      if (adx < 6 && ady < 6) return; // not enough movement yet
+
+      if (adx > ady * 1.2) {
+        // Clearly horizontal — lock and prevent default immediately.
+        // This is the key: calling preventDefault here stops iOS from
+        // rubber-banding the page, which was the "bounce" on Dashboard.
+        s.isHorizontal = true;
+        e.preventDefault();
+      } else {
+        // Clearly vertical — let the browser handle the scroll naturally
+        s.isHorizontal = false;
+        s.active = false; // stop tracking this gesture
+      }
+    };
+
     const onTouchEnd = (e) => {
-      if (!swipeRef.current.active) return;
+      const s = swipeRef.current;
+      if (!s.active || !s.isHorizontal) {
+        swipeRef.current.active = false;
+        return;
+      }
       swipeRef.current.active = false;
 
-      const dx = e.changedTouches[0].clientX - swipeRef.current.x;
-      const dy = e.changedTouches[0].clientY - swipeRef.current.y;
+      const dx = e.changedTouches[0].clientX - s.x;
+      const dy = e.changedTouches[0].clientY - s.y;
 
-      // Require a clearly horizontal gesture: at least 60 px wide and more
-      // horizontal than vertical. Keeps vertical scrolling from firing nav.
-      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      // Navigate if the horizontal distance clears 40 px and is more
+      // horizontal than vertical (guards against diagonal flicks).
+      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
 
       const currentIndex = getCurrentTabIndex();
       if (currentIndex === -1) return;
 
       if (dx < 0 && currentIndex < TAB_ORDER.length - 1) {
-        // Left swipe → go forward
         const next = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
         navigate(next);
       } else if (dx > 0 && currentIndex > 0) {
-        // Right swipe → go back
         navigate(TAB_ORDER[currentIndex - 1]);
       }
     };
 
     const onTouchCancel = () => { swipeRef.current.active = false; };
 
-    window.addEventListener('touchstart', onTouchStart, { passive: true });
-    window.addEventListener('touchend',   onTouchEnd,   { passive: true });
-    window.addEventListener('touchcancel', onTouchCancel);
+    // touchstart can be passive (we never preventDefault here)
+    // touchmove must be non-passive so we can call preventDefault
+    window.addEventListener('touchstart',  onTouchStart,  { passive: true  });
+    window.addEventListener('touchmove',   onTouchMove,   { passive: false });
+    window.addEventListener('touchend',    onTouchEnd,    { passive: true  });
+    window.addEventListener('touchcancel', onTouchCancel, { passive: true  });
 
     return () => {
-      window.removeEventListener('touchstart', onTouchStart);
-      window.removeEventListener('touchend',   onTouchEnd);
+      window.removeEventListener('touchstart',  onTouchStart);
+      window.removeEventListener('touchmove',   onTouchMove);
+      window.removeEventListener('touchend',    onTouchEnd);
       window.removeEventListener('touchcancel', onTouchCancel);
     };
   }, [getCurrentTabIndex, getSearchPath, navigate]);
@@ -193,12 +222,19 @@ export default function AppLayout() {
   return (
     <div className="flex min-h-screen bg-background">
       {/*
-        Neutralise the global `.main-content { transition: transform 0.3s ease-out }`
-        rule that caused the snap-back bounce. All visual transitions are now
-        handled by the slide-from-right / slide-from-left keyframe animations.
+        1. `.main-content { transition: none !important }` — kills the global
+           CSS rule that was animating the snap-back and causing the bounce in
+           earlier versions.
+        2. Slide keyframes redefined here so they are guaranteed to exist
+           even if the external CSS file fails to load or is overridden.
+        3. `overscroll-behavior-x: none` on main — secondary guard against
+           horizontal rubber-banding that the touchmove preventDefault misses.
       */}
       <style>{`
-        .main-content { transition: none !important; }
+        .main-content {
+          transition: none !important;
+          overscroll-behavior-x: none;
+        }
         @keyframes slideFromRight {
           from { transform: translateX(100%); }
           to   { transform: translateX(0);    }
@@ -212,7 +248,6 @@ export default function AppLayout() {
       `}</style>
 
       <NavigationProgressBar pathname={location.pathname} />
-
       <Sidebar />
 
       <div className="relative flex-1 lg:ml-64 overflow-hidden">
