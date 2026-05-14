@@ -5,10 +5,8 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase } from '@/api/supabaseData';
 
-// Tab order for swipe navigation (matches bottom nav order)
 const TAB_ORDER = ['/', '/search-vehicles', '/messages', '/tracking', '/wallet', '/settings'];
 
-// Metadata for each tab — used by the peek indicator
 const TAB_META = {
   '/':                { label: 'Home',     icon: LayoutDashboard },
   '/search-vehicles': { label: 'Search',   icon: Search          },
@@ -20,7 +18,6 @@ const TAB_META = {
   '/settings':        { label: 'Settings', icon: Settings        },
 };
 
-// ─── Navigation progress bar ──────────────────────────────────────────────────
 function useNavigationProgress(pathname) {
   const [barState, setBarState] = useState({ width: 0, visible: false, done: false });
   const prevPathRef = useRef(pathname);
@@ -34,16 +31,13 @@ function useNavigationProgress(pathname) {
   useEffect(() => {
     if (prevPathRef.current === pathname) return;
     prevPathRef.current = pathname;
-
     clear();
     setBarState({ width: 0, visible: true, done: false });
-
     const t1 = setTimeout(() => setBarState(s => ({ ...s, width: 60 })), 30);
     const t2 = setTimeout(() => setBarState(s => ({ ...s, width: 80 })), 250);
     const t3 = setTimeout(() => setBarState(s => ({ ...s, width: 95 })), 500);
     const t4 = setTimeout(() => setBarState(s => ({ ...s, width: 100, done: true })), 700);
     const t5 = setTimeout(() => setBarState({ width: 0, visible: false, done: false }), 1050);
-
     timersRef.current = [t1, t2, t3, t4, t5];
     return clear;
   }, [pathname]);
@@ -53,9 +47,7 @@ function useNavigationProgress(pathname) {
 
 function NavigationProgressBar({ pathname }) {
   const { width, visible, done } = useNavigationProgress(pathname);
-
   if (!visible) return null;
-
   return (
     <div className="fixed top-0 left-0 right-0 z-[100] h-[3px] pointer-events-none">
       <div
@@ -73,13 +65,11 @@ function NavigationProgressBar({ pathname }) {
   );
 }
 
-// ─── Peek strip ───────────────────────────────────────────────────────────────
 function PeekStrip({ direction, tab, progress }) {
   if (!tab) return null;
   const Icon = tab.icon;
   const opacity = Math.min(progress * 2.5, 1);
   const isRight = direction === 'right';
-
   return (
     <div
       className={`absolute inset-y-0 ${isRight ? 'right-0' : 'left-0'} w-20 flex flex-col items-center justify-center gap-1.5 pointer-events-none z-20`}
@@ -101,7 +91,6 @@ function PeekStrip({ direction, tab, progress }) {
   );
 }
 
-// ─── Main layout ──────────────────────────────────────────────────────────────
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -117,18 +106,14 @@ export default function AppLayout() {
   const [slideClass, setSlideClass] = useState('');
   const accountTypeRef = useRef('driver');
 
-  useEffect(() => {
-    accountTypeRef.current = accountType;
-  }, [accountType]);
+  useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
   useEffect(() => {
     const prevPath = prevLocationRef.current;
     const newPath = location.pathname;
     prevLocationRef.current = newPath;
-
     const prevIndex = TAB_ORDER.indexOf(prevPath);
     const newIndex = TAB_ORDER.indexOf(newPath);
-
     if (Math.abs(newIndex - prevIndex) >= 1 && prevIndex !== -1 && newIndex !== -1) {
       setSlideClass(newIndex > prevIndex ? 'slide-from-right' : 'slide-from-left');
       const timer = setTimeout(() => setSlideClass(''), 320);
@@ -144,9 +129,6 @@ export default function AppLayout() {
     }).catch(() => {});
   }, []);
 
-  // Silently keep the biometric refresh token up to date.
-  // Supabase fires TOKEN_REFRESHED roughly every hour; we update the httpOnly
-  // cookie each time so the stored token never goes stale.
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (
@@ -184,9 +166,7 @@ export default function AppLayout() {
     const threshold = containerWidth * 0.25;
     const currentIndex = getCurrentTabIndex();
     if (currentIndex === -1) return null;
-
     const progress = Math.abs(dragOffset) / threshold;
-
     if (dragOffset < -10 && currentIndex < TAB_ORDER.length - 1) {
       const nextPath = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
       return { direction: 'right', tab: TAB_META[nextPath] || TAB_META[TAB_ORDER[currentIndex + 1]], progress };
@@ -201,9 +181,9 @@ export default function AppLayout() {
     const el = mainRef.current;
     if (!el) return;
 
-    // Native touchstart with passive:false so the browser knows we may
-    // call preventDefault — this is what lets us "win" against scrollable
-    // children (messages list, search results) on iOS/Android.
+    // Register touchstart as non-passive so the browser knows we may call
+    // preventDefault — this lets us "win" against scrollable children
+    // (messages list, search results) on iOS and Android.
     const handleTouchStartNative = (e) => {
       touchStartRef.current = {
         x: e.touches[0].clientX,
@@ -215,13 +195,11 @@ export default function AppLayout() {
 
     const handleTouchMove = (e) => {
       const { x: startX, y: startY } = touchStartRef.current;
-      const currentX = e.touches[0].clientX;
-      const currentY = e.touches[0].clientY;
-      const dx = currentX - startX;
-      const dy = currentY - startY;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
 
-      // Lower ratio (1.2×) so horizontal swipes are caught quickly before
-      // the browser assigns the touch to a scrollable child.
+      // 1.2× ratio catches horizontal swipes early, before the browser
+      // can assign the touch to a scrollable child for vertical scrolling.
       if (!isDraggingRef.current && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) {
         isDraggingRef.current = true;
         setIsDragging(true);
@@ -241,11 +219,6 @@ export default function AppLayout() {
       el.removeEventListener('touchmove',  handleTouchMove);
     };
   }, []);
-
-  const handleTouchStart = () => {
-    setIsDragging(false);
-    setDragOffset(0);
-  };
 
   const handleTouchEnd = useCallback(() => {
     if (!isDraggingRef.current) return;
@@ -271,9 +244,8 @@ export default function AppLayout() {
   }, [getCurrentTabIndex, getSearchPath, navigate]);
 
   const inlineStyle = {
-    // pan-y tells the browser: handle vertical scroll natively, hand
-    // horizontal gestures to our JS — fixes swipe on pages with
-    // scrollable children (Messages list, Search results).
+    // pan-y = browser handles vertical scroll natively, JS handles horizontal.
+    // Fixes the "bounce and snap back" on pages with scrollable content.
     touchAction: isDragging ? 'none' : 'pan-y',
     ...(isDragging
       ? { transform: `translateX(${dragOffset}px)`, transition: 'none' }
@@ -301,7 +273,6 @@ export default function AppLayout() {
           ref={mainRef}
           className={`h-screen overflow-y-auto pb-20 lg:pb-0 main-content ${slideClass}`}
           style={inlineStyle}
-          onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
           <div className="lg:hidden flex items-center px-4 py-3 border-b border-border bg-card sticky top-0 z-30">
