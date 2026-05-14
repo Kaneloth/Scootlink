@@ -201,6 +201,18 @@ export default function AppLayout() {
     const el = mainRef.current;
     if (!el) return;
 
+    // Native touchstart with passive:false so the browser knows we may
+    // call preventDefault — this is what lets us "win" against scrollable
+    // children (messages list, search results) on iOS/Android.
+    const handleTouchStartNative = (e) => {
+      touchStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+      };
+      isDraggingRef.current = false;
+      dragOffsetRef.current = 0;
+    };
+
     const handleTouchMove = (e) => {
       const { x: startX, y: startY } = touchStartRef.current;
       const currentX = e.touches[0].clientX;
@@ -208,7 +220,9 @@ export default function AppLayout() {
       const dx = currentX - startX;
       const dy = currentY - startY;
 
-      if (!isDraggingRef.current && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 2) {
+      // Lower ratio (1.2×) so horizontal swipes are caught quickly before
+      // the browser assigns the touch to a scrollable child.
+      if (!isDraggingRef.current && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) {
         isDraggingRef.current = true;
         setIsDragging(true);
       }
@@ -220,17 +234,15 @@ export default function AppLayout() {
       }
     };
 
-    el.addEventListener('touchmove', handleTouchMove, { passive: false });
-    return () => el.removeEventListener('touchmove', handleTouchMove);
+    el.addEventListener('touchstart', handleTouchStartNative, { passive: false });
+    el.addEventListener('touchmove',  handleTouchMove,        { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', handleTouchStartNative);
+      el.removeEventListener('touchmove',  handleTouchMove);
+    };
   }, []);
 
-  const handleTouchStart = (e) => {
-    touchStartRef.current = {
-      x: e.touches[0].clientX,
-      y: e.touches[0].clientY,
-    };
-    isDraggingRef.current = false;
-    dragOffsetRef.current = 0;
+  const handleTouchStart = () => {
     setIsDragging(false);
     setDragOffset(0);
   };
@@ -258,11 +270,17 @@ export default function AppLayout() {
     setDragOffset(0);
   }, [getCurrentTabIndex, getSearchPath, navigate]);
 
-  const inlineStyle = isDragging
-    ? { transform: `translateX(${dragOffset}px)`, transition: 'none' }
-    : slideClass
-      ? {}
-      : { transform: 'translateX(0)', transition: 'transform 0.25s ease-out' };
+  const inlineStyle = {
+    // pan-y tells the browser: handle vertical scroll natively, hand
+    // horizontal gestures to our JS — fixes swipe on pages with
+    // scrollable children (Messages list, Search results).
+    touchAction: isDragging ? 'none' : 'pan-y',
+    ...(isDragging
+      ? { transform: `translateX(${dragOffset}px)`, transition: 'none' }
+      : slideClass
+        ? {}
+        : { transform: 'translateX(0)', transition: 'transform 0.25s ease-out' }),
+  };
 
   return (
     <div className="flex min-h-screen bg-background">
