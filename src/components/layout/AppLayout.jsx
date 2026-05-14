@@ -50,12 +50,83 @@ function NavigationProgressBar({ pathname }) {
   );
 }
 
+// ─── Verification gate ────────────────────────────────────────────────────────
+// Routes the user can always reach even before verification is complete.
+const GATE_EXEMPT = ['/onboarding', '/subscription', '/settings', '/profile'];
+const ADMIN_EMAILS = ['kanelothelejane@gmail.com'];
+
+function VerificationGate({ user, userLoading, children }) {
+  const location = useLocation();
+  const navigate  = useNavigate();
+
+  if (userLoading) return null; // wait — avoids flash of gate before user loads
+  if (!user) return children;  // not logged in, router handles the auth redirect
+
+  const isAdmin   = ADMIN_EMAILS.includes(user.email);
+  const isExempt  = GATE_EXEMPT.some((p) => location.pathname.startsWith(p));
+  if (isAdmin || isExempt) return children;
+
+  // Step 1 — onboarding not started/completed → redirect immediately
+  if (!user.onboarding_completed) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
+        <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center">
+          <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 3h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+        </div>
+        <div>
+          <h2 className="text-xl font-bold mb-2">Complete your profile first</h2>
+          <p className="text-muted-foreground text-sm max-w-xs">
+            Identity verification is required before you can access Scootlink features.
+          </p>
+        </div>
+        <button
+          className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-sm transition-colors"
+          onClick={() => navigate('/onboarding')}
+        >
+          Set up my profile
+        </button>
+      </div>
+    );
+  }
+
+  // Step 2 — onboarding done but admin hasn't verified yet → holding screen
+  if (!user.verified) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
+        <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+          <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          </svg>
+        </div>
+        <div>
+          <h2 className="text-xl font-bold mb-2">Verification in progress</h2>
+          <p className="text-muted-foreground text-sm max-w-xs">
+            Your profile has been submitted and is being reviewed. You'll have full access as soon as it's approved — usually within 24 hours.
+          </p>
+        </div>
+        <button
+          className="px-6 py-3 rounded-xl border border-border text-sm font-medium hover:bg-accent transition-colors"
+          onClick={() => navigate('/settings')}
+        >
+          View my profile
+        </button>
+      </div>
+    );
+  }
+
+  return children;
+}
+
 // ─── Main layout ──────────────────────────────────────────────────────────────
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
   const [slideClass, setSlideClass] = useState('');
+  const [gateUser, setGateUser]     = useState(null);
+  const [userLoading, setUserLoading] = useState(true);
 
   const mainRef = useRef(null);
   const prevLocationRef = useRef(location.pathname);
@@ -89,7 +160,8 @@ export default function AppLayout() {
   useEffect(() => {
     auth.me().then(user => {
       setAccountType(user?.subscription_plan || 'driver');
-    }).catch(() => {});
+      setGateUser(user ?? null);
+    }).catch(() => {}).finally(() => setUserLoading(false));
   }, []);
 
   useEffect(() => {
@@ -197,6 +269,7 @@ export default function AppLayout() {
   }, [getCurrentTabIndex, getSearchPath, navigate]);
 
   return (
+    <VerificationGate user={gateUser} userLoading={userLoading}>
     <div className="flex min-h-screen bg-background">
       {/*
         1. transition: none !important  — kills the .main-content CSS rule
@@ -247,5 +320,6 @@ export default function AppLayout() {
 
       <MobileNav />
     </div>
+    </VerificationGate>
   );
 }
