@@ -149,14 +149,3 @@ main {
   width: 100vw;
   flex-shrink: 0;
 }
-/* Allow only vertical scrolling inside the swipe area */
-main * {
-  /* but reset on elements that genuinely need horizontal scroll (like the image strip) */
-  touch-action: pan-y;
-}
-
-/* Re‑enable horizontal scrolling only for the intentional image strip */
-main .overflow-x-auto {
-  touch-action: pan-x;   /* allow horizontal scroll for the image preview, BUT */
-  max-width: 100vw;      /* prevent it from making the page wider */
-}
