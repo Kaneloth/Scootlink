@@ -5,32 +5,50 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase } from '@/api/supabaseData';
 
-// Import all main tab components – they will be pre‑rendered for smooth swiping
-import Dashboard from '@/pages/Dashboard';
-import SearchVehicles from '@/pages/SearchVehicles';
-import FindDrivers from '@/pages/FindDrivers';
-import SearchPage from '@/pages/SearchPage';
-import Tracking from '@/pages/Tracking';
-import Wallet from '@/pages/Wallet';
-import Settings from '@/pages/Settings';
-import Messages from '@/pages/Messages';
-
-// Tab order and metadata (unchanged from your version)
 const TAB_ORDER = ['/', '/search-vehicles', '/messages', '/tracking', '/wallet', '/settings'];
-const TAB_META = {
-  '/':                { label: 'Home',     icon: LayoutDashboard },
-  '/search-vehicles': { label: 'Search',   icon: Search          },
-  '/find-drivers':    { label: 'Search',   icon: Search          },
-  '/mysearch':        { label: 'Search',   icon: Search          },
-  '/messages':        { label: 'Messages', icon: MessageCircle   },
-  '/tracking':        { label: 'Track',    icon: MapPin          },
-  '/wallet':          { label: 'Wallet',   icon: Wallet          },
-  '/settings':        { label: 'Settings', icon: Settings        },
-};
 
-// ─── Navigation progress bar (exactly as you had it) ─────────────────────────
-function useNavigationProgress(pathname) { /* unchanged */ }
-function NavigationProgressBar({ pathname }) { /* unchanged */ }
+// ─── Navigation progress bar ──────────────────────────────────────────────────
+function useNavigationProgress(pathname) {
+  const [barState, setBarState] = useState({ width: 0, visible: false, done: false });
+  const prevPathRef = useRef(pathname);
+  const timersRef = useRef([]);
+  const clear = () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
+
+  useEffect(() => {
+    if (prevPathRef.current === pathname) return;
+    prevPathRef.current = pathname;
+    clear();
+    setBarState({ width: 0, visible: true, done: false });
+    const t1 = setTimeout(() => setBarState(s => ({ ...s, width: 60 })), 30);
+    const t2 = setTimeout(() => setBarState(s => ({ ...s, width: 80 })), 250);
+    const t3 = setTimeout(() => setBarState(s => ({ ...s, width: 95 })), 500);
+    const t4 = setTimeout(() => setBarState(s => ({ ...s, width: 100, done: true })), 700);
+    const t5 = setTimeout(() => setBarState({ width: 0, visible: false, done: false }), 1050);
+    timersRef.current = [t1, t2, t3, t4, t5];
+    return clear;
+  }, [pathname]);
+
+  return barState;
+}
+
+function NavigationProgressBar({ pathname }) {
+  const { width, visible, done } = useNavigationProgress(pathname);
+  if (!visible) return null;
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[100] h-[3px] pointer-events-none">
+      <div style={{
+        height: '100%', width: `${width}%`,
+        transition: width === 0 ? 'none' : done
+          ? 'width 0.2s ease-in, opacity 0.3s ease-out 0.05s'
+          : 'width 0.4s ease-out',
+        opacity: done ? 0 : 1,
+        background: 'hsl(var(--primary))',
+        boxShadow: '0 0 8px hsl(var(--primary) / 0.6)',
+        borderRadius: '0 2px 2px 0',
+      }} />
+    </div>
+  );
+}
 
 // ─── Main layout ──────────────────────────────────────────────────────────────
 export default function AppLayout() {
@@ -40,16 +58,14 @@ export default function AppLayout() {
   const [slideClass, setSlideClass] = useState('');
 
   const mainRef = useRef(null);
-  const swipeRef = useRef(null);
   const prevLocationRef = useRef(location.pathname);
   const accountTypeRef = useRef('driver');
 
-  // Tracks the currently active tab index for the bottom nav
-  const [activeTab, setActiveTab] = useState(0);
+  // Swipe tracking — only start/end positions, no live drag state
+  const swipeRef = useRef({ x: 0, y: 0, active: false });
 
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
-  // Slide animation when navigating directly (not via swipe) – stays
   useEffect(() => {
     const prevPath = prevLocationRef.current;
     const newPath = location.pathname;
@@ -94,95 +110,108 @@ export default function AppLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Helper to get the correct Search component and path based on plan
-  const getSearchComponent = useCallback(() => {
-    const plan = accountTypeRef.current;
-    if (plan === 'owner') return <FindDrivers />;
-    if (plan === 'both') return <SearchPage />;
-    return <SearchVehicles />;
-  }, []);
-
   const getSearchPath = useCallback(() => {
-    const plan = accountTypeRef.current;
-    if (plan === 'owner') return '/find-drivers';
-    if (plan === 'both') return '/mysearch';
+    const type = accountTypeRef.current;
+    if (type === 'owner') return '/find-drivers';
+    if (type === 'both') return '/mysearch';
     return '/search-vehicles';
   }, []);
 
-  // Build the tabs array – order matters for swipe
-  const tabs = [
-    { component: <Dashboard />, path: '/' },
-    { component: getSearchComponent(), path: getSearchPath() },
-    { component: <Messages />, path: '/messages' },
-    { component: <Tracking />, path: '/tracking' },
-    { component: <Wallet />, path: '/wallet' },
-    { component: <Settings />, path: '/settings' },
-  ];
-
-  // Mapping from path to index (for bottom nav highlight)
-  const pathToIndex = {
-    '/': 0,
-    '/search-vehicles': 1, '/find-drivers': 1, '/mysearch': 1,
-    '/messages': 2,
-    '/tracking': 3,
-    '/wallet': 4,
-    '/settings': 5,
-  };
-
-  // Sync activeTab from URL (only when on a main tab)
-  useEffect(() => {
-    if (MAIN_TAB_PATHS.includes(location.pathname)) {
-      setActiveTab(pathToIndex[location.pathname] ?? 0);
-    }
+  const getCurrentTabIndex = useCallback((pathname) => {
+    const path = pathname || location.pathname;
+    if (path === '/search-vehicles' || path === '/find-drivers' || path === '/mysearch') return 1;
+    return TAB_ORDER.indexOf(path);
   }, [location.pathname]);
 
-  // Scroll to a specific tab (used by MobileNav)
-  const scrollToTab = useCallback((index) => {
-    if (swipeRef.current) {
-      const containerWidth = swipeRef.current.offsetWidth;
-      swipeRef.current.scrollTo({
-        left: index * containerWidth,
-        behavior: 'smooth',
-      });
-    }
-  }, []);
+  // ── Swipe detection ─────────────────────────────────────────────────────────
+  //
+  // No touchmove listener — adding a non-passive touchmove to window freezes
+  // Android Chrome's scroll pipeline and makes the app appear unresponsive.
+  //
+  // Instead, we use touchend with { passive: false } so we can call
+  // e.preventDefault() when a horizontal gesture is detected. Calling
+  // preventDefault on touchend suppresses the synthetic click event that the
+  // browser would otherwise fire — this is what was causing the Dashboard
+  // bounce: the <Link to="/wallet"> wrapping WalletCard was receiving the
+  // swipe gesture and navigating to /wallet before our threshold fired.
+  //
+  // touch-action: pan-y on the main element tells the browser "handle vertical
+  // scrolling natively; horizontal touches go to JS". This prevents any native
+  // rubber-band from horizontal movement on interactive child elements.
+  useEffect(() => {
+    const onTouchStart = (e) => {
+      if (!mainRef.current?.contains(e.target)) return;
+      swipeRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        active: true,
+      };
+    };
 
-  // When the swipe container finishes scrolling, update the URL
-  const handleScrollEnd = useCallback(() => {
-    if (!swipeRef.current) return;
-    const containerWidth = swipeRef.current.offsetWidth;
-    const scrollLeft = swipeRef.current.scrollLeft;
-    const newIndex = Math.round(scrollLeft / containerWidth);
-    const targetPath = tabs[newIndex]?.path;
-    if (targetPath && location.pathname !== targetPath) {
-      navigate(targetPath, { replace: true });
-    }
-    setActiveTab(newIndex);
-  }, [tabs, navigate, location.pathname]);
+    const onTouchEnd = (e) => {
+      const s = swipeRef.current;
+      if (!s.active) return;
+      s.active = false;
 
-  // Determine if we are on a main tab (where swiper should be shown)
-  const MAIN_TAB_PATHS = ['/', '/search-vehicles', '/find-drivers', '/mysearch', '/messages', '/tracking', '/wallet', '/settings'];
-  const isMainTab = MAIN_TAB_PATHS.includes(location.pathname);
+      const dx = e.changedTouches[0].clientX - s.x;
+      const dy = e.changedTouches[0].clientY - s.y;
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
+
+      // Any meaningful horizontal movement (> 10 px, more horizontal than
+      // vertical) → suppress the click so Links/buttons don't fire. This
+      // prevents <Link to="/wallet"> from navigating on a swipe gesture.
+      if (adx > 10 && adx > ady) {
+        e.preventDefault();
+      }
+
+      // Navigate only on a clear long horizontal swipe (> 40 px and at least
+      // twice as wide as it is tall so diagonal flicks don't trigger it).
+      if (adx < 40 || adx < ady * 2) return;
+
+      const currentIndex = getCurrentTabIndex();
+      if (currentIndex === -1) return;
+
+      if (dx < 0 && currentIndex < TAB_ORDER.length - 1) {
+        const next = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
+        navigate(next);
+      } else if (dx > 0 && currentIndex > 0) {
+        navigate(TAB_ORDER[currentIndex - 1]);
+      }
+    };
+
+    const onTouchCancel = () => { swipeRef.current.active = false; };
+
+    // touchstart: passive (we never call preventDefault here)
+    // touchend:   non-passive so we can call preventDefault to suppress click
+    // NO touchmove listener — intentionally omitted to preserve scroll performance
+    window.addEventListener('touchstart',  onTouchStart,  { passive: true  });
+    window.addEventListener('touchend',    onTouchEnd,    { passive: false });
+    window.addEventListener('touchcancel', onTouchCancel, { passive: true  });
+
+    return () => {
+      window.removeEventListener('touchstart',  onTouchStart);
+      window.removeEventListener('touchend',    onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchCancel);
+    };
+  }, [getCurrentTabIndex, getSearchPath, navigate]);
 
   return (
     <div className="flex min-h-screen bg-background">
+      {/*
+        1. transition: none !important  — kills the .main-content CSS rule
+           that was animating the snap-back in earlier versions.
+        2. touch-action: pan-y          — tells the browser "vertical scrolling
+           only; horizontal belongs to JS." No native rubber-band on horizontal
+           swipes anywhere in the main area, including inside Link/onClick children.
+        3. overscroll-behavior-x: none  — belt-and-suspenders for horizontal
+           overscroll on browsers that don't fully respect touch-action.
+      */}
       <style>{`
         .main-content {
           transition: none !important;
-          touch-action: pan-y;               /* vertical scrolling only */
-          overscroll-behavior-x: none;       /* prevent horizontal rubber-band */
-        }
-        .swipe-container {
-          scroll-snap-type: x mandatory;
-          -webkit-overflow-scrolling: touch;
-        }
-        .swipe-page {
-          scroll-snap-align: start;
-          width: 100vw;
-          flex-shrink: 0;
-          height: 100%;
-          overflow-y: auto;
-          padding-bottom: 5rem;              /* space for bottom nav */
+          touch-action: pan-y;
+          overscroll-behavior-x: none;
         }
         @keyframes slideFromRight {
           from { transform: translateX(100%); }
@@ -200,30 +229,10 @@ export default function AppLayout() {
       <Sidebar />
 
       <div className="relative flex-1 lg:ml-64 overflow-hidden">
-        {/* Mobile: swipeable tab pages */}
-        <div className="lg:hidden h-full">
-          {isMainTab ? (
-            <div
-              ref={swipeRef}
-              className="swipe-container flex overflow-x-auto overflow-y-hidden h-full"
-              onScrollEnd={handleScrollEnd}
-              style={{ WebkitOverflowScrolling: 'touch' }}
-            >
-              {tabs.map((tab, index) => (
-                <div key={tab.path} className="swipe-page">
-                  {tab.component}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <main className="h-full overflow-y-auto pb-20">
-              <Outlet />
-            </main>
-          )}
-        </div>
-
-        {/* Desktop: normal router – unchanged */}
-        <main className="hidden lg:block h-screen overflow-y-auto pb-0">
+        <main
+          ref={mainRef}
+          className={`h-screen overflow-y-auto pb-20 lg:pb-0 main-content ${slideClass}`}
+        >
           <div className="lg:hidden flex items-center px-4 py-3 border-b border-border bg-card sticky top-0 z-30">
             <Link to="/" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
@@ -236,8 +245,7 @@ export default function AppLayout() {
         </main>
       </div>
 
-      {/* MobileNav gets activeTab and scrollToTab so it can sync and navigate */}
-      <MobileNav activeTab={activeTab} onScrollToTab={scrollToTab} />
+      <MobileNav />
     </div>
   );
 }
