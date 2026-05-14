@@ -21,12 +21,13 @@ const addHiddenMsg    = (uid, id)  => { const s = getHiddenMsgs(uid);  s.add(id)
 const addHiddenChat   = (uid, oid) => { const s = getHiddenChats(uid); s.add(oid); localStorage.setItem(HIDDEN_CHATS_KEY(uid), JSON.stringify([...s])); };
 
 // ── Status icon shown on sent messages ───────────────────────────────────────
-function MsgStatus({ status }) {
-  if (status === 'sending') return <Clock     className="w-3 h-3 opacity-60 inline ml-1" />;
-  if (status === 'failed')  return <AlertCircle className="w-3 h-3 text-red-400 inline ml-1" />;
-  if (status === 'sent')    return <Check      className="w-3 h-3 opacity-70 inline ml-1" />;
-  // delivered (real DB message, no temp status)
-  return                           <CheckCheck  className="w-3 h-3 opacity-70 inline ml-1" />;
+// status: 'sending' | 'failed' | undefined (real DB row)
+// read:   boolean — whether the recipient has opened the message
+function MsgStatus({ status, read }) {
+  if (status === 'sending') return <Clock      className="w-3 h-3 opacity-60 inline ml-1" />;
+  if (status === 'failed')  return null; // no tick on failed
+  if (read)                 return <CheckCheck className="w-3.5 h-3.5 text-primary   inline ml-1" />;
+  return                           <Check      className="w-3.5 h-3.5 opacity-60     inline ml-1" />;
 }
 
 // ── Skeletons ─────────────────────────────────────────────────────────────────
@@ -157,11 +158,13 @@ export default function Messages() {
         const otherId = msg.sender_id === u.id ? msg.receiver_id : msg.sender_id;
         if (!grouped[otherId]) {
           grouped[otherId] = {
-            otherUserId:  otherId,
+            otherUserId:   otherId,
             otherUserName: nameMap[otherId] || 'User',
-            lastMessage:  msg.body,
-            unread:       !msg.read && msg.receiver_id === u.id,
-            lastTime:     msg.created_at,
+            lastMessage:   msg.body,
+            lastSenderId:  msg.sender_id,
+            lastRead:      msg.read,
+            unread:        !msg.read && msg.receiver_id === u.id,
+            lastTime:      msg.created_at,
           };
         }
       });
@@ -192,8 +195,26 @@ export default function Messages() {
         (payload) => handleRealtimeInsert(payload.new))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
         (payload) => handleRealtimeInsert(payload.new))
+      // When the recipient marks a message as read, flip the tick on the sender's side
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
+        (payload) => {
+          if (payload.new?.id) {
+            setMessages((prev) =>
+              prev.map((m) => m.id === payload.new.id ? { ...m, read: payload.new.read } : m)
+            );
+          }
+          fetchConversations();
+        })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' },
-        () => fetchConversations())
+        (payload) => {
+          // Remove the deleted message from the open chat on both sides.
+          // payload.old contains at least the primary key even when
+          // REPLICA IDENTITY is not set to FULL.
+          if (payload.old?.id) {
+            setMessages((prev) => prev.filter((m) => m.id !== payload.old.id));
+          }
+          fetchConversations();
+        })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
@@ -463,7 +484,12 @@ export default function Messages() {
                       </div>
                       <div>
                         <p className="text-sm font-medium text-foreground">{conv.otherUserName}</p>
-                        <p className="text-xs text-muted-foreground truncate max-w-[200px]">{conv.lastMessage}</p>
+                        <p className="text-xs text-muted-foreground truncate max-w-[180px] flex items-center gap-1">
+                          {conv.lastSenderId === user?.id && (
+                            <MsgStatus status={undefined} read={conv.lastRead} />
+                          )}
+                          {conv.lastMessage}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -535,7 +561,7 @@ export default function Messages() {
                       <div className="flex items-center justify-end gap-1 mt-1 opacity-70">
                         <span className="text-[10px]">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         {/* Status ticks only on messages I sent */}
-                        {isMine && <MsgStatus status={msg._status} />}
+                        {isMine && <MsgStatus status={msg._status} read={msg.read} />}
                       </div>
                       {isFailed && (
                         <button
