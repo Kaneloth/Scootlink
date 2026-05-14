@@ -61,8 +61,8 @@ export default function AppLayout() {
   const prevLocationRef = useRef(location.pathname);
   const accountTypeRef = useRef('driver');
 
-  // Swipe state: tracks one touch gesture from start to end
-  const swipeRef = useRef({ x: 0, y: 0, active: false, isHorizontal: null });
+  // Swipe tracking — only start/end positions, no live drag state
+  const swipeRef = useRef({ x: 0, y: 0, active: false });
 
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
@@ -123,17 +123,21 @@ export default function AppLayout() {
     return TAB_ORDER.indexOf(path);
   }, [location.pathname]);
 
-  // ── Touch / swipe handling ──────────────────────────────────────────────────
+  // ── Swipe detection ─────────────────────────────────────────────────────────
   //
-  // Strategy: determine swipe direction on the first few pixels of touchmove
-  // and immediately call e.preventDefault() if it's horizontal. This kills
-  // the iOS rubber-band bounce that fires on interactive elements (Links,
-  // onClick divs) BEFORE our threshold distance is reached. The bounce the
-  // user was seeing on the Dashboard was 100% iOS rubber-banding triggered by
-  // WalletCard (inside a <Link>) and the stat card onClick divs.
+  // No touchmove listener — adding a non-passive touchmove to window freezes
+  // Android Chrome's scroll pipeline and makes the app appear unresponsive.
   //
-  // Listeners are on `window` so scrollable-child elements (messages list,
-  // search results) cannot silently consume the touch before we see it.
+  // Instead, we use touchend with { passive: false } so we can call
+  // e.preventDefault() when a horizontal gesture is detected. Calling
+  // preventDefault on touchend suppresses the synthetic click event that the
+  // browser would otherwise fire — this is what was causing the Dashboard
+  // bounce: the <Link to="/wallet"> wrapping WalletCard was receiving the
+  // swipe gesture and navigating to /wallet before our threshold fired.
+  //
+  // touch-action: pan-y on the main element tells the browser "handle vertical
+  // scrolling natively; horizontal touches go to JS". This prevents any native
+  // rubber-band from horizontal movement on interactive child elements.
   useEffect(() => {
     const onTouchStart = (e) => {
       if (!mainRef.current?.contains(e.target)) return;
@@ -141,55 +145,29 @@ export default function AppLayout() {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY,
         active: true,
-        isHorizontal: null, // null = not yet determined
       };
-    };
-
-    const onTouchMove = (e) => {
-      const s = swipeRef.current;
-      if (!s.active) return;
-
-      // Wait until we have enough movement to determine direction
-      if (s.isHorizontal !== null) {
-        // Direction already locked — if horizontal, keep blocking default
-        if (s.isHorizontal) e.preventDefault();
-        return;
-      }
-
-      const dx = e.touches[0].clientX - s.x;
-      const dy = e.touches[0].clientY - s.y;
-      const adx = Math.abs(dx);
-      const ady = Math.abs(dy);
-
-      if (adx < 6 && ady < 6) return; // not enough movement yet
-
-      if (adx > ady * 1.2) {
-        // Clearly horizontal — lock and prevent default immediately.
-        // This is the key: calling preventDefault here stops iOS from
-        // rubber-banding the page, which was the "bounce" on Dashboard.
-        s.isHorizontal = true;
-        e.preventDefault();
-      } else {
-        // Clearly vertical — let the browser handle the scroll naturally
-        s.isHorizontal = false;
-        s.active = false; // stop tracking this gesture
-      }
     };
 
     const onTouchEnd = (e) => {
       const s = swipeRef.current;
-      if (!s.active || !s.isHorizontal) {
-        swipeRef.current.active = false;
-        return;
-      }
-      swipeRef.current.active = false;
+      if (!s.active) return;
+      s.active = false;
 
       const dx = e.changedTouches[0].clientX - s.x;
       const dy = e.changedTouches[0].clientY - s.y;
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
 
-      // Navigate if the horizontal distance clears 40 px and is more
-      // horizontal than vertical (guards against diagonal flicks).
-      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      // Any meaningful horizontal movement (> 10 px, more horizontal than
+      // vertical) → suppress the click so Links/buttons don't fire. This
+      // prevents <Link to="/wallet"> from navigating on a swipe gesture.
+      if (adx > 10 && adx > ady) {
+        e.preventDefault();
+      }
+
+      // Navigate only on a clear long horizontal swipe (> 40 px and at least
+      // twice as wide as it is tall so diagonal flicks don't trigger it).
+      if (adx < 40 || adx < ady * 2) return;
 
       const currentIndex = getCurrentTabIndex();
       if (currentIndex === -1) return;
@@ -204,16 +182,15 @@ export default function AppLayout() {
 
     const onTouchCancel = () => { swipeRef.current.active = false; };
 
-    // touchstart can be passive (we never preventDefault here)
-    // touchmove must be non-passive so we can call preventDefault
+    // touchstart: passive (we never call preventDefault here)
+    // touchend:   non-passive so we can call preventDefault to suppress click
+    // NO touchmove listener — intentionally omitted to preserve scroll performance
     window.addEventListener('touchstart',  onTouchStart,  { passive: true  });
-    window.addEventListener('touchmove',   onTouchMove,   { passive: false });
-    window.addEventListener('touchend',    onTouchEnd,    { passive: true  });
+    window.addEventListener('touchend',    onTouchEnd,    { passive: false });
     window.addEventListener('touchcancel', onTouchCancel, { passive: true  });
 
     return () => {
       window.removeEventListener('touchstart',  onTouchStart);
-      window.removeEventListener('touchmove',   onTouchMove);
       window.removeEventListener('touchend',    onTouchEnd);
       window.removeEventListener('touchcancel', onTouchCancel);
     };
@@ -222,17 +199,18 @@ export default function AppLayout() {
   return (
     <div className="flex min-h-screen bg-background">
       {/*
-        1. `.main-content { transition: none !important }` — kills the global
-           CSS rule that was animating the snap-back and causing the bounce in
-           earlier versions.
-        2. Slide keyframes redefined here so they are guaranteed to exist
-           even if the external CSS file fails to load or is overridden.
-        3. `overscroll-behavior-x: none` on main — secondary guard against
-           horizontal rubber-banding that the touchmove preventDefault misses.
+        1. transition: none !important  — kills the .main-content CSS rule
+           that was animating the snap-back in earlier versions.
+        2. touch-action: pan-y          — tells the browser "vertical scrolling
+           only; horizontal belongs to JS." No native rubber-band on horizontal
+           swipes anywhere in the main area, including inside Link/onClick children.
+        3. overscroll-behavior-x: none  — belt-and-suspenders for horizontal
+           overscroll on browsers that don't fully respect touch-action.
       */}
       <style>{`
         .main-content {
           transition: none !important;
+          touch-action: pan-y;
           overscroll-behavior-x: none;
         }
         @keyframes slideFromRight {
