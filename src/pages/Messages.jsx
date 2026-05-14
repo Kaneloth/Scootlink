@@ -508,7 +508,7 @@ export default function Messages() {
             </button>
           </div>
 
-          <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto" id="messages-container">
+          <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto" id="messages-container" style={{ touchAction: 'pan-y' }}>
             {chatLoading ? (
               <MessagesSkeleton />
             ) : (

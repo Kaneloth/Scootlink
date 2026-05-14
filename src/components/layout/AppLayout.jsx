@@ -112,8 +112,11 @@ export default function AppLayout() {
     const prevPath = prevLocationRef.current;
     const newPath = location.pathname;
     prevLocationRef.current = newPath;
-    const prevIndex = TAB_ORDER.indexOf(prevPath);
-    const newIndex = TAB_ORDER.indexOf(newPath);
+    const normalize = (p) =>
+  (p === '/find-drivers' || p === '/mysearch') ? '/search-vehicles' : p;
+
+const prevIndex = TAB_ORDER.indexOf(normalize(prevPath));
+const newIndex  = TAB_ORDER.indexOf(normalize(newPath));
     if (Math.abs(newIndex - prevIndex) >= 1 && prevIndex !== -1 && newIndex !== -1) {
       setSlideClass(newIndex > prevIndex ? 'slide-from-right' : 'slide-from-left');
       const timer = setTimeout(() => setSlideClass(''), 320);
