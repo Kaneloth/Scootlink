@@ -233,57 +233,75 @@ export default function Onboarding() {
 
   useEffect(() => { return () => stopCamera(); }, []);
 
-  // ── Home Affairs verification (local simulation) ─────────────────────────
+  // ── Home Affairs verification (DEMO MODE — auto-passes when required fields filled) ──
   const runVerification = async () => {
     setVerifying(true);
-    await new Promise(r => setTimeout(r, 2000));
+    // Brief simulated delay to mimic a real check
+    await new Promise(r => setTimeout(r, 1500));
 
-    const isSA     = form.citizenship === 'South African';
-    const idValid  = isSA ? form.sa_id?.length === 13 : (!!form.passport && !!form.passport_country);
+    const isSA      = form.citizenship === 'South African';
+    const hasId     = isSA ? !!form.sa_id : (!!form.passport && !!form.passport_country);
     const allFilled = !!form.date_of_birth && !!form.gender && !!form.phone;
-    const verified  = idValid && allFilled;
+    // Demo mode: verified as long as required fields are present
+    const verified  = hasId && allFilled;
 
     const checks_passed = [];
     const flags = [];
-    if (form.date_of_birth)            checks_passed.push('Date of birth provided');
-    if (form.gender)                   checks_passed.push('Gender confirmed');
-    if (form.phone)                    checks_passed.push('Contact number verified');
-    if (isSA && form.sa_id?.length === 13) checks_passed.push('SA ID format valid');
-    if (!isSA && form.passport)        checks_passed.push('Passport number provided');
-    if (isSA && form.sa_id?.length !== 13) flags.push('SA ID must be exactly 13 digits');
-    if (!allFilled)                    flags.push('Some required fields are missing');
+    if (form.date_of_birth)  checks_passed.push('Date of birth provided');
+    if (form.gender)         checks_passed.push('Gender confirmed');
+    if (form.phone)          checks_passed.push('Contact number verified');
+    if (isSA && form.sa_id)  checks_passed.push('SA ID number provided');
+    if (!isSA && form.passport) checks_passed.push('Passport number provided');
+    if (!hasId)              flags.push(isSA ? 'SA ID number is required' : 'Passport details are required');
+    if (!allFilled)          flags.push('Some required fields are missing');
+    if (verified)            checks_passed.push('Identity verification passed (demo mode)');
 
-    setVerificationResult({ verified, confidence_score: verified ? 92 : 40, checks_passed, flags });
+    setVerificationResult({ verified, confidence_score: verified ? 100 : 40, checks_passed, flags });
     setVerifying(false);
   };
 
   useEffect(() => { if (step === 3) runVerification(); }, [step]);
 
-  // ── Save ─────────────────────────────────────────────────────────────────
+  // ── Save helpers ──────────────────────────────────────────────────────────
+  const buildProfilePayload = () => ({
+    phone:                form.phone,
+    gender:               form.gender,
+    date_of_birth:        form.date_of_birth,
+    location:             buildLocation(),
+    residential_address:  form.residential_address,
+    license_number:       form.license_number || undefined,
+    license_year:         form.license_year ? parseInt(form.license_year) : undefined,
+    citizenship:          form.citizenship,
+    sa_id:                form.sa_id || undefined,
+    passport:             form.passport || undefined,
+    passport_country:     form.passport_country || undefined,
+    sign_in_method:       form.sign_in_method,
+    selfie_url:           selfieUrl,
+    verified:             verificationResult?.verified || false,
+    kyc_completed:        true,
+    subscription_active:  false,
+    onboarding_completed: true,
+  });
+
   const handleComplete = async () => {
     setSaving(true);
     try {
-      await auth.updateMe({
-        phone:               form.phone,
-        gender:              form.gender,
-        date_of_birth:       form.date_of_birth,
-        location:            buildLocation(),
-        residential_address: form.residential_address,
-        license_number:      form.license_number || undefined,
-        license_year:        form.license_year ? parseInt(form.license_year) : undefined,
-        citizenship:         form.citizenship,
-        sa_id:               form.sa_id || undefined,
-        passport:            form.passport || undefined,
-        passport_country:    form.passport_country || undefined,
-        sign_in_method:      form.sign_in_method,
-        selfie_url:          selfieUrl,
-        verified:            verificationResult?.verified || false,
-        kyc_completed:       true,
-        subscription_active: false,
-        onboarding_completed: true,
-      });
+      await auth.updateMe(buildProfilePayload());
       toast.success('Profile setup complete! Please subscribe to get started.');
       navigate('/subscription');
+    } catch (err) {
+      toast.error('Failed to save: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSkipSubscription = async () => {
+    setSaving(true);
+    try {
+      await auth.updateMe(buildProfilePayload());
+      toast.success('Profile saved! You can subscribe any time from Settings.');
+      navigate('/');
     } catch (err) {
       toast.error('Failed to save: ' + err.message);
     } finally {
@@ -716,25 +734,40 @@ export default function Onboarding() {
           )}
 
           {/* ── Navigation ────────────────────────────────────────────────── */}
-          <div className="flex justify-between items-center mt-6 pt-4 border-t border-border">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => step === 0 ? navigate('/') : setStep(s => s - 1)}
-              className="gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" /> Back
-            </Button>
-
-            {step < STEPS.length - 1 ? (
-              <Button onClick={nextStep} className="gap-2" disabled={step === 3 && verifying}>
-                {step === 3 && verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Continue <ArrowRight className="w-4 h-4" />
+          <div className="mt-6 pt-4 border-t border-border space-y-3">
+            <div className="flex justify-between items-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => step === 0 ? navigate('/') : setStep(s => s - 1)}
+                className="gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" /> Back
               </Button>
-            ) : (
-              <Button onClick={handleComplete} className="gap-2" disabled={saving}>
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                {saving ? 'Saving...' : 'Complete Setup'}
+
+              {step < STEPS.length - 1 ? (
+                <Button onClick={nextStep} className="gap-2" disabled={step === 3 && verifying}>
+                  {step === 3 && verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Continue <ArrowRight className="w-4 h-4" />
+                </Button>
+              ) : (
+                <Button onClick={handleComplete} className="gap-2" disabled={saving}>
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  {saving ? 'Saving...' : 'Subscribe & Get Started'}
+                </Button>
+              )}
+            </div>
+
+            {/* Skip subscription — only shown on the final step */}
+            {step === STEPS.length - 1 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-muted-foreground hover:text-foreground"
+                onClick={handleSkipSubscription}
+                disabled={saving}
+              >
+                Skip subscription for now
               </Button>
             )}
           </div>
