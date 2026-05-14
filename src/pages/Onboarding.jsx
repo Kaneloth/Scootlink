@@ -15,53 +15,60 @@ import { toast } from 'sonner';
 
 // ── Location data ─────────────────────────────────────────────────────────────
 const SA_PROVINCES = [
-  'Gauteng', 'Western Cape', 'KwaZulu-Natal', 'Eastern Cape',
-  'Free State', 'North West', 'Mpumalanga', 'Limpopo', 'Northern Cape',
+  'Eastern Cape',
+  'Free State',
+  'Gauteng',
+  'KwaZulu-Natal',
+  'Limpopo',
+  'Mpumalanga',
+  'North West',
+  'Northern Cape',
+  'Western Cape',
 ];
 
 const SA_PROVINCE_CITIES = {
-  'Gauteng': [
-    'Johannesburg', 'Pretoria', 'Soweto', 'Sandton', 'Midrand', 'Centurion',
-    'Randburg', 'Roodepoort', 'Kempton Park', 'Benoni', 'Boksburg',
-    'Springs', 'Vereeniging', 'Vanderbijlpark', 'Alberton', 'Germiston',
-    'Edenvale', 'Fourways', 'Randfontein', 'Carletonville',
-  ],
-  'Western Cape': [
-    'Cape Town', 'Stellenbosch', 'Paarl', 'Worcester', 'George',
-    'Mossel Bay', 'Knysna', 'Oudtshoorn', 'Swellendam', 'Hermanus',
-    'Strand', 'Bellville', 'Durbanville', 'Somerset West', 'Malmesbury',
-    'Vredenburg', 'Saldanha', 'Beaufort West',
-  ],
-  'KwaZulu-Natal': [
-    'Durban', 'Pietermaritzburg', 'Richards Bay', 'Newcastle', 'Ladysmith',
-    'Pinetown', 'Umhlanga', 'Westville', 'Kloof', 'Ballito', 'Stanger',
-    'Margate', 'Port Shepstone', 'Empangeni', 'Ulundi', 'Vryheid',
-  ],
   'Eastern Cape': [
-    'Gqeberha (Port Elizabeth)', 'East London', 'Mthatha', 'Grahamstown',
-    "King William's Town", 'Queenstown', 'Aliwal North', 'Bhisho',
-    'Stutterheim', 'Port Alfred', 'Jeffreys Bay', 'Humansdorp',
+    'Aliwal North', 'Bhisho', 'East London', 'Gqeberha (Port Elizabeth)',
+    'Grahamstown', 'Humansdorp', 'Jeffreys Bay', "King William's Town",
+    'Mthatha', 'Port Alfred', 'Queenstown', 'Stutterheim',
   ],
   'Free State': [
-    'Bloemfontein', 'Welkom', 'Bethlehem', 'Kroonstad', 'Sasolburg',
-    'Parys', 'Phuthaditjhaba', 'Harrismith', 'Virginia', 'Ficksburg',
+    'Bethlehem', 'Bloemfontein', 'Ficksburg', 'Harrismith', 'Kroonstad',
+    'Parys', 'Phuthaditjhaba', 'Sasolburg', 'Virginia', 'Welkom',
   ],
-  'North West': [
-    'Mahikeng', 'Potchefstroom', 'Klerksdorp', 'Rustenburg', 'Brits',
-    'Hartbeespoort', 'Lichtenburg', 'Zeerust', 'Wolmaransstad',
+  'Gauteng': [
+    'Alberton', 'Benoni', 'Boksburg', 'Carletonville', 'Centurion',
+    'Edenvale', 'Fourways', 'Germiston', 'Johannesburg', 'Kempton Park',
+    'Midrand', 'Pretoria', 'Randburg', 'Randfontein', 'Roodepoort',
+    'Sandton', 'Soweto', 'Springs', 'Vanderbijlpark', 'Vereeniging',
   ],
-  'Mpumalanga': [
-    'Mbombela (Nelspruit)', 'Witbank (eMalahleni)', 'Middelburg', 'Secunda',
-    'Ermelo', 'Sabie', 'Graskop', 'Malelane', 'Komatipoort', 'Piet Retief',
-    'Barberton', 'Hazyview',
+  'KwaZulu-Natal': [
+    'Ballito', 'Durban', 'Empangeni', 'Kloof', 'Ladysmith', 'Margate',
+    'Newcastle', 'Pietermaritzburg', 'Pinetown', 'Port Shepstone',
+    'Richards Bay', 'Stanger', 'Ulundi', 'Umhlanga', 'Vryheid', 'Westville',
   ],
   'Limpopo': [
-    'Polokwane', 'Tzaneen', 'Mokopane', 'Thohoyandou', 'Phalaborwa',
-    'Musina', 'Bela-Bela', 'Modimolle', 'Louis Trichardt', 'Giyani',
+    'Bela-Bela', 'Giyani', 'Louis Trichardt', 'Modimolle', 'Mokopane',
+    'Musina', 'Phalaborwa', 'Polokwane', 'Thohoyandou', 'Tzaneen',
+  ],
+  'Mpumalanga': [
+    'Barberton', 'Ermelo', 'Graskop', 'Hazyview', 'Komatipoort',
+    'Malelane', 'Mbombela (Nelspruit)', 'Middelburg', 'Piet Retief',
+    'Sabie', 'Secunda', 'Witbank (eMalahleni)',
+  ],
+  'North West': [
+    'Brits', 'Hartbeespoort', 'Klerksdorp', 'Lichtenburg', 'Mahikeng',
+    'Potchefstroom', 'Rustenburg', 'Wolmaransstad', 'Zeerust',
   ],
   'Northern Cape': [
-    'Kimberley', 'Upington', 'Springbok', 'De Aar', 'Colesberg',
-    'Kuruman', 'Kathu', 'Pofadder',
+    'Colesberg', 'De Aar', 'Kathu', 'Kimberley', 'Kuruman',
+    'Pofadder', 'Springbok', 'Upington',
+  ],
+  'Western Cape': [
+    'Beaufort West', 'Bellville', 'Cape Town', 'Durbanville', 'George',
+    'Hermanus', 'Knysna', 'Malmesbury', 'Mossel Bay', 'Oudtshoorn',
+    'Paarl', 'Saldanha', 'Somerset West', 'Stellenbosch', 'Strand',
+    'Swellendam', 'Vredenburg', 'Worcester',
   ],
 };
 
