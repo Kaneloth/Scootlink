@@ -96,7 +96,6 @@ export default function Messages() {
   const [selectedChat, setSelectedChat]               = useState(null);
   const [messages, setMessages]                       = useState([]);
   const [newMessage, setNewMessage]                   = useState('');
-  const [subject, setSubject]                         = useState('');
   const [loading, setLoading]                         = useState(false);
   const [newChatEmail, setNewChatEmail]               = useState('');
   const [startNewChat, setStartNewChat]               = useState(false);
@@ -276,7 +275,6 @@ export default function Messages() {
 
     const tempId      = `temp-${Date.now()}`;
     const msgBody     = newMessage.trim();
-    const msgSubject  = subject || null;
 
     // Optimistically add message immediately so the user sees it right away
     const optimistic = {
@@ -285,19 +283,17 @@ export default function Messages() {
       _status:     'sending',
       sender_id:   user.id,
       receiver_id: selectedChat.otherUserId,
-      subject:     msgSubject,
       body:        msgBody,
       created_at:  new Date().toISOString(),
       read:        false,
     };
     setMessages((prev) => [...prev, optimistic]);
     setNewMessage('');
-    setSubject('');
 
     setLoading(true);
     const { data: inserted, error } = await supabase
       .from('messages')
-      .insert([{ sender_id: user.id, receiver_id: selectedChat.otherUserId, subject: msgSubject, body: msgBody }])
+      .insert([{ sender_id: user.id, receiver_id: selectedChat.otherUserId, body: msgBody }])
       .select()
       .single();
     setLoading(false);
@@ -316,7 +312,6 @@ export default function Messages() {
   const handleRetry = async (failedMsg) => {
     setMessages((prev) => prev.filter((m) => m.id !== failedMsg.id));
     setNewMessage(failedMsg.body);
-    if (failedMsg.subject) setSubject(failedMsg.subject);
   };
 
   // ── New chat ──────────────────────────────────────────────────────────────
@@ -513,29 +508,33 @@ export default function Messages() {
               <MessagesSkeleton />
             ) : (
               visibleMessages.map((msg) => {
-                const isMine  = msg.sender_id === user.id;
+                // Defensive: only true when user.id is known AND matches sender
+                const userId   = user?.id ?? null;
+                const isMine   = userId !== null && msg.sender_id === userId;
                 const isFailed = msg._status === 'failed';
 
                 return (
                   <div
                     key={msg.id}
-                    className={`flex w-full select-none ${isMine ? 'justify-end' : 'justify-start'}`}
+                    className="w-full flex select-none"
                     onContextMenu={(e) => { e.preventDefault(); if (!msg._temp) showMessageMenu(msg); }}
                     onTouchStart={startLongPress(() => { if (!msg._temp) showMessageMenu(msg); })}
                     onTouchEnd={cancelLongPress}
                     onTouchMove={cancelLongPress}
                   >
-                    <div className={`max-w-[75%] p-3 rounded-xl ${
+                    <div className={`max-w-[75%] p-3 rounded-xl ${isMine ? 'ml-auto' : 'mr-auto'} ${
                       isMine
                         ? isFailed
                           ? 'bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700'
-                          : 'bg-primary text-primary-foreground opacity-' + (msg._status === 'sending' ? '60' : '100')
+                          : msg._status === 'sending'
+                            ? 'bg-primary/60 text-primary-foreground'
+                            : 'bg-primary text-primary-foreground'
                         : 'bg-card border border-border/50'
                     }`}>
-                      {msg.subject && <p className="text-xs font-medium mb-1">{msg.subject}</p>}
                       <p className="text-sm">{msg.body}</p>
-                      <div className={`flex items-center justify-end gap-1 mt-1 ${isMine ? 'opacity-70' : 'opacity-50'}`}>
+                      <div className="flex items-center justify-end gap-1 mt-1 opacity-70">
                         <span className="text-[10px]">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        {/* Status ticks only on messages I sent */}
                         {isMine && <MsgStatus status={msg._status} />}
                       </div>
                       {isFailed && (
@@ -556,7 +555,6 @@ export default function Messages() {
 
           {canMessage ? (
             <div className="border-t border-border pt-4">
-              <Input className="mb-2" placeholder="Subject (optional)" value={subject} onChange={(e) => setSubject(e.target.value)} />
               <Textarea
                 placeholder="Type your message…"
                 value={newMessage}
