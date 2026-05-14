@@ -214,7 +214,7 @@ export default function AppLayout() {
 
       if (!isDraggingRef.current) {
         // Require clear horizontal intent before claiming the gesture.
-        if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+        if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 0.8) {
           isDraggingRef.current = true;
           setIsDragging(true);
         } else if (Math.abs(dy) > 10) {
