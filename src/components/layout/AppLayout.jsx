@@ -143,7 +143,7 @@ function MobileHeader() {
   };
 
   return (
-    <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card sticky top-0 z-30">
+    <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card z-30 shrink-0">
       {/* Logo */}
       <Link to="/" className="flex items-center gap-2">
         <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
@@ -376,12 +376,13 @@ export default function AppLayout() {
       <NavigationProgressBar pathname={location.pathname} />
       <Sidebar />
 
-      <div className="relative flex-1 lg:ml-64 overflow-hidden">
+      <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-screen">
+        {/* Header lives outside the animated element — never moves on swipe */}
+        <MobileHeader />
         <main
           ref={mainRef}
-          className={`h-screen overflow-y-auto pb-20 lg:pb-0 main-content ${slideClass}`}
+          className={`flex-1 min-h-0 overflow-y-auto pb-20 lg:pb-0 main-content ${slideClass}`}
         >
-          <MobileHeader />
           <Outlet />
         </main>
       </div>
