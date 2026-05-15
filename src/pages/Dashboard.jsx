@@ -272,7 +272,11 @@ export default function Dashboard() {
   const driverPendingConfRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'awaiting_driver_confirmation');
   const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
 
-  const accountType = user?.subscription_plan || 'driver';
+  // Unsubscribed users see 'both' as a full preview so they can explore
+  // owner AND driver features before choosing a plan.
+  const accountType = user?.subscription_active
+    ? (user?.subscription_plan || 'driver')
+    : 'both';
 
   const scrollToSection = (ref) => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });

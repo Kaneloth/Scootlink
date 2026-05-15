@@ -18,12 +18,17 @@ export default function MobileNav() {
   const userIdRef                          = useRef(null);
 
   // ── Resolve user ID and account type from Supabase auth directly ──────────
+  // Resolve effective account type: unsubscribed users get 'both' as a preview
+  const resolveAccountType = (userMeta) => {
+    if (!userMeta?.subscription_active) return 'both';
+    return userMeta?.subscription_plan || 'driver';
+  };
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
       userIdRef.current = user.id;
-      const plan = user.user_metadata?.subscription_plan;
-      if (plan) setAccountType(plan);
+      setAccountType(resolveAccountType(user.user_metadata));
       fetchUnreadCount(user.id);
     });
   }, []);
@@ -33,8 +38,7 @@ export default function MobileNav() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         userIdRef.current = session.user.id;
-        const plan = session.user.user_metadata?.subscription_plan;
-        if (plan) setAccountType(plan);
+        setAccountType(resolveAccountType(session.user.user_metadata));
         fetchUnreadCount(session.user.id);
       }
     });
