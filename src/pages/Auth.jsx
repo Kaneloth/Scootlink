@@ -226,7 +226,7 @@ export default function Auth() {
           <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-4 shadow-lg">
             <Bike className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">Scootlink</h1>
+          <h1 className="text-2xl font-bold text-foreground">Skootlink</h1>
           <p className="text-sm text-muted-foreground mt-1">
             The formal way to connect owners and drivers in the delivery space.
           </p>

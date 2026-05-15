@@ -334,7 +334,7 @@ export default function Onboarding() {
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow">
               <Bike className="w-5 h-5 text-white" />
             </div>
-            <span className="text-lg font-bold text-foreground">Scootlink</span>
+            <span className="text-lg font-bold text-foreground">Skootlink</span>
           </a>
         </div>
 
@@ -676,7 +676,7 @@ export default function Onboarding() {
           {step === 4 && (
             <div className="space-y-4">
               <h2 className="font-semibold text-lg">Security Settings</h2>
-              <p className="text-sm text-muted-foreground">Choose how you want to sign in to Scootlink.</p>
+              <p className="text-sm text-muted-foreground">Choose how you want to sign in to Skootlink.</p>
 
               <div className="space-y-3">
                 {[
@@ -704,7 +704,7 @@ export default function Onboarding() {
               {(form.sign_in_method === 'biometric' || form.sign_in_method === 'both') && (
                 <div className="bg-primary/5 rounded-xl p-4 flex items-start gap-3">
                   <Fingerprint className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground">Biometric authentication uses your device's secure hardware. Scootlink never stores your biometric data — it's handled entirely by your phone's OS.</p>
+                  <p className="text-xs text-muted-foreground">Biometric authentication uses your device's secure hardware. Skootlink never stores your biometric data — it's handled entirely by your phone's OS.</p>
                 </div>
               )}
 
