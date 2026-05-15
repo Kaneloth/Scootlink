@@ -98,6 +98,13 @@ export default function Dashboard() {
     queryFn: () => Vehicle.filter({ status: 'available' }),
   });
 
+  // All vehicles regardless of status — used to look up vehicle details on active/completed rental cards
+  const { data: allVehiclesLookup = [] } = useQuery({
+    queryKey: ['all-vehicles-lookup'],
+    queryFn: () => Vehicle.list(),
+    enabled: !!user?.id,
+  });
+
   const { data: rentals = [] } = useQuery({
     queryKey: ['my-rentals'],
     queryFn: async () => {
@@ -199,30 +206,34 @@ export default function Dashboard() {
     } catch { return raw; }
   };
 
-  // Full profile fields used in detail panels
-  const PROFILE_SELECT = 'id, full_name, email, phone, location, residential_address, gender, citizenship, license_year, license_number, verified, rating, avatar_url, avatar_visible';
+  // Safe columns that are guaranteed to exist in the profiles table
+  const PROFILE_SELECT_SAFE = 'id, full_name, email, phone, location, license_year, license_number, verified, rating, avatar_url, avatar_visible';
+  // Extended columns that may not exist yet — fetched separately and merged
+  const PROFILE_SELECT_EXTRA = 'id, residential_address, gender, citizenship';
 
-  // Pure fetch — returns the profile without touching selectedDriver state.
-  // Used by openContractModal so it doesn't accidentally open the driver panel.
+  // Fetches a profile with full details. Tries extended columns separately and
+  // merges them in — so a missing column never blocks the safe fields from loading.
+  const fetchFullProfile = async (userId) => {
+    const [safeResult, extraResult] = await Promise.all([
+      supabase.from('profiles').select(PROFILE_SELECT_SAFE).eq('id', userId).single(),
+      supabase.from('profiles').select(PROFILE_SELECT_EXTRA).eq('id', userId).single(),
+    ]);
+    const base  = safeResult.data  || null;
+    const extra = extraResult.error ? {} : (extraResult.data || {});
+    return base ? { ...base, ...extra } : null;
+  };
+
+  // Pure fetch — used by openContractModal (doesn't open the driver panel).
   const fetchDriverProfile = async (driverId) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select(PROFILE_SELECT)
-        .eq('id', driverId)
-        .single();
-      if (error) throw error;
-      return data;
-    } catch {
-      return null;
-    }
+    try { return await fetchFullProfile(driverId); }
+    catch { return null; }
   };
 
   // Opens the driver details panel.
   const fetchDriverDetails = async (driverId, fallbackEmail = '') => {
     setLoadingDriverId(driverId);
     try {
-      const data = await fetchDriverProfile(driverId);
+      const data = await fetchFullProfile(driverId);
       setSelectedDriver(data || { id: driverId, email: fallbackEmail, full_name: fallbackEmail || 'Driver' });
     } catch {
       setSelectedDriver({ id: driverId, email: fallbackEmail, full_name: fallbackEmail || 'Driver' });
@@ -235,12 +246,8 @@ export default function Dashboard() {
   const fetchOwnerDetails = async (ownerId, fallbackEmail = '') => {
     setLoadingOwnerId(ownerId);
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select(PROFILE_SELECT)
-        .eq('id', ownerId)
-        .single();
-      setSelectedOwner((!error && data) ? data : { id: ownerId, email: fallbackEmail, full_name: fallbackEmail || 'Owner' });
+      const data = await fetchFullProfile(ownerId);
+      setSelectedOwner(data || { id: ownerId, email: fallbackEmail, full_name: fallbackEmail || 'Owner' });
     } catch {
       setSelectedOwner({ id: ownerId, email: fallbackEmail, full_name: fallbackEmail || 'Owner' });
     } finally {
@@ -512,7 +519,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           <div className="space-y-3">
             {ownerPendingRentals.map(r => {
               if (!r || !r.vehicle_id) return null;
-              const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
+              const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
               const driverName = r.driver_email || 'Driver';
               return (
                 <Card key={r.id} className="p-4 border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
@@ -557,7 +564,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           <p className="text-sm font-medium text-muted-foreground mb-2">AWAITING DRIVER CONFIRMATION</p>
           <div className="space-y-3">
             {ownerAwaitingRentals.map(r => {
-              const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
+              const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
               return (
                 <Card key={r.id} className="p-4 border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800">
                   <div className="mb-3">
@@ -588,7 +595,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         ownerActiveRentals.length > 0 ? (
           <div className="space-y-3">
             {ownerActiveRentals.map(r => {
-              const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
+              const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
               const driverName = r.driver_email || 'Driver';
               const isEnding = endingRentalId === r.id;
               return (
@@ -673,7 +680,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           <h3 className="text-lg font-semibold mb-3">Pending Confirmation</h3>
           <div className="space-y-3">
             {driverPendingConfRentals.map(r => {
-              const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
+              const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
               const ownerName = r.owner_email || 'Owner';
               return (
                 <Card key={r.id} className="p-4 border border-primary/30 bg-primary/5">
@@ -704,7 +711,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       {driverActiveRentals.length > 0 ? (
         <div className="space-y-3">
           {driverActiveRentals.map(r => {
-            const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
+            const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
             const ownerName = r.owner_email || 'Owner';
             const isEnding = endingRentalId === r.id;
             return (
@@ -884,7 +891,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
               const targetEmail = isOwner ? r.driver_email : r.owner_email;
               const targetType = isOwner ? 'driver' : 'owner';
               const targetId = isOwner ? r.driver_id : r.owner_id;
-              const v = [...vehicles, ...allVehicles].find(v => v.id === r.vehicle_id);
+              const v = allVehiclesLookup.find(veh => veh.id === r.vehicle_id) || vehicles.find(veh => veh.id === r.vehicle_id) || allVehicles.find(veh => veh.id === r.vehicle_id);
               return (
                 <Card key={r.id} className="p-4 border border-border/50 flex items-center justify-between gap-3">
                   <div>
