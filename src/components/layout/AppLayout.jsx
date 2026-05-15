@@ -141,7 +141,7 @@ function MobileHeader() {
   const handleLogout = async () => {
     setOpen(false);
     await supabase.auth.signOut();
-    navigate('/login');
+    navigate('/auth');
   };
 
   return (
