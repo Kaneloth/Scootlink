@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Search, MapPin, Wallet, Settings, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Search, MapPin, Wallet, MessageCircle } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 
 const baseItems = [
   { label: 'Home',     icon: LayoutDashboard, path: '/'                },
   { label: 'Search',   icon: Search,          path: '/search-vehicles' },
-  { label: 'Messages', icon: MessageCircle,   path: '/messages'        },
   { label: 'Track',    icon: MapPin,          path: '/tracking'        },
   { label: 'Wallet',   icon: Wallet,          path: '/wallet'          },
-  { label: 'Settings', icon: Settings,        path: '/settings'        },
+  { label: 'Messages', icon: MessageCircle,   path: '/messages'        },
 ];
 
 export default function MobileNav() {
