@@ -54,8 +54,10 @@ export default function Dashboard() {
   const [balanceLoading, setBalanceLoading] = useState(true);
   const [reviewModal, setReviewModal] = useState(null);
   const [selectedDriver,  setSelectedDriver]  = useState(null);
-  const [loadingDriverId, setLoadingDriverId] = useState(null); // tracks which card is loading
-  const [endingRentalId,  setEndingRentalId]  = useState(null); // tracks which rental is being ended
+  const [loadingDriverId, setLoadingDriverId] = useState(null);
+  const [selectedOwner,   setSelectedOwner]   = useState(null);
+  const [loadingOwnerId,  setLoadingOwnerId]  = useState(null);
+  const [endingRentalId,  setEndingRentalId]  = useState(null);
 
   // Contract modal states
   const [contractModal, setContractModal] = useState(false);
@@ -197,13 +199,16 @@ export default function Dashboard() {
     } catch { return raw; }
   };
 
+  // Full profile fields used in detail panels
+  const PROFILE_SELECT = 'id, full_name, email, phone, location, residential_address, gender, citizenship, license_year, license_number, verified, rating, avatar_url, avatar_visible';
+
   // Pure fetch — returns the profile without touching selectedDriver state.
   // Used by openContractModal so it doesn't accidentally open the driver panel.
   const fetchDriverProfile = async (driverId) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, email, phone, location, license_year, license_number, verified, rating, avatar_url, avatar_visible')
+        .select(PROFILE_SELECT)
         .eq('id', driverId)
         .single();
       if (error) throw error;
@@ -213,19 +218,33 @@ export default function Dashboard() {
     }
   };
 
-  // Opens the driver details panel. Always opens even if the profile fetch fails —
-  // falls back to the rental's driver_email so the owner sees something useful.
-  // Uses loadingDriverId (not a boolean) so each card tracks its own loading state.
+  // Opens the driver details panel.
   const fetchDriverDetails = async (driverId, fallbackEmail = '') => {
     setLoadingDriverId(driverId);
     try {
       const data = await fetchDriverProfile(driverId);
-      // If RLS blocks the read or the profile row doesn't exist, show what we know
       setSelectedDriver(data || { id: driverId, email: fallbackEmail, full_name: fallbackEmail || 'Driver' });
     } catch {
       setSelectedDriver({ id: driverId, email: fallbackEmail, full_name: fallbackEmail || 'Driver' });
     } finally {
       setLoadingDriverId(null);
+    }
+  };
+
+  // Opens the owner details panel for the driver's view.
+  const fetchOwnerDetails = async (ownerId, fallbackEmail = '') => {
+    setLoadingOwnerId(ownerId);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select(PROFILE_SELECT)
+        .eq('id', ownerId)
+        .single();
+      setSelectedOwner((!error && data) ? data : { id: ownerId, email: fallbackEmail, full_name: fallbackEmail || 'Owner' });
+    } catch {
+      setSelectedOwner({ id: ownerId, email: fallbackEmail, full_name: fallbackEmail || 'Owner' });
+    } finally {
+      setLoadingOwnerId(null);
     }
   };
 
@@ -696,6 +715,15 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                   <p className="text-xs text-muted-foreground">Started: {formatCommenced(r)}</p>
                   <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                 </div>
+                {r.owner_id && (
+                  <button
+                    onClick={() => fetchOwnerDetails(r.owner_id, r.owner_email)}
+                    disabled={loadingOwnerId === r.owner_id}
+                    className="w-full text-xs text-primary border border-primary/30 rounded-lg py-2 mb-3 hover:bg-primary/5 active:bg-primary/10 transition-colors disabled:opacity-50"
+                  >
+                    {loadingOwnerId === r.owner_id ? 'Loading…' : '👤 View owner details'}
+                  </button>
+                )}
                 <div className="flex gap-2 pt-2 border-t border-green-200 dark:border-green-800">
                   {r.owner_id && (
                     <Button
@@ -894,57 +922,114 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         />
       )}
 
-      {/* Driver Detail Modal — rendered via portal so the AppLayout transform/overflow
-          never clips or repositions it. Portals attach directly to document.body. */}
-      {selectedDriver && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={() => setSelectedDriver(null)}>
-          <div className="bg-card rounded-2xl shadow-xl max-w-md w-full p-6 border border-border" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Driver Profile</h2>
-              <button onClick={() => setSelectedDriver(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+      {/* Reusable profile detail panel — used for both Driver and Owner popups */}
+      {[
+        { profile: selectedDriver, role: 'Driver', onClose: () => setSelectedDriver(null) },
+        { profile: selectedOwner,  role: 'Owner',  onClose: () => setSelectedOwner(null)  },
+      ].map(({ profile, role, onClose }) => profile && createPortal(
+        <div key={role} className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-md w-full border border-border flex flex-col max-h-[88vh]" onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+              <h2 className="text-xl font-bold">{role} Profile</h2>
+              <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden shrink-0">
-                {selectedDriver.avatar_visible !== false && selectedDriver.avatar_url ? (
-                  <img src={selectedDriver.avatar_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  selectedDriver.full_name?.[0] || '?'
+
+            {/* Scrollable body */}
+            <div className="overflow-y-auto px-6 pb-6 flex-1">
+              {/* Avatar + name */}
+              <div className="flex items-center gap-4 mb-5">
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden shrink-0">
+                  {profile.avatar_visible !== false && profile.avatar_url ? (
+                    <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    profile.full_name?.[0]?.toUpperCase() || '?'
+                  )}
+                </div>
+                <div>
+                  <p className="font-semibold text-lg leading-tight">{profile.full_name || role}</p>
+                  <p className="text-sm text-muted-foreground">{profile.email}</p>
+                  <p className="text-xs mt-1">
+                    {profile.verified
+                      ? <span className="text-green-600 font-medium">✅ Verified</span>
+                      : <span className="text-amber-600 font-medium">⏳ Pending verification</span>}
+                  </p>
+                </div>
+              </div>
+
+              {/* Detail rows */}
+              <div className="divide-y divide-border rounded-xl border border-border overflow-hidden text-sm mb-5">
+                {profile.phone && (
+                  <div className="flex justify-between px-4 py-2.5">
+                    <span className="text-muted-foreground">Phone</span>
+                    <span className="font-medium">{profile.phone}</span>
+                  </div>
                 )}
+                {profile.gender && (
+                  <div className="flex justify-between px-4 py-2.5">
+                    <span className="text-muted-foreground">Gender</span>
+                    <span className="font-medium capitalize">{profile.gender}</span>
+                  </div>
+                )}
+                {profile.citizenship && (
+                  <div className="flex justify-between px-4 py-2.5">
+                    <span className="text-muted-foreground">Citizenship</span>
+                    <span className="font-medium">{profile.citizenship}</span>
+                  </div>
+                )}
+                {profile.location && (
+                  <div className="flex justify-between px-4 py-2.5">
+                    <span className="text-muted-foreground">City / Area</span>
+                    <span className="font-medium">{profile.location}</span>
+                  </div>
+                )}
+                {profile.residential_address && (
+                  <div className="flex justify-between px-4 py-2.5 gap-4">
+                    <span className="text-muted-foreground shrink-0">Address</span>
+                    <span className="font-medium text-right">{profile.residential_address}</span>
+                  </div>
+                )}
+                {profile.license_number && (
+                  <div className="flex justify-between px-4 py-2.5">
+                    <span className="text-muted-foreground">Licence No.</span>
+                    <span className="font-medium font-mono tracking-wide">{profile.license_number}</span>
+                  </div>
+                )}
+                {profile.license_year && (
+                  <div className="flex justify-between px-4 py-2.5">
+                    <span className="text-muted-foreground">Licence Since</span>
+                    <span className="font-medium">{profile.license_year} ({currentYear - profile.license_year} yr{currentYear - profile.license_year !== 1 ? 's' : ''} experience)</span>
+                  </div>
+                )}
+                <div className="flex justify-between px-4 py-2.5">
+                  <span className="text-muted-foreground">Rating</span>
+                  <span><StarRating value={Math.round(profile.rating || 0)} size="sm" showValue /></span>
+                </div>
               </div>
-              <div>
-                <p className="font-semibold text-lg">{selectedDriver.full_name || 'Driver'}</p>
-                <p className="text-sm text-muted-foreground">{selectedDriver.email}</p>
-              </div>
+
+              {/* Message button */}
+              <Button
+                className="w-full gap-2"
+                onClick={() => {
+                  const canMsg = ['kanelothelejane@gmail.com'].includes(user?.email) || (user?.subscription_active && user?.verified);
+                  if (!canMsg) {
+                    toast.warning(!user?.subscription_active
+                      ? `You need an active subscription to message ${role.toLowerCase()}s`
+                      : 'Your account is awaiting verification');
+                    return;
+                  }
+                  onClose();
+                  navigate(`/messages?userId=${profile.id}`);
+                }}
+              >
+                <MessageCircle className="w-4 h-4" /> Message {profile.full_name?.split(' ')[0] || role}
+              </Button>
             </div>
-            <div className="space-y-2 text-sm">
-              {selectedDriver.phone && <div className="flex justify-between"><span className="text-muted-foreground">Phone</span><span className="font-medium">{selectedDriver.phone}</span></div>}
-              {selectedDriver.location && <div className="flex justify-between"><span className="text-muted-foreground">Location</span><span className="font-medium">{selectedDriver.location}</span></div>}
-              {selectedDriver.license_year && <div className="flex justify-between"><span className="text-muted-foreground">Experience</span><span className="font-medium">{currentYear - selectedDriver.license_year} years</span></div>}
-              <div className="flex justify-between"><span className="text-muted-foreground">Verified</span><span>{selectedDriver.verified ? '✅ Verified' : '⏳ Pending'}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Rating</span><span><StarRating value={Math.round(selectedDriver.rating || 0)} size="sm" showValue /></span></div>
-            </div>
-            <Button
-              className="w-full mt-6 gap-2"
-              onClick={() => {
-                const canMsg = ['kanelothelejane@gmail.com'].includes(user?.email) || (user?.subscription_active && user?.verified);
-                if (!canMsg) {
-                  toast.warning(
-                    !user?.subscription_active
-                      ? 'You need an active subscription to message drivers'
-                      : 'Your account is awaiting verification'
-                  );
-                  return;
-                }
-                setSelectedDriver(null);
-                navigate(`/messages?userId=${selectedDriver.id}`);
-              }}
-            >
-              <MessageCircle className="w-4 h-4" /> Message {selectedDriver.full_name?.split(' ')[0]}
-            </Button>
           </div>
         </div>,
         document.body
-      )}
+      ))}
 
       {/* Contract Modal — portal so AppLayout transform/overflow can't clip it */}
       {contractModal && selectedProposal && createPortal(
