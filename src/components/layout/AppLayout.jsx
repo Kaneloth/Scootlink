@@ -5,7 +5,9 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase } from '@/api/supabaseData';
 
-const TAB_ORDER = ['/', '/search-vehicles', '/messages', '/tracking', '/wallet', '/settings'];
+// Must match bottom nav order exactly: Home → Search → Track → Wallet → Messages
+// Settings is in the header dropdown, not swipeable.
+const TAB_ORDER = ['/', '/search-vehicles', '/tracking', '/wallet', '/messages'];
 
 // ─── Navigation progress bar ──────────────────────────────────────────────────
 function useNavigationProgress(pathname) {
