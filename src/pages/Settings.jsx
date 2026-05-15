@@ -48,11 +48,11 @@ async function registerBiometric(user) {
   const credential = await navigator.credentials.create({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: 'Scootlink', id: window.location.hostname },
+      rp: { name: 'Skootlink', id: window.location.hostname },
       user: {
-        id: new TextEncoder().encode(user?.id || 'scootlink-user'),
-        name: user?.email || 'user@scootlink.co.za',
-        displayName: user?.full_name || 'Scootlink User',
+        id: new TextEncoder().encode(user?.id || 'skootlink-user'),
+        name: user?.email || 'user@skootlink.co.za',
+        displayName: user?.full_name || 'Skootlink User',
       },
       pubKeyCredParams: [
         { alg: -7, type: 'public-key' },
