@@ -20,7 +20,7 @@ import EmptyState from '@/components/common/EmptyState';
 import LeaveReviewModal from '@/components/reviews/LeaveReviewModal';
 import StarRating from '@/components/reviews/StarRating';
 
-// ─── Skeletons (unchanged) ─────────────────────────────────────────────────
+// ─── Skeletons ─────────────────────────────────────────────────────────────
 function StatCardsSkeleton() {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
@@ -47,7 +47,7 @@ function ActionButtonsSkeleton() {
   );
 }
 
-// ─── Profile Detail Panel (unchanged) ─────────────────────────────────────
+// ─── Profile Detail Panel ─────────────────────────────────────────────────
 function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, canMessage, onMessageBlocked }) {
   const row = (label, value, extra = {}) => value ? (
     <div className={`flex justify-between px-4 py-2.5 ${extra.wrap ? 'gap-4' : ''}`}>
@@ -126,7 +126,7 @@ export default function Dashboard() {
   const [loadingOwnerId,  setLoadingOwnerId]  = useState(null);
   const [endingRentalId,  setEndingRentalId]  = useState(null);
 
-  // Contract modal states (unchanged)
+  // Contract modal states
   const [contractModal, setContractModal] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState(null);
   const [contractAgreed, setContractAgreed] = useState(false);
@@ -142,7 +142,7 @@ export default function Dashboard() {
 
   const [bothTab, setBothTab] = useState('owner');
 
-  // Map of user ID → full name (counterparty names)
+  // Counterparty names cache
   const [counterpartyNames, setCounterpartyNames] = useState({});
 
   useEffect(() => {
@@ -183,7 +183,7 @@ export default function Dashboard() {
     enabled: !!user?.id,
   });
 
-  // Fetch counterparty names for all rentals involving the current user
+  // Fetch counterparty names for all rentals
   useEffect(() => {
     if (!user || rentals.length === 0) return;
     const idsToFetch = new Set();
@@ -209,9 +209,7 @@ export default function Dashboard() {
     })();
   }, [rentals, user]);
 
-  const getCounterpartyName = (id) => {
-    return counterpartyNames[id] || '';
-  };
+  const getCounterpartyName = (id) => counterpartyNames[id] || '';
 
   const availableForMe = allVehicles.filter(v => v.owner_id !== user?.id);
   const completedRentals = rentals.filter(r => r.status === 'completed');
@@ -235,7 +233,6 @@ export default function Dashboard() {
     setTimeout(() => scrollToSection(ref), 100);
   };
 
-  // ─── Proposal response (owner) ───────────────────────────────────────────
   const handleProposalResponse = async (rentalId, action) => {
     try {
       const rental = rentals.find(r => r.id === rentalId);
@@ -255,7 +252,6 @@ export default function Dashboard() {
     }
   };
 
-  // ─── Driver confirms contract ─────────────────────────────────────────────
   const handleDriverConfirm = async () => {
     if (!selectedProposal) return;
     try {
@@ -278,7 +274,6 @@ export default function Dashboard() {
     }
   };
 
-  // ─── End rental (either party) ──────────────────────────────────────────
   const handleEndRental = async (rental) => {
     if (!window.confirm('End this rental? The vehicle will be marked available again and the rental will move to Completed.')) return;
     setEndingRentalId(rental.id);
@@ -346,9 +341,237 @@ export default function Dashboard() {
     }
   };
 
-  // (generateContractText, openContractModal, closeContractModal, handleWithdrawContract, handleRejectContract, handleSaveContractEdits, handleAcceptWithContract are unchanged – included in full file below)
+  const generateContractText = (rental, vehicle, driverProfile) => {
+    const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
+    const ownerName = user?.full_name || '';
+    const ownerIdNo = user?.id_number || user?.passport_number || '';
+    const driverName = driverProfile?.full_name || '';
+    const driverIdNo = driverProfile?.id_number || driverProfile?.passport_number || '';
+    const licenseNumber = driverProfile?.license_number || '';
+    const vType = vehicle?.vehicle_type || vehicle?.type || '';
+    const vMake = vehicle?.make || '';
+    const vModel = vehicle?.model || '';
+    const vYear = vehicle?.year || '';
+    return `VEHICLE RENTAL AGREEMENT
 
-  // ─── Owner Content (with names from profiles) ─────────────────────────────
+This Vehicle Rental Agreement ("Agreement") is entered into on ${today} (Effective Date),
+
+BETWEEN:
+
+Owner: ${ownerName}
+ID/Passport No: ${ownerIdNo}
+
+AND
+
+Driver (Renter): ${driverName}
+ID/Passport No: ${driverIdNo}
+
+
+1. VEHICLE DETAILS
+
+Type: ${vType}
+Make: ${vMake}
+Model: ${vModel}
+Year: ${vYear}
+Current Odometer Reading: 
+
+
+2. RENTAL TERMS
+
+Rental Start Date: ${rental.start_date || ''}
+Rental End Date: ${rental.end_date || ''}
+Weekly Rate: R ${rental.price_per_week || ''}
+Security Deposit: R ${rental.deposit || ''}
+
+The security deposit shall be refundable upon return of the vehicle, subject to inspection.
+Any damages, fines, or additional charges will be deducted from the deposit.
+
+
+3. DRIVER REQUIREMENTS
+
+The Driver confirms that:
+• They are at least 18 years of age.
+• They hold a valid and legal driver's licence.
+• They are capable of operating the vehicle safely.
+
+Driver's Licence Number: ${licenseNumber}
+
+For motorcycles or scooters:
+• A helmet must be worn at all times.
+• Only one rider is permitted unless the vehicle is designed for two riders.
+
+
+4. USE AND OPERATING CONDITIONS
+
+The Driver agrees to:
+• Comply with all traffic laws and regulations.
+• Observe all speed limits.
+• Not operate the vehicle under the influence of alcohol or drugs.
+• Not use the vehicle on restricted roads where prohibited.
+• Park only in designated and lawful areas.
+• Immediately report any accident, damage, or mechanical issue.
+• Not allow any unauthorised person to operate the vehicle.
+• Not use the vehicle for illegal purposes.
+
+
+5. OWNER'S RESPONSIBILITIES
+
+The Owner agrees to:
+• Ensure the vehicle is roadworthy and complies with all legal safety requirements.
+• Provide necessary safety equipment (e.g., helmet where applicable).
+• Maintain valid insurance coverage for the vehicle.
+• Ensure the vehicle is fitted with a functional tracking device (where applicable).
+
+
+6. LIABILITY AND DAMAGES
+
+• The Driver assumes responsibility for the vehicle during the rental period.
+• The Driver is liable for:
+    – Traffic fines, penalties, and violations;
+    – Damage beyond normal wear and tear.
+• The Owner shall not be liable for injury, loss, or damage resulting from use of the vehicle, except where required by law.
+• Insurance shall cover applicable risks; however, any excess, exclusions, or uncovered costs shall be borne by the Driver.
+
+
+7. RETURN OF VEHICLE
+
+• The vehicle must be returned on or before the rental end date.
+• The vehicle must be returned in the same condition as received, excluding normal wear and tear.
+• Late returns may incur additional charges.
+• The Owner reserves the right to inspect the vehicle upon return.
+
+
+8. TERMINATION
+
+8.1 Termination for Breach
+Either party may terminate this Agreement immediately by written notice if the other party:
+• Breaches any material term; and
+• Fails to remedy such breach within a reasonable period (not exceeding 48 hours) after written notice.
+
+8.2 Owner's Right to Terminate
+The Owner may terminate immediately and reclaim the vehicle if:
+• The vehicle is used illegally or recklessly;
+• The Driver commits serious traffic violations;
+• There is a risk of damage, loss, or theft;
+• The Driver provides false or misleading information.
+
+8.3 Driver's Right to Terminate
+The Driver may terminate immediately if:
+• The vehicle is not roadworthy or safe;
+• The Owner fails to provide valid insurance;
+• The vehicle does not match its description;
+• The Owner fails to fulfil a material obligation.
+
+8.4 Termination for Convenience (No Breach)
+Either party may terminate this Agreement without cause by giving written notice of  hours/days.
+• The Driver must return the vehicle by the termination date.
+
+8.5 Financial Consequences of Termination
+• The Owner shall refund any unused rental fees on a pro-rata basis.
+• The deposit shall be refunded subject to deductions for:
+    – Damages;
+    – Outstanding fees or penalties;
+    – Reasonable early termination costs.
+• An early termination fee of  (if applicable) may apply.
+
+8.6 Exceptional Circumstances
+Either party may terminate immediately without penalty due to:
+• Medical emergencies;
+• Safety risks;
+• Events beyond reasonable control (force majeure).
+
+8.7 Effects of Termination
+• The vehicle must be returned immediately upon termination.
+• A joint inspection is recommended upon return.
+• Any outstanding liabilities shall remain enforceable after termination.
+
+
+9. GENERAL TERMS
+
+• This Agreement constitutes the entire agreement between the parties.
+• Any amendments must be in writing and agreed to by both parties.
+• This Agreement shall be governed by the laws of 
+
+By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize Rental", both parties confirm they have read, understood, and agreed to this Agreement. This constitutes a valid digital signature.`;
+  };
+
+  const openContractModal = async (rental, mode) => {
+    setSelectedProposal(rental);
+    setContractAgreed(false);
+    setContractEditMode(mode);
+
+    const vehicle = vehicles.find(v => v.id === rental.vehicle_id) || allVehicles.find(v => v.id === rental.vehicle_id);
+
+    let driverProfileData = null;
+    if (rental.driver_id) {
+      driverProfileData = await fetchDriverProfile(rental.driver_id);
+    }
+    if (!driverProfileData && mode === 'review') {
+      driverProfileData = {
+        full_name: user?.full_name,
+        id_number: user?.id_number,
+        passport_number: user?.passport_number,
+        license_number: user?.license_number,
+      };
+    }
+
+    const isComplete = rental.contract_text && rental.contract_text.trimStart().startsWith('VEHICLE RENTAL AGREEMENT');
+    const text = isComplete ? rental.contract_text : generateContractText(rental, vehicle, driverProfileData);
+
+    setEditableContractText(text);
+    setSelectedProposal({ ...rental, contractText: text });
+    setContractModal(true);
+  };
+
+  const closeContractModal = () => {
+    setContractModal(false);
+    setSelectedProposal(null);
+    setContractAgreed(false);
+  };
+
+  const handleWithdrawContract = async (rental) => {
+    if (!window.confirm('Withdraw this contract? It will be removed from both your dashboard and the driver\'s. You can send a new proposal at any time.')) return;
+    try {
+      await Rental.update(rental.id, { status: 'cancelled', contract_text: null });
+      toast.success('Contract withdrawn and removed from both dashboards.');
+      queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
+    } catch (err) {
+      toast.error(`Could not withdraw contract: ${err?.message || 'please try again.'}`);
+    }
+  };
+
+  const handleRejectContract = async (rental) => {
+    if (!window.confirm('Reject this contract? It will be removed from both your dashboard and the owner\'s. Message the owner if you want to renegotiate.')) return;
+    try {
+      await Rental.update(rental.id, { status: 'cancelled' });
+      toast.success('Contract rejected and removed from both dashboards. Use Messages to renegotiate.');
+      queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
+    } catch (err) {
+      toast.error(`Could not reject contract: ${err?.message || 'please try again.'}`);
+    }
+  };
+
+  const handleSaveContractEdits = async () => {
+    if (!selectedProposal) return;
+    try {
+      await Rental.update(selectedProposal.id, { contract_text: editableContractText });
+      toast.success('Contract updated. Driver will see the new version.');
+      closeContractModal();
+    } catch (err) {
+      toast.error('Failed to save: ' + err.message);
+    }
+  };
+
+  const handleAcceptWithContract = async () => {
+    if (!contractAgreed || !selectedProposal) return;
+    try {
+      await Rental.update(selectedProposal.id, { contract_text: editableContractText });
+    } catch { /* non-fatal */ }
+    await handleProposalResponse(selectedProposal.id, 'accept');
+    closeContractModal();
+  };
+
+  // ─────────────── Owner Content ───────────────
   const renderOwnerContent = () => (
     <>
       <h3 className="text-lg font-semibold mb-3" ref={ownerVehiclesRef}>My Listed Vehicles</h3>
@@ -503,7 +726,7 @@ export default function Dashboard() {
     </>
   );
 
-  // ─── Driver Content (with names from profiles) ─────────────────────────────
+  // ─────────────── Driver Content ───────────────
   const renderDriverContent = () => (
     <>
       <h3 className="text-lg font-semibold mb-3" ref={driverAvailableRef}>Available Vehicles</h3>
@@ -612,8 +835,245 @@ export default function Dashboard() {
       )}
     </>
   );
-}
-  // … renderStatCards, renderActionButtons, and the rest of the return (including portals) are identical to the code you originally pasted.
-  // For brevity, I'm not duplicating them here. Use your existing renderStatCards, renderActionButtons, and the main return block.
 
-  // The full file with all parts combined is provided in the final answer.
+  // ─────────────── Stat Cards ───────────────
+  const renderStatCards = () => {
+    if (!user) return <StatCardsSkeleton />;
+
+    if (accountType === 'driver') {
+      return (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+          <div onClick={() => scrollToSection(driverAvailableRef)} className="cursor-pointer"><StatCard icon={Search} label="Available Vehicles" value={availableForMe.length} subtitle="Vehicles near you" /></div>
+          <div onClick={() => scrollToSection(driverActiveRentalsRef)} className="cursor-pointer"><StatCard icon={Bike} label="Active Rentals" value={driverActiveRentals.length} /></div>
+          <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer"><StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} /></div>
+        </div>
+      );
+    }
+    if (accountType === 'both') {
+      return (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+          <div onClick={() => navigateToBothSection('owner', ownerVehiclesRef)} className="cursor-pointer"><StatCard icon={Car} label="My Vehicles" value={vehicles.length} /></div>
+          <div onClick={() => navigateToBothSection('driver', driverAvailableRef)} className="cursor-pointer"><StatCard icon={Search} label="Available" value={availableForMe.length} subtitle="Vehicles near you" /></div>
+          <div onClick={() => navigateToBothSection('owner', ownerAssignmentsRef)} className="cursor-pointer"><StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} /></div>
+          <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer"><StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} /></div>
+        </div>
+      );
+    }
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+        <div onClick={() => scrollToSection(ownerVehiclesRef)} className="cursor-pointer"><StatCard icon={Car} label="My Vehicles" value={vehicles.length} /></div>
+        <div onClick={() => scrollToSection(ownerAssignmentsRef)} className="cursor-pointer"><StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} /></div>
+        <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer"><StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} /></div>
+      </div>
+    );
+  };
+
+  const renderActionButtons = () => {
+    if (!user) return <ActionButtonsSkeleton />;
+
+    const rowButtonClass = "w-full gap-1.5 py-3 text-xs lg:text-sm";
+    const iconClass = "w-4 h-4";
+    if (accountType === 'owner' || accountType === 'both') {
+      const gridCols = accountType === 'both' ? 'grid-cols-3' : 'grid-cols-2';
+      return (
+        <div className="mt-6">
+          <Link to="/add-vehicle" className="block w-full mb-2">
+            <Button className="w-full gap-2 py-5 text-base"><Plus className={iconClass} /> Add Vehicle</Button>
+          </Link>
+          <div className={`grid gap-2 ${gridCols}`}>
+            <Link to="/find-drivers"><Button variant="outline" className={rowButtonClass}><Users className={iconClass} /> Find Drivers</Button></Link>
+            {accountType === 'both' && <Link to="/search-vehicles"><Button variant="outline" className={rowButtonClass}><Search className={iconClass} /> Find Vehicles</Button></Link>}
+            <Link to="/tracking"><Button variant="outline" className={rowButtonClass}><MapPin className={iconClass} /> GPS Track</Button></Link>
+          </div>
+        </div>
+      );
+    }
+    if (accountType === 'driver') {
+      return (
+        <div className="grid grid-cols-2 gap-2 mt-6">
+          <Link to="/search-vehicles"><Button className="w-full gap-2 py-4 text-sm"><Search className="w-4 h-4" /> Find Vehicles</Button></Link>
+          <Link to="/tracking"><Button variant="outline" className="w-full gap-2 py-4 text-sm"><MapPin className="w-4 h-4" /> GPS Track</Button></Link>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const currentYear = new Date().getFullYear();
+
+  return (
+    <div className="p-4 lg:p-8 max-w-5xl mx-auto">
+      <PageHeader title={`Welcome${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`} subtitle="Manage your vehicles and rentals" />
+
+      {user && !user.onboarding_completed && (
+        <Card className="p-4 border-2 border-amber-300 bg-amber-50 mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+            <div><p className="text-sm font-semibold text-amber-800">Complete your profile to get started</p><p className="text-xs text-amber-700">Identity verification required before using Skootlink</p></div>
+          </div>
+          <Link to="/onboarding"><Button size="sm" className="shrink-0 bg-amber-500 hover:bg-amber-600">Set Up</Button></Link>
+        </Card>
+      )}
+
+      {user && user.onboarding_completed && !user.subscription_active && (
+        <Card className="p-4 border-2 border-primary/30 bg-primary/5 mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Crown className="w-5 h-5 text-primary shrink-0" />
+            <div><p className="text-sm font-semibold text-foreground">Subscribe to unlock full access</p><p className="text-xs text-muted-foreground">Plans from R 49/month</p></div>
+          </div>
+          <Link to="/subscription"><Button size="sm" className="shrink-0">Subscribe</Button></Link>
+        </Card>
+      )}
+
+      <Link to="/wallet">
+        <WalletCard balance={user?.wallet_balance ?? 0} loading={balanceLoading} />
+      </Link>
+
+      {renderStatCards()}
+      {renderActionButtons()}
+
+      <div className="mt-8" ref={tabsRef}>
+        {!user ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-20 rounded-xl border border-border/50 bg-muted animate-pulse" />
+            ))}
+          </div>
+        ) : accountType === 'both' ? (
+          <Tabs value={bothTab} onValueChange={setBothTab}>
+            <TabsList className="grid w-full grid-cols-2 max-w-xs"><TabsTrigger value="owner">Owner</TabsTrigger><TabsTrigger value="driver">Driver</TabsTrigger></TabsList>
+            <TabsContent value="owner" className="mt-4">{renderOwnerContent()}</TabsContent>
+            <TabsContent value="driver" className="mt-4">{renderDriverContent()}</TabsContent>
+          </Tabs>
+        ) : accountType === 'owner' ? (
+          <div>{renderOwnerContent()}</div>
+        ) : (
+          <div>{renderDriverContent()}</div>
+        )}
+      </div>
+
+      {completedRentals.length > 0 && (
+        <div className="mt-8" ref={reviewsSectionRef}>
+          <h3 className="text-lg font-semibold mb-3">Completed Rentals</h3>
+          <div className="space-y-3">
+            {completedRentals.map(r => {
+              const isOwner = r.owner_id === user?.id;
+              const targetEmail = isOwner ? r.driver_email : r.owner_email;
+              const targetType = isOwner ? 'driver' : 'owner';
+              const targetId = isOwner ? r.driver_id : r.owner_id;
+              const v = allVehiclesLookup.find(veh => veh.id === r.vehicle_id) || vehicles.find(veh => veh.id === r.vehicle_id) || allVehicles.find(veh => veh.id === r.vehicle_id);
+              return (
+                <Card key={r.id} className="p-4 border border-border/50 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">{v ? `${v.make} ${v.model}` : 'Rental'}</p>
+                    <p className="text-xs text-muted-foreground">{isOwner ? 'Driver: ' : 'Owner: '}{targetEmail}</p>
+                  </div>
+                  <Button size="sm" variant="outline" className="gap-1.5 shrink-0"
+                    onClick={() => setReviewModal({ rental: r, targetEmail, targetName: targetEmail, targetType, targetId })}>
+                    <StarRating value={0} size="sm" /> Rate
+                  </Button>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {reviewModal && (
+        <LeaveReviewModal
+          open={!!reviewModal}
+          onClose={() => setReviewModal(null)}
+          rental={reviewModal.rental}
+          currentUser={user}
+          targetEmail={reviewModal.targetEmail}
+          targetName={reviewModal.targetName}
+          targetType={reviewModal.targetType}
+        />
+      )}
+
+      {selectedDriver && createPortal(
+        <ProfileDetailPanel
+          profile={selectedDriver}
+          role="Driver"
+          currentYear={currentYear}
+          onClose={() => setSelectedDriver(null)}
+          onMessage={(id) => { setSelectedDriver(null); navigate(`/messages?userId=${id}`); }}
+          canMessage={['kanelothelejane@gmail.com'].includes(user?.email) || (user?.subscription_active && user?.verified)}
+          onMessageBlocked={() => toast.warning(!user?.subscription_active ? 'You need an active subscription to message drivers' : 'Your account is awaiting verification')}
+        />,
+        document.body
+      )}
+      {selectedOwner && createPortal(
+        <ProfileDetailPanel
+          profile={selectedOwner}
+          role="Owner"
+          currentYear={currentYear}
+          onClose={() => setSelectedOwner(null)}
+          onMessage={(id) => { setSelectedOwner(null); navigate(`/messages?userId=${id}`); }}
+          canMessage={['kanelothelejane@gmail.com'].includes(user?.email) || (user?.subscription_active && user?.verified)}
+          onMessageBlocked={() => toast.warning(!user?.subscription_active ? 'You need an active subscription to message owners' : 'Your account is awaiting verification')}
+        />,
+        document.body
+      )}
+
+      {contractModal && selectedProposal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1 shrink-0">
+              <h2 className="text-xl font-bold">Rental Agreement</h2>
+              <button onClick={closeContractModal} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+            </div>
+
+            <p className="text-xs text-muted-foreground mb-3 shrink-0">
+              {contractEditMode === 'review'
+                ? 'Read the full agreement below. If you want any changes, request them via Messages — the owner will update the contract. Confirm only when you are fully satisfied.'
+                : contractEditMode === 'edit'
+                  ? 'Edit the contract below to reflect any changes agreed via Messages, then save. The driver will see the updated version.'
+                  : 'Review and edit all details below before sending to the driver. Once you accept, the driver will confirm to finalise the rental.'}
+            </p>
+
+            <div className="bg-muted rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0">
+              <textarea
+                className="w-full h-full min-h-[40vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
+                value={editableContractText}
+                onChange={e => setEditableContractText(e.target.value)}
+                readOnly={contractEditMode === 'review'}
+              />
+            </div>
+
+            {contractEditMode !== 'edit' && (
+              <div className="flex items-start gap-3 mb-4 shrink-0">
+                <input type="checkbox" id="agree-contract" checked={contractAgreed} onChange={e => setContractAgreed(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                <label htmlFor="agree-contract" className="text-sm text-muted-foreground">
+                  I confirm I have read, understood, and agree to be bound by this Rental Agreement and all its terms.
+                </label>
+              </div>
+            )}
+
+            <div className="flex gap-3 shrink-0">
+              <Button variant="outline" className="flex-1" onClick={closeContractModal}>Cancel</Button>
+
+              {contractEditMode === 'accept' && (
+                <Button className="flex-1" disabled={!contractAgreed} onClick={handleAcceptWithContract}>
+                  Accept & Send to Driver
+                </Button>
+              )}
+              {contractEditMode === 'edit' && (
+                <Button className="flex-1" onClick={handleSaveContractEdits}>
+                  Save Contract Changes
+                </Button>
+              )}
+              {contractEditMode === 'review' && (
+                <Button className="flex-1" disabled={!contractAgreed} onClick={handleDriverConfirm}>
+                  Confirm & Finalise Rental
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
