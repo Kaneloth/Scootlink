@@ -28,11 +28,23 @@ exports.handler = async (event) => {
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  // Step 1: Fetch profiles rows (service role bypasses RLS)
-  const { data: profiles = [] } = await supabase
-    .from('profiles')
-    .select('id, full_name, email, phone, location, license_year, license_number, verified, rating, avatar_url, avatar_visible, residential_address, gender, citizenship')
-    .in('id', ids);
+  // Step 1: Fetch profiles rows (service role bypasses RLS).
+  // Use only columns that are guaranteed to exist. Potentially-missing columns
+  // (avatar_url, avatar_visible, residential_address, gender, citizenship) are
+  // fetched in a separate query so one bad column never kills the whole result.
+  const [safeResult, extraResult] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, full_name, email, phone, location, license_year, license_number, verified, rating')
+      .in('id', ids),
+    supabase
+      .from('profiles')
+      .select('id, avatar_url, avatar_visible, residential_address, gender, citizenship')
+      .in('id', ids),
+  ]);
+  const extraMap = {};
+  (extraResult.data || []).forEach(p => { extraMap[p.id] = p; });
+  const profiles = (safeResult.data || []).map(p => ({ ...p, ...(extraMap[p.id] || {}) }));
 
   // Build a map for quick lookup
   const profileMap = {};

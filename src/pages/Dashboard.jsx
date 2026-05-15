@@ -212,10 +212,11 @@ export default function Dashboard() {
       });
       if (res.ok) return await res.json();
     } catch { /* fall through to direct query */ }
-    // Fallback: direct Supabase query (may be empty if RLS blocks cross-user reads)
+    // Fallback: direct Supabase query using only columns confirmed to exist.
+    // Including unknown columns (avatar_url, etc.) silently kills the entire query.
     const { data } = await supabase
       .from('profiles')
-      .select('id, full_name, email, phone, location, license_year, license_number, verified, rating, avatar_url, avatar_visible, residential_address, gender, citizenship')
+      .select('id, full_name, email, phone, location, license_year, license_number, verified, rating')
       .in('id', ids);
     return data || [];
   };
