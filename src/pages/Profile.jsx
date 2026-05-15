@@ -179,6 +179,22 @@ export default function Profile() {
 
       await auth.updateMe(metadataUpdates);
 
+      // ── 1b. Sync key fields to the profiles table so counterparties can see
+      //        this user's name. auth.updateMe() only writes to auth metadata;
+      //        the profiles table is what other users can query.
+      await supabase.from('profiles').upsert(
+        {
+          id: user.id,
+          full_name: form.full_name || null,
+          email: form.email || user.email,
+          phone: form.phone || null,
+          location: form.location || null,
+          license_year: form.license_year ? parseInt(form.license_year) : null,
+          license_number: form.license_number || null,
+        },
+        { onConflict: 'id' }
+      );
+
       // ── 2. Upsert sensitive fields in the isolated table ───────────────────
       // RLS ensures only this user's row can be written.
       const { error: sensitiveError } = await supabase

@@ -158,6 +158,9 @@ export default function Dashboard() {
 
   const [bothTab, setBothTab] = useState('owner');
 
+  // Counterparty names cache: { [userId]: displayName }
+  const [counterpartyNames, setCounterpartyNames] = useState({});
+
   useEffect(() => {
     auth.me().then(u => {
       setUser(u);
@@ -196,6 +199,48 @@ export default function Dashboard() {
     },
     enabled: !!user?.id,
   });
+
+  // ── Fetch profiles via Netlify function (uses service role, bypasses RLS) ──
+  // Falls back to a direct Supabase query if the function isn't available.
+  const fetchProfilesViaFunction = async (ids) => {
+    if (!ids || ids.length === 0) return [];
+    try {
+      const res = await fetch('/.netlify/functions/get-profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      if (res.ok) return await res.json();
+    } catch { /* fall through to direct query */ }
+    // Fallback: direct Supabase query (may be empty if RLS blocks cross-user reads)
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, phone, location, license_year, license_number, verified, rating, avatar_url, avatar_visible, residential_address, gender, citizenship')
+      .in('id', ids);
+    return data || [];
+  };
+
+  // Populate the counterpartyNames cache whenever rentals change
+  useEffect(() => {
+    if (!user || rentals.length === 0) return;
+    const idsToFetch = new Set();
+    rentals.forEach(r => {
+      if (r.owner_id === user.id && r.driver_id) idsToFetch.add(r.driver_id);
+      if (r.driver_id === user.id && r.owner_id) idsToFetch.add(r.owner_id);
+    });
+    const idsArray = Array.from(idsToFetch);
+    if (idsArray.length === 0) return;
+
+    fetchProfilesViaFunction(idsArray).then(profiles => {
+      const nameMap = {};
+      profiles.forEach(p => {
+        nameMap[p.id] = p.full_name || p.email || '';
+      });
+      setCounterpartyNames(prev => ({ ...prev, ...nameMap }));
+    });
+  }, [rentals, user]);
+
+  const getCounterpartyName = (id) => counterpartyNames[id] || '';
 
   const availableForMe = allVehicles.filter(v => v.owner_id !== user?.id);
   const completedRentals = rentals.filter(r => r.status === 'completed');
@@ -295,9 +340,13 @@ export default function Dashboard() {
   // missing column never breaks the safe fetch above
   const PROFILE_SELECT_EXTRA = 'id, residential_address, gender, citizenship, avatar_url, avatar_visible';
 
-  // Fetches a profile with full details. Tries extended columns separately and
-  // merges them in — so a missing column never blocks the safe fields from loading.
+  // Fetches a full profile — uses the Netlify function (service role, bypasses RLS)
+  // and falls back to a two-step direct Supabase query so missing columns never
+  // break the safe fields.
   const fetchFullProfile = async (userId) => {
+    const profiles = await fetchProfilesViaFunction([userId]);
+    if (profiles.length > 0) return profiles[0];
+    // Fallback: split query so unknown columns don't kill confirmed ones
     const [safeResult, extraResult] = await Promise.all([
       supabase.from('profiles').select(PROFILE_SELECT_SAFE).eq('id', userId).single(),
       supabase.from('profiles').select(PROFILE_SELECT_EXTRA).eq('id', userId).single(),
@@ -604,7 +653,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
             {ownerPendingRentals.map(r => {
               if (!r || !r.vehicle_id) return null;
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const driverName = r.driver_email || 'Driver';
+              const driverName = getCounterpartyName(r.driver_id) || r.driver_email || 'Driver';
               return (
                 <Card key={r.id} className="p-4 border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
                   {/* Vehicle + driver info */}
@@ -680,7 +729,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           <div className="space-y-3">
             {ownerActiveRentals.map(r => {
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const driverName = r.driver_email || 'Driver';
+              const driverName = getCounterpartyName(r.driver_id) || r.driver_email || 'Driver';
               const isEnding = endingRentalId === r.id;
               return (
                 <Card key={r.id} className="p-4 border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800">
@@ -765,7 +814,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           <div className="space-y-3">
             {driverPendingConfRentals.map(r => {
               const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const ownerName = r.owner_email || 'Owner';
+              const ownerName = getCounterpartyName(r.owner_id) || r.owner_email || 'Owner';
               return (
                 <Card key={r.id} className="p-4 border border-primary/30 bg-primary/5">
                   <div className="flex flex-col sm:flex-row justify-between gap-3">
@@ -796,7 +845,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         <div className="space-y-3">
           {driverActiveRentals.map(r => {
             const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-            const ownerName = r.owner_email || 'Owner';
+            const ownerName = getCounterpartyName(r.owner_id) || r.owner_email || 'Owner';
             const isEnding = endingRentalId === r.id;
             return (
               <Card key={r.id} className="p-4 border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800">
