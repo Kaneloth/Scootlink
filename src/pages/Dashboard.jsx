@@ -284,16 +284,34 @@ export default function Dashboard() {
     }
   };
 
+  // Tries to update a rental with optional extra fields; if Supabase rejects because
+  // a column doesn't exist yet, retries with just the required fields.
+  const safeRentalUpdate = async (id, required, optional = {}) => {
+    try {
+      await Rental.update(id, { ...required, ...optional });
+    } catch (err) {
+      const msg = err?.message || '';
+      const missingCol = Object.keys(optional).some(k =>
+        msg.toLowerCase().includes(k.toLowerCase())
+      );
+      if (missingCol) {
+        await Rental.update(id, required);
+      } else {
+        throw err;
+      }
+    }
+  };
+
   const handleDriverConfirm = async () => {
     if (!selectedProposal) return;
     try {
       const rental = rentals.find(r => r.id === selectedProposal.id);
       if (!rental) return;
-      await Rental.update(rental.id, {
-        status: 'active',
-        contract_text: editableContractText,
-        confirmed_at: new Date().toISOString(),
-      });
+      await safeRentalUpdate(
+        rental.id,
+        { status: 'active', contract_text: editableContractText },
+        { confirmed_at: new Date().toISOString() }
+      );
       await Vehicle.update(rental.vehicle_id, { status: 'rented' });
       toast.success('Rental confirmed! Vehicle assigned.');
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
@@ -310,10 +328,11 @@ export default function Dashboard() {
     if (!window.confirm('End this rental? The vehicle will be marked available again and the rental will move to Completed.')) return;
     setEndingRentalId(rental.id);
     try {
-      await Rental.update(rental.id, {
-        status: 'completed',
-        ended_at: new Date().toISOString(),
-      });
+      await safeRentalUpdate(
+        rental.id,
+        { status: 'completed' },
+        { ended_at: new Date().toISOString() }
+      );
       await Vehicle.update(rental.vehicle_id, { status: 'available' });
       toast.success('Rental ended. You can now leave a review.');
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
