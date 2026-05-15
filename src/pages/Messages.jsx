@@ -185,15 +185,24 @@ export default function Messages() {
         otherIds.add(msg.sender_id === u.id ? msg.receiver_id : msg.sender_id);
       });
 
+      // Always fetch names — this query uses only columns that already exist
       const { data: profiles } = await supabase
-        .from('profiles').select('id, full_name, avatar_url, avatar_visible').in('id', Array.from(otherIds));
+        .from('profiles').select('id, full_name').in('id', Array.from(otherIds));
 
-      const nameMap = {};
+      const nameMap   = {};
       const avatarMap = {};
-      profiles?.forEach((p) => {
-        nameMap[p.id]   = p.full_name || 'User';
-        avatarMap[p.id] = p.avatar_visible !== false ? (p.avatar_url || null) : null;
-      });
+      profiles?.forEach((p) => { nameMap[p.id] = p.full_name || 'User'; });
+
+      // Try to fetch avatar fields separately — silently skipped if columns don't exist yet
+      try {
+        const { data: avatarProfiles, error: avatarErr } = await supabase
+          .from('profiles').select('id, avatar_url, avatar_visible').in('id', Array.from(otherIds));
+        if (!avatarErr && avatarProfiles) {
+          avatarProfiles.forEach((p) => {
+            avatarMap[p.id] = p.avatar_visible !== false ? (p.avatar_url || null) : null;
+          });
+        }
+      } catch { /* avatar columns not yet in schema — ignore */ }
 
       const grouped = {};
       data.forEach((msg) => {
