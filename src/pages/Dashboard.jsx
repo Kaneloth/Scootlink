@@ -48,6 +48,86 @@ function ActionButtonsSkeleton() {
   );
 }
 
+// ─── Profile Detail Panel ─────────────────────────────────────────────────────
+// Standalone component so it can be used as a direct child of createPortal
+// without the broken .map() pattern.
+function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, canMessage, onMessageBlocked }) {
+  const row = (label, value, extra = {}) => value ? (
+    <div className={`flex justify-between px-4 py-2.5 ${extra.wrap ? 'gap-4' : ''}`}>
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <span className={`font-medium ${extra.right ? 'text-right' : ''} ${extra.mono ? 'font-mono tracking-wide' : ''}`}>{value}</span>
+    </div>
+  ) : null;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
+      <div className="bg-card rounded-2xl shadow-xl max-w-md w-full border border-border flex flex-col max-h-[88vh]" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+          <h2 className="text-xl font-bold">{role} Profile</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto px-6 pb-6 flex-1">
+
+          {/* Avatar + name + verified badge */}
+          <div className="flex items-center gap-4 mb-5">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden shrink-0">
+              {profile.avatar_visible !== false && profile.avatar_url
+                ? <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                : (profile.full_name?.[0]?.toUpperCase() || '?')}
+            </div>
+            <div>
+              <p className="font-semibold text-lg leading-tight">{profile.full_name || role}</p>
+              <p className="text-sm text-muted-foreground">{profile.email}</p>
+              <p className="text-xs mt-1">
+                {profile.verified
+                  ? <span className="text-green-600 font-medium">✅ Verified</span>
+                  : <span className="text-amber-600 font-medium">⏳ Pending verification</span>}
+              </p>
+            </div>
+          </div>
+
+          {/* Detail rows — only renders rows that have data */}
+          <div className="divide-y divide-border rounded-xl border border-border overflow-hidden text-sm mb-5">
+            {row('Phone',        profile.phone)}
+            {row('Gender',       profile.gender ? profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1) : null)}
+            {row('Citizenship',  profile.citizenship)}
+            {row('City / Area',  profile.location)}
+            {row('Address',      profile.residential_address, { wrap: true, right: true })}
+            {row('Licence No.',  profile.license_number, { mono: true })}
+            {profile.license_year && (
+              <div className="flex justify-between px-4 py-2.5">
+                <span className="text-muted-foreground">Licence Since</span>
+                <span className="font-medium">
+                  {profile.license_year} ({currentYear - profile.license_year} yr{currentYear - profile.license_year !== 1 ? 's' : ''} experience)
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between px-4 py-2.5">
+              <span className="text-muted-foreground">Rating</span>
+              <span><StarRating value={Math.round(profile.rating || 0)} size="sm" showValue /></span>
+            </div>
+          </div>
+
+          {/* Message button */}
+          <Button
+            className="w-full gap-2"
+            onClick={() => {
+              if (!canMessage) { onMessageBlocked(); return; }
+              onMessage(profile.id);
+            }}
+          >
+            <MessageCircle className="w-4 h-4" /> Message {profile.full_name?.split(' ')[0] || role}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -101,7 +181,10 @@ export default function Dashboard() {
   // All vehicles regardless of status — used to look up vehicle details on active/completed rental cards
   const { data: allVehiclesLookup = [] } = useQuery({
     queryKey: ['all-vehicles-lookup'],
-    queryFn: () => Vehicle.list(),
+    queryFn: async () => {
+      const { data } = await supabase.from('vehicles').select('*');
+      return data || [];
+    },
     enabled: !!user?.id,
   });
 
@@ -929,114 +1012,31 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         />
       )}
 
-      {/* Reusable profile detail panel — used for both Driver and Owner popups */}
-      {[
-        { profile: selectedDriver, role: 'Driver', onClose: () => setSelectedDriver(null) },
-        { profile: selectedOwner,  role: 'Owner',  onClose: () => setSelectedOwner(null)  },
-      ].map(({ profile, role, onClose }) => profile && createPortal(
-        <div key={role} className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
-          <div className="bg-card rounded-2xl shadow-xl max-w-md w-full border border-border flex flex-col max-h-[88vh]" onClick={e => e.stopPropagation()}>
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
-              <h2 className="text-xl font-bold">{role} Profile</h2>
-              <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
-            </div>
-
-            {/* Scrollable body */}
-            <div className="overflow-y-auto px-6 pb-6 flex-1">
-              {/* Avatar + name */}
-              <div className="flex items-center gap-4 mb-5">
-                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden shrink-0">
-                  {profile.avatar_visible !== false && profile.avatar_url ? (
-                    <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    profile.full_name?.[0]?.toUpperCase() || '?'
-                  )}
-                </div>
-                <div>
-                  <p className="font-semibold text-lg leading-tight">{profile.full_name || role}</p>
-                  <p className="text-sm text-muted-foreground">{profile.email}</p>
-                  <p className="text-xs mt-1">
-                    {profile.verified
-                      ? <span className="text-green-600 font-medium">✅ Verified</span>
-                      : <span className="text-amber-600 font-medium">⏳ Pending verification</span>}
-                  </p>
-                </div>
-              </div>
-
-              {/* Detail rows */}
-              <div className="divide-y divide-border rounded-xl border border-border overflow-hidden text-sm mb-5">
-                {profile.phone && (
-                  <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-muted-foreground">Phone</span>
-                    <span className="font-medium">{profile.phone}</span>
-                  </div>
-                )}
-                {profile.gender && (
-                  <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-muted-foreground">Gender</span>
-                    <span className="font-medium capitalize">{profile.gender}</span>
-                  </div>
-                )}
-                {profile.citizenship && (
-                  <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-muted-foreground">Citizenship</span>
-                    <span className="font-medium">{profile.citizenship}</span>
-                  </div>
-                )}
-                {profile.location && (
-                  <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-muted-foreground">City / Area</span>
-                    <span className="font-medium">{profile.location}</span>
-                  </div>
-                )}
-                {profile.residential_address && (
-                  <div className="flex justify-between px-4 py-2.5 gap-4">
-                    <span className="text-muted-foreground shrink-0">Address</span>
-                    <span className="font-medium text-right">{profile.residential_address}</span>
-                  </div>
-                )}
-                {profile.license_number && (
-                  <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-muted-foreground">Licence No.</span>
-                    <span className="font-medium font-mono tracking-wide">{profile.license_number}</span>
-                  </div>
-                )}
-                {profile.license_year && (
-                  <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-muted-foreground">Licence Since</span>
-                    <span className="font-medium">{profile.license_year} ({currentYear - profile.license_year} yr{currentYear - profile.license_year !== 1 ? 's' : ''} experience)</span>
-                  </div>
-                )}
-                <div className="flex justify-between px-4 py-2.5">
-                  <span className="text-muted-foreground">Rating</span>
-                  <span><StarRating value={Math.round(profile.rating || 0)} size="sm" showValue /></span>
-                </div>
-              </div>
-
-              {/* Message button */}
-              <Button
-                className="w-full gap-2"
-                onClick={() => {
-                  const canMsg = ['kanelothelejane@gmail.com'].includes(user?.email) || (user?.subscription_active && user?.verified);
-                  if (!canMsg) {
-                    toast.warning(!user?.subscription_active
-                      ? `You need an active subscription to message ${role.toLowerCase()}s`
-                      : 'Your account is awaiting verification');
-                    return;
-                  }
-                  onClose();
-                  navigate(`/messages?userId=${profile.id}`);
-                }}
-              >
-                <MessageCircle className="w-4 h-4" /> Message {profile.full_name?.split(' ')[0] || role}
-              </Button>
-            </div>
-          </div>
-        </div>,
+      {/* Driver & Owner profile detail panels — two explicit portals (never use .map for portals) */}
+      {selectedDriver && createPortal(
+        <ProfileDetailPanel
+          profile={selectedDriver}
+          role="Driver"
+          currentYear={currentYear}
+          onClose={() => setSelectedDriver(null)}
+          onMessage={(id) => { setSelectedDriver(null); navigate(`/messages?userId=${id}`); }}
+          canMessage={['kanelothelejane@gmail.com'].includes(user?.email) || (user?.subscription_active && user?.verified)}
+          onMessageBlocked={() => toast.warning(!user?.subscription_active ? 'You need an active subscription to message drivers' : 'Your account is awaiting verification')}
+        />,
         document.body
-      ))}
+      )}
+      {selectedOwner && createPortal(
+        <ProfileDetailPanel
+          profile={selectedOwner}
+          role="Owner"
+          currentYear={currentYear}
+          onClose={() => setSelectedOwner(null)}
+          onMessage={(id) => { setSelectedOwner(null); navigate(`/messages?userId=${id}`); }}
+          canMessage={['kanelothelejane@gmail.com'].includes(user?.email) || (user?.subscription_active && user?.verified)}
+          onMessageBlocked={() => toast.warning(!user?.subscription_active ? 'You need an active subscription to message owners' : 'Your account is awaiting verification')}
+        />,
+        document.body
+      )}
 
       {/* Contract Modal — portal so AppLayout transform/overflow can't clip it */}
       {contractModal && selectedProposal && createPortal(
