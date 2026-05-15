@@ -20,7 +20,7 @@ import EmptyState from '@/components/common/EmptyState';
 import LeaveReviewModal from '@/components/reviews/LeaveReviewModal';
 import StarRating from '@/components/reviews/StarRating';
 
-// ─── Skeletons ─────────────────────────────────────────────────────────────
+// Skeleton for the stat cards row while user is loading
 function StatCardsSkeleton() {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
@@ -35,6 +35,7 @@ function StatCardsSkeleton() {
   );
 }
 
+// Skeleton for the action buttons while user is loading
 function ActionButtonsSkeleton() {
   return (
     <div className="mt-6 space-y-2">
@@ -47,7 +48,9 @@ function ActionButtonsSkeleton() {
   );
 }
 
-// ─── Profile Detail Panel ─────────────────────────────────────────────────
+// ─── Profile Detail Panel ─────────────────────────────────────────────────────
+// Standalone component so it can be used as a direct child of createPortal
+// without the broken .map() pattern.
 function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, canMessage, onMessageBlocked }) {
   const row = (label, value, extra = {}) => value ? (
     <div className={`flex justify-between px-4 py-2.5 ${extra.wrap ? 'gap-4' : ''}`}>
@@ -59,11 +62,17 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-card rounded-2xl shadow-xl max-w-md w-full border border-border flex flex-col max-h-[88vh]" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
           <h2 className="text-xl font-bold">{role} Profile</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
         </div>
+
+        {/* Scrollable body */}
         <div className="overflow-y-auto px-6 pb-6 flex-1">
+
+          {/* Avatar + name + verified badge */}
           <div className="flex items-center gap-4 mb-5">
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden shrink-0">
               {profile.avatar_visible !== false && profile.avatar_url
@@ -80,6 +89,8 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
               </p>
             </div>
           </div>
+
+          {/* Detail rows — only renders rows that have data */}
           <div className="divide-y divide-border rounded-xl border border-border overflow-hidden text-sm mb-5">
             {row('Phone',        profile.phone)}
             {row('Gender',       profile.gender ? profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1) : null)}
@@ -100,6 +111,8 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
               <span><StarRating value={Math.round(profile.rating || 0)} size="sm" showValue /></span>
             </div>
           </div>
+
+          {/* Message button */}
           <Button
             className="w-full gap-2"
             onClick={() => {
@@ -131,6 +144,9 @@ export default function Dashboard() {
   const [selectedProposal, setSelectedProposal] = useState(null);
   const [contractAgreed, setContractAgreed] = useState(false);
   const [editableContractText, setEditableContractText] = useState('');
+  // 'accept' = owner signing a fresh proposal
+  // 'edit'   = owner updating an already-accepted contract
+  // 'review' = driver reading and confirming
   const [contractEditMode, setContractEditMode] = useState('accept');
 
   const ownerVehiclesRef = useRef(null);
@@ -141,9 +157,6 @@ export default function Dashboard() {
   const tabsRef = useRef(null);
 
   const [bothTab, setBothTab] = useState('owner');
-
-  // Counterparty names cache
-  const [counterpartyNames, setCounterpartyNames] = useState({});
 
   useEffect(() => {
     auth.me().then(u => {
@@ -165,6 +178,7 @@ export default function Dashboard() {
     queryFn: () => Vehicle.filter({ status: 'available' }),
   });
 
+  // All vehicles regardless of status — used to look up vehicle details on active/completed rental cards
   const { data: allVehiclesLookup = [] } = useQuery({
     queryKey: ['all-vehicles-lookup'],
     queryFn: async () => {
@@ -182,34 +196,6 @@ export default function Dashboard() {
     },
     enabled: !!user?.id,
   });
-
-  // Fetch counterparty names for all rentals
-  useEffect(() => {
-    if (!user || rentals.length === 0) return;
-    const idsToFetch = new Set();
-    rentals.forEach(r => {
-      if (r.owner_id === user.id && r.driver_id) idsToFetch.add(r.driver_id);
-      if (r.driver_id === user.id && r.owner_id) idsToFetch.add(r.owner_id);
-    });
-    const idsArray = Array.from(idsToFetch);
-    if (idsArray.length === 0) return;
-
-    (async () => {
-      const { data: profiles, error } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', idsArray);
-      if (error) {
-        console.error('Failed to fetch counterparty names', error);
-        return;
-      }
-      const nameMap = {};
-      (profiles || []).forEach(p => { nameMap[p.id] = p.full_name || ''; });
-      setCounterpartyNames(prev => ({ ...prev, ...nameMap }));
-    })();
-  }, [rentals, user]);
-
-  const getCounterpartyName = (id) => counterpartyNames[id] || '';
 
   const availableForMe = allVehicles.filter(v => v.owner_id !== user?.id);
   const completedRentals = rentals.filter(r => r.status === 'completed');
@@ -294,6 +280,7 @@ export default function Dashboard() {
     }
   };
 
+  // Format a commencement date — use confirmed_at if saved, fall back to start_date, then today
   const formatCommenced = (r) => {
     const raw = r.confirmed_at || r.start_date;
     if (!raw) return 'Date not recorded';
@@ -302,21 +289,31 @@ export default function Dashboard() {
     } catch { return raw; }
   };
 
+  // Columns confirmed to exist in the profiles table
+  const PROFILE_SELECT_SAFE = 'id, full_name, email, phone, location, license_year, license_number, verified, rating';
+  // Columns that may not exist yet (not yet migrated) — fetched separately so any
+  // missing column never breaks the safe fetch above
+  const PROFILE_SELECT_EXTRA = 'id, residential_address, gender, citizenship, avatar_url, avatar_visible';
+
+  // Fetches a profile with full details. Tries extended columns separately and
+  // merges them in — so a missing column never blocks the safe fields from loading.
   const fetchFullProfile = async (userId) => {
     const [safeResult, extraResult] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, email, phone, location, license_year, license_number, verified, rating, avatar_url, avatar_visible').eq('id', userId).single(),
-      supabase.from('profiles').select('id, residential_address, gender, citizenship').eq('id', userId).single(),
+      supabase.from('profiles').select(PROFILE_SELECT_SAFE).eq('id', userId).single(),
+      supabase.from('profiles').select(PROFILE_SELECT_EXTRA).eq('id', userId).single(),
     ]);
     const base  = safeResult.data  || null;
     const extra = extraResult.error ? {} : (extraResult.data || {});
     return base ? { ...base, ...extra } : null;
   };
 
+  // Pure fetch — used by openContractModal (doesn't open the driver panel).
   const fetchDriverProfile = async (driverId) => {
     try { return await fetchFullProfile(driverId); }
     catch { return null; }
   };
 
+  // Opens the driver details panel.
   const fetchDriverDetails = async (driverId, fallbackEmail = '') => {
     setLoadingDriverId(driverId);
     try {
@@ -329,6 +326,7 @@ export default function Dashboard() {
     }
   };
 
+  // Opens the owner details panel for the driver's view.
   const fetchOwnerDetails = async (ownerId, fallbackEmail = '') => {
     setLoadingOwnerId(ownerId);
     try {
@@ -341,6 +339,8 @@ export default function Dashboard() {
     }
   };
 
+  // Generates the full contract (all 9 sections).
+  // Owner can edit everything freely; driver sees it read-only and confirms when satisfied.
   const generateContractText = (rental, vehicle, driverProfile) => {
     const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
     const ownerName = user?.full_name || '';
@@ -495,6 +495,7 @@ Either party may terminate immediately without penalty due to:
 By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize Rental", both parties confirm they have read, understood, and agreed to this Agreement. This constitutes a valid digital signature.`;
   };
 
+  // mode: 'accept' (owner, fresh proposal) | 'edit' (owner, already accepted) | 'review' (driver)
   const openContractModal = async (rental, mode) => {
     setSelectedProposal(rental);
     setContractAgreed(false);
@@ -502,10 +503,12 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
 
     const vehicle = vehicles.find(v => v.id === rental.vehicle_id) || allVehicles.find(v => v.id === rental.vehicle_id);
 
+    // Always fetch driver profile so names/IDs populate correctly for both parties
     let driverProfileData = null;
     if (rental.driver_id) {
       driverProfileData = await fetchDriverProfile(rental.driver_id);
     }
+    // If we're the driver opening our own review, use our own profile
     if (!driverProfileData && mode === 'review') {
       driverProfileData = {
         full_name: user?.full_name,
@@ -515,6 +518,8 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       };
     }
 
+    // Use saved contract_text only when it is a complete contract (contains the header).
+    // Old saves only stored clauses 3–9 and lack the header — regenerate those from scratch.
     const isComplete = rental.contract_text && rental.contract_text.trimStart().startsWith('VEHICLE RENTAL AGREEMENT');
     const text = isComplete ? rental.contract_text : generateContractText(rental, vehicle, driverProfileData);
 
@@ -529,6 +534,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     setContractAgreed(false);
   };
 
+  // Owner withdraws the contract they sent — cancelled removes it from both views
   const handleWithdrawContract = async (rental) => {
     if (!window.confirm('Withdraw this contract? It will be removed from both your dashboard and the driver\'s. You can send a new proposal at any time.')) return;
     try {
@@ -540,6 +546,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     }
   };
 
+  // Driver rejects a contract — cancelled removes it from both views
   const handleRejectContract = async (rental) => {
     if (!window.confirm('Reject this contract? It will be removed from both your dashboard and the owner\'s. Message the owner if you want to renegotiate.')) return;
     try {
@@ -551,6 +558,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     }
   };
 
+  // Owner saves edits to an already-accepted contract without changing its status
   const handleSaveContractEdits = async () => {
     if (!selectedProposal) return;
     try {
@@ -571,7 +579,8 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     closeContractModal();
   };
 
-  // ─────────────── Owner Content ───────────────
+  // =============== RENDER HELPERS ===============
+
   const renderOwnerContent = () => (
     <>
       <h3 className="text-lg font-semibold mb-3" ref={ownerVehiclesRef}>My Listed Vehicles</h3>
@@ -595,9 +604,10 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
             {ownerPendingRentals.map(r => {
               if (!r || !r.vehicle_id) return null;
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const driverName = getCounterpartyName(r.driver_id) || r.driver_email || 'Driver';
+              const driverName = r.driver_email || 'Driver';
               return (
                 <Card key={r.id} className="p-4 border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
+                  {/* Vehicle + driver info */}
                   <div className="mb-3">
                     <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
                     <p className="text-xs text-muted-foreground">Driver: {driverName}</p>
@@ -606,6 +616,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                     {r.message && <p className="text-xs italic mt-1">"{r.message}"</p>}
                   </div>
 
+                  {/* View driver details — full-width, clearly separate from action buttons */}
                   {r.driver_id && (
                     <button
                       onClick={() => fetchDriverDetails(r.driver_id, r.driver_email)}
@@ -616,6 +627,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                     </button>
                   )}
 
+                  {/* Accept / Reject — separated by a visible divider */}
                   <div className="flex gap-2 pt-2 border-t border-amber-200 dark:border-amber-800">
                     <Button size="sm" variant="default" className="flex-1 gap-1" onClick={(e) => { e.stopPropagation(); openContractModal(r, 'accept'); }}>
                       <Check className="w-3.5 h-3.5" /> Accept
@@ -668,7 +680,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           <div className="space-y-3">
             {ownerActiveRentals.map(r => {
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const driverName = getCounterpartyName(r.driver_id) || r.driver_email || 'Driver';
+              const driverName = r.driver_email || 'Driver';
               const isEnding = endingRentalId === r.id;
               return (
                 <Card key={r.id} className="p-4 border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800">
@@ -726,7 +738,6 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     </>
   );
 
-  // ─────────────── Driver Content ───────────────
   const renderDriverContent = () => (
     <>
       <h3 className="text-lg font-semibold mb-3" ref={driverAvailableRef}>Available Vehicles</h3>
@@ -754,7 +765,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           <div className="space-y-3">
             {driverPendingConfRentals.map(r => {
               const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const ownerName = getCounterpartyName(r.owner_id) || r.owner_email || 'Owner';
+              const ownerName = r.owner_email || 'Owner';
               return (
                 <Card key={r.id} className="p-4 border border-primary/30 bg-primary/5">
                   <div className="flex flex-col sm:flex-row justify-between gap-3">
@@ -785,7 +796,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         <div className="space-y-3">
           {driverActiveRentals.map(r => {
             const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-            const ownerName = getCounterpartyName(r.owner_id) || r.owner_email || 'Owner';
+            const ownerName = r.owner_email || 'Owner';
             const isEnding = endingRentalId === r.id;
             return (
               <Card key={r.id} className="p-4 border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800">
@@ -836,8 +847,8 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     </>
   );
 
-  // ─────────────── Stat Cards ───────────────
   const renderStatCards = () => {
+    // Show skeleton while user hasn't loaded yet
     if (!user) return <StatCardsSkeleton />;
 
     if (accountType === 'driver') {
@@ -869,6 +880,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
   };
 
   const renderActionButtons = () => {
+    // Show skeleton while user hasn't loaded yet
     if (!user) return <ActionButtonsSkeleton />;
 
     const rowButtonClass = "w-full gap-1.5 py-3 text-xs lg:text-sm";
@@ -933,6 +945,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       {renderActionButtons()}
 
       <div className="mt-8" ref={tabsRef}>
+        {/* Don't render tabs until user is loaded — avoids flashing wrong tab content */}
         {!user ? (
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
@@ -952,6 +965,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         )}
       </div>
 
+      {/* Completed Rentals — leave review */}
       {completedRentals.length > 0 && (
         <div className="mt-8" ref={reviewsSectionRef}>
           <h3 className="text-lg font-semibold mb-3">Completed Rentals</h3>
@@ -969,7 +983,15 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                     <p className="text-xs text-muted-foreground">{isOwner ? 'Driver: ' : 'Owner: '}{targetEmail}</p>
                   </div>
                   <Button size="sm" variant="outline" className="gap-1.5 shrink-0"
-                    onClick={() => setReviewModal({ rental: r, targetEmail, targetName: targetEmail, targetType, targetId })}>
+                    onClick={() => {
+                      setReviewModal({
+                        rental: r,
+                        targetEmail,
+                        targetName: targetEmail,
+                        targetType,
+                        targetId
+                      });
+                    }}>
                     <StarRating value={0} size="sm" /> Rate
                   </Button>
                 </Card>
@@ -991,6 +1013,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         />
       )}
 
+      {/* Driver & Owner profile detail panels — two explicit portals (never use .map for portals) */}
       {selectedDriver && createPortal(
         <ProfileDetailPanel
           profile={selectedDriver}
@@ -1016,6 +1039,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         document.body
       )}
 
+      {/* Contract Modal — portal so AppLayout transform/overflow can't clip it */}
       {contractModal && selectedProposal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
           <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
@@ -1032,6 +1056,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                   : 'Review and edit all details below before sending to the driver. Once you accept, the driver will confirm to finalise the rental.'}
             </p>
 
+            {/* Full contract textarea — editable for owner (accept/edit modes), read-only for driver (review) */}
             <div className="bg-muted rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0">
               <textarea
                 className="w-full h-full min-h-[40vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
@@ -1041,6 +1066,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
               />
             </div>
 
+            {/* Checkbox only shown for accept and review (actual signing steps) */}
             {contractEditMode !== 'edit' && (
               <div className="flex items-start gap-3 mb-4 shrink-0">
                 <input type="checkbox" id="agree-contract" checked={contractAgreed} onChange={e => setContractAgreed(e.target.checked)}
