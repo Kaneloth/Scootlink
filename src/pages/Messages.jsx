@@ -24,10 +24,12 @@ const addHiddenChat   = (uid, oid) => { const s = getHiddenChats(uid); s.add(oid
 // status: 'sending' | 'failed' | undefined (real DB row)
 // read:   boolean — whether the recipient has opened the message
 function MsgStatus({ status, read }) {
-  if (status === 'sending') return <Clock      className="w-3 h-3 opacity-60 inline ml-1" />;
+  if (status === 'sending') return <Clock      className="w-3 h-3 opacity-50 inline ml-1" />;
   if (status === 'failed')  return null; // no tick on failed
-  if (read)                 return <CheckCheck className="w-3.5 h-3.5 text-primary   inline ml-1" />;
-  return                           <Check      className="w-3.5 h-3.5 opacity-60     inline ml-1" />;
+  // Use opacity only — inherits parent color so ticks stay visible inside
+  // primary-colored sent bubbles AND in the muted conversation list preview.
+  if (read)  return <CheckCheck className="w-3 h-3 opacity-90 inline ml-1" />;
+  return            <Check      className="w-3 h-3 opacity-55 inline ml-1" />;
 }
 
 // ── Skeletons ─────────────────────────────────────────────────────────────────
@@ -111,9 +113,45 @@ export default function Messages() {
   const selectedChatRef = useRef(null);
   const longPressTimer  = useRef(null);
   const messagesEndRef  = useRef(null);
+  // Per-conversation broadcast channel — used for "delete for everyone" because
+  // Supabase postgres_changes DELETE events are not delivered to the recipient
+  // when RLS is enabled with default REPLICA IDENTITY (the row is gone so RLS
+  // cannot be evaluated). A broadcast channel shared by both users in the
+  // conversation is the reliable alternative.
+  const convChannelRef  = useRef(null);
 
   useEffect(() => { userRef.current = user; },         [user]);
   useEffect(() => { selectedChatRef.current = selectedChat; }, [selectedChat]);
+
+  // Subscribe to a shared broadcast channel whenever a chat is open.
+  // Both participants join the same channel (keyed by sorted user IDs) so
+  // broadcasts from either side — e.g. "delete for everyone" — are received
+  // by both without relying on postgres_changes DELETE (which Supabase drops
+  // when RLS + default REPLICA IDENTITY prevents row-level auth on deletes).
+  useEffect(() => {
+    if (convChannelRef.current) {
+      supabase.removeChannel(convChannelRef.current);
+      convChannelRef.current = null;
+    }
+    if (!selectedChat || !user) return;
+
+    const convKey = [user.id, selectedChat.otherUserId].sort().join('_');
+    const ch = supabase
+      .channel(`conv-broadcast-${convKey}`)
+      .on('broadcast', { event: 'message_deleted' }, ({ payload }) => {
+        if (payload?.id) {
+          setMessages((prev) => prev.filter((m) => m.id !== payload.id));
+        }
+        fetchConversations();
+      })
+      .subscribe();
+
+    convChannelRef.current = ch;
+    return () => {
+      supabase.removeChannel(ch);
+      convChannelRef.current = null;
+    };
+  }, [selectedChat, user]);
 
   // Auto-scroll to latest message
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -148,23 +186,28 @@ export default function Messages() {
       });
 
       const { data: profiles } = await supabase
-        .from('profiles').select('id, full_name').in('id', Array.from(otherIds));
+        .from('profiles').select('id, full_name, avatar_url, avatar_visible').in('id', Array.from(otherIds));
 
       const nameMap = {};
-      profiles?.forEach((p) => { nameMap[p.id] = p.full_name || 'User'; });
+      const avatarMap = {};
+      profiles?.forEach((p) => {
+        nameMap[p.id]   = p.full_name || 'User';
+        avatarMap[p.id] = p.avatar_visible !== false ? (p.avatar_url || null) : null;
+      });
 
       const grouped = {};
       data.forEach((msg) => {
         const otherId = msg.sender_id === u.id ? msg.receiver_id : msg.sender_id;
         if (!grouped[otherId]) {
           grouped[otherId] = {
-            otherUserId:   otherId,
-            otherUserName: nameMap[otherId] || 'User',
-            lastMessage:   msg.body,
-            lastSenderId:  msg.sender_id,
-            lastRead:      msg.read,
-            unread:        !msg.read && msg.receiver_id === u.id,
-            lastTime:      msg.created_at,
+            otherUserId:    otherId,
+            otherUserName:  nameMap[otherId] || 'User',
+            otherUserAvatar: avatarMap[otherId] || null,
+            lastMessage:    msg.body,
+            lastSenderId:   msg.sender_id,
+            lastRead:       msg.read,
+            unread:         !msg.read && msg.receiver_id === u.id,
+            lastTime:       msg.created_at,
           };
         }
       });
@@ -358,9 +401,18 @@ export default function Messages() {
   const handleDeleteForEveryone = async (msgId) => {
     const { error } = await supabase.from('messages').delete().eq('id', msgId).eq('sender_id', user.id);
     if (error) { toast.error('Could not delete message.'); return; }
+    // Remove from sender's own view immediately
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
     fetchConversations();
     toast.success('Message deleted for everyone.');
+    // Broadcast to the shared conversation channel so the recipient's UI
+    // removes the message instantly (postgres_changes DELETE is unreliable
+    // when Supabase RLS + default REPLICA IDENTITY is in use).
+    convChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'message_deleted',
+      payload: { id: msgId },
+    });
   };
 
   const handleDeleteChat = (otherUserId) => {
@@ -479,8 +531,12 @@ export default function Messages() {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <User className="w-5 h-5 text-primary" />
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                        {conv.otherUserAvatar ? (
+                          <img src={conv.otherUserAvatar} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-5 h-5 text-primary" />
+                        )}
                       </div>
                       <div>
                         <p className="text-sm font-medium text-foreground">{conv.otherUserName}</p>
