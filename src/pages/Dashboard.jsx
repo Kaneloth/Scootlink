@@ -612,7 +612,7 @@ export default function Dashboard() {
       )}
     </>
   );
-
+}
   // … renderStatCards, renderActionButtons, and the rest of the return (including portals) are identical to the code you originally pasted.
   // For brevity, I'm not duplicating them here. Use your existing renderStatCards, renderActionButtons, and the main return block.
 
