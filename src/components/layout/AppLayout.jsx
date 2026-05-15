@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
-import { Bike } from 'lucide-react';
+import { Bike, User, Settings, LogOut } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase } from '@/api/supabaseData';
@@ -117,6 +117,81 @@ function VerificationGate({ user, userLoading, children }) {
   }
 
   return children;
+}
+
+// ─── Mobile header with profile dropdown ─────────────────────────────────────
+function MobileHeader() {
+  const navigate               = useNavigate();
+  const [open, setOpen]        = useState(false);
+  const dropdownRef            = useRef(null);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleLogout = async () => {
+    setOpen(false);
+    await supabase.auth.signOut();
+    navigate('/login');
+  };
+
+  return (
+    <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card sticky top-0 z-30">
+      {/* Logo */}
+      <Link to="/" className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+          <Bike className="w-4 h-4 text-white" />
+        </div>
+        <span className="text-base font-bold text-foreground">Scootlink</span>
+      </Link>
+
+      {/* Profile button + dropdown */}
+      <div className="relative" ref={dropdownRef}>
+        <button
+          onClick={() => setOpen(v => !v)}
+          className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-colors ${open ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-foreground'}`}
+          aria-label="Account menu"
+        >
+          <User className="w-4 h-4" />
+        </button>
+
+        {open && (
+          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden z-50">
+            <button
+              onClick={() => { setOpen(false); navigate('/profile'); }}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
+            >
+              <User className="w-4 h-4 text-muted-foreground" />
+              Profile
+            </button>
+            <div className="border-t border-border" />
+            <button
+              onClick={() => { setOpen(false); navigate('/settings'); }}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
+            >
+              <Settings className="w-4 h-4 text-muted-foreground" />
+              Settings
+            </button>
+            <div className="border-t border-border" />
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-destructive/10 text-destructive transition-colors text-left"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── Main layout ──────────────────────────────────────────────────────────────
@@ -306,14 +381,7 @@ export default function AppLayout() {
           ref={mainRef}
           className={`h-screen overflow-y-auto pb-20 lg:pb-0 main-content ${slideClass}`}
         >
-          <div className="lg:hidden flex items-center px-4 py-3 border-b border-border bg-card sticky top-0 z-30">
-            <Link to="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                <Bike className="w-4 h-4 text-white" />
-              </div>
-              <span className="text-base font-bold text-foreground">Scootlink</span>
-            </Link>
-          </div>
+          <MobileHeader />
           <Outlet />
         </main>
       </div>
