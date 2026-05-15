@@ -236,7 +236,8 @@ export default function AppLayout() {
 
   useEffect(() => {
     auth.me().then(user => {
-      setAccountType(user?.subscription_plan || 'driver');
+      // Unsubscribed users preview both owner + driver navigation
+      setAccountType(user?.subscription_active ? (user?.subscription_plan || 'driver') : 'both');
       setGateUser(user ?? null);
     }).catch(() => {}).finally(() => setUserLoading(false));
   }, []);
