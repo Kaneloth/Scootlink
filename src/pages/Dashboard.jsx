@@ -537,7 +537,21 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
             {ownerActiveRentals.map(r => {
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
               const driverName = r.driver_email || 'Driver';
-              return <RentalCard key={r.id} rental={r} vehicle={vehicle} counterpartyName={driverName} />;
+              return (
+                <div key={r.id} className="space-y-1">
+                  <RentalCard rental={r} vehicle={vehicle} counterpartyName={driverName} />
+                  {r.driver_id && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2 text-primary border-primary/30 hover:bg-primary/5"
+                      onClick={() => navigate(`/messages?userId=${r.driver_id}`)}
+                    >
+                      <MessageCircle className="w-4 h-4" /> Message Driver
+                    </Button>
+                  )}
+                </div>
+              );
             })}
           </div>
         ) : (
@@ -612,7 +626,21 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           {driverActiveRentals.map(r => {
             const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
             const ownerName = r.owner_email || 'Owner';
-            return <RentalCard key={r.id} rental={r} vehicle={vehicle} counterpartyName={ownerName} />;
+            return (
+              <div key={r.id} className="space-y-1">
+                <RentalCard rental={r} vehicle={vehicle} counterpartyName={ownerName} />
+                {r.owner_id && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2 text-primary border-primary/30 hover:bg-primary/5"
+                    onClick={() => navigate(`/messages?userId=${r.owner_id}`)}
+                  >
+                    <MessageCircle className="w-4 h-4" /> Message Owner
+                  </Button>
+                )}
+              </div>
+            );
           })}
         </div>
       ) : (
