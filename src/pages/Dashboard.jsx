@@ -169,7 +169,7 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, email, phone, location, license_year, license_number, verified, rating')
+        .select('id, full_name, email, phone, location, license_year, license_number, verified, rating, avatar_url, avatar_visible')
         .eq('id', driverId)
         .single();
       if (error) throw error;
@@ -825,8 +825,12 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
               <button onClick={() => setSelectedDriver(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
-                {selectedDriver.full_name?.[0] || '?'}
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden shrink-0">
+                {selectedDriver.avatar_visible !== false && selectedDriver.avatar_url ? (
+                  <img src={selectedDriver.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  selectedDriver.full_name?.[0] || '?'
+                )}
               </div>
               <div>
                 <p className="font-semibold text-lg">{selectedDriver.full_name || 'Driver'}</p>

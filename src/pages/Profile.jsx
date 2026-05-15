@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ShieldCheck, Loader2 } from 'lucide-react';
+import { ShieldCheck, Loader2, Camera, Eye, EyeOff } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import StarRating from '@/components/reviews/StarRating';
 import ReviewsSection from '@/components/reviews/ReviewsSection';
@@ -63,9 +63,13 @@ function FormSkeleton() {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Profile() {
-  const navigate = useNavigate();
-  const [user, setUser] = useState(null);
-  const [userLoading, setUserLoading] = useState(true);
+  const navigate        = useNavigate();
+  const fileInputRef    = useRef(null);
+  const [user,          setUser]          = useState(null);
+  const [userLoading,   setUserLoading]   = useState(true);
+  const [avatarUrl,     setAvatarUrl]     = useState(null);
+  const [avatarVisible, setAvatarVisible] = useState(true);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   // Non-sensitive fields stored in user metadata
   const [form, setForm] = useState({
@@ -95,6 +99,8 @@ export default function Profile() {
       .then(async (u) => {
         if (cancelled) return;
         setUser(u);
+        setAvatarUrl(u.avatar_url || null);
+        setAvatarVisible(u.avatar_visible !== false); // default true
         setForm({
           full_name: u.full_name || '',
           email: u.email || '',
@@ -127,6 +133,34 @@ export default function Profile() {
     return () => { cancelled = true; };
   }, []);
 
+  // ── Avatar upload ──────────────────────────────────────────────────────────
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+    setAvatarUploading(true);
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const ext      = file.name.split('.').pop() || 'jpg';
+      const filePath = `${authUser.id}/avatar_${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from('profile-images')
+        .upload(filePath, file, { contentType: file.type });
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage
+        .from('profile-images')
+        .getPublicUrl(filePath);
+      setAvatarUrl(publicUrl);
+      await auth.updateMe({ avatar_url: publicUrl });
+      toast.success('Profile photo updated!');
+    } catch (err) {
+      toast.error('Upload failed: ' + err.message);
+    } finally {
+      setAvatarUploading(false);
+      e.target.value = '';
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -140,6 +174,7 @@ export default function Profile() {
         license_number: form.license_number,
         license_year: form.license_year ? parseInt(form.license_year) : null,
         citizenship: form.citizenship,
+        avatar_visible: avatarVisible,
       };
 
       await auth.updateMe(metadataUpdates);
@@ -182,20 +217,46 @@ export default function Profile() {
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <PageHeader title="My Profile" subtitle="Edit details & view your reviews" backTo="/settings" />
 
+      {/* Hidden file input for avatar upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleAvatarUpload}
+      />
+
       {/* Profile header */}
       {userLoading ? (
         <ProfileHeaderSkeleton />
       ) : user ? (
         <Card className="p-5 mb-4 border border-border/50">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden shrink-0">
-              {user.selfie_url ? (
-                <img src={user.selfie_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                user.full_name?.[0] || 'U'
-              )}
+
+            {/* Avatar with camera overlay */}
+            <div className="relative shrink-0">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                ) : user.selfie_url ? (
+                  <img src={user.selfie_url} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  user.full_name?.[0] || 'U'
+                )}
+              </div>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={avatarUploading}
+                className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+                title="Change photo"
+              >
+                {avatarUploading
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <Camera className="w-3 h-3" />}
+              </button>
             </div>
-            <div>
+
+            <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="font-bold text-lg text-foreground">{user.full_name || 'User'}</h2>
                 {user.verified && <ShieldCheck className="w-4 h-4 text-primary" />}
@@ -207,6 +268,16 @@ export default function Profile() {
                   <span className="text-xs text-muted-foreground">({user.total_reviews} reviews)</span>
                 )}
               </div>
+
+              {/* Visibility toggle */}
+              <button
+                onClick={() => setAvatarVisible(v => !v)}
+                className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {avatarVisible
+                  ? <><Eye className="w-3.5 h-3.5" /> Photo visible to others</>
+                  : <><EyeOff className="w-3.5 h-3.5" /> Photo hidden from others</>}
+              </button>
             </div>
           </div>
         </Card>
