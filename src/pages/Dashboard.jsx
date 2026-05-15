@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
   Plus, Search, MapPin, Bike, Users, Car, Crown, ShieldCheck, AlertTriangle,
-  Check, X, User as UserIcon, MessageCircle, Loader2
+  Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/layout/PageHeader';
@@ -53,8 +53,9 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [balanceLoading, setBalanceLoading] = useState(true);
   const [reviewModal, setReviewModal] = useState(null);
-  const [selectedDriver, setSelectedDriver] = useState(null);
+  const [selectedDriver,  setSelectedDriver]  = useState(null);
   const [loadingDriverId, setLoadingDriverId] = useState(null); // tracks which card is loading
+  const [endingRentalId,  setEndingRentalId]  = useState(null); // tracks which rental is being ended
 
   // Contract modal states
   const [contractModal, setContractModal] = useState(false);
@@ -150,7 +151,11 @@ export default function Dashboard() {
     try {
       const rental = rentals.find(r => r.id === selectedProposal.id);
       if (!rental) return;
-      await Rental.update(rental.id, { status: 'active', contract_text: editableContractText });
+      await Rental.update(rental.id, {
+        status: 'active',
+        contract_text: editableContractText,
+        confirmed_at: new Date().toISOString(),
+      });
       await Vehicle.update(rental.vehicle_id, { status: 'rented' });
       toast.success('Rental confirmed! Vehicle assigned.');
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
@@ -161,6 +166,35 @@ export default function Dashboard() {
     } finally {
       closeContractModal();
     }
+  };
+
+  const handleEndRental = async (rental) => {
+    if (!window.confirm('End this rental? The vehicle will be marked available again and the rental will move to Completed.')) return;
+    setEndingRentalId(rental.id);
+    try {
+      await Rental.update(rental.id, {
+        status: 'completed',
+        ended_at: new Date().toISOString(),
+      });
+      await Vehicle.update(rental.vehicle_id, { status: 'available' });
+      toast.success('Rental ended. You can now leave a review.');
+      queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
+      queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+    } catch (err) {
+      toast.error('Could not end rental: ' + err.message);
+    } finally {
+      setEndingRentalId(null);
+    }
+  };
+
+  // Format a commencement date — use confirmed_at if saved, fall back to start_date, then today
+  const formatCommenced = (r) => {
+    const raw = r.confirmed_at || r.start_date;
+    if (!raw) return 'Date not recorded';
+    try {
+      return new Date(raw).toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch { return raw; }
   };
 
   // Pure fetch — returns the profile without touching selectedDriver state.
@@ -537,20 +571,47 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
             {ownerActiveRentals.map(r => {
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
               const driverName = r.driver_email || 'Driver';
+              const isEnding = endingRentalId === r.id;
               return (
-                <div key={r.id} className="space-y-1">
-                  <RentalCard rental={r} vehicle={vehicle} counterpartyName={driverName} />
+                <Card key={r.id} className="p-4 border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800">
+                  <div className="mb-3">
+                    <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
+                    <p className="text-xs text-muted-foreground">Driver: {driverName}</p>
+                    <p className="text-xs text-muted-foreground">Started: {formatCommenced(r)}</p>
+                    <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
+                  </div>
                   {r.driver_id && (
+                    <button
+                      onClick={() => fetchDriverDetails(r.driver_id, r.driver_email)}
+                      disabled={loadingDriverId === r.driver_id}
+                      className="w-full text-xs text-primary border border-primary/30 rounded-lg py-2 mb-3 hover:bg-primary/5 active:bg-primary/10 transition-colors disabled:opacity-50"
+                    >
+                      {loadingDriverId === r.driver_id ? 'Loading…' : '👤 View driver details'}
+                    </button>
+                  )}
+                  <div className="flex gap-2 pt-2 border-t border-green-200 dark:border-green-800">
+                    {r.driver_id && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-1.5 text-primary border-primary/30 hover:bg-primary/5"
+                        onClick={() => navigate(`/messages?userId=${r.driver_id}`)}
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" /> Message Driver
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
-                      className="w-full gap-2 text-primary border-primary/30 hover:bg-primary/5"
-                      onClick={() => navigate(`/messages?userId=${r.driver_id}`)}
+                      className="flex-1 gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10"
+                      disabled={isEnding}
+                      onClick={() => handleEndRental(r)}
                     >
-                      <MessageCircle className="w-4 h-4" /> Message Driver
+                      {isEnding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <StopCircle className="w-3.5 h-3.5" />}
+                      {isEnding ? 'Ending…' : 'End Rental'}
                     </Button>
-                  )}
-                </div>
+                  </div>
+                </Card>
               );
             })}
           </div>
@@ -626,20 +687,38 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           {driverActiveRentals.map(r => {
             const vehicle = allVehicles.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id);
             const ownerName = r.owner_email || 'Owner';
+            const isEnding = endingRentalId === r.id;
             return (
-              <div key={r.id} className="space-y-1">
-                <RentalCard rental={r} vehicle={vehicle} counterpartyName={ownerName} />
-                {r.owner_id && (
+              <Card key={r.id} className="p-4 border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800">
+                <div className="mb-3">
+                  <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
+                  <p className="text-xs text-muted-foreground">Owner: {ownerName}</p>
+                  <p className="text-xs text-muted-foreground">Started: {formatCommenced(r)}</p>
+                  <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
+                </div>
+                <div className="flex gap-2 pt-2 border-t border-green-200 dark:border-green-800">
+                  {r.owner_id && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 gap-1.5 text-primary border-primary/30 hover:bg-primary/5"
+                      onClick={() => navigate(`/messages?userId=${r.owner_id}`)}
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" /> Message Owner
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
-                    className="w-full gap-2 text-primary border-primary/30 hover:bg-primary/5"
-                    onClick={() => navigate(`/messages?userId=${r.owner_id}`)}
+                    className="flex-1 gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10"
+                    disabled={isEnding}
+                    onClick={() => handleEndRental(r)}
                   >
-                    <MessageCircle className="w-4 h-4" /> Message Owner
+                    {isEnding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <StopCircle className="w-3.5 h-3.5" />}
+                    {isEnding ? 'Ending…' : 'End Rental'}
                   </Button>
-                )}
-              </div>
+                </div>
+              </Card>
             );
           })}
         </div>
