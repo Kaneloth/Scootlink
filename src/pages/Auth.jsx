@@ -117,7 +117,10 @@ async function triggerBiometricLogin() {
       } else {
         const errTxt = await tokenRes.text().catch(() => '');
         _dbg.push(`P2 REST:${tokenRes.status} ${errTxt.slice(0, 60)}`);
-        if (tokenRes.status === 400 || tokenRes.status === 401) clearBiometricRefreshToken();
+        // Only clear the backup when Supabase explicitly says the token doesn't
+        // exist server-side — any other error (network, 5xx, etc.) should keep
+        // the backup so the next attempt can retry.
+        if (errTxt.includes('refresh_token_not_found')) clearBiometricRefreshToken();
       }
     } catch (ex) { _dbg.push(`P2 threw:${ex?.message}`); }
   }
