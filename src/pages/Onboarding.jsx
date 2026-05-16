@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth } from '@/api/supabaseData';
+import { auth, supabase } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -283,10 +283,27 @@ export default function Onboarding() {
     onboarding_completed: true,
   });
 
+  // Helper: geocode the user's location and persist PostGIS point (non-fatal)
+  const saveGeoLocation = async () => {
+    const locationStr = buildLocation();
+    if (!locationStr) return;
+    try {
+      const { geocodeLocation } = await import('@/lib/geocode');
+      const coords = await geocodeLocation(locationStr);
+      if (coords) {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        await supabase.from('profiles').update({
+          geo_location: `SRID=4326;POINT(${coords.longitude} ${coords.latitude})`,
+        }).eq('id', authUser.id);
+      }
+    } catch { /* non-fatal */ }
+  };
+
   const handleComplete = async () => {
     setSaving(true);
     try {
       await auth.updateMe(buildProfilePayload());
+      await saveGeoLocation();
       toast.success('Profile setup complete! Please subscribe to get started.');
       navigate('/subscription');
     } catch (err) {
@@ -300,6 +317,7 @@ export default function Onboarding() {
     setSaving(true);
     try {
       await auth.updateMe(buildProfilePayload());
+      await saveGeoLocation();
       toast.success('Profile saved! You can subscribe any time from Settings.');
       navigate('/');
     } catch (err) {

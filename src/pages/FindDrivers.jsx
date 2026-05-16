@@ -14,63 +14,112 @@ import PageHeader from '@/components/layout/PageHeader';
 import EmptyState from '@/components/common/EmptyState';
 import { toast } from 'sonner';
 import { supabase } from '@/api/supabaseClient';
+import { geocodeLocation } from '@/lib/geocode';
 
 export default function FindDrivers() {
   const navigate = useNavigate();
-  const [driverReviews, setDriverReviews] = useState([]);
-  const [loadingReviews, setLoadingReviews] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({ location: '', minExperience: 0, minRating: 0, radius: 50 });
-  const [currentUser, setCurrentUser] = useState(null);
-  const [selectedDriver, setSelectedDriver] = useState(null);
-  const [avatarMap, setAvatarMap] = useState({});
+  const [driverReviews,    setDriverReviews]    = useState([]);
+  const [loadingReviews,   setLoadingReviews]   = useState(false);
+  const [showFilters,      setShowFilters]      = useState(false);
+  const [filters,          setFilters]          = useState({ location: '', minExperience: 0, minRating: 0, radius: 50 });
+  const [currentUser,      setCurrentUser]      = useState(null);
+  const [selectedDriver,   setSelectedDriver]   = useState(null);
+  const [avatarMap,        setAvatarMap]        = useState({});
+
+  // Proximity state
+  const [locationCoords,   setLocationCoords]   = useState(null);
+  const [geocoding,        setGeocoding]        = useState(false);
+  const [rpcDrivers,       setRpcDrivers]       = useState(null); // null = use User.list(); array = RPC results
 
   // Owner-initiated contract state
   const [showContractForm, setShowContractForm] = useState(false);
-  const [ownerVehicles, setOwnerVehicles] = useState([]);
-  const [contractForm, setContractForm] = useState({
-    vehicle_id: '',
-    start_date: new Date().toISOString().split('T')[0],
-    end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  const [ownerVehicles,    setOwnerVehicles]    = useState([]);
+  const [contractForm,     setContractForm]     = useState({
+    vehicle_id:     '',
+    start_date:     new Date().toISOString().split('T')[0],
+    end_date:       new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     price_per_week: '',
-    deposit: '',
-    message: '',
+    deposit:        '',
+    message:        '',
   });
   const [sendingContract, setSendingContract] = useState(false);
 
   useEffect(() => {
     auth.me().then(u => {
       setCurrentUser(u);
-      if (u?.id) {
-        Vehicle.filter({ owner_id: u.id }).then(setOwnerVehicles).catch(() => {});
-      }
+      if (u?.id) Vehicle.filter({ owner_id: u.id }).then(setOwnerVehicles).catch(() => {});
     }).catch(() => {});
   }, []);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['all-users'],
-    queryFn: () => User.list(),
+    queryFn:  () => User.list(),
   });
 
   useEffect(() => {
     if (!users.length) return;
-    fetchProfilesByIds(users.map((u) => u.id))
-      .then((enriched) => {
+    fetchProfilesByIds(users.map(u => u.id))
+      .then(enriched => {
         const map = {};
-        enriched.forEach((p) => { map[p.id] = p; });
+        enriched.forEach(p => { map[p.id] = p; });
         setAvatarMap(map);
       })
       .catch(() => {});
   }, [users]);
 
+  // Geocode location and call nearby_drivers RPC when filters.location or radius changes
+  useEffect(() => {
+    if (!filters.location) {
+      setLocationCoords(null);
+      setRpcDrivers(null);
+      return;
+    }
+    let cancelled = false;
+    setGeocoding(true);
+    setRpcDrivers(null);
+
+    geocodeLocation(filters.location).then(async coords => {
+      if (cancelled) return;
+      if (!coords) {
+        toast.error('Location not found — showing text-match results instead');
+        setLocationCoords(null);
+        setRpcDrivers(null);
+        return;
+      }
+      setLocationCoords(coords);
+      const { data, error } = await supabase.rpc('nearby_drivers', {
+        search_lat: coords.latitude,
+        search_lng: coords.longitude,
+        radius_km:  filters.radius,
+      });
+      if (cancelled) return;
+      if (error) {
+        console.error('nearby_drivers RPC error:', error);
+        toast.error('Proximity search failed — showing text-match results');
+        setLocationCoords(null);
+        setRpcDrivers(null);
+      } else {
+        setRpcDrivers(data || []);
+      }
+    }).finally(() => { if (!cancelled) setGeocoding(false); });
+
+    return () => { cancelled = true; };
+  }, [filters.location, filters.radius]);
+
   const currentYear = new Date().getFullYear();
-  const drivers = users.filter(u => {
-    if (u.account_type !== 'driver' && u.account_type !== 'both') return false;
-    if (filters.location && !(u.location || '').toLowerCase().includes(filters.location.toLowerCase())) return false;
-    if (filters.minExperience > 0 && u.license_year && (currentYear - u.license_year) < filters.minExperience) return false;
-    if (filters.minRating > 0 && (u.rating || 0) < filters.minRating) return false;
-    return true;
-  });
+
+  const drivers = useMemo(() => {
+    // Use RPC results when available, otherwise fall back to full user list
+    const source = rpcDrivers !== null ? rpcDrivers : users;
+    return source.filter(u => {
+      if (u.account_type !== 'driver' && u.account_type !== 'both') return false;
+      // Text-match location fallback only when geocoding failed or no location set
+      if (!locationCoords && filters.location && !(u.location || '').toLowerCase().includes(filters.location.toLowerCase())) return false;
+      if (filters.minExperience > 0 && u.license_year && (currentYear - u.license_year) < filters.minExperience) return false;
+      if (filters.minRating > 0 && (u.rating || 0) < filters.minRating) return false;
+      return true;
+    });
+  }, [rpcDrivers, users, filters, locationCoords, currentYear]);
 
   const fetchDriverReviews = async (driverId) => {
     setLoadingReviews(true);
@@ -95,26 +144,23 @@ export default function FindDrivers() {
     setShowContractForm(false);
     setContractForm(f => ({
       ...f,
-      vehicle_id: '',
-      price_per_week: '',
-      deposit: '',
-      message: '',
+      vehicle_id: '', price_per_week: '', deposit: '', message: '',
       start_date: new Date().toISOString().split('T')[0],
-      end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      end_date:   new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     }));
     fetchDriverReviews(driver.id);
   };
 
   const selectedVehicle = useMemo(
     () => ownerVehicles.find(v => String(v.id) === String(contractForm.vehicle_id)) || null,
-    [ownerVehicles, contractForm.vehicle_id]
+    [ownerVehicles, contractForm.vehicle_id],
   );
 
   const estimate = useMemo(() => {
     if (!selectedVehicle || !contractForm.start_date || !contractForm.end_date) return null;
-    const days = Math.max(1, Math.ceil((new Date(contractForm.end_date) - new Date(contractForm.start_date)) / (1000 * 60 * 60 * 24)));
+    const days  = Math.max(1, Math.ceil((new Date(contractForm.end_date) - new Date(contractForm.start_date)) / (1000 * 60 * 60 * 24)));
     const weeks = Math.ceil(days / 7);
-    const rate = parseFloat(contractForm.price_per_week) || selectedVehicle.price_per_week || 0;
+    const rate  = parseFloat(contractForm.price_per_week) || selectedVehicle.price_per_week || 0;
     return { weeks, total: weeks * rate };
   }, [selectedVehicle, contractForm]);
 
@@ -122,22 +168,22 @@ export default function FindDrivers() {
 
   const handleSendContract = async () => {
     if (!selectedDriver || !currentUser) return;
-    if (!contractForm.vehicle_id) { toast.error('Please select a vehicle'); return; }
-    if (!contractForm.start_date || !contractForm.end_date) { toast.error('Please set the rental dates'); return; }
-    if (!contractForm.price_per_week) { toast.error('Please enter the weekly rate'); return; }
+    if (!contractForm.vehicle_id)                            { toast.error('Please select a vehicle'); return; }
+    if (!contractForm.start_date || !contractForm.end_date)  { toast.error('Please set the rental dates'); return; }
+    if (!contractForm.price_per_week)                        { toast.error('Please enter the weekly rate'); return; }
 
     setSendingContract(true);
     try {
       const { error } = await supabase.from('rentals').insert([{
-        vehicle_id: contractForm.vehicle_id,
-        owner_id: currentUser.id,
-        driver_id: selectedDriver.id,
-        start_date: contractForm.start_date,
-        end_date: contractForm.end_date,
-        status: 'awaiting_driver_confirmation',
+        vehicle_id:     contractForm.vehicle_id,
+        owner_id:       currentUser.id,
+        driver_id:      selectedDriver.id,
+        start_date:     contractForm.start_date,
+        end_date:       contractForm.end_date,
+        status:         'awaiting_driver_confirmation',
         price_per_week: parseFloat(contractForm.price_per_week),
-        deposit: parseFloat(contractForm.deposit) || 0,
-        message: contractForm.message || '',
+        deposit:        parseFloat(contractForm.deposit) || 0,
+        message:        contractForm.message || '',
       }]);
       if (error) throw error;
       toast.success(`Contract sent to ${selectedDriver.full_name?.split(' ')[0] || 'driver'}! They'll confirm on their dashboard.`);
@@ -151,12 +197,25 @@ export default function FindDrivers() {
   };
 
   const isOwner = currentUser?.subscription_plan === 'owner' || currentUser?.subscription_plan === 'both' || !currentUser?.subscription_active;
+  const isSearching = isLoading || geocoding;
+
+  const clearFilters = () => {
+    setFilters({ location: '', minExperience: 0, minRating: 0, radius: 50 });
+    setLocationCoords(null);
+    setRpcDrivers(null);
+  };
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
       <PageHeader
         title="Find Drivers"
-        subtitle={`${drivers.length} driver${drivers.length !== 1 ? 's' : ''} found`}
+        subtitle={
+          geocoding
+            ? 'Locating…'
+            : locationCoords
+              ? `${drivers.length} driver${drivers.length !== 1 ? 's' : ''} within ${filters.radius} km`
+              : `${drivers.length} driver${drivers.length !== 1 ? 's' : ''} found`
+        }
         backTo="/"
         action={
           <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="gap-2">
@@ -169,18 +228,32 @@ export default function FindDrivers() {
         <Card className="p-5 mb-6 border border-border/50">
           <div className="flex items-center justify-between mb-4">
             <h4 className="font-semibold text-sm">Filters</h4>
-            <Button variant="ghost" size="sm" onClick={() => setFilters({ location: '', minExperience: 0, minRating: 0, radius: 50 })}>
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
               <X className="w-3 h-3 mr-1" /> Clear
             </Button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label className="text-xs">Location</Label>
-              <Input className="mt-1" placeholder="e.g. Soweto" value={filters.location} onChange={e => setFilters(p => ({ ...p, location: e.target.value }))} />
+              <Label className="text-xs flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> Location
+                {geocoding && <Loader2 className="w-3 h-3 animate-spin ml-1 text-primary" />}
+              </Label>
+              <Input
+                className="mt-1"
+                placeholder="e.g. Soweto — finds nearby drivers too"
+                value={filters.location}
+                onChange={e => setFilters(p => ({ ...p, location: e.target.value }))}
+              />
             </div>
             <div>
               <Label className="text-xs">Min Experience (years)</Label>
-              <Input className="mt-1" type="number" min="0" value={filters.minExperience || ''} onChange={e => setFilters(p => ({ ...p, minExperience: parseInt(e.target.value) || 0 }))} />
+              <Input
+                className="mt-1"
+                type="number"
+                min="0"
+                value={filters.minExperience || ''}
+                onChange={e => setFilters(p => ({ ...p, minExperience: parseInt(e.target.value) || 0 }))}
+              />
             </div>
             <div>
               <Label className="text-xs">Min Rating</Label>
@@ -194,7 +267,9 @@ export default function FindDrivers() {
               </Select>
             </div>
             <div>
-              <Label className="text-xs">Search Radius: <span className="font-semibold text-foreground">{filters.radius} km</span></Label>
+              <Label className="text-xs">
+                Search Radius: <span className="font-semibold text-foreground">{filters.radius} km</span>
+              </Label>
               <Slider
                 className="mt-3"
                 min={5}
@@ -208,10 +283,17 @@ export default function FindDrivers() {
               </div>
             </div>
           </div>
+
+          {locationCoords && (
+            <p className="text-xs text-primary mt-3 flex items-center gap-1.5">
+              <MapPin className="w-3 h-3" />
+              Showing drivers within {filters.radius} km of &ldquo;{filters.location}&rdquo;, sorted by distance
+            </p>
+          )}
         </Card>
       )}
 
-      {isLoading ? (
+      {isSearching ? (
         <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-20 bg-muted animate-pulse rounded-xl" />)}</div>
       ) : drivers.length > 0 ? (
         <div className="space-y-3">
@@ -256,17 +338,24 @@ export default function FindDrivers() {
           })}
         </div>
       ) : (
-        <EmptyState icon="👤" title="No drivers found" description="Try adjusting your search filters" />
+        <EmptyState
+          icon="👤"
+          title="No drivers found"
+          description={
+            locationCoords
+              ? `No drivers found within ${filters.radius} km of "${filters.location}". Try increasing the radius.`
+              : 'Try adjusting your search filters'
+          }
+        />
       )}
 
-      {/* ── Driver Detail Modal ─────────────────────────────────────────────── */}
+      {/* ── Driver Detail Modal ──────────────────────────────────────────────── */}
       {selectedDriver && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => { setSelectedDriver(null); setShowContractForm(false); }}>
           <div
             className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Scrollable body */}
             <div className="overflow-y-auto p-6 flex-1">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold truncate">Driver Profile</h2>
@@ -306,7 +395,6 @@ export default function FindDrivers() {
                 </div>
               </div>
 
-              {/* Reviews */}
               <div className="mt-4">
                 {loadingReviews ? (
                   <p className="text-xs text-muted-foreground">Loading reviews...</p>
@@ -328,7 +416,6 @@ export default function FindDrivers() {
                 )}
               </div>
 
-              {/* ── Owner-initiated contract form ─────────────────────────── */}
               {isOwner && canSendContract && selectedDriver.id !== currentUser?.id && (
                 <div className="mt-5 border-t border-border pt-4">
                   <button
@@ -339,9 +426,7 @@ export default function FindDrivers() {
                       <FileText className="w-4 h-4" />
                       Send Rental Contract
                     </span>
-                    {showContractForm
-                      ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                      : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                    {showContractForm ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                   </button>
 
                   {showContractForm && (
@@ -350,7 +435,6 @@ export default function FindDrivers() {
                         Use this after agreeing on terms via Messages. The driver will see the contract on their dashboard and confirm to activate the rental.
                       </p>
 
-                      {/* Vehicle selector */}
                       {ownerVehicles.length === 0 ? (
                         <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
                           You have no vehicles listed. Add a vehicle first to send a contract.
@@ -364,9 +448,9 @@ export default function FindDrivers() {
                               const veh = ownerVehicles.find(x => String(x.id) === v);
                               setContractForm(f => ({
                                 ...f,
-                                vehicle_id: v,
+                                vehicle_id:     v,
                                 price_per_week: veh?.price_per_week ? String(veh.price_per_week) : f.price_per_week,
-                                deposit: veh?.deposit ? String(veh.deposit) : f.deposit,
+                                deposit:        veh?.deposit ? String(veh.deposit) : f.deposit,
                               }));
                             }}
                           >
@@ -382,7 +466,6 @@ export default function FindDrivers() {
                         </div>
                       )}
 
-                      {/* Dates */}
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <Label className="text-xs">Start Date</Label>
@@ -394,7 +477,6 @@ export default function FindDrivers() {
                         </div>
                       </div>
 
-                      {/* Price + Deposit */}
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <Label className="text-xs">Weekly Rate (R)</Label>
@@ -406,7 +488,6 @@ export default function FindDrivers() {
                         </div>
                       </div>
 
-                      {/* Estimate */}
                       {estimate && contractForm.price_per_week && (
                         <div className="bg-muted rounded-lg p-3 text-xs">
                           {estimate.weeks} week{estimate.weeks !== 1 ? 's' : ''} × R {contractForm.price_per_week} = <span className="font-bold text-foreground">R {estimate.total}</span>
@@ -414,7 +495,6 @@ export default function FindDrivers() {
                         </div>
                       )}
 
-                      {/* Note to driver */}
                       <div>
                         <Label className="text-xs">Note to Driver (optional)</Label>
                         <textarea
@@ -441,7 +521,6 @@ export default function FindDrivers() {
               )}
             </div>
 
-            {/* Fixed footer buttons */}
             <div className="px-6 pb-6 shrink-0">
               <Button
                 className="w-full gap-2"

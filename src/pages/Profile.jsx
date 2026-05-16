@@ -234,6 +234,19 @@ export default function Profile() {
 
       if (sensitiveError) throw sensitiveError;
 
+      // Geocode location and update PostGIS point (non-fatal — profile saves even if geocoding fails)
+      if (form.location) {
+        try {
+          const { geocodeLocation } = await import('@/lib/geocode');
+          const coords = await geocodeLocation(form.location);
+          if (coords) {
+            await supabase.from('profiles').update({
+              geo_location: `SRID=4326;POINT(${coords.longitude} ${coords.latitude})`,
+            }).eq('id', user.id);
+          }
+        } catch { /* non-fatal */ }
+      }
+
       // ── 3. Handle email change separately (requires confirmation) ──────────
       if (form.email !== user.email) {
         const { error } = await supabase.auth.updateUser({ email: form.email });
