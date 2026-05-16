@@ -241,14 +241,14 @@ export default function Settings() {
 
   const handleLogout = async () => {
     if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-      // Save the session backup BEFORE signing out — tokens are still valid here.
+      // Save the current session tokens WITHOUT calling signOut — signOut (even
+      // scope:'local') sends a server-side revocation that invalidates the refresh
+      // token, breaking biometric restoration. We just navigate away; the Supabase
+      // session stays live in localStorage so Path 1 can refreshSession() on login.
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data } = await supabase.auth.getSession(); // no network call if token fresh
         if (data?.session) saveBiometricRefreshToken(data.session);
       } catch { /* non-fatal */ }
-      // Sign out locally only: clears Supabase's localStorage but does NOT
-      // invalidate the refresh token on the server, so our backup still works.
-      await supabase.auth.signOut({ scope: 'local' });
       navigate('/auth');
     } else {
       await clearTokenCookie();
