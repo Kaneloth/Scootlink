@@ -149,10 +149,12 @@ export default function SearchVehicles() {
   }, []);
 
   // Geocode whenever the committed location filter changes.
-  // Requires ≥3 characters — single/short strings can't be geocoded and fall
-  // through to silent text-match without showing an error toast.
+  // Requires ≥3 characters — single/short strings fall through to silent
+  // text-match without attempting geocoding or showing an error toast.
   useEffect(() => {
     if (!filters.location || filters.location.trim().length < 3) {
+      // Explicitly clear the spinner — the cleanup below won't run on early return
+      setGeocoding(false);
       setFilters(prev => ({ ...prev, locationCoords: null }));
       return;
     }
@@ -163,7 +165,9 @@ export default function SearchVehicles() {
       if (!coords) toast.error('Location not found — showing text-match results instead');
       setFilters(prev => ({ ...prev, locationCoords: coords ?? null }));
     }).finally(() => { if (!cancelled) setGeocoding(false); });
-    return () => { cancelled = true; };
+    // Always clear the spinner immediately when the user changes the location
+    // so it never stays stuck if the previous request was cancelled mid-flight.
+    return () => { cancelled = true; setGeocoding(false); };
   }, [filters.location]);
 
   const { data: user } = useQuery({
