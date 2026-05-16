@@ -75,26 +75,49 @@ async function triggerBiometricLogin() {
     _dbg.push(`P1:${e1?.message || 'no session'}`);
   } catch (ex) { _dbg.push(`P1 threw:${ex?.message}`); }
 
-  // Path 2: Restore from our own backup (both tokens; onAuthStateChange in
-  // supabaseData.js keeps it in sync with every Supabase token rotation).
+  // Path 2: Exchange stored refresh_token via Supabase REST API → get a fresh
+  // access_token + refresh_token pair → then call setSession with both.
+  // We NEVER pass an empty access_token; setSession throws "Auth session missing!"
+  // before even attempting the refresh_token if access_token is falsy.
   const backup = loadBiometricRefreshToken();
-  if (!backup?.refresh_token) {
+  const storedRt = backup?.refresh_token ?? null;
+  if (!storedRt) {
     _dbg.push('P2:no backup');
   } else {
     try {
-      const { data: s2, error: e2 } = await supabase.auth.setSession({
-        access_token:  backup.access_token || '',
-        refresh_token: backup.refresh_token,
-      });
-      if (!e2 && s2?.session) {
-        saveBiometricRefreshToken(s2.session);
-        setTokenCookie(s2.session.refresh_token).catch(() => {});
-        return s2.session;
-      }
-      _dbg.push(`P2:${e2?.message || 'no session returned'}`);
-      // If the refresh token is explicitly rejected, clear the stale backup.
-      if (e2?.message?.toLowerCase().includes('invalid') || e2?.status === 400) {
-        clearBiometricRefreshToken();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey    = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const tokenRes = await fetch(
+        `${supabaseUrl}/auth/v1/token?grant_type=refresh_token`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: anonKey },
+          body: JSON.stringify({ refresh_token: storedRt }),
+        }
+      );
+      if (tokenRes.ok) {
+        const tokens = await tokenRes.json();
+        if (tokens.access_token && tokens.refresh_token) {
+          const { data: s2, error: e2 } = await supabase.auth.setSession({
+            access_token:  tokens.access_token,
+            refresh_token: tokens.refresh_token,
+          });
+          if (!e2 && s2?.session) {
+            saveBiometricRefreshToken(s2.session);
+            setTokenCookie(s2.session.refresh_token).catch(() => {});
+            return s2.session;
+          }
+          _dbg.push(`P2 setSession:${e2?.message || 'no session'}`);
+          if (e2?.message?.toLowerCase().includes('invalid') || e2?.status === 400) {
+            clearBiometricRefreshToken();
+          }
+        } else {
+          _dbg.push('P2 REST ok but tokens missing in response');
+        }
+      } else {
+        const errTxt = await tokenRes.text().catch(() => '');
+        _dbg.push(`P2 REST:${tokenRes.status} ${errTxt.slice(0, 60)}`);
+        if (tokenRes.status === 400 || tokenRes.status === 401) clearBiometricRefreshToken();
       }
     } catch (ex) { _dbg.push(`P2 threw:${ex?.message}`); }
   }
