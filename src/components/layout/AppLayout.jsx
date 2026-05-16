@@ -296,6 +296,8 @@ export default function AppLayout() {
   useEffect(() => {
     const onTouchStart = (e) => {
       if (!mainRef.current?.contains(e.target)) return;
+      // Don't register swipe on slider or other no-swipe elements
+      if (e.target.closest('[data-no-swipe]')) return;
       swipeRef.current = {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY,
