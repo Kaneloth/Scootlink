@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Search, MapPin, Wallet, Settings, Bike, LogOut, Users, Plus, MessageCircle
 } from 'lucide-react';
-import { auth } from '@/api/supabaseData';
+import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
@@ -18,11 +18,25 @@ const navItems = [
 
 export default function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
 
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
   }, []);
+
+  const handleLogout = async () => {
+    if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data?.session) saveBiometricRefreshToken(data.session);
+      } catch { /* non-fatal */ }
+      navigate('/auth');
+    } else {
+      await supabase.auth.signOut();
+      navigate('/auth');
+    }
+  };
 
   return (
     <aside className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-card border-r border-border z-40">
@@ -71,7 +85,7 @@ export default function Sidebar() {
           </div>
         )}
         <button
-          onClick={() => auth.logout()}
+          onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all w-full"
         >
           <LogOut className="w-4 h-4" />

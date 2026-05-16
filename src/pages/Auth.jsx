@@ -61,29 +61,23 @@ async function triggerBiometricLogin() {
   }
 
   // ── Fingerprint passed — restore the Supabase session ──────────────────────
-  const _dbg = [];   // collected debug lines shown in toast if all paths fail
 
-  // Path 1: Supabase JS has a local refresh token (present when biometric logout
-  // is skipped or the user was never fully signed out).
+  // Path 1: Supabase JS has a live session in memory/localStorage (the normal
+  // case after a biometric logout that did NOT call signOut).
   try {
-    const { data: r1, error: e1 } = await supabase.auth.refreshSession();
+    const { data: r1 } = await supabase.auth.refreshSession();
     if (r1?.session) {
       saveBiometricRefreshToken(r1.session);
       setTokenCookie(r1.session.refresh_token).catch(() => {});
       return r1.session;
     }
-    _dbg.push(`P1:${e1?.message || 'no session'}`);
-  } catch (ex) { _dbg.push(`P1 threw:${ex?.message}`); }
+  } catch { /* fall through to Path 2 */ }
 
-  // Path 2: Exchange stored refresh_token via Supabase REST API → get a fresh
-  // access_token + refresh_token pair → then call setSession with both.
-  // We NEVER pass an empty access_token; setSession throws "Auth session missing!"
-  // before even attempting the refresh_token if access_token is falsy.
-  const backup = loadBiometricRefreshToken();
+  // Path 2: Exchange the stored refresh_token via Supabase REST API.
+  // Used when the in-memory session is gone (e.g. page was reloaded after logout).
+  const backup  = loadBiometricRefreshToken();
   const storedRt = backup?.refresh_token ?? null;
-  if (!storedRt) {
-    _dbg.push('P2:no backup');
-  } else {
+  if (storedRt) {
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const anonKey    = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -107,22 +101,14 @@ async function triggerBiometricLogin() {
             setTokenCookie(s2.session.refresh_token).catch(() => {});
             return s2.session;
           }
-          _dbg.push(`P2 setSession:${e2?.message || 'no session'}`);
-          if (e2?.message?.toLowerCase().includes('invalid') || e2?.status === 400) {
-            clearBiometricRefreshToken();
-          }
-        } else {
-          _dbg.push('P2 REST ok but tokens missing in response');
         }
       } else {
         const errTxt = await tokenRes.text().catch(() => '');
-        _dbg.push(`P2 REST:${tokenRes.status} ${errTxt.slice(0, 60)}`);
-        // Only clear the backup when Supabase explicitly says the token doesn't
-        // exist server-side — any other error (network, 5xx, etc.) should keep
-        // the backup so the next attempt can retry.
+        // Only clear the backup when Supabase confirms the token is dead —
+        // transient errors (network, 5xx) should leave it intact for retry.
         if (errTxt.includes('refresh_token_not_found')) clearBiometricRefreshToken();
       }
-    } catch (ex) { _dbg.push(`P2 threw:${ex?.message}`); }
+    } catch { /* fall through to Path 3 */ }
   }
 
   // Path 3: httpOnly cookie via Netlify function.
@@ -138,15 +124,10 @@ async function triggerBiometricLogin() {
         saveBiometricRefreshToken(s3.session);
         return s3.session;
       }
-      _dbg.push(`P3:${e3?.message || 'no session'}`);
-    } else {
-      _dbg.push(`P3:HTTP ${res.status}`);
     }
-  } catch (ex) { _dbg.push(`P3 threw:${ex?.message}`); }
+  } catch { /* all paths exhausted */ }
 
-  // Surface the debug detail so we can see exactly which path failed.
-  const detail = _dbg.join(' | ');
-  throw Object.assign(biometricError('session-expired', 'session-expired'), { detail });
+  throw biometricError('session-expired', 'session-expired');
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
