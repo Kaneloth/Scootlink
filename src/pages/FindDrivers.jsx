@@ -22,6 +22,9 @@ export default function FindDrivers() {
   const [loadingReviews,   setLoadingReviews]   = useState(false);
   const [showFilters,      setShowFilters]      = useState(false);
   const [filters,          setFilters]          = useState({ location: '', minExperience: 0, minRating: 0, radius: 50 });
+  // localLocation drives the input — typing never touches `filters.location`
+  // directly, so geocoding only fires when the user finishes typing (blur/Enter).
+  const [localLocation,    setLocalLocation]    = useState('');
   const [currentUser,      setCurrentUser]      = useState(null);
   const [selectedDriver,   setSelectedDriver]   = useState(null);
   const [avatarMap,        setAvatarMap]        = useState({});
@@ -234,7 +237,11 @@ export default function FindDrivers() {
   const isOwner = currentUser?.subscription_plan === 'owner' || currentUser?.subscription_plan === 'both' || !currentUser?.subscription_active;
   const isSearching = isLoading || geocoding;
 
+  const commitLocation = () =>
+    setFilters(prev => ({ ...prev, location: localLocation }));
+
   const clearFilters = () => {
+    setLocalLocation('');
     setFilters({ location: '', minExperience: 0, minRating: 0, radius: 50 });
     setLocationCoords(null);
     setRpcDrivers(null);
@@ -276,8 +283,10 @@ export default function FindDrivers() {
               <Input
                 className="mt-1"
                 placeholder="e.g. Soweto — finds nearby drivers too"
-                value={filters.location}
-                onChange={e => setFilters(p => ({ ...p, location: e.target.value }))}
+                value={localLocation}
+                onChange={e => setLocalLocation(e.target.value)}
+                onBlur={commitLocation}
+                onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
               />
               {locationCoords && (
                 <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
@@ -312,14 +321,15 @@ export default function FindDrivers() {
               <Label className="text-xs">
                 Search Radius: <span className="font-semibold text-foreground">{filters.radius} km</span>
               </Label>
-              <Slider
-                className="mt-3"
-                min={5}
-                max={200}
-                step={5}
-                value={[filters.radius]}
-                onValueChange={([v]) => setFilters(p => ({ ...p, radius: v }))}
-              />
+              <div className="mt-3 touch-none">
+                <Slider
+                  min={5}
+                  max={200}
+                  step={5}
+                  value={[filters.radius]}
+                  onValueChange={([v]) => setFilters(p => ({ ...p, radius: v }))}
+                />
+              </div>
               <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
                 <span>5 km</span><span>200 km</span>
               </div>
