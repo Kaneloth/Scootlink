@@ -148,8 +148,8 @@ export default function SearchVehicles() {
     isError,
     error,
   } = useInfiniteQuery({
-    queryKey:        ['search-vehicles', filters],
-    queryFn:         ({ pageParam }) => fetchVehiclePage({ pageParam, filters }),
+    queryKey:        ['search-vehicles', filters, localLocation],
+    queryFn:         ({ pageParam }) => fetchVehiclePage({ pageParam, filters: { ...filters, location: localLocation } }),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       if (filters.locationCoords) return undefined; // RPC gives all at once
