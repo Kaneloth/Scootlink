@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { auth, supabase } from '@/api/supabaseData';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -89,12 +89,34 @@ async function fetchVehiclePage({ pageParam = 0, filters }) {
 
 export default function SearchVehicles() {
   const [showFilters, setShowFilters] = useState(false);
+
+  // ── Committed filter state — drives the query ──────────────────────────────
   const [filters, setFilters] = useState({
     type: 'all',
     maxPrice: 3000,   // match slider max so no vehicles are hidden on first load
     location: '',
     minRating: 0,
   });
+
+  // ── Local UI state — updates instantly without firing a query ──────────────
+  // Committed to `filters` only when the user releases the slider thumb
+  // (onValueCommit) or confirms the location input (blur / Enter).
+  const [localMaxPrice, setLocalMaxPrice] = useState(3000);
+  const [localLocation, setLocalLocation]  = useState('');
+
+  // Ref for the slider wrapper — we attach a native touchstart listener so
+  // AppLayout's window-level swipe detector never sees horizontal drags here.
+  const sliderWrapperRef = useRef(null);
+
+  useEffect(() => {
+    const el = sliderWrapperRef.current;
+    if (!el) return;
+    // stopPropagation on the native event prevents the AppLayout window listener
+    // from treating a slider drag as a tab-swipe gesture.
+    const stop = (e) => e.stopPropagation();
+    el.addEventListener('touchstart', stop, { passive: true });
+    return () => el.removeEventListener('touchstart', stop);
+  }, []);
 
   const { data: user } = useQuery({
     queryKey: ['current-user'],
@@ -121,7 +143,7 @@ export default function SearchVehicles() {
   });
 
   // Surface DB errors (e.g. RLS blocking reads) as a visible toast
-  React.useEffect(() => {
+  useEffect(() => {
     if (isError && error) {
       toast.error(`Could not load vehicles: ${error.message}`);
     }
@@ -134,33 +156,28 @@ export default function SearchVehicles() {
 
   const totalLoaded = data?.pages.flat().length ?? 0;
 
-  if (isLoading) {
-    return (
-      <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-        <PageHeader
-          title="Find Vehicles"
-          subtitle="Loading…"
-          backTo="/"
-          action={
-            <Button variant="outline" size="sm" disabled className="gap-2">
-              <SlidersHorizontal className="w-4 h-4" />
-              Filters
-            </Button>
-          }
-        />
-        <SearchSkeleton />
-      </div>
-    );
-  }
+  // ── Commit location from local state to query filters ──────────────────────
+  const commitLocation = () => {
+    setFilters((prev) => ({ ...prev, location: localLocation }));
+  };
+
+  // ── Clear all filters ──────────────────────────────────────────────────────
+  const clearFilters = () => {
+    setLocalMaxPrice(3000);
+    setLocalLocation('');
+    setFilters({ type: 'all', maxPrice: 3000, location: '', minRating: 0 });
+  };
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
       <PageHeader
         title="Find Vehicles"
         subtitle={
-          totalLoaded > 0
-            ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} loaded`
-            : 'No vehicles found'
+          isLoading
+            ? 'Loading…'
+            : totalLoaded > 0
+              ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} loaded`
+              : 'No vehicles found'
         }
         backTo="/"
         action={
@@ -180,11 +197,7 @@ export default function SearchVehicles() {
         <Card className="p-5 mb-6 border border-border/50">
           <div className="flex items-center justify-between mb-4">
             <h4 className="font-semibold text-sm">Filters</h4>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setFilters({ type: 'all', maxPrice: 2000, location: '', minRating: 0 })}
-            >
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
               <X className="w-3 h-3 mr-1" /> Clear
             </Button>
           </div>
@@ -206,23 +219,39 @@ export default function SearchVehicles() {
             </div>
             <div>
               <Label className="text-xs">Location</Label>
+              {/*
+                localLocation drives the input — typing never touches `filters`
+                so the query key is stable while the user is typing. The search
+                commits only on blur or Enter, keeping the keyboard open.
+              */}
               <Input
                 className="mt-1"
                 placeholder="e.g. Johannesburg"
-                value={filters.location}
-                onChange={(e) => setFilters((prev) => ({ ...prev, location: e.target.value }))}
+                value={localLocation}
+                onChange={(e) => setLocalLocation(e.target.value)}
+                onBlur={commitLocation}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
               />
             </div>
             <div>
-              <Label className="text-xs">Max Price: R {filters.maxPrice}/week</Label>
-              <Slider
-                className="mt-3"
-                value={[filters.maxPrice]}
-                max={3000}
-                min={100}
-                step={50}
-                onValueChange={([v]) => setFilters((prev) => ({ ...prev, maxPrice: v }))}
-              />
+              <Label className="text-xs">
+                Max Price: R {localMaxPrice}/week
+              </Label>
+              {/*
+                Wrapper div with a native touchstart listener (added in useEffect)
+                so AppLayout's window-level swipe detector never sees horizontal
+                drags on this slider and navigates away.
+              */}
+              <div ref={sliderWrapperRef} className="mt-3">
+                <Slider
+                  value={[localMaxPrice]}
+                  max={3000}
+                  min={100}
+                  step={50}
+                  onValueChange={([v]) => setLocalMaxPrice(v)}
+                  onValueCommit={([v]) => setFilters((prev) => ({ ...prev, maxPrice: v }))}
+                />
+              </div>
             </div>
             <div>
               <Label className="text-xs">Min Rating</Label>
@@ -243,7 +272,14 @@ export default function SearchVehicles() {
         </Card>
       )}
 
-      {vehicles.length > 0 ? (
+      {/*
+        Skeleton is rendered inline (not as a full-page early return) so the
+        filter panel stays mounted and stable during any loading state. This
+        prevents the input from unmounting mid-type and losing keyboard focus.
+      */}
+      {isLoading ? (
+        <SearchSkeleton />
+      ) : vehicles.length > 0 ? (
         <>
           <div className="space-y-3">
             {vehicles.map((v) => {
@@ -300,7 +336,7 @@ export default function SearchVehicles() {
         </>
       ) : (
         <EmptyState
-          icon={isError ? '⚠️' : '🔍'}
+          icon={isError ? '⭐️' : '🔍'}
           title={isError ? 'Could not load vehicles' : 'No vehicles found'}
           description={isError ? 'There may be a permissions issue — check Supabase RLS policies on the vehicles table' : 'Try adjusting your filters'}
         />
