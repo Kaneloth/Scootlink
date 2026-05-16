@@ -4,7 +4,7 @@ import { auth, supabase } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Crown, Bike, Users, Shield, Loader2, ArrowRight, ArrowLeft } from 'lucide-react';
+import { CheckCircle2, Crown, Bike, Users, Shield, Loader2, ArrowRight, ArrowLeft, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -67,11 +67,12 @@ export default function Subscription() {
   const [user, setUser] = useState(null);
   const [selected, setSelected] = useState('owner');
   const [processing, setProcessing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   useEffect(() => {
     auth.me().then(u => {
       setUser(u);
-      // Use the actual subscription plan from metadata; fallback to account_type if missing
       const plan = u.subscription_plan || u.account_type || 'driver';
       setSelected(plan === 'both' ? 'both' : plan);
     }).catch(() => {});
@@ -80,26 +81,20 @@ export default function Subscription() {
   const handleSubscribe = async () => {
     setProcessing(true);
     try {
-      // 1. Update your custom profiles data
       await auth.updateMe({
         subscription_active: true,
         subscription_plan: selected,
         subscription_start: new Date().toISOString(),
         subscription_expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       });
-
-      // 2. Update the Supabase Auth metadata so the dashboard reads the new plan instantly
       const { error } = await supabase.auth.updateUser({
         data: { subscription_plan: selected }
       });
-
       if (error) {
         console.error('Failed to sync auth metadata', error);
         toast.warning('Plan updated, but you may need to re-login.');
       }
-
-      toast.success('Subscription activated! Welcome to Scootlink.');
-      // Force a full page reload so the Dashboard picks up the new metadata
+      toast.success('Subscription activated! Welcome to Skootlink.');
       window.location.href = '/';
     } catch {
       toast.error('Something went wrong. Please try again.');
@@ -107,7 +102,27 @@ export default function Subscription() {
     }
   };
 
+  const handleCancelSubscription = async () => {
+    setCancelling(true);
+    try {
+      await auth.updateMe({
+        subscription_active: false,
+        subscription_expires: new Date().toISOString(),
+      });
+      await supabase.auth.updateUser({ data: { subscription_active: false } });
+      toast.success('Subscription cancelled. You can resubscribe any time.');
+      const updated = await auth.me();
+      setUser(updated);
+      setShowCancelConfirm(false);
+    } catch {
+      toast.error('Failed to cancel subscription. Please try again.');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const plan = PLANS.find(p => p.id === selected);
+  const currentPlanName = PLANS.find(p => p.id === user?.subscription_plan)?.name;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
@@ -118,7 +133,7 @@ export default function Subscription() {
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow">
               <Bike className="w-5 h-5 text-white" />
             </div>
-            <span className="text-lg font-bold text-foreground">Scootlink</span>
+            <span className="text-lg font-bold text-foreground">Skootlink</span>
           </Link>
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="w-4 h-4" /> Back
@@ -133,10 +148,20 @@ export default function Subscription() {
           <p className="text-sm text-muted-foreground mt-1">Subscribe to unlock full platform access</p>
         </div>
 
+        {/* Current plan badge */}
+        {user?.subscription_active && currentPlanName && (
+          <div className="mb-5 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 text-xs font-medium">
+              ● Active: {currentPlanName} Plan
+            </span>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {PLANS.map(p => {
             const Icon = p.icon;
             const isSelected = selected === p.id;
+            const isCurrent = user?.subscription_plan === p.id && user?.subscription_active;
             return (
               <Card
                 key={p.id}
@@ -146,6 +171,11 @@ export default function Subscription() {
                 {p.popular && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                     <Badge className="bg-primary text-white text-[10px] px-3">Most Popular</Badge>
+                  </div>
+                )}
+                {isCurrent && (
+                  <div className="absolute -top-3 right-4">
+                    <Badge className="bg-green-600 text-white text-[10px] px-2">Current</Badge>
                   </div>
                 )}
                 <div className="flex items-center justify-between mb-3">
@@ -180,10 +210,54 @@ export default function Subscription() {
             </div>
             <Button onClick={handleSubscribe} disabled={processing} className="gap-2 px-6">
               {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              {processing ? 'Processing...' : 'Subscribe Now'}
+              {processing ? 'Processing...' : user?.subscription_active ? 'Switch Plan' : 'Subscribe Now'}
             </Button>
           </div>
         </Card>
+
+        {/* Cancel subscription */}
+        {user?.subscription_active && !showCancelConfirm && (
+          <div className="text-center mb-4">
+            <button
+              onClick={() => setShowCancelConfirm(true)}
+              className="text-sm text-destructive/70 hover:text-destructive underline underline-offset-2 transition-colors"
+            >
+              Cancel my subscription
+            </button>
+          </div>
+        )}
+
+        {user?.subscription_active && showCancelConfirm && (
+          <Card className="p-5 border border-destructive/30 bg-destructive/5 mb-4 space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+              <div className="text-sm text-destructive/80 space-y-1">
+                <p className="font-semibold">Cancel your subscription?</p>
+                <p className="text-xs">You'll lose access to all paid features at the end of your current billing period. Your profile and data will be kept.</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowCancelConfirm(false)}
+                disabled={cancelling}
+              >
+                Keep My Plan
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1 gap-2"
+                onClick={handleCancelSubscription}
+                disabled={cancelling}
+              >
+                {cancelling
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Cancelling…</>
+                  : 'Yes, Cancel'}
+              </Button>
+            </div>
+          </Card>
+        )}
 
         <div className="flex items-center gap-2 justify-center text-xs text-muted-foreground">
           <Shield className="w-3.5 h-3.5" />
