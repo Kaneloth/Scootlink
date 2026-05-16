@@ -137,6 +137,9 @@ export default function Messages() {
     const handleDeletedEvent = ({ payload }) => {
       if (payload?.id) {
         setMessages((prev) => prev.filter((m) => m.id !== payload.id));
+        // Persist so the message stays hidden after a reload
+        addHiddenMsg(user.id, payload.id);
+        setHiddenMsgs((prev) => new Set([...prev, payload.id]));
       }
       fetchConversations();
     };
@@ -171,6 +174,9 @@ export default function Messages() {
       .on('broadcast', { event: 'message_deleted' }, ({ payload }) => {
         if (payload?.id) {
           setMessages((prev) => prev.filter((m) => m.id !== payload.id));
+          // Persist so the message stays hidden after a reload
+          addHiddenMsg(user.id, payload.id);
+          setHiddenMsgs((prev) => new Set([...prev, payload.id]));
         }
         fetchConversations();
       })
@@ -447,8 +453,10 @@ export default function Messages() {
     const { error } = await supabase.from('messages').delete().eq('id', msgId).eq('sender_id', user.id);
     if (error) { toast.error('Could not delete message.'); return; }
 
-    // Remove from sender's own view immediately
+    // Remove from sender's own view immediately and persist across reloads
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    addHiddenMsg(user.id, msgId);
+    setHiddenMsgs((prev) => new Set([...prev, msgId]));
     fetchConversations();
     toast.success('Message deleted for everyone.');
 
