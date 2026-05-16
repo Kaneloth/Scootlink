@@ -118,10 +118,40 @@ export default function Messages() {
   // when RLS is enabled with default REPLICA IDENTITY (the row is gone so RLS
   // cannot be evaluated). A broadcast channel shared by both users in the
   // conversation is the reliable alternative.
-  const convChannelRef  = useRef(null);
+  const convChannelRef      = useRef(null);
+  // Persistent per-user events channel — always active while the user is logged
+  // in, regardless of which conversation (if any) is open. "Delete for everyone"
+  // broadcasts here so the recipient receives the removal even when they are
+  // looking at a different chat or the conversations list.
+  const userEventsChannelRef = useRef(null);
 
   useEffect(() => { userRef.current = user; },         [user]);
   useEffect(() => { selectedChatRef.current = selectedChat; }, [selectedChat]);
+
+  // Persistent per-user events channel.
+  // Active for the entire session (not tied to a specific conversation) so
+  // "delete for everyone" broadcasts reach the recipient wherever they are.
+  useEffect(() => {
+    if (!user) return;
+
+    const handleDeletedEvent = ({ payload }) => {
+      if (payload?.id) {
+        setMessages((prev) => prev.filter((m) => m.id !== payload.id));
+      }
+      fetchConversations();
+    };
+
+    const ch = supabase
+      .channel(`user-events-${user.id}`)
+      .on('broadcast', { event: 'message_deleted' }, handleDeletedEvent)
+      .subscribe();
+
+    userEventsChannelRef.current = ch;
+    return () => {
+      supabase.removeChannel(ch);
+      userEventsChannelRef.current = null;
+    };
+  }, [user, fetchConversations]);
 
   // Subscribe to a shared broadcast channel whenever a chat is open.
   // Both participants join the same channel (keyed by sorted user IDs) so
@@ -151,7 +181,7 @@ export default function Messages() {
       supabase.removeChannel(ch);
       convChannelRef.current = null;
     };
-  }, [selectedChat, user]);
+  }, [selectedChat, user, fetchConversations]);
 
   // Auto-scroll to latest message
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -410,18 +440,32 @@ export default function Messages() {
   const handleDeleteForEveryone = async (msgId) => {
     const { error } = await supabase.from('messages').delete().eq('id', msgId).eq('sender_id', user.id);
     if (error) { toast.error('Could not delete message.'); return; }
+
     // Remove from sender's own view immediately
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
     fetchConversations();
     toast.success('Message deleted for everyone.');
-    // Broadcast to the shared conversation channel so the recipient's UI
-    // removes the message instantly (postgres_changes DELETE is unreliable
-    // when Supabase RLS + default REPLICA IDENTITY is in use).
-    convChannelRef.current?.send({
-      type: 'broadcast',
-      event: 'message_deleted',
-      payload: { id: msgId },
-    });
+
+    const deletePayload = { type: 'broadcast', event: 'message_deleted', payload: { id: msgId } };
+
+    // 1. Broadcast on the shared per-conversation channel (catches recipient
+    //    when they have this exact chat open).
+    convChannelRef.current?.send(deletePayload);
+
+    // 2. Broadcast on the recipient's persistent user-events channel so the
+    //    message is removed even when the recipient is on a different page,
+    //    viewing a different chat, or on the conversations list.
+    const recipientId = selectedChat?.otherUserId;
+    if (recipientId) {
+      const tmpCh = supabase.channel(`user-events-${recipientId}`);
+      tmpCh.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          tmpCh.send(deletePayload);
+          // Leave quickly — we only needed to publish, not linger
+          setTimeout(() => supabase.removeChannel(tmpCh), 3000);
+        }
+      });
+    }
   };
 
   const handleDeleteChat = (otherUserId) => {
