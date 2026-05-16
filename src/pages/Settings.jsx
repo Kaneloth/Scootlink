@@ -9,9 +9,17 @@ import { Card } from '@/components/ui/card';
 import {
   Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
-  AlertTriangle, ShieldCheck, Info,
+  AlertTriangle, ShieldCheck, Info, Type,
 } from 'lucide-react';
+
 import { toast } from 'sonner';
+
+// Text size options stored as root font-size in px
+const TEXT_SIZES = [
+  { label: 'Normal',   value: '16px' },
+  { label: 'Large',    value: '18px' },
+  { label: 'X-Large', value: '20px' },
+];
 
 // ── Put your admin email(s) here ────────────────────────────────────────────
 const ADMIN_EMAILS = ['kanelothelejane@gmail.com'];
@@ -132,6 +140,7 @@ async function deleteAccount(accessToken) {
 export default function Settings() {
   const navigate = useNavigate();
   const [darkMode, setDarkMode] = useState(false);
+  const [fontSize, setFontSize] = useState('16px');
   const [signInMethod, setSignInMethod] = useState('password');
   const [selectedPlan, setSelectedPlan] = useState('driver');
   const [processingPlan, setProcessingPlan] = useState(false);
@@ -166,6 +175,9 @@ export default function Settings() {
     const isDark = localStorage.getItem('theme') === 'dark';
     setDarkMode(isDark);
     document.documentElement.classList.toggle('dark', isDark);
+    const savedSize = localStorage.getItem('scootlink_font_size') || '16px';
+    setFontSize(savedSize);
+    document.documentElement.style.fontSize = savedSize;
     setSignInMethod(localStorage.getItem('scootlink_signin_method') || 'password');
     setNotifications(localStorage.getItem('scootlink_notifications') !== 'false');
     auth.me().then((u) => {
@@ -180,6 +192,12 @@ export default function Settings() {
     setDarkMode(newDark);
     document.documentElement.classList.toggle('dark', newDark);
     localStorage.setItem('theme', newDark ? 'dark' : 'light');
+  };
+
+  const changeFontSize = (size) => {
+    setFontSize(size);
+    document.documentElement.style.fontSize = size;
+    localStorage.setItem('scootlink_font_size', size);
   };
 
   const toggleNotifications = () => {
@@ -443,12 +461,36 @@ export default function Settings() {
               <div className="flex items-center gap-3">
                 {darkMode ? <Moon className="w-5 h-5 text-muted-foreground" /> : <Sun className="w-5 h-5 text-muted-foreground" />}
                 <div className="text-left">
-                  <p className="text-sm font-medium text-foreground">Dark Mode</p>
+                  <p className="text-sm font-medium text-foreground">{darkMode ? 'Light Mode' : 'Dark Mode'}</p>
                   <p className="text-xs text-muted-foreground">{darkMode ? 'Switch to light' : 'Switch to dark'}</p>
                 </div>
               </div>
               <div className={`h-6 w-10 rounded-full relative transition-colors ${darkMode ? 'bg-primary' : 'bg-gray-300'}`}>
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${darkMode ? 'right-1' : 'left-1'}`} />
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl">
+              <div className="flex items-center gap-3 mb-3">
+                <Type className="w-5 h-5 text-muted-foreground" />
+                <div className="text-left">
+                  <p className="text-sm font-medium text-foreground">Text Size</p>
+                  <p className="text-xs text-muted-foreground">Adjust how large text appears</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {TEXT_SIZES.map((s) => (
+                  <button
+                    key={s.value}
+                    onClick={() => changeFontSize(s.value)}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors
+                      ${fontSize === s.value
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background text-muted-foreground border-border hover:bg-accent'}`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
               </div>
             </div>
 
