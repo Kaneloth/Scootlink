@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, supabase } from '@/api/supabaseData';
-import { saveSessionBackup } from '@/pages/Auth';
+import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -242,11 +241,11 @@ export default function Settings() {
 
   const handleLogout = async () => {
     if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-      // Refresh and save the session backup before leaving so biometric login
-      // can restore the session directly from localStorage next time.
+      // Refresh the session and save the refresh token before leaving so
+      // biometric login can restore it via the direct REST token exchange.
       try {
         const { data } = await supabase.auth.refreshSession();
-        if (data?.session) saveSessionBackup(data.session);
+        if (data?.session) saveBiometricRefreshToken(data.session);
       } catch { /* non-fatal */ }
       navigate('/auth');
     } else {

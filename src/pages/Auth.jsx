@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
+import { saveBiometricRefreshToken, loadBiometricRefreshToken } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -33,29 +34,6 @@ async function setTokenCookie(refresh_token) {
   });
 }
 
-// ── Session backup in localStorage ───────────────────────────────────────────
-// We keep our own copy of the refresh token so biometric login can restore the
-// session without depending on Supabase's internal storage or the httpOnly cookie.
-// The security trade-off is the same as storing the WebAuthn credential ID.
-const SESSION_BACKUP_KEY = 'scootlink_session_backup';
-
-export function saveSessionBackup(session) {
-  if (!session?.refresh_token) return;
-  try {
-    localStorage.setItem(SESSION_BACKUP_KEY, JSON.stringify({
-      access_token:  session.access_token,
-      refresh_token: session.refresh_token,
-    }));
-  } catch { /* storage full — non-fatal */ }
-}
-
-function loadSessionBackup() {
-  try {
-    const raw = localStorage.getItem(SESSION_BACKUP_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
 async function triggerBiometricLogin() {
   if (!window.PublicKeyCredential) {
     throw biometricError('unsupported', 'Your browser does not support biometric login.');
@@ -83,32 +61,48 @@ async function triggerBiometricLogin() {
   }
 
   // ── Fingerprint passed — restore the Supabase session ──────────────────────
-  // Three paths tried in order, each more of a fallback than the last.
+  // Three paths tried in order from most to least reliable.
 
-  // Path 1: Supabase still has a valid refresh token in its own localStorage.
+  // Path 1: Supabase JS still has a stored refresh token — fastest path.
   const { data: r1 } = await supabase.auth.refreshSession();
   if (r1?.session) {
-    saveSessionBackup(r1.session);
+    saveBiometricRefreshToken(r1.session);
     setTokenCookie(r1.session.refresh_token).catch(() => {});
     return r1.session;
   }
 
-  // Path 2: Our own localStorage backup — restored via setSession then
-  // immediately refreshed so we get a fresh access token.
-  const backup = loadSessionBackup();
-  if (backup?.refresh_token) {
-    const { data: s2 } = await supabase.auth.setSession(backup);
-    if (s2?.session) {
-      const { data: r2 } = await supabase.auth.refreshSession();
-      const finalSession = r2?.session || s2.session;
-      saveSessionBackup(finalSession);
-      setTokenCookie(finalSession.refresh_token).catch(() => {});
-      return finalSession;
-    }
+  // Path 2: Direct Supabase REST token exchange using our stored refresh token.
+  // This bypasses the JS client's internal state entirely and works even when
+  // Supabase's own localStorage entry is gone or the access token has expired.
+  const storedRt = loadBiometricRefreshToken();
+  if (storedRt) {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey    = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const tokenRes = await fetch(
+        `${supabaseUrl}/auth/v1/token?grant_type=refresh_token`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: anonKey },
+          body: JSON.stringify({ refresh_token: storedRt }),
+        }
+      );
+      if (tokenRes.ok) {
+        const tokens = await tokenRes.json();
+        const { data: s2, error: e2 } = await supabase.auth.setSession({
+          access_token:  tokens.access_token,
+          refresh_token: tokens.refresh_token,
+        });
+        if (!e2 && s2?.session) {
+          saveBiometricRefreshToken(s2.session);
+          setTokenCookie(s2.session.refresh_token).catch(() => {});
+          return s2.session;
+        }
+      }
+    } catch { /* fall through to Path 3 */ }
   }
 
-  // Path 3: httpOnly cookie — asks the Netlify function to exchange the stored
-  // refresh token for a new session.
+  // Path 3: httpOnly cookie via Netlify function.
   try {
     const res = await fetch('/.netlify/functions/auth-refresh', {
       method: 'POST',
@@ -118,11 +112,11 @@ async function triggerBiometricLogin() {
       const { access_token, refresh_token } = await res.json();
       const { data: s3, error: e3 } = await supabase.auth.setSession({ access_token, refresh_token });
       if (!e3 && s3?.session) {
-        saveSessionBackup(s3.session);
+        saveBiometricRefreshToken(s3.session);
         return s3.session;
       }
     }
-  } catch { /* non-fatal — fall through to error below */ }
+  } catch { /* fall through to error */ }
 
   throw biometricError('session-expired', 'session-expired');
 }
@@ -197,7 +191,7 @@ export default function Auth() {
         password: loginPassword,
       });
       if (error) throw error;
-      saveSessionBackup(data.session);
+      saveBiometricRefreshToken(data.session);
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       navigate('/');
     } catch (err) {

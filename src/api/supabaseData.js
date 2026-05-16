@@ -165,6 +165,24 @@ export const User        = {
   },
 };
 
+// ─── Biometric session backup ─────────────────────────────────────────────────
+// Stores only the refresh token so biometric login can restore a session even
+// when Supabase's own localStorage entry has expired or been cleared.
+const BIOMETRIC_RT_KEY = 'scootlink_biometric_refresh';
+
+export function saveBiometricRefreshToken(session) {
+  if (!session?.refresh_token) return;
+  try { localStorage.setItem(BIOMETRIC_RT_KEY, session.refresh_token); } catch { /* full */ }
+}
+
+export function loadBiometricRefreshToken() {
+  try { return localStorage.getItem(BIOMETRIC_RT_KEY) || null; } catch { return null; }
+}
+
+export function clearBiometricRefreshToken() {
+  try { localStorage.removeItem(BIOMETRIC_RT_KEY); } catch { /* ignore */ }
+}
+
 // ─── Avatar-aware profile fetcher ────────────────────────────────────────────
 // Uses the Netlify service-role function so avatar_url is resolved from auth
 // user_metadata for users who haven't re-saved their profile since the fix.
