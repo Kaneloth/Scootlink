@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Bike, User, Settings, LogOut } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
-import { auth, supabase } from '@/api/supabaseData';
+import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 
 // Must match bottom nav order exactly: Home → Search → Track → Wallet → Messages
 // Settings is in the header dropdown, not swipeable.
@@ -121,6 +121,25 @@ function VerificationGate({ user, userLoading, children }) {
   return children;
 }
 
+// ─── Shared biometric-aware logout ───────────────────────────────────────────
+// All logout buttons in the layout must go through this helper so that
+// biometric users keep their refresh token alive on the server.
+async function layoutLogout(navigate) {
+  if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
+    // Save the current session without calling signOut — signOut (even
+    // scope:'local') sends a server-side revocation that invalidates the
+    // refresh token, breaking biometric restoration on next login.
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) saveBiometricRefreshToken(data.session);
+    } catch { /* non-fatal */ }
+    navigate('/auth');
+  } else {
+    await supabase.auth.signOut();
+    navigate('/auth');
+  }
+}
+
 // ─── Mobile header with profile dropdown ─────────────────────────────────────
 function MobileHeader() {
   const navigate               = useNavigate();
@@ -140,8 +159,7 @@ function MobileHeader() {
 
   const handleLogout = async () => {
     setOpen(false);
-    await supabase.auth.signOut();
-    navigate('/auth');
+    await layoutLogout(navigate);
   };
 
   return (
@@ -275,20 +293,6 @@ export default function AppLayout() {
   }, [location.pathname]);
 
   // ── Swipe detection ─────────────────────────────────────────────────────────
-  //
-  // No touchmove listener — adding a non-passive touchmove to window freezes
-  // Android Chrome's scroll pipeline and makes the app appear unresponsive.
-  //
-  // Instead, we use touchend with { passive: false } so we can call
-  // e.preventDefault() when a horizontal gesture is detected. Calling
-  // preventDefault on touchend suppresses the synthetic click event that the
-  // browser would otherwise fire — this is what was causing the Dashboard
-  // bounce: the <Link to="/wallet"> wrapping WalletCard was receiving the
-  // swipe gesture and navigating to /wallet before our threshold fired.
-  //
-  // touch-action: pan-y on the main element tells the browser "handle vertical
-  // scrolling natively; horizontal touches go to JS". This prevents any native
-  // rubber-band from horizontal movement on interactive child elements.
   useEffect(() => {
     const onTouchStart = (e) => {
       if (!mainRef.current?.contains(e.target)) return;
@@ -309,15 +313,10 @@ export default function AppLayout() {
       const adx = Math.abs(dx);
       const ady = Math.abs(dy);
 
-      // Any meaningful horizontal movement (> 10 px, more horizontal than
-      // vertical) → suppress the click so Links/buttons don't fire. This
-      // prevents <Link to="/wallet"> from navigating on a swipe gesture.
       if (adx > 10 && adx > ady) {
         e.preventDefault();
       }
 
-      // Navigate only on a clear long horizontal swipe (> 40 px and at least
-      // twice as wide as it is tall so diagonal flicks don't trigger it).
       if (adx < 40 || adx < ady * 2) return;
 
       const currentIndex = getCurrentTabIndex();
@@ -333,9 +332,6 @@ export default function AppLayout() {
 
     const onTouchCancel = () => { swipeRef.current.active = false; };
 
-    // touchstart: passive (we never call preventDefault here)
-    // touchend:   non-passive so we can call preventDefault to suppress click
-    // NO touchmove listener — intentionally omitted to preserve scroll performance
     window.addEventListener('touchstart',  onTouchStart,  { passive: true  });
     window.addEventListener('touchend',    onTouchEnd,    { passive: false });
     window.addEventListener('touchcancel', onTouchCancel, { passive: true  });
@@ -350,15 +346,6 @@ export default function AppLayout() {
   return (
     <VerificationGate user={gateUser} userLoading={userLoading}>
     <div className="flex min-h-screen bg-background">
-      {/*
-        1. transition: none !important  — kills the .main-content CSS rule
-           that was animating the snap-back in earlier versions.
-        2. touch-action: pan-y          — tells the browser "vertical scrolling
-           only; horizontal belongs to JS." No native rubber-band on horizontal
-           swipes anywhere in the main area, including inside Link/onClick children.
-        3. overscroll-behavior-x: none  — belt-and-suspenders for horizontal
-           overscroll on browsers that don't fully respect touch-action.
-      */}
       <style>{`
         .main-content {
           transition: none !important;
@@ -381,7 +368,6 @@ export default function AppLayout() {
       <Sidebar />
 
       <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-screen">
-        {/* Header lives outside the animated element — never moves on swipe */}
         <MobileHeader />
         <main
           ref={mainRef}
