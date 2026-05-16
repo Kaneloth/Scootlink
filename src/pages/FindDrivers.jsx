@@ -22,9 +22,9 @@ export default function FindDrivers() {
   const [loadingReviews,   setLoadingReviews]   = useState(false);
   const [showFilters,      setShowFilters]      = useState(false);
   const [filters,          setFilters]          = useState({ location: '', minExperience: 0, minRating: 0, radius: 50 });
-  // localLocation drives the input — typing never touches `filters.location`
-  // directly, so geocoding only fires when the user finishes typing (blur/Enter).
-  const [localLocation,    setLocalLocation]    = useState('');
+  // geocodeTarget only changes on blur/Enter — keeps geocoding off every keystroke
+  // while filters.location updates live so text-match responds immediately.
+  const [geocodeTarget,    setGeocodeTarget]    = useState('');
   const [currentUser,      setCurrentUser]      = useState(null);
 
   const [selectedDriver,   setSelectedDriver]   = useState(null);
@@ -71,12 +71,10 @@ export default function FindDrivers() {
       .catch(() => {});
   }, [users]);
 
-  // Effect 1: Geocode only when the location TEXT changes.
-  // Requires ≥3 characters — single/short strings fall through to silent
-  // text-match without attempting geocoding or showing an error toast.
+  // Effect 1: Geocode only when the user commits a location (blur or Enter).
+  // Requires ≥3 characters — shorter strings fall back to text-match silently.
   useEffect(() => {
-    if (!filters.location || filters.location.trim().length < 3) {
-      // Explicitly clear the spinner — the cleanup below won't run on early return
+    if (!geocodeTarget || geocodeTarget.trim().length < 3) {
       setGeocoding(false);
       setLocationCoords(null);
       setRpcDrivers(null);
@@ -86,22 +84,18 @@ export default function FindDrivers() {
     setGeocoding(true);
     setRpcDrivers(null);
 
-    geocodeLocation(filters.location).then(coords => {
+    geocodeLocation(geocodeTarget).then(coords => {
       if (cancelled) return;
       if (!coords) {
-        console.warn('[FindDrivers] Geocoding returned null for:', filters.location);
         toast.error('Location not found — showing text-match results instead');
         setLocationCoords(null);
       } else {
-        console.log('[FindDrivers] Geocoded:', filters.location, '→', coords);
         setLocationCoords(coords);
       }
     }).finally(() => { if (!cancelled) setGeocoding(false); });
 
-    // Always clear the spinner immediately when the user changes the location
-    // so it never stays stuck if the previous request was cancelled mid-flight.
     return () => { cancelled = true; setGeocoding(false); };
-  }, [filters.location]);
+  }, [geocodeTarget]);
 
   // Effect 2: Call the RPC whenever we have valid coords OR when the radius
   // slider changes. Keeping this separate means moving the slider never
@@ -153,12 +147,12 @@ export default function FindDrivers() {
 
     return source.filter(u => {
       if (u.account_type !== 'driver' && u.account_type !== 'both') return false;
-      if (!locationCoords && localLocation && !(u.location || '').toLowerCase().includes(localLocation.toLowerCase())) return false;
+      if (!locationCoords && filters.location && !(u.location || '').toLowerCase().includes(filters.location.toLowerCase())) return false;
       if (filters.minExperience > 0 && u.license_year && (currentYear - u.license_year) < filters.minExperience) return false;
       if (filters.minRating > 0 && (u.rating || 0) < filters.minRating) return false;
       return true;
     });
-  }, [rpcDrivers, users, filters, locationCoords, currentYear, localLocation]);
+  }, [rpcDrivers, users, filters, locationCoords, currentYear]);
 
   const fetchDriverReviews = async (driverId) => {
     setLoadingReviews(true);
@@ -238,11 +232,8 @@ export default function FindDrivers() {
   const isOwner = currentUser?.subscription_plan === 'owner' || currentUser?.subscription_plan === 'both' || !currentUser?.subscription_active;
   const isSearching = isLoading || geocoding;
 
-  const commitLocation = () =>
-    setFilters(prev => ({ ...prev, location: localLocation }));
-
   const clearFilters = () => {
-    setLocalLocation('');
+    setGeocodeTarget('');
     setFilters({ location: '', minExperience: 0, minRating: 0, radius: 50 });
     setLocationCoords(null);
     setRpcDrivers(null);
@@ -284,10 +275,10 @@ export default function FindDrivers() {
               <Input
                 className="mt-1"
                 placeholder="e.g. Soweto — finds nearby drivers too"
-                value={localLocation}
-                onChange={e => setLocalLocation(e.target.value)}
-                onBlur={commitLocation}
-                onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                value={filters.location}
+                onChange={e => setFilters(p => ({ ...p, location: e.target.value }))}
+                onBlur={e => setGeocodeTarget(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { setGeocodeTarget(e.currentTarget.value); e.currentTarget.blur(); } }}
               />
               {locationCoords && (
                 <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
