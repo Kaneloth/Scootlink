@@ -138,8 +138,6 @@ export default function FindDrivers() {
         price_per_week: parseFloat(contractForm.price_per_week),
         deposit: parseFloat(contractForm.deposit) || 0,
         message: contractForm.message || '',
-        owner_email: currentUser.email,
-        driver_email: selectedDriver.email || '',
       }]);
       if (error) throw error;
       toast.success(`Contract sent to ${selectedDriver.full_name?.split(' ')[0] || 'driver'}! They'll confirm on their dashboard.`);
