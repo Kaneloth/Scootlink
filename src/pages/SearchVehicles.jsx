@@ -56,20 +56,46 @@ async function fetchVehiclePage({ pageParam = 0, filters }) {
   const { locationCoords, radiusKm } = filters;
 
   if (locationCoords) {
-    // RPC returns all results sorted by distance — no server-side pagination
+    // RPC returns all results sorted by distance — no server-side pagination needed
     if (pageParam > 0) return [];
-    const { data, error } = await supabase.rpc('nearby_vehicles', {
-      search_lat: locationCoords.latitude,
-      search_lng: locationCoords.longitude,
-      radius_km:  radiusKm,
-    });
-    if (error) throw error;
-    return (data || [])
-      .filter(v => v.status === 'available')
-      .filter(v => filters.type === 'all' || v.type === filters.type)
-      .filter(v => (v.price ?? 0) <= filters.maxPrice)
-      .filter(v => filters.minRating === 0 || (v.rating ?? 0) >= filters.minRating)
-      .map(vehicleFromDb);
+
+    // Run proximity RPC and text-match in parallel.
+    // Text-match catches vehicles that were listed before geocoding was added
+    // (they have a location string but no geo_location point yet).
+    let textQuery = supabase
+      .from('vehicles')
+      .select('*')
+      .eq('status', 'available')
+      .lte('price', filters.maxPrice)
+      .ilike('location', `%${filters.location}%`)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (filters.type !== 'all') textQuery = textQuery.eq('type', filters.type);
+    if (filters.minRating > 0)  textQuery = textQuery.gte('rating', filters.minRating);
+
+    const [rpcRes, textRes] = await Promise.all([
+      supabase.rpc('nearby_vehicles', {
+        search_lat: locationCoords.latitude,
+        search_lng: locationCoords.longitude,
+        radius_km:  radiusKm,
+      }),
+      textQuery,
+    ]);
+
+    const applyFilters = (rows) =>
+      (rows || [])
+        .filter(v => v.status === 'available')
+        .filter(v => filters.type === 'all' || v.type === filters.type)
+        .filter(v => (v.price ?? 0) <= filters.maxPrice)
+        .filter(v => filters.minRating === 0 || (v.rating ?? 0) >= filters.minRating);
+
+    const geoVehicles  = applyFilters(rpcRes.data).map(vehicleFromDb);
+    const textVehicles = applyFilters(textRes.data).map(vehicleFromDb);
+
+    // Merge: geo-sorted results first, then any text-match extras not already included
+    const geoIds = new Set(geoVehicles.map(v => v.id));
+    return [...geoVehicles, ...textVehicles.filter(v => !geoIds.has(v.id))];
   }
 
   // Fallback: paginated text-match query
@@ -122,9 +148,11 @@ export default function SearchVehicles() {
     };
   }, []);
 
-  // Geocode whenever the committed location filter changes
+  // Geocode whenever the committed location filter changes.
+  // Requires ≥3 characters — single/short strings can't be geocoded and fall
+  // through to silent text-match without showing an error toast.
   useEffect(() => {
-    if (!filters.location) {
+    if (!filters.location || filters.location.trim().length < 3) {
       setFilters(prev => ({ ...prev, locationCoords: null }));
       return;
     }

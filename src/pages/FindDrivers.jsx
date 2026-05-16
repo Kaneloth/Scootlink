@@ -67,9 +67,11 @@ export default function FindDrivers() {
       .catch(() => {});
   }, [users]);
 
-  // Geocode location and call nearby_drivers RPC when filters.location or radius changes
+  // Effect 1: Geocode only when the location TEXT changes.
+  // Requires ≥3 characters — single letters can't be geocoded and must not
+  // show an error toast; they fall through to silent text-match.
   useEffect(() => {
-    if (!filters.location) {
+    if (!filters.location || filters.location.trim().length < 3) {
       setLocationCoords(null);
       setRpcDrivers(null);
       return;
@@ -78,25 +80,39 @@ export default function FindDrivers() {
     setGeocoding(true);
     setRpcDrivers(null);
 
-    geocodeLocation(filters.location).then(async coords => {
+    geocodeLocation(filters.location).then(coords => {
       if (cancelled) return;
       if (!coords) {
         toast.error('Location not found — showing text-match results instead');
         setLocationCoords(null);
-        setRpcDrivers(null);
-        return;
+      } else {
+        setLocationCoords(coords);
       }
-      setLocationCoords(coords);
-      const { data, error } = await supabase.rpc('nearby_drivers', {
-        search_lat: coords.latitude,
-        search_lng: coords.longitude,
-        radius_km:  filters.radius,
-      });
+    }).finally(() => { if (!cancelled) setGeocoding(false); });
+
+    return () => { cancelled = true; };
+  }, [filters.location]);
+
+  // Effect 2: Call the RPC whenever we have valid coords OR when the radius
+  // slider changes. Keeping this separate means moving the slider never
+  // re-geocodes and never fires the "location not found" toast.
+  useEffect(() => {
+    if (!locationCoords) {
+      setRpcDrivers(null);
+      return;
+    }
+    let cancelled = false;
+    setGeocoding(true);
+
+    supabase.rpc('nearby_drivers', {
+      search_lat: locationCoords.latitude,
+      search_lng: locationCoords.longitude,
+      radius_km:  filters.radius,
+    }).then(({ data, error }) => {
       if (cancelled) return;
       if (error) {
         console.error('nearby_drivers RPC error:', error);
         toast.error('Proximity search failed — showing text-match results');
-        setLocationCoords(null);
         setRpcDrivers(null);
       } else {
         setRpcDrivers(data || []);
@@ -104,16 +120,31 @@ export default function FindDrivers() {
     }).finally(() => { if (!cancelled) setGeocoding(false); });
 
     return () => { cancelled = true; };
-  }, [filters.location, filters.radius]);
+  }, [locationCoords, filters.radius]);
 
   const currentYear = new Date().getFullYear();
 
   const drivers = useMemo(() => {
-    // Use RPC results when available, otherwise fall back to full user list
-    const source = rpcDrivers !== null ? rpcDrivers : users;
+    let source;
+
+    if (rpcDrivers !== null && locationCoords) {
+      // Merge proximity results with text-match from the full user list.
+      // Text-match catches drivers who were registered before geocoding was added
+      // (they have a location string but no geo_location point yet).
+      const rpcIds = new Set(rpcDrivers.map(d => d.id));
+      const textExtras = users.filter(u =>
+        (u.account_type === 'driver' || u.account_type === 'both') &&
+        (u.location || '').toLowerCase().includes(filters.location.toLowerCase()) &&
+        !rpcIds.has(u.id),
+      );
+      // Geo-sorted results first, then text-match extras
+      source = [...rpcDrivers, ...textExtras];
+    } else {
+      source = users;
+    }
+
     return source.filter(u => {
       if (u.account_type !== 'driver' && u.account_type !== 'both') return false;
-      // Text-match location fallback only when geocoding failed or no location set
       if (!locationCoords && filters.location && !(u.location || '').toLowerCase().includes(filters.location.toLowerCase())) return false;
       if (filters.minExperience > 0 && u.license_year && (currentYear - u.license_year) < filters.minExperience) return false;
       if (filters.minRating > 0 && (u.rating || 0) < filters.minRating) return false;
