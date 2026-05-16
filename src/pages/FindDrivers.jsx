@@ -132,17 +132,11 @@ export default function FindDrivers() {
     let source;
 
     if (rpcDrivers !== null && locationCoords) {
-      // Merge proximity results with text-match from the full user list.
-      // Text-match catches drivers who were registered before geocoding was added
-      // (they have a location string but no geo_location point yet).
-      const rpcIds = new Set(rpcDrivers.map(d => d.id));
-      const textExtras = users.filter(u =>
-        (u.account_type === 'driver' || u.account_type === 'both') &&
-        (u.location || '').toLowerCase().includes(filters.location.toLowerCase()) &&
-        !rpcIds.has(u.id),
-      );
-      // Geo-sorted results first, then text-match extras
-      source = [...rpcDrivers, ...textExtras];
+      // Proximity mode — use only the RPC results (already radius-filtered).
+      // No text-match merge: adding text-match results bypasses the radius and
+      // causes distant drivers (e.g. Durban) to appear in a Soweto search.
+      // geo_location is backfilled for all existing profiles.
+      source = rpcDrivers;
     } else {
       source = users;
     }
