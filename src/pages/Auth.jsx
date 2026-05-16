@@ -71,33 +71,20 @@ async function triggerBiometricLogin() {
     return r1.session;
   }
 
-  // Path 2: Direct Supabase REST token exchange using our stored refresh token.
-  // This bypasses the JS client's internal state entirely and works even when
-  // Supabase's own localStorage entry is gone or the access token has expired.
-  const storedRt = loadBiometricRefreshToken();
-  if (storedRt) {
+  // Path 2: Restore from our own backup (both tokens stored; onAuthStateChange
+  // in supabaseData.js keeps this in sync with every Supabase token rotation).
+  // setSession() in Supabase JS v2 auto-refreshes if the access_token is stale.
+  const backup = loadBiometricRefreshToken();
+  if (backup?.refresh_token) {
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey    = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const tokenRes = await fetch(
-        `${supabaseUrl}/auth/v1/token?grant_type=refresh_token`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: anonKey },
-          body: JSON.stringify({ refresh_token: storedRt }),
-        }
-      );
-      if (tokenRes.ok) {
-        const tokens = await tokenRes.json();
-        const { data: s2, error: e2 } = await supabase.auth.setSession({
-          access_token:  tokens.access_token,
-          refresh_token: tokens.refresh_token,
-        });
-        if (!e2 && s2?.session) {
-          saveBiometricRefreshToken(s2.session);
-          setTokenCookie(s2.session.refresh_token).catch(() => {});
-          return s2.session;
-        }
+      const { data: s2, error: e2 } = await supabase.auth.setSession({
+        access_token:  backup.access_token  || backup.refresh_token,
+        refresh_token: backup.refresh_token,
+      });
+      if (!e2 && s2?.session) {
+        saveBiometricRefreshToken(s2.session);
+        setTokenCookie(s2.session.refresh_token).catch(() => {});
+        return s2.session;
       }
     } catch { /* fall through to Path 3 */ }
   }
