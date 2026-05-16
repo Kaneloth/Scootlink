@@ -106,31 +106,29 @@ export default function SearchVehicles() {
   });
 
   const [localMaxPrice,  setLocalMaxPrice]  = useState(3000);
-  const [localLocation,  setLocalLocation]  = useState('');
   const [localRadiusKm,  setLocalRadiusKm]  = useState(50);
   const [geocoding,      setGeocoding]      = useState(false);
+  // geocodeTarget only changes on blur/Enter — keeps geocoding off every keystroke
+  // while filters.location updates live so text-match responds immediately.
+  const [geocodeTarget,  setGeocodeTarget]  = useState('');
 
-  // Geocode whenever the committed location filter changes.
-  // Requires ≥3 characters — single/short strings fall through to silent
-  // text-match without attempting geocoding or showing an error toast.
+  // Geocode only when the user commits a location (blur or Enter).
+  // Requires ≥3 characters — shorter strings fall back to text-match silently.
   useEffect(() => {
-    if (!filters.location || filters.location.trim().length < 3) {
-      // Explicitly clear the spinner — the cleanup below won't run on early return
+    if (!geocodeTarget || geocodeTarget.trim().length < 3) {
       setGeocoding(false);
       setFilters(prev => ({ ...prev, locationCoords: null }));
       return;
     }
     let cancelled = false;
     setGeocoding(true);
-    geocodeLocation(filters.location).then(coords => {
+    geocodeLocation(geocodeTarget).then(coords => {
       if (cancelled) return;
       if (!coords) toast.error('Location not found — showing text-match results instead');
       setFilters(prev => ({ ...prev, locationCoords: coords ?? null }));
     }).finally(() => { if (!cancelled) setGeocoding(false); });
-    // Always clear the spinner immediately when the user changes the location
-    // so it never stays stuck if the previous request was cancelled mid-flight.
     return () => { cancelled = true; setGeocoding(false); };
-  }, [filters.location]);
+  }, [geocodeTarget]);
 
   const { data: user } = useQuery({
     queryKey:  ['current-user'],
@@ -148,8 +146,8 @@ export default function SearchVehicles() {
     isError,
     error,
   } = useInfiniteQuery({
-    queryKey:        ['search-vehicles', filters, localLocation],
-    queryFn:         ({ pageParam }) => fetchVehiclePage({ pageParam, filters: { ...filters, location: localLocation } }),
+    queryKey:        ['search-vehicles', filters],
+    queryFn:         ({ pageParam }) => fetchVehiclePage({ pageParam, filters }),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       if (filters.locationCoords) return undefined; // RPC gives all at once
@@ -165,9 +163,6 @@ export default function SearchVehicles() {
   const vehicles  = (data?.pages.flat() ?? []).filter(v => !user || v.owner_id !== user.id);
   const totalLoaded = data?.pages.flat().length ?? 0;
 
-  const commitLocation = () =>
-    setFilters(prev => ({ ...prev, location: localLocation, locationCoords: null }));
-
   const commitRadius = (km) =>
     // Bump a copy of locationCoords so the queryKey changes and results refresh
     setFilters(prev => ({
@@ -178,8 +173,8 @@ export default function SearchVehicles() {
 
   const clearFilters = () => {
     setLocalMaxPrice(3000);
-    setLocalLocation('');
     setLocalRadiusKm(50);
+    setGeocodeTarget('');
     setFilters({ type: 'all', maxPrice: 3000, location: '', minRating: 0, radiusKm: 50, locationCoords: null });
   };
 
@@ -237,10 +232,10 @@ export default function SearchVehicles() {
               <Input
                 className="mt-1"
                 placeholder="e.g. Randburg — finds nearby too"
-                value={localLocation}
-                onChange={(e) => setLocalLocation(e.target.value)}
-                onBlur={commitLocation}
-                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                value={filters.location}
+                onChange={(e) => setFilters(prev => ({ ...prev, location: e.target.value, locationCoords: null }))}
+                onBlur={(e) => setGeocodeTarget(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { setGeocodeTarget(e.currentTarget.value); e.currentTarget.blur(); } }}
               />
               {filters.locationCoords && (
                 <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
