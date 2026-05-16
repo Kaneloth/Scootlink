@@ -12,6 +12,7 @@ import { ImagePlus, X } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import SubscriptionGate from '@/components/subscription/SubscriptionGate';
 import { toast } from 'sonner';
+import { geocodeLocation } from '@/lib/geocode';
 
 export default function AddVehicle() {
   const navigate = useNavigate();
@@ -23,19 +24,19 @@ export default function AddVehicle() {
   }, []);
 
   const [form, setForm] = useState({
-    vehicle_type: 'scooter',
-    make: '',
-    model: '',
-    year: '',
-    plate: '',
-    location: '',
-    price_per_week: '',
-    deposit: '',
-    storage_type: 'owner_address',   // default: owner's address
+    vehicle_type:           'scooter',
+    make:                   '',
+    model:                  '',
+    year:                   '',
+    plate:                  '',
+    location:               '',
+    price_per_week:         '',
+    deposit:                '',
+    storage_type:           'owner_address',
     pickup_return_location: '',
   });
 
-  const [images, setImages] = useState([]);
+  const [images,    setImages]    = useState([]);
   const [uploading, setUploading] = useState(false);
 
   const mutation = useMutation({
@@ -43,11 +44,23 @@ export default function AddVehicle() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      // Map frontend fields to DB columns
+      // Map frontend field names → DB column names
       const dbRow = { ...data };
-      if ('vehicle_type' in dbRow) { dbRow.type = dbRow.vehicle_type; delete dbRow.vehicle_type; }
+      if ('vehicle_type'   in dbRow) { dbRow.type  = dbRow.vehicle_type;   delete dbRow.vehicle_type;   }
       if ('price_per_week' in dbRow) { dbRow.price = dbRow.price_per_week; delete dbRow.price_per_week; }
       dbRow.owner_id = user.id;
+
+      // Geocode the location and store a PostGIS geography point (non-fatal)
+      if (dbRow.location) {
+        try {
+          const coords = await geocodeLocation(dbRow.location);
+          if (coords) {
+            dbRow.latitude     = coords.latitude;
+            dbRow.longitude    = coords.longitude;
+            dbRow.geo_location = `SRID=4326;POINT(${coords.longitude} ${coords.latitude})`;
+          }
+        } catch { /* non-fatal — vehicle still lists without coordinates */ }
+      }
 
       const { data: result, error } = await supabase
         .from('vehicles')
@@ -97,20 +110,19 @@ export default function AddVehicle() {
       toast.error('Please fill in all required fields');
       return;
     }
-    // Validation for storage fields (optional)
     if (form.storage_type === 'owner_address' && !form.pickup_return_location) {
       toast.error('Please specify the pickup/return address');
       return;
     }
     mutation.mutate({
       ...form,
-      year: parseInt(form.year) || 2024,
+      year:           parseInt(form.year) || 2024,
       price_per_week: parseFloat(form.price_per_week),
-      deposit: parseFloat(form.deposit) || 0,
-      status: 'available',
+      deposit:        parseFloat(form.deposit) || 0,
+      status:         'available',
       images,
-      rating: 0,
-      total_reviews: 0,
+      rating:         0,
+      total_reviews:  0,
     });
   };
 
@@ -158,9 +170,9 @@ export default function AddVehicle() {
           <div>
             <Label>Location *</Label>
             <Input className="mt-1" placeholder="Johannesburg CBD" value={form.location} onChange={e => update('location', e.target.value)} />
+            <p className="text-[11px] text-muted-foreground mt-1">This will be geocoded so drivers can find you in proximity searches.</p>
           </div>
 
-          {/* Storage Type and Pickup/Return Location */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Storage Type</Label>
