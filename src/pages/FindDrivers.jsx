@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, auth, Vehicle, fetchProfilesByIds } from '@/api/supabaseData';
 import { useQuery } from '@tanstack/react-query';
@@ -26,6 +26,17 @@ export default function FindDrivers() {
   // directly, so geocoding only fires when the user finishes typing (blur/Enter).
   const [localLocation,    setLocalLocation]    = useState('');
   const [currentUser,      setCurrentUser]      = useState(null);
+
+  const radiusSliderRef = useRef(null);
+
+  // Prevent page scroll while dragging the radius slider on mobile.
+  // touchmove must be non-passive so we can call preventDefault().
+  useEffect(() => {
+    const prevent = (e) => e.preventDefault();
+    const el = radiusSliderRef.current;
+    el?.addEventListener('touchmove', prevent, { passive: false });
+    return () => el?.removeEventListener('touchmove', prevent);
+  }, []);
   const [selectedDriver,   setSelectedDriver]   = useState(null);
   const [avatarMap,        setAvatarMap]        = useState({});
 
@@ -321,7 +332,7 @@ export default function FindDrivers() {
               <Label className="text-xs">
                 Search Radius: <span className="font-semibold text-foreground">{filters.radius} km</span>
               </Label>
-              <div className="mt-3 touch-none">
+              <div ref={radiusSliderRef} className="mt-3 touch-none">
                 <Slider
                   min={5}
                   max={200}

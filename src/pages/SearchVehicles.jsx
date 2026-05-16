@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { auth } from '@/api/supabaseData';
 import { supabase } from '@/api/supabaseClient';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
@@ -110,6 +110,22 @@ export default function SearchVehicles() {
   const [localRadiusKm,  setLocalRadiusKm]  = useState(50);
   const [geocoding,      setGeocoding]      = useState(false);
 
+  const priceSliderRef  = useRef(null);
+  const radiusSliderRef = useRef(null);
+
+  // Prevent page scroll while dragging either slider on mobile.
+  // touchmove must be non-passive so we can call preventDefault().
+  useEffect(() => {
+    const prevent = (e) => e.preventDefault();
+    [priceSliderRef, radiusSliderRef].forEach(ref => {
+      ref.current?.addEventListener('touchmove', prevent, { passive: false });
+    });
+    return () => {
+      [priceSliderRef, radiusSliderRef].forEach(ref => {
+        ref.current?.removeEventListener('touchmove', prevent);
+      });
+    };
+  }, []);
 
   // Geocode whenever the committed location filter changes.
   // Requires ≥3 characters — single/short strings fall through to silent
@@ -259,7 +275,7 @@ export default function SearchVehicles() {
                   Search Radius: <span className="font-semibold text-foreground">{localRadiusKm} km</span>
                   <span className="text-muted-foreground ml-1">— returns all vehicles within this distance</span>
                 </Label>
-                <div className="mt-3 touch-none">
+                <div ref={radiusSliderRef} className="mt-3 touch-none">
                   <Slider
                     value={[localRadiusKm]}
                     min={5}
@@ -277,7 +293,7 @@ export default function SearchVehicles() {
 
             <div>
               <Label className="text-xs">Max Price: R {localMaxPrice}/week</Label>
-              <div className="mt-3 touch-none">
+              <div ref={priceSliderRef} className="mt-3 touch-none">
                 <Slider
                   value={[localMaxPrice]}
                   max={3000}
