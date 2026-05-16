@@ -10,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ShieldCheck, Loader2, Camera, Eye, EyeOff } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import StarRating from '@/components/reviews/StarRating';
-import ReviewsSection from '@/components/reviews/ReviewsSection';
 import { toast } from 'sonner';
 
 // ─── Skeleton components ──────────────────────────────────────────────────────
@@ -91,6 +90,22 @@ export default function Profile() {
   });
 
   const [saving, setSaving] = useState(false);
+  const [myReviews, setMyReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  const fetchMyReviews = async (userId) => {
+    setReviewsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('id, rating, comment, created_at, target_type')
+        .eq('target_id', userId)
+        .order('created_at', { ascending: false });
+      if (!error) setMyReviews(data || []);
+    } catch { /* non-fatal */ } finally {
+      setReviewsLoading(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +115,7 @@ export default function Profile() {
         if (cancelled) return;
         setUser(u);
         setAvatarUrl(u.avatar_url || null);
+        fetchMyReviews(u.id);
         setAvatarVisible(u.avatar_visible !== false); // default true
         setForm({
           full_name: u.full_name || '',
@@ -218,7 +234,7 @@ export default function Profile() {
       }
 
       toast.success('Profile updated!');
-      navigate('/settings');
+      navigate('/');
     } catch (err) {
       toast.error('Update failed: ' + (err.message || 'Unknown error'));
     } finally {
@@ -231,7 +247,7 @@ export default function Profile() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <PageHeader title="My Profile" subtitle="Edit details & view your reviews" backTo="/settings" />
+      <PageHeader title="My Profile" subtitle="Edit details & view your reviews" backTo="/" />
 
       {/* Hidden file input for avatar upload */}
       <input
@@ -447,7 +463,42 @@ export default function Profile() {
         </TabsContent>
 
         <TabsContent value="reviews-received">
-          <ReviewsSection targetEmail={user?.email} targetType="owner" />
+          {reviewsLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-20 rounded-xl border border-border/50 bg-muted animate-pulse" />
+              ))}
+            </div>
+          ) : myReviews.length === 0 ? (
+            <Card className="p-8 border border-border/50 text-center">
+              <p className="text-3xl mb-3">⭐</p>
+              <p className="font-semibold text-foreground mb-1">No reviews yet</p>
+              <p className="text-sm text-muted-foreground">Reviews from owners and drivers will appear here after completed rentals.</p>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {myReviews.map(review => (
+                <Card key={review.id} className="p-4 border border-border/50">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <StarRating value={review.rating} size="sm" showValue />
+                      {review.target_type && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground capitalize">
+                          as {review.target_type}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(review.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  {review.comment && (
+                    <p className="text-sm text-foreground">{review.comment}</p>
+                  )}
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>
