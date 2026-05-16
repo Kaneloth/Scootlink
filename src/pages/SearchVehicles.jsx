@@ -257,6 +257,13 @@ export default function SearchVehicles() {
                 onBlur={commitLocation}
                 onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
               />
+              {filters.locationCoords && (
+                <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
+                  Searching near: {filters.locationCoords.latitude.toFixed(4)}°,{' '}
+                  {filters.locationCoords.longitude.toFixed(4)}°
+                  {filters.locationCoords.displayName ? ` — ${filters.locationCoords.displayName}` : ''}
+                </p>
+              )}
             </div>
 
             {/* Radius slider — only visible when a location is typed */}
