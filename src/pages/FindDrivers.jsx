@@ -68,10 +68,12 @@ export default function FindDrivers() {
   }, [users]);
 
   // Effect 1: Geocode only when the location TEXT changes.
-  // Requires ≥3 characters — single letters can't be geocoded and must not
-  // show an error toast; they fall through to silent text-match.
+  // Requires ≥3 characters — single/short strings fall through to silent
+  // text-match without attempting geocoding or showing an error toast.
   useEffect(() => {
     if (!filters.location || filters.location.trim().length < 3) {
+      // Explicitly clear the spinner — the cleanup below won't run on early return
+      setGeocoding(false);
       setLocationCoords(null);
       setRpcDrivers(null);
       return;
@@ -90,7 +92,9 @@ export default function FindDrivers() {
       }
     }).finally(() => { if (!cancelled) setGeocoding(false); });
 
-    return () => { cancelled = true; };
+    // Always clear the spinner immediately when the user changes the location
+    // so it never stays stuck if the previous request was cancelled mid-flight.
+    return () => { cancelled = true; setGeocoding(false); };
   }, [filters.location]);
 
   // Effect 2: Call the RPC whenever we have valid coords OR when the radius
@@ -119,7 +123,7 @@ export default function FindDrivers() {
       }
     }).finally(() => { if (!cancelled) setGeocoding(false); });
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; setGeocoding(false); };
   }, [locationCoords, filters.radius]);
 
   const currentYear = new Date().getFullYear();
