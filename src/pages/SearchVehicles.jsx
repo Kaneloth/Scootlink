@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { auth } from '@/api/supabaseData';
 import { supabase } from '@/api/supabaseClient';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
@@ -110,20 +110,6 @@ export default function SearchVehicles() {
   const [localRadiusKm,  setLocalRadiusKm]  = useState(50);
   const [geocoding,      setGeocoding]      = useState(false);
 
-  const sliderRef       = useRef(null);
-  const radiusSliderRef = useRef(null);
-
-  useEffect(() => {
-    const stop = (e) => e.stopPropagation();
-    [sliderRef, radiusSliderRef].forEach(ref => {
-      ref.current?.addEventListener('touchstart', stop, { passive: true });
-    });
-    return () => {
-      [sliderRef, radiusSliderRef].forEach(ref => {
-        ref.current?.removeEventListener('touchstart', stop);
-      });
-    };
-  }, []);
 
   // Geocode whenever the committed location filter changes.
   // Requires ≥3 characters — single/short strings fall through to silent
@@ -273,7 +259,7 @@ export default function SearchVehicles() {
                   Search Radius: <span className="font-semibold text-foreground">{localRadiusKm} km</span>
                   <span className="text-muted-foreground ml-1">— returns all vehicles within this distance</span>
                 </Label>
-                <div ref={radiusSliderRef} className="mt-3">
+                <div className="mt-3 touch-none">
                   <Slider
                     value={[localRadiusKm]}
                     min={5}
@@ -291,7 +277,7 @@ export default function SearchVehicles() {
 
             <div>
               <Label className="text-xs">Max Price: R {localMaxPrice}/week</Label>
-              <div ref={sliderRef} className="mt-3">
+              <div className="mt-3 touch-none">
                 <Slider
                   value={[localMaxPrice]}
                   max={3000}
