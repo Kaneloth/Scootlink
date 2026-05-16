@@ -606,28 +606,26 @@ export default function Messages() {
                   onTouchEnd={cancelLongPress}
                   onTouchMove={cancelLongPress}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
-                        {conv.otherUserAvatar ? (
-                          <img src={conv.otherUserAvatar} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <User className="w-5 h-5 text-primary" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{conv.otherUserName}</p>
-                        <p className="text-xs text-muted-foreground truncate max-w-[180px] flex items-center gap-1">
-                          {conv.lastSenderId === user?.id && (
-                            <MsgStatus status={undefined} read={conv.lastRead} />
-                          )}
-                          {conv.lastMessage}
-                        </p>
-                      </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                      {conv.otherUserAvatar ? (
+                        <img src={conv.otherUserAvatar} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-5 h-5 text-primary" />
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{conv.otherUserName}</p>
+                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                        {conv.lastSenderId === user?.id && (
+                          <MsgStatus status={undefined} read={conv.lastRead} />
+                        )}
+                        {conv.lastMessage}
+                      </p>
+                    </div>
+                    <div className="shrink-0 flex flex-col items-end gap-1 ml-2">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">{new Date(conv.lastTime).toLocaleDateString()}</span>
                       {conv.unread && <span className="w-2 h-2 bg-primary rounded-full" />}
-                      <span className="text-xs text-muted-foreground">{new Date(conv.lastTime).toLocaleDateString()}</span>
                     </div>
                   </div>
                 </Card>
