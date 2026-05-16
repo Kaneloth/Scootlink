@@ -239,20 +239,30 @@ export default function Messages() {
         });
       } catch { /* non-fatal — conversation list just shows initials */ }
 
+      // Read hidden (deleted-for-everyone) message IDs fresh from localStorage
+      // so that deleted messages are never shown as the conversation preview.
+      const currentHiddenMsgs = getHiddenMsgs(u.id);
+
       const grouped = {};
       data.forEach((msg) => {
         const otherId = msg.sender_id === u.id ? msg.receiver_id : msg.sender_id;
+        // Always record the conversation so it appears in the list, but only
+        // use this message as the preview if it hasn't been deleted.
         if (!grouped[otherId]) {
           grouped[otherId] = {
-            otherUserId:    otherId,
-            otherUserName:  nameMap[otherId] || 'User',
+            otherUserId:     otherId,
+            otherUserName:   nameMap[otherId] || 'User',
             otherUserAvatar: avatarMap[otherId] || null,
-            lastMessage:    msg.body,
-            lastSenderId:   msg.sender_id,
-            lastRead:       msg.read,
-            unread:         !msg.read && msg.receiver_id === u.id,
-            lastTime:       msg.created_at,
+            lastMessage:     null,
+            lastSenderId:    msg.sender_id,
+            lastRead:        msg.read,
+            unread:          !msg.read && msg.receiver_id === u.id,
+            lastTime:        msg.created_at,
           };
+        }
+        // Fill in lastMessage with the first (most-recent) non-hidden message.
+        if (grouped[otherId].lastMessage === null && !currentHiddenMsgs.has(msg.id)) {
+          grouped[otherId].lastMessage = msg.body;
         }
       });
 
