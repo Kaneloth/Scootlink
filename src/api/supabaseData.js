@@ -12,6 +12,7 @@ import { base44 } from './base44Client';
 const PROFILE_FIELDS = [
   'subscription_active', 'subscription_plan', 'subscription_start',
   'subscription_expires', 'verified', 'full_name', 'phone', 'location',
+  'avatar_url', 'avatar_visible',
 ];
 
 // ─── Auth helpers ────────────────────────────────────────────────────────────
@@ -47,6 +48,8 @@ export const auth = {
       phone:                profile?.phone                ?? user.user_metadata?.phone                ?? null,
       location:             profile?.location             ?? user.user_metadata?.location             ?? null,
       onboarding_completed: profile?.onboarding_completed ?? user.user_metadata?.onboarding_completed ?? false,
+      avatar_url:           profile?.avatar_url           ?? user.user_metadata?.avatar_url           ?? null,
+      avatar_visible:       profile?.avatar_visible       ?? user.user_metadata?.avatar_visible       ?? true,
     };
   },
 
@@ -160,6 +163,30 @@ export const User        = {
     if (error) throw error;
     return data || [];
   },
+};
+
+// ─── Avatar-aware profile fetcher ────────────────────────────────────────────
+// Uses the Netlify service-role function so avatar_url is resolved from auth
+// user_metadata for users who haven't re-saved their profile since the fix.
+// Falls back to a direct profiles query if the function isn't available.
+export const fetchProfilesByIds = async (ids) => {
+  if (!ids || ids.length === 0) return [];
+  try {
+    const res = await fetch('/.netlify/functions/get-profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) throw new Error('Function unavailable');
+    return await res.json();
+  } catch {
+    // Fallback: direct profiles query (avatar_url from DB, no auth metadata merge)
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url, avatar_visible')
+      .in('id', ids);
+    return data || [];
+  }
 };
 
 // ─── File upload via Supabase Storage ────────────────────────────────────────
