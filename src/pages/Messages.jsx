@@ -345,8 +345,9 @@ export default function Messages() {
     setChatLoading(true);
 
     const { data: profile } = await supabase
-      .from('profiles').select('full_name, email').eq('id', otherUserId).single();
-    const otherUserName = profile?.full_name || profile?.email || 'User';
+      .from('profiles').select('full_name, email, avatar_url, avatar_visible').eq('id', otherUserId).single();
+    const otherUserName   = profile?.full_name || profile?.email || 'User';
+    const otherUserAvatar = (profile?.avatar_visible !== false && profile?.avatar_url) ? profile.avatar_url : null;
 
     const { data, error } = await supabase
       .from('messages')
@@ -361,7 +362,7 @@ export default function Messages() {
       await supabase.from('messages').update({ read: true }).in('id', unreadIds);
     }
 
-    setSelectedChat({ otherUserId, otherUserName });
+    setSelectedChat({ otherUserId, otherUserName, otherUserAvatar });
     setMessages(data);
     setChatLoading(false);
   };
@@ -621,9 +622,13 @@ export default function Messages() {
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="flex-1">
-              <h2 className="text-xl font-bold text-foreground">Chat</h2>
-              <p className="text-xs text-muted-foreground">{selectedChat.otherUserName}</p>
+            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+              {selectedChat.otherUserAvatar
+                ? <img src={selectedChat.otherUserAvatar} alt="" className="w-full h-full object-cover" />
+                : <User className="w-4 h-4 text-primary" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-bold text-foreground leading-tight truncate">{selectedChat.otherUserName}</h2>
             </div>
             <button
               className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 py-2 px-2 rounded-lg hover:bg-destructive/10"

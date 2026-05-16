@@ -139,8 +139,10 @@ export default function FindDrivers() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary shrink-0">
-                      {d.full_name?.[0] || '?'}
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary shrink-0 overflow-hidden">
+                      {d.avatar_visible !== false && d.avatar_url
+                        ? <img src={d.avatar_url} alt="" className="w-full h-full object-cover" />
+                        : (d.full_name?.[0] || '?')}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -184,8 +186,10 @@ export default function FindDrivers() {
             </div>
 
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0">
-                {selectedDriver.full_name?.[0] || '?'}
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0 overflow-hidden">
+                {selectedDriver.avatar_visible !== false && selectedDriver.avatar_url
+                  ? <img src={selectedDriver.avatar_url} alt="" className="w-full h-full object-cover" />
+                  : (selectedDriver.full_name?.[0] || '?')}
               </div>
               <div className="min-w-0">
                 <p className="font-semibold text-lg truncate">{selectedDriver.full_name || 'Driver'}</p>

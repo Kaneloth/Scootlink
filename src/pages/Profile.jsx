@@ -168,6 +168,11 @@ export default function Profile() {
         .getPublicUrl(filePath);
       setAvatarUrl(publicUrl);
       await auth.updateMe({ avatar_url: publicUrl });
+      // Sync to profiles table so other users can see the new photo
+      await supabase.from('profiles').upsert(
+        { id: authUser.id, avatar_url: publicUrl },
+        { onConflict: 'id' }
+      );
       toast.success('Profile photo updated!');
     } catch (err) {
       toast.error('Upload failed: ' + err.message);
@@ -207,6 +212,9 @@ export default function Profile() {
           location: form.location || null,
           license_year: form.license_year ? parseInt(form.license_year) : null,
           license_number: form.license_number || null,
+          // Sync avatar so counterparties can see the photo and visibility setting
+          avatar_url: avatarUrl || null,
+          avatar_visible: avatarVisible,
         },
         { onConflict: 'id' }
       );
