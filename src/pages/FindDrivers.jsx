@@ -174,7 +174,7 @@ export default function FindDrivers() {
       {/* ---------- Driver Detail Modal ---------- */}
       {selectedDriver && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setSelectedDriver(null)}>
-          <div 
+          <div
             className="bg-card rounded-2xl shadow-xl w-full max-w-md p-6 border border-border max-h-[85vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
@@ -189,17 +189,13 @@ export default function FindDrivers() {
               </div>
               <div className="min-w-0">
                 <p className="font-semibold text-lg truncate">{selectedDriver.full_name || 'Driver'}</p>
-                <p className="text-sm text-muted-foreground truncate">{selectedDriver.email}</p>
+                {selectedDriver.verified
+                  ? <span className="text-xs text-green-600 font-medium">✅ Verified</span>
+                  : <span className="text-xs text-amber-600 font-medium">⏳ Pending verification</span>}
               </div>
             </div>
 
             <div className="space-y-2 text-sm">
-              {selectedDriver.phone && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Phone</span>
-                  <span className="font-medium truncate ml-4">{selectedDriver.phone}</span>
-                </div>
-              )}
               {selectedDriver.location && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Location</span>
@@ -212,10 +208,6 @@ export default function FindDrivers() {
                   <span className="font-medium">{currentYear - selectedDriver.license_year} years</span>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Verified</span>
-                <span>{selectedDriver.verified ? <Badge className="bg-emerald-100 text-emerald-700">✅ Verified</Badge> : <Badge variant="outline">⏳ Pending</Badge>}</span>
-              </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Rating</span>
                 <span><StarRating value={Math.round(selectedDriver.rating || 0)} size="sm" showValue /></span>
