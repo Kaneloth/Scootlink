@@ -183,6 +183,19 @@ export function clearBiometricRefreshToken() {
   try { localStorage.removeItem(BIOMETRIC_RT_KEY); } catch { /* ignore */ }
 }
 
+// Auto-keep the backup in sync with Supabase's own token rotation.
+// Supabase JS v2 rotates refresh tokens on every use. Without this listener,
+// any token saved at login time is stale by the time biometric login runs.
+// This fires on: initial session load, every auto-refresh, and manual sign-in.
+supabase.auth.onAuthStateChange((event, session) => {
+  if (
+    (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') &&
+    session?.refresh_token
+  ) {
+    try { localStorage.setItem(BIOMETRIC_RT_KEY, session.refresh_token); } catch { /* full */ }
+  }
+});
+
 // ─── Avatar-aware profile fetcher ────────────────────────────────────────────
 // Uses the Netlify service-role function so avatar_url is resolved from auth
 // user_metadata for users who haven't re-saved their profile since the fix.
