@@ -67,12 +67,18 @@ async function triggerBiometricLogin() {
 
   // ── Fingerprint passed — restore the Supabase session ──────────────────────
 
-  const { data: existing } = await supabase.auth.getSession();
-  if (existing?.session) {
-    await setTokenCookie(existing.session.refresh_token);
-    return existing.session;
+  // 1. Try refreshSession() — unlike getSession(), this actually validates the
+  //    stored refresh token and returns a fresh access token, so it works even
+  //    when the previous access token has expired.
+  const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+  if (!refreshErr && refreshed?.session) {
+    await setTokenCookie(refreshed.session.refresh_token);
+    return refreshed.session;
   }
 
+  // 2. Supabase localStorage session is gone (e.g. cleared by browser or expired
+  //    refresh token) — fall back to the httpOnly cookie set during the last
+  //    password login. The auth-refresh function exchanges it for fresh tokens.
   const res = await fetch('/.netlify/functions/auth-refresh', {
     method: 'POST',
     credentials: 'include',

@@ -241,6 +241,11 @@ export default function Settings() {
 
   const handleLogout = async () => {
     if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
+      // Refresh the session before leaving so the httpOnly cookie holds the
+      // freshest refresh token. The onAuthStateChange listener in AppLayout
+      // picks up TOKEN_REFRESHED and writes the new token to the cookie.
+      // This gives biometric login the best chance of succeeding next time.
+      await supabase.auth.refreshSession().catch(() => {});
       navigate('/auth');
     } else {
       await clearTokenCookie();
