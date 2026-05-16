@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
+import { saveSessionBackup } from '@/pages/Auth';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -241,11 +242,12 @@ export default function Settings() {
 
   const handleLogout = async () => {
     if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-      // Refresh the session before leaving so the httpOnly cookie holds the
-      // freshest refresh token. The onAuthStateChange listener in AppLayout
-      // picks up TOKEN_REFRESHED and writes the new token to the cookie.
-      // This gives biometric login the best chance of succeeding next time.
-      await supabase.auth.refreshSession().catch(() => {});
+      // Refresh and save the session backup before leaving so biometric login
+      // can restore the session directly from localStorage next time.
+      try {
+        const { data } = await supabase.auth.refreshSession();
+        if (data?.session) saveSessionBackup(data.session);
+      } catch { /* non-fatal */ }
       navigate('/auth');
     } else {
       await clearTokenCookie();
