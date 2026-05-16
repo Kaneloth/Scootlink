@@ -241,12 +241,14 @@ export default function Settings() {
 
   const handleLogout = async () => {
     if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-      // Refresh the session and save the refresh token before leaving so
-      // biometric login can restore it via the direct REST token exchange.
+      // Save the session backup BEFORE signing out — tokens are still valid here.
       try {
-        const { data } = await supabase.auth.refreshSession();
+        const { data } = await supabase.auth.getSession();
         if (data?.session) saveBiometricRefreshToken(data.session);
       } catch { /* non-fatal */ }
+      // Sign out locally only: clears Supabase's localStorage but does NOT
+      // invalidate the refresh token on the server, so our backup still works.
+      await supabase.auth.signOut({ scope: 'local' });
       navigate('/auth');
     } else {
       await clearTokenCookie();

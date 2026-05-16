@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
-import { saveBiometricRefreshToken, loadBiometricRefreshToken } from '@/api/supabaseData';
+import { saveBiometricRefreshToken, loadBiometricRefreshToken, clearBiometricRefreshToken } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -61,24 +61,29 @@ async function triggerBiometricLogin() {
   }
 
   // ── Fingerprint passed — restore the Supabase session ──────────────────────
-  // Three paths tried in order from most to least reliable.
+  const _dbg = [];   // collected debug lines shown in toast if all paths fail
 
-  // Path 1: Supabase JS still has a stored refresh token — fastest path.
-  const { data: r1 } = await supabase.auth.refreshSession();
-  if (r1?.session) {
-    saveBiometricRefreshToken(r1.session);
-    setTokenCookie(r1.session.refresh_token).catch(() => {});
-    return r1.session;
-  }
+  // Path 1: Supabase JS has a local refresh token (present when biometric logout
+  // is skipped or the user was never fully signed out).
+  try {
+    const { data: r1, error: e1 } = await supabase.auth.refreshSession();
+    if (r1?.session) {
+      saveBiometricRefreshToken(r1.session);
+      setTokenCookie(r1.session.refresh_token).catch(() => {});
+      return r1.session;
+    }
+    _dbg.push(`P1:${e1?.message || 'no session'}`);
+  } catch (ex) { _dbg.push(`P1 threw:${ex?.message}`); }
 
-  // Path 2: Restore from our own backup (both tokens stored; onAuthStateChange
-  // in supabaseData.js keeps this in sync with every Supabase token rotation).
-  // setSession() in Supabase JS v2 auto-refreshes if the access_token is stale.
+  // Path 2: Restore from our own backup (both tokens; onAuthStateChange in
+  // supabaseData.js keeps it in sync with every Supabase token rotation).
   const backup = loadBiometricRefreshToken();
-  if (backup?.refresh_token) {
+  if (!backup?.refresh_token) {
+    _dbg.push('P2:no backup');
+  } else {
     try {
       const { data: s2, error: e2 } = await supabase.auth.setSession({
-        access_token:  backup.access_token  || backup.refresh_token,
+        access_token:  backup.access_token || '',
         refresh_token: backup.refresh_token,
       });
       if (!e2 && s2?.session) {
@@ -86,7 +91,12 @@ async function triggerBiometricLogin() {
         setTokenCookie(s2.session.refresh_token).catch(() => {});
         return s2.session;
       }
-    } catch { /* fall through to Path 3 */ }
+      _dbg.push(`P2:${e2?.message || 'no session returned'}`);
+      // If the refresh token is explicitly rejected, clear the stale backup.
+      if (e2?.message?.toLowerCase().includes('invalid') || e2?.status === 400) {
+        clearBiometricRefreshToken();
+      }
+    } catch (ex) { _dbg.push(`P2 threw:${ex?.message}`); }
   }
 
   // Path 3: httpOnly cookie via Netlify function.
@@ -102,10 +112,15 @@ async function triggerBiometricLogin() {
         saveBiometricRefreshToken(s3.session);
         return s3.session;
       }
+      _dbg.push(`P3:${e3?.message || 'no session'}`);
+    } else {
+      _dbg.push(`P3:HTTP ${res.status}`);
     }
-  } catch { /* fall through to error */ }
+  } catch (ex) { _dbg.push(`P3 threw:${ex?.message}`); }
 
-  throw biometricError('session-expired', 'session-expired');
+  // Surface the debug detail so we can see exactly which path failed.
+  const detail = _dbg.join(' | ');
+  throw Object.assign(biometricError('session-expired', 'session-expired'), { detail });
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -145,6 +160,8 @@ export default function Auth() {
       navigate('/');
     } catch (err) {
       if (err.code === 'no-session' || err.code === 'session-expired') {
+        // Temporary diagnostic toast — shows exactly which path failed and why.
+        if (err.detail) toast.error(`Debug: ${err.detail}`, { duration: 15000 });
         setBannerReason('session-expired');
         setLoginStage('password');
       } else if (err.code === 'no-credential') {
