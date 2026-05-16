@@ -81,7 +81,6 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
             </div>
             <div>
               <p className="font-semibold text-lg leading-tight">{profile.full_name || role}</p>
-              <p className="text-sm text-muted-foreground">{profile.email}</p>
               <p className="text-xs mt-1">
                 {profile.verified
                   ? <span className="text-green-600 font-medium">✅ Verified</span>
@@ -92,7 +91,6 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
 
           {/* Detail rows — only renders rows that have data */}
           <div className="divide-y divide-border rounded-xl border border-border overflow-hidden text-sm mb-5">
-            {row('Phone',        profile.phone)}
             {row('Gender',       profile.gender ? profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1) : null)}
             {row('Citizenship',  profile.citizenship)}
             {row('City / Area',  profile.location)}
@@ -1066,12 +1064,13 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
               const targetEmail = isOwner ? r.driver_email : r.owner_email;
               const targetType = isOwner ? 'driver' : 'owner';
               const targetId = isOwner ? r.driver_id : r.owner_id;
+              const targetName = getCounterpartyName(targetId) || (isOwner ? 'Driver' : 'Owner');
               const v = allVehiclesLookup.find(veh => veh.id === r.vehicle_id) || vehicles.find(veh => veh.id === r.vehicle_id) || allVehicles.find(veh => veh.id === r.vehicle_id);
               return (
                 <Card key={r.id} className="p-4 border border-border/50 flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-medium">{v ? `${v.make} ${v.model}` : 'Rental'}</p>
-                    <p className="text-xs text-muted-foreground">{isOwner ? 'Driver: ' : 'Owner: '}{targetEmail}</p>
+                    <p className="text-xs text-muted-foreground">{isOwner ? 'Driver: ' : 'Owner: '}{targetName}</p>
                   </div>
                   <Button size="sm" variant="outline" className="gap-1.5 shrink-0"
                     onClick={() => {
