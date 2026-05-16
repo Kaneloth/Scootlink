@@ -461,7 +461,7 @@ export default function Settings() {
               <div className="flex items-center gap-3">
                 {darkMode ? <Moon className="w-5 h-5 text-muted-foreground" /> : <Sun className="w-5 h-5 text-muted-foreground" />}
                 <div className="text-left">
-                  <p className="text-sm font-medium text-foreground">{darkMode ? 'Light Mode' : 'Dark Mode'}</p>
+                  <p className="text-sm font-medium text-foreground">{darkMode ? 'Dark Mode' : 'Light Mode'}</p>
                   <p className="text-xs text-muted-foreground">{darkMode ? 'Switch to light' : 'Switch to dark'}</p>
                 </div>
               </div>
