@@ -151,7 +151,7 @@ export default function Messages() {
       supabase.removeChannel(ch);
       userEventsChannelRef.current = null;
     };
-  }, [user, fetchConversations]);
+  }, [user]); // fetchConversations omitted: stable useCallback([]) ref, declared later in body
 
   // Subscribe to a shared broadcast channel whenever a chat is open.
   // Both participants join the same channel (keyed by sorted user IDs) so
@@ -181,7 +181,7 @@ export default function Messages() {
       supabase.removeChannel(ch);
       convChannelRef.current = null;
     };
-  }, [selectedChat, user, fetchConversations]);
+  }, [selectedChat, user]); // fetchConversations omitted: stable useCallback([]) ref, declared later in body
 
   // Auto-scroll to latest message
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
