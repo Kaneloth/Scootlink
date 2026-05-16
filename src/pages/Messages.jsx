@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { auth, supabase } from '@/api/supabaseData';
+import { auth, supabase, fetchProfilesByIds } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -223,16 +223,15 @@ export default function Messages() {
       const avatarMap = {};
       profiles?.forEach((p) => { nameMap[p.id] = p.full_name || 'User'; });
 
-      // Try to fetch avatar fields separately — silently skipped if columns don't exist yet
+      // Fetch enriched profiles via the Netlify function (service role) so
+      // avatar_url is resolved from auth user_metadata for all users, including
+      // those who set a photo before the profiles table had the column.
       try {
-        const { data: avatarProfiles, error: avatarErr } = await supabase
-          .from('profiles').select('id, avatar_url, avatar_visible').in('id', Array.from(otherIds));
-        if (!avatarErr && avatarProfiles) {
-          avatarProfiles.forEach((p) => {
-            avatarMap[p.id] = p.avatar_visible !== false ? (p.avatar_url || null) : null;
-          });
-        }
-      } catch { /* avatar columns not yet in schema — ignore */ }
+        const enriched = await fetchProfilesByIds(Array.from(otherIds));
+        enriched.forEach((p) => {
+          avatarMap[p.id] = p.avatar_visible !== false ? (p.avatar_url || null) : null;
+        });
+      } catch { /* non-fatal — conversation list just shows initials */ }
 
       const grouped = {};
       data.forEach((msg) => {
@@ -345,9 +344,15 @@ export default function Messages() {
     setChatLoading(true);
 
     const { data: profile } = await supabase
-      .from('profiles').select('full_name, email, avatar_url, avatar_visible').eq('id', otherUserId).single();
-    const otherUserName   = profile?.full_name || profile?.email || 'User';
-    const otherUserAvatar = (profile?.avatar_visible !== false && profile?.avatar_url) ? profile.avatar_url : null;
+      .from('profiles').select('full_name, email').eq('id', otherUserId).single();
+    const otherUserName = profile?.full_name || profile?.email || 'User';
+    // Fetch avatar via service-role function so auth metadata avatars are included
+    let otherUserAvatar = null;
+    try {
+      const enriched = await fetchProfilesByIds([otherUserId]);
+      const ep = enriched[0];
+      otherUserAvatar = (ep?.avatar_visible !== false && ep?.avatar_url) ? ep.avatar_url : null;
+    } catch { /* non-fatal */ }
 
     const { data, error } = await supabase
       .from('messages')
