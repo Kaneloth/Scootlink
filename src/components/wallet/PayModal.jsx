@@ -121,14 +121,27 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
       if (txError) throw txError;
 
       toast.success(`R ${amt.toFixed(2)} sent to ${selectedUser?.full_name || 'User'}`);
+      // ── SMS notifications ─────────────────────────────────────────────────
       try {
+        console.log('[SMS] Recipient phone:', selectedUser?.phone);
+        console.log('[SMS] Sender phone:', user?.phone);
         if (selectedUser?.phone) {
-          await sendSMS(selectedUser.phone, `You have received a payment of R ${amt.toFixed(2)} from ${user.full_name || 'a Skootlink user'}.${note ? ` Note: "${note}"` : ''}`);
+          const r1 = await sendSMS(selectedUser.phone, `You have received a payment of R ${amt.toFixed(2)} from ${user.full_name || 'a Skootlink user'}.${note ? ` Note: "${note}"` : ''}`);
+          if (r1?.success) { console.log('[SMS] Recipient notified OK'); }
+          else { console.error('[SMS] Recipient notification failed:', r1?.error); }
+        } else {
+          console.warn('[SMS] Skipped recipient — no phone number on profile');
         }
         if (user?.phone) {
-          await sendSMS(user.phone, `You sent R ${amt.toFixed(2)} to ${selectedUser?.full_name || 'User'} on Skootlink.${note ? ` Note: "${note}"` : ''}`);
+          const r2 = await sendSMS(user.phone, `You sent R ${amt.toFixed(2)} to ${selectedUser?.full_name || 'User'} on Skootlink.${note ? ` Note: "${note}"` : ''}`);
+          if (r2?.success) { console.log('[SMS] Sender confirmation OK'); }
+          else { console.error('[SMS] Sender confirmation failed:', r2?.error); }
+        } else {
+          console.warn('[SMS] Skipped sender — no phone number on profile');
         }
-      } catch { /* SMS failure must never block the main flow */ }
+      } catch (smsErr) {
+        console.error('[SMS] Unexpected error:', smsErr);
+      }
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       if (onSuccess) onSuccess();
       handleClose();
