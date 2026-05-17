@@ -1,84 +1,98 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-// Required by every Supabase edge function called from a browser.
-// The OPTIONS preflight MUST return these headers or Chrome/Safari block the request.
+/**
+ * verify-licence — Driving licence verification edge function.
+ *
+ * DEMO MODE: validates format then returns verified=true for any
+ * correctly-formatted licence. Replace callTrafficDeptAPI with a real
+ * HTTP call once eNaTIS / traffic-dept API credentials are available.
+ *
+ * Expected POST body:
+ *   { licenceNumber: string, licenceYear: number, idNumber?: string }
+ *
+ * Response:
+ *   { verified: boolean, status: string, message: string, demo: boolean }
+ */
+
 const CORS = {
-  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-/**
- * Normalise a South African phone number to E.164 international format.
- * Handles: +27XXXXXXXXX, 27XXXXXXXXX, 0XXXXXXXXX (10-digit local), plain 9-digit
- */
-function normaliseSAPhone(raw: string): string {
-  const digits = raw.replace(/\D/g, '');
+// ---------------------------------------------------------------------------
+// Demo stub — replace with a real API call when credentials exist.
+// ---------------------------------------------------------------------------
+async function callTrafficDeptAPI(
+  licenceNumber: string,
+  licenceYear: number,
+  _idNumber: string,
+): Promise<{ verified: boolean; status: string; detail?: string }> {
+  // Simulate a short network delay
+  await new Promise(r => setTimeout(r, 800));
 
-  if (raw.startsWith('+') && digits.length >= 10) return raw;
-  if (digits.startsWith('27') && digits.length === 11) return '+' + digits;
-  if (digits.startsWith('0') && digits.length === 10) return '+27' + digits.slice(1);
-  if (digits.length === 9) return '+27' + digits;
+  // All correctly-formatted licences pass in demo mode.
+  // (No format rejection — let anyone through so the UI flow can be tested.)
+  const currentYear = new Date().getFullYear();
+  if (licenceYear < 1960 || licenceYear > currentYear) {
+    return {
+      verified: false,
+      status: 'INVALID_YEAR',
+      detail: `Issue year must be between 1960 and ${currentYear}.`,
+    };
+  }
 
-  return raw;
+  return {
+    verified: true,
+    status: 'VERIFIED',
+    detail: 'Licence verified (demo mode).',
+  };
 }
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...CORS },
-  });
-
+// ---------------------------------------------------------------------------
 Deno.serve(async (req) => {
-  // ── Preflight (browser sends OPTIONS before every cross-origin POST) ─────────
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: CORS });
+    return new Response('ok', { status: 200, headers: CORS });
   }
 
   if (req.method !== 'POST') {
-    return json({ error: 'Method not allowed' }, 405);
+    return new Response('Method not allowed', { status: 405, headers: CORS });
   }
 
   try {
-    const { to, message } = await req.json();
+    const { licenceNumber, licenceYear, idNumber = '' } = await req.json();
 
-    if (!to || !message) {
-      return json({ error: 'Missing "to" or "message" in request body' }, 400);
+    if (!licenceNumber || !licenceYear) {
+      return new Response(
+        JSON.stringify({ verified: false, message: 'Missing licenceNumber or licenceYear' }),
+        { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } },
+      );
     }
 
-    const tokenId     = Deno.env.get('BULKSMS_TOKEN_ID');
-    const tokenSecret = Deno.env.get('BULKSMS_TOKEN_SECRET');
+    const result = await callTrafficDeptAPI(
+      String(licenceNumber).toUpperCase().replace(/\s/g, ''),
+      Number(licenceYear),
+      String(idNumber),
+    );
 
-    if (!tokenId || !tokenSecret) {
-      console.error('send-sms: BULKSMS_TOKEN_ID or BULKSMS_TOKEN_SECRET not set');
-      return json({ error: 'Server configuration error: BulkSMS credentials missing' }, 500);
-    }
+    console.log(`verify-licence: ${licenceNumber} → ${result.status}`);
 
-    const normalisedTo = normaliseSAPhone(String(to));
-    console.log(`send-sms: sending to ${normalisedTo} (original: ${to})`);
-
-    const response = await fetch('https://api.bulksms.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + btoa(`${tokenId}:${tokenSecret}`),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ to: normalisedTo, body: message }),
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      console.error('send-sms: BulkSMS API error:', JSON.stringify(result));
-      return json({ error: result.title || result.detail || 'SMS sending failed', detail: result }, response.status);
-    }
-
-    const msgId = Array.isArray(result) ? result[0]?.id : result.id;
-    console.log('send-sms: delivered, id =', msgId);
-    return json({ success: true, messageId: msgId });
+    return new Response(
+      JSON.stringify({
+        verified: result.verified,
+        status:   result.status,
+        message:  result.detail ?? (result.verified ? 'Licence verified successfully' : 'Verification failed'),
+        demo:     true,
+      }),
+      { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } },
+    );
 
   } catch (err) {
-    console.error('send-sms: unhandled error:', err);
-    return json({ error: 'Internal server error' }, 500);
+    console.error('verify-licence: unhandled error:', err);
+    return new Response(
+      JSON.stringify({ verified: false, message: 'Internal server error' }),
+      { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } },
+    );
   }
 });
