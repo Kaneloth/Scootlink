@@ -1,18 +1,21 @@
 /**
  * Geocode a free-form location string into { latitude, longitude, displayName }.
  *
- * Primary:  Photon (photon.komoot.io) — OpenStreetMap data, works from browser.
- * Fallback: Open-Meteo geocoding API — free, no API key, highly reliable.
+ * Three independent services are tried in order — the next is only called if
+ * the previous one fails or returns no results:
  *
- * The fallback fires automatically if Photon is down or returns an error,
- * so a temporary Photon outage never shows "location not found" to the user.
+ *  1. Photon        (photon.komoot.io)               — OpenStreetMap data, browser-direct
+ *  2. Open-Meteo    (geocoding-api.open-meteo.com)   — GeoNames data, browser-direct
+ *  3. Nominatim     (via /.netlify/functions/geocode) — full OSM, proxied server-side
+ *                    (browser can't set the User-Agent Nominatim requires, so we
+ *                     go through a Netlify function that adds it)
  *
- * Returns null only if both services fail or return no results.
+ * Returns null only if all three services fail or return no results.
  */
 export async function geocodeLocation(query) {
   if (!query || query.trim().length === 0) return null;
 
-  // ── Primary: Photon ──────────────────────────────────────────────────────
+  // ── 1. Photon ────────────────────────────────────────────────────────────
   try {
     const res = await fetch(
       `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=en`
@@ -30,24 +33,50 @@ export async function geocodeLocation(query) {
         };
       }
     }
-  } catch { /* Photon unavailable — fall through to backup */ }
+  } catch { /* Photon unavailable — try next */ }
 
-  // ── Fallback: Open-Meteo Geocoding ───────────────────────────────────────
+  // ── 2. Open-Meteo ────────────────────────────────────────────────────────
   try {
     const res = await fetch(
       `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`
     );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const r = data?.results?.[0];
-    if (!r) return null;
-    return {
-      latitude:    r.latitude,
-      longitude:   r.longitude,
-      displayName: [r.name, r.admin1, r.country].filter(Boolean).join(', '),
-    };
+    if (res.ok) {
+      const data = await res.json();
+      const r = data?.results?.[0];
+      if (r) {
+        return {
+          latitude:    r.latitude,
+          longitude:   r.longitude,
+          displayName: [r.name, r.admin1, r.country].filter(Boolean).join(', '),
+        };
+      }
+    }
+  } catch { /* Open-Meteo unavailable — try next */ }
+
+  // ── 3. Nominatim via Netlify proxy ───────────────────────────────────────
+  try {
+    const res = await fetch(
+      `/.netlify/functions/geocode?q=${encodeURIComponent(query)}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const r = data?.[0];
+      if (r) {
+        const addr = r.address || {};
+        const displayName = [
+          addr.city || addr.town || addr.village || addr.county || r.name,
+          addr.state,
+          addr.country,
+        ].filter(Boolean).join(', ');
+        return {
+          latitude:  parseFloat(r.lat),
+          longitude: parseFloat(r.lon),
+          displayName,
+        };
+      }
+    }
   } catch (err) {
-    console.error('[geocode] Both Photon and Open-Meteo failed:', err);
+    console.error('[geocode] All three geocoders failed:', err);
   }
 
   return null;
