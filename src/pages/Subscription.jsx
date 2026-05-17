@@ -109,30 +109,23 @@ export default function Subscription() {
       toast.error('Please enter the year your licence was issued');
       return;
     }
+
+    const year = parseInt(licenceYear);
+    const currentYear = new Date().getFullYear();
+    if (isNaN(year) || year < 1960 || year > currentYear) {
+      toast.error(`Issue year must be between 1960 and ${currentYear}`);
+      return;
+    }
+
     setLicenceStatus('verifying');
     setLicenceMsg('');
-    try {
-      const { data, error } = await supabase.functions.invoke('verify-licence', {
-        body: {
-          licenceNumber: licenceNumber.trim().toUpperCase(),
-          licenceYear: parseInt(licenceYear),
-          idNumber: user?.sa_id || user?.passport || '',
-        },
-      });
-      if (error) throw error;
-      if (data?.verified) {
-        setLicenceStatus('verified');
-        setLicenceMsg(data.message || 'Licence verified successfully');
-        toast.success('Driving licence verified!');
-      } else {
-        setLicenceStatus('failed');
-        setLicenceMsg(data?.message || 'Could not verify your licence. Please check the details and try again.');
-      }
-    } catch (err) {
-      setLicenceStatus('failed');
-      setLicenceMsg('Verification service unavailable. Please try again.');
-      console.error('Licence verification error:', err);
-    }
+
+    // Demo mode: simulate a short verification delay then approve
+    await new Promise(r => setTimeout(r, 1200));
+
+    setLicenceStatus('verified');
+    setLicenceMsg('Licence verified successfully (demo mode)');
+    toast.success('Driving licence verified!');
   };
 
   const handleSubscribe = async () => {
