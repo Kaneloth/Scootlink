@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Send, Loader2, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { sendSMS } from '@/lib/sms';
 
 export default function PayModal({ open, onClose, user, onSuccess }) {
   const queryClient = useQueryClient();
@@ -55,7 +56,7 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
 
         const { data: profiles, error: profileError } = await supabase
           .from('profiles')
-          .select('id, full_name, email, verified, wallet_balance')
+          .select('id, full_name, email, verified, wallet_balance, phone')
           .in('id', ids);
 
         if (profileError) throw profileError;
@@ -120,6 +121,14 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
       if (txError) throw txError;
 
       toast.success(`R ${amt.toFixed(2)} sent to ${selectedUser?.full_name || 'User'}`);
+      try {
+        if (selectedUser?.phone) {
+          await sendSMS(selectedUser.phone, `You have received a payment of R ${amt.toFixed(2)} from ${user.full_name || 'a Skootlink user'}.${note ? ` Note: "${note}"` : ''}`);
+        }
+        if (user?.phone) {
+          await sendSMS(user.phone, `You sent R ${amt.toFixed(2)} to ${selectedUser?.full_name || 'User'} on Skootlink.${note ? ` Note: "${note}"` : ''}`);
+        }
+      } catch { /* SMS failure must never block the main flow */ }
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       if (onSuccess) onSuccess();
       handleClose();
