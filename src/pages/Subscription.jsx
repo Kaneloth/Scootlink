@@ -4,7 +4,12 @@ import { auth, supabase } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Crown, Bike, Users, Shield, Loader2, ArrowRight, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  CheckCircle2, Crown, Bike, Users, Shield, Loader2, ArrowRight, ArrowLeft,
+  AlertTriangle, FileText, XCircle, ShieldCheck,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -70,23 +75,84 @@ export default function Subscription() {
   const [cancelling, setCancelling] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
+  // Licence verification state (only required for driver / both plans)
+  const [licenceNumber, setLicenceNumber] = useState('');
+  const [licenceYear, setLicenceYear] = useState('');
+  const [licenceStatus, setLicenceStatus] = useState('idle'); // 'idle' | 'verifying' | 'verified' | 'failed'
+  const [licenceMsg, setLicenceMsg] = useState('');
+
+  const needsLicence = selected === 'driver' || selected === 'both';
+
+  // Reset licence status whenever the plan changes
+  useEffect(() => {
+    setLicenceStatus('idle');
+    setLicenceMsg('');
+  }, [selected]);
+
   useEffect(() => {
     auth.me().then(u => {
       setUser(u);
       const plan = u.subscription_plan || u.account_type || 'driver';
       setSelected(plan === 'both' ? 'both' : plan);
+      // Pre-fill if they already have a licence on record
+      if (u.license_number) setLicenceNumber(u.license_number);
+      if (u.license_year)   setLicenceYear(String(u.license_year));
     }).catch(() => {});
   }, []);
 
+  const handleVerifyLicence = async () => {
+    if (!licenceNumber.trim()) {
+      toast.error('Please enter your licence number');
+      return;
+    }
+    if (!licenceYear.trim()) {
+      toast.error('Please enter the year your licence was issued');
+      return;
+    }
+    setLicenceStatus('verifying');
+    setLicenceMsg('');
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-licence', {
+        body: {
+          licenceNumber: licenceNumber.trim().toUpperCase(),
+          licenceYear: parseInt(licenceYear),
+          idNumber: user?.sa_id || user?.passport || '',
+        },
+      });
+      if (error) throw error;
+      if (data?.verified) {
+        setLicenceStatus('verified');
+        setLicenceMsg(data.message || 'Licence verified successfully');
+        toast.success('Driving licence verified!');
+      } else {
+        setLicenceStatus('failed');
+        setLicenceMsg(data?.message || 'Could not verify your licence. Please check the details and try again.');
+      }
+    } catch (err) {
+      setLicenceStatus('failed');
+      setLicenceMsg('Verification service unavailable. Please try again.');
+      console.error('Licence verification error:', err);
+    }
+  };
+
   const handleSubscribe = async () => {
+    if (needsLicence && licenceStatus !== 'verified') {
+      toast.error('Please verify your driving licence before subscribing as a Driver');
+      return;
+    }
     setProcessing(true);
     try {
-      await auth.updateMe({
+      const profileUpdate = {
         subscription_active: true,
         subscription_plan: selected,
         subscription_start: new Date().toISOString(),
         subscription_expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      });
+      };
+      if (needsLicence && licenceStatus === 'verified') {
+        profileUpdate.license_number = licenceNumber.trim().toUpperCase();
+        profileUpdate.license_year = parseInt(licenceYear);
+      }
+      await auth.updateMe(profileUpdate);
       const { error } = await supabase.auth.updateUser({
         data: { subscription_plan: selected }
       });
@@ -202,13 +268,99 @@ export default function Subscription() {
           })}
         </div>
 
+        {/* ── Driving licence verification (driver / both plans only) ─────── */}
+        {needsLicence && (
+          <Card className="p-5 border border-border/50 mb-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-primary shrink-0" />
+              <p className="font-semibold text-sm">Driving Licence Required</p>
+              {licenceStatus === 'verified' && (
+                <ShieldCheck className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              A valid driving licence is required to drive vehicles on Skootlink.
+              Your licence will be verified with the traffic department before activation.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-medium">Licence Number *</Label>
+                <Input
+                  className="mt-1"
+                  placeholder="e.g. DL1234567"
+                  value={licenceNumber}
+                  onChange={e => { setLicenceNumber(e.target.value); setLicenceStatus('idle'); }}
+                  disabled={licenceStatus === 'verifying' || licenceStatus === 'verified'}
+                />
+              </div>
+              <div>
+                <Label className="text-xs font-medium">Year Issued *</Label>
+                <Input
+                  className="mt-1"
+                  type="number"
+                  placeholder="e.g. 2018"
+                  value={licenceYear}
+                  onChange={e => { setLicenceYear(e.target.value); setLicenceStatus('idle'); }}
+                  disabled={licenceStatus === 'verifying' || licenceStatus === 'verified'}
+                />
+              </div>
+            </div>
+
+            {/* Status feedback */}
+            {licenceStatus === 'verified' && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm">
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                <span>{licenceMsg}</span>
+              </div>
+            )}
+            {licenceStatus === 'failed' && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-700 text-sm">
+                <XCircle className="w-4 h-4 shrink-0" />
+                <span>{licenceMsg}</span>
+              </div>
+            )}
+
+            {licenceStatus !== 'verified' && (
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={handleVerifyLicence}
+                disabled={licenceStatus === 'verifying' || !licenceNumber.trim() || !licenceYear.trim()}
+              >
+                {licenceStatus === 'verifying'
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
+                  : <><ShieldCheck className="w-4 h-4" /> Verify Licence</>}
+              </Button>
+            )}
+            {licenceStatus === 'verified' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground"
+                onClick={() => { setLicenceStatus('idle'); setLicenceMsg(''); }}
+              >
+                Use a different licence
+              </Button>
+            )}
+          </Card>
+        )}
+
+        {/* Summary + subscribe */}
         <Card className="p-5 border border-border/50 mb-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Selected Plan</p>
               <p className="font-bold text-lg">{plan?.name} — R {plan?.price}/month</p>
+              {needsLicence && licenceStatus !== 'verified' && (
+                <p className="text-xs text-amber-600 mt-0.5">Licence verification required to continue</p>
+              )}
             </div>
-            <Button onClick={handleSubscribe} disabled={processing} className="gap-2 px-6">
+            <Button
+              onClick={handleSubscribe}
+              disabled={processing || (needsLicence && licenceStatus !== 'verified')}
+              className="gap-2 px-6"
+            >
               {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
               {processing ? 'Processing...' : user?.subscription_active ? 'Switch Plan' : 'Subscribe Now'}
             </Button>
