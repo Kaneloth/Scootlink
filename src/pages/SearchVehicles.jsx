@@ -247,7 +247,7 @@ export default function SearchVehicles() {
             </div>
 
             {/* Radius slider — only visible when a location is typed */}
-            {filters.location && (
+            {localLocation && (
               <div className="sm:col-span-2">
                 <Label className="text-xs">
                   Search Radius: <span className="font-semibold text-foreground">{localRadiusKm} km</span>
