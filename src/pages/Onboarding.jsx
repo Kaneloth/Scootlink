@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, supabase } from '@/api/supabaseData';
+import { auth } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -72,6 +72,22 @@ const SA_PROVINCE_CITIES = {
   ],
 };
 
+// ── Phone normalisation ───────────────────────────────────────────────────────
+// Converts any common SA format to E.164 (+27XXXXXXXXX) so BulkSMS always works.
+// Handles: 0812345678  →  +27812345678
+//          27812345678 →  +27812345678
+//          +27812345678 → +27812345678 (no-op)
+//          812345678   →  +27812345678 (9-digit without leading 0)
+function normalisePhone(raw) {
+  if (!raw) return raw;
+  const digits = raw.replace(/\D/g, '');
+  if (raw.startsWith('+') && digits.length >= 10) return raw;
+  if (digits.startsWith('27') && digits.length === 11) return '+' + digits;
+  if (digits.startsWith('0') && digits.length === 10) return '+27' + digits.slice(1);
+  if (digits.length === 9) return '+27' + digits;
+  return raw; // unknown — leave as-is and let validation catch it
+}
+
 // ── Steps ─────────────────────────────────────────────────────────────────────
 const STEPS = [
   { id: 'personal', label: 'Personal Info',  icon: User        },
@@ -114,9 +130,6 @@ export default function Onboarding() {
     sa_id:               '',
     passport:            '',
     passport_country:    '',
-    // License (optional — role is determined by subscription)
-    license_number:      '',
-    license_year:        '',
     // Security
     sign_in_method:      'password',
   });
@@ -155,6 +168,11 @@ export default function Onboarding() {
   const validatePersonal = () => {
     if (!form.phone || !form.gender || !form.date_of_birth || !form.residential_address) {
       toast.error('Please fill in all required fields');
+      return false;
+    }
+    const phoneDigits = form.phone.replace(/\D/g, '');
+    if (!form.phone.startsWith('+') || phoneDigits.length < 10 || phoneDigits.length > 15) {
+      toast.error('Please enter a valid phone number (e.g. 082 123 4567 or +27 82 123 4567)');
       return false;
     }
     if (form.country_type === 'South Africa') {
@@ -264,13 +282,11 @@ export default function Onboarding() {
 
   // ── Save helpers ──────────────────────────────────────────────────────────
   const buildProfilePayload = () => ({
-    phone:                form.phone,
+    phone:                normalisePhone(form.phone),
     gender:               form.gender,
     date_of_birth:        form.date_of_birth,
     location:             buildLocation(),
     residential_address:  form.residential_address,
-    license_number:       form.license_number || undefined,
-    license_year:         form.license_year ? parseInt(form.license_year) : undefined,
     citizenship:          form.citizenship,
     sa_id:                form.sa_id || undefined,
     passport:             form.passport || undefined,
@@ -283,27 +299,10 @@ export default function Onboarding() {
     onboarding_completed: true,
   });
 
-  // Helper: geocode the user's location and persist PostGIS point (non-fatal)
-  const saveGeoLocation = async () => {
-    const locationStr = buildLocation();
-    if (!locationStr) return;
-    try {
-      const { geocodeLocation } = await import('@/lib/geocode');
-      const coords = await geocodeLocation(locationStr);
-      if (coords) {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        await supabase.from('profiles').update({
-          geo_location: `SRID=4326;POINT(${coords.longitude} ${coords.latitude})`,
-        }).eq('id', authUser.id);
-      }
-    } catch { /* non-fatal */ }
-  };
-
   const handleComplete = async () => {
     setSaving(true);
     try {
       await auth.updateMe(buildProfilePayload());
-      await saveGeoLocation();
       toast.success('Profile setup complete! Please subscribe to get started.');
       navigate('/subscription');
     } catch (err) {
@@ -317,7 +316,6 @@ export default function Onboarding() {
     setSaving(true);
     try {
       await auth.updateMe(buildProfilePayload());
-      await saveGeoLocation();
       toast.success('Profile saved! You can subscribe any time from Settings.');
       navigate('/');
     } catch (err) {
@@ -387,7 +385,14 @@ export default function Onboarding() {
                 {/* Phone */}
                 <div>
                   <Label className="text-xs font-medium">Phone Number *</Label>
-                  <Input className="mt-1" placeholder="+27 123 456 789" value={form.phone} onChange={e => update('phone', e.target.value)} />
+                  <Input
+                    className="mt-1"
+                    placeholder="082 123 4567 or +27 82 123 4567"
+                    value={form.phone}
+                    onChange={e => update('phone', e.target.value)}
+                    onBlur={e => update('phone', normalisePhone(e.target.value))}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">SA numbers are auto-converted to international format (+27…)</p>
                 </div>
 
                 {/* Gender */}
@@ -496,20 +501,6 @@ export default function Onboarding() {
                 <Input className="mt-1" placeholder="123 Main St, Johannesburg, 2000" value={form.residential_address} onChange={e => update('residential_address', e.target.value)} />
               </div>
 
-              {/* License fields — optional, role determined by subscription */}
-              <div className="space-y-3 pt-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Driver's Licence (optional)</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-xs font-medium">Licence Number</Label>
-                    <Input className="mt-1" placeholder="DL123456" value={form.license_number} onChange={e => update('license_number', e.target.value)} />
-                  </div>
-                  <div>
-                    <Label className="text-xs font-medium">Year Obtained</Label>
-                    <Input className="mt-1" type="number" placeholder="2018" value={form.license_year} onChange={e => update('license_year', e.target.value)} />
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 
