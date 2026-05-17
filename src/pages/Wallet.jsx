@@ -16,6 +16,7 @@ import EmptyState from '@/components/common/EmptyState';
 import PayModal from '@/components/wallet/PayModal';
 import SubscriptionGate from '@/components/subscription/SubscriptionGate';
 import { toast } from 'sonner';
+import { sendSMS } from '@/lib/sms';
 
 // Skeleton for the action buttons row
 function ActionButtonsSkeleton() {
@@ -90,6 +91,9 @@ export default function Wallet() {
         type: 'deposit', description: 'Funds added', created_at: new Date().toISOString(),
       }]);
       toast.success(`R ${amt.toFixed(2)} deposited`);
+      try {
+        if (user?.phone) await sendSMS(user.phone, `Your Skootlink wallet has been topped up with R ${amt.toFixed(2)}. New balance: R ${newBalance.toFixed(2)}.`);
+      } catch { /* SMS failure must never block the main flow */ }
       closeDialogs();
       await refreshUser();
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -111,6 +115,9 @@ export default function Wallet() {
         type: 'withdraw', description: 'Withdrawal', created_at: new Date().toISOString(),
       }]);
       toast.success(`R ${amt.toFixed(2)} withdrawn`);
+      try {
+        if (user?.phone) await sendSMS(user.phone, `R ${amt.toFixed(2)} has been withdrawn from your Skootlink wallet. New balance: R ${newBalance.toFixed(2)}.`);
+      } catch { /* SMS failure must never block the main flow */ }
       closeDialogs();
       await refreshUser();
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
