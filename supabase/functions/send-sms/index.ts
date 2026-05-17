@@ -29,10 +29,10 @@ Deno.serve(async (req) => {
     // Build Basic Auth header
     const authHeader = 'Basic ' + btoa(`${tokenId}:${tokenSecret}`);
 
+    // No 'from' field – BulkSMS will use a default shared number in South Africa
     const payload = {
       to: to,
       body: message,
-      from: 'Skootlink', // Your sender ID – must be registered with BulkSMS
     };
 
     const response = await fetch('https://api.bulksms.com/v1/messages', {
