@@ -11,6 +11,7 @@ import {
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { sendSMS } from '@/lib/sms';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
 import WalletCard from '@/components/dashboard/WalletCard';
@@ -292,6 +293,12 @@ export default function Dashboard() {
       if (action === 'accept') {
         await Rental.update(rentalId, { status: 'awaiting_driver_confirmation' });
         toast.success('Proposal accepted! Awaiting driver confirmation.');
+        try {
+          const [driverProfile] = await fetchProfilesViaFunction([rental.driver_id]);
+          if (driverProfile?.phone) {
+            await sendSMS(driverProfile.phone, 'Your Skootlink rental proposal has been accepted! Please open the app to review and confirm the agreement.');
+          }
+        } catch { /* SMS failure must never block the main flow */ }
       } else {
         await Rental.update(rentalId, { status: 'rejected' });
         toast.success('Proposal rejected.');
@@ -334,6 +341,12 @@ export default function Dashboard() {
       );
       await Vehicle.update(rental.vehicle_id, { status: 'rented' });
       toast.success('Rental confirmed! Vehicle assigned.');
+      try {
+        const [ownerProfile] = await fetchProfilesViaFunction([rental.owner_id]);
+        if (ownerProfile?.phone) {
+          await sendSMS(ownerProfile.phone, 'Great news! The driver has confirmed the Skootlink rental. The rental is now active.');
+        }
+      } catch { /* SMS failure must never block the main flow */ }
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
@@ -355,6 +368,14 @@ export default function Dashboard() {
       );
       await Vehicle.update(rental.vehicle_id, { status: 'available' });
       toast.success('Rental ended. You can now leave a review.');
+      try {
+        const parties = await fetchProfilesViaFunction([rental.owner_id, rental.driver_id].filter(Boolean));
+        for (const profile of parties) {
+          if (profile?.phone) {
+            await sendSMS(profile.phone, 'Your Skootlink rental has ended. Please open the app to leave a review.');
+          }
+        }
+      } catch { /* SMS failure must never block the main flow */ }
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });

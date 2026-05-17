@@ -10,6 +10,7 @@ import {
   Copy, Trash2, Trash, Check, CheckCheck, Clock, AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { sendSMS } from '@/lib/sms';
 
 // ── localStorage helpers for client-side "delete for me" ─────────────────────
 const HIDDEN_KEY       = (uid) => `scootlink_hidden_msgs_${uid}`;
@@ -430,6 +431,13 @@ export default function Messages() {
     } else if (inserted) {
       // Replace optimistic with real DB message
       setMessages((prev) => prev.map((m) => m.id === tempId ? inserted : m));
+      try {
+        const { data: recipientProfile } = await supabase
+          .from('profiles').select('phone').eq('id', selectedChat.otherUserId).single();
+        if (recipientProfile?.phone) {
+          await sendSMS(recipientProfile.phone, `You have a new message from ${user.full_name || 'a Skootlink user'}. Open the app to reply.`);
+        }
+      } catch { /* SMS failure must never block the main flow */ }
     }
   };
 
@@ -606,26 +614,28 @@ export default function Messages() {
                   onTouchEnd={cancelLongPress}
                   onTouchMove={cancelLongPress}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
-                      {conv.otherUserAvatar ? (
-                        <img src={conv.otherUserAvatar} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <User className="w-5 h-5 text-primary" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{conv.otherUserName}</p>
-                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                        {conv.lastSenderId === user?.id && (
-                          <MsgStatus status={undefined} read={conv.lastRead} />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                        {conv.otherUserAvatar ? (
+                          <img src={conv.otherUserAvatar} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-5 h-5 text-primary" />
                         )}
-                        {conv.lastMessage}
-                      </p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{conv.otherUserName}</p>
+                        <p className="text-xs text-muted-foreground truncate max-w-[180px] flex items-center gap-1">
+                          {conv.lastSenderId === user?.id && (
+                            <MsgStatus status={undefined} read={conv.lastRead} />
+                          )}
+                          {conv.lastMessage}
+                        </p>
+                      </div>
                     </div>
-                    <div className="shrink-0 flex flex-col items-end gap-1 ml-2">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">{new Date(conv.lastTime).toLocaleDateString()}</span>
+                    <div className="flex items-center gap-2">
                       {conv.unread && <span className="w-2 h-2 bg-primary rounded-full" />}
+                      <span className="text-xs text-muted-foreground">{new Date(conv.lastTime).toLocaleDateString()}</span>
                     </div>
                   </div>
                 </Card>
