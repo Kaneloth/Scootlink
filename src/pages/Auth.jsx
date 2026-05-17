@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Bike, LogIn, ArrowRight, Loader2, Fingerprint, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { setUser } from '@/lib/sentry';
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
 
@@ -163,7 +164,8 @@ export default function Auth() {
     setLoginStage('biometric-loading');
     setLoading(true);
     try {
-      await triggerBiometricLogin();
+      const session = await triggerBiometricLogin();
+      setUser({ id: session.user.id, email: session.user.email });
       navigate('/');
     } catch (err) {
       if (err.code === 'no-session' || err.code === 'session-expired') {
@@ -204,6 +206,7 @@ export default function Auth() {
       if (error) throw error;
       saveBiometricRefreshToken(data.session);
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
+      setUser({ id: data.user.id, email: data.user.email });
       navigate('/');
     } catch (err) {
       toast.error(err.message || 'Login failed');
