@@ -1,45 +1,53 @@
 /**
  * Geocode a free-form location string into { latitude, longitude, displayName }.
  *
- * Uses Photon (photon.komoot.io) — a free, open geocoder built on OpenStreetMap data.
- * Unlike Nominatim, Photon works from browser fetch() without a User-Agent header
- * (browsers block that header for security and Nominatim silently rejects requests
- * that lack it, causing every city lookup to return null).
+ * Primary:  Photon (photon.komoot.io) — OpenStreetMap data, works from browser.
+ * Fallback: Open-Meteo geocoding API — free, no API key, highly reliable.
  *
- * Returns null on failure or empty results.
+ * The fallback fires automatically if Photon is down or returns an error,
+ * so a temporary Photon outage never shows "location not found" to the user.
+ *
+ * Returns null only if both services fail or return no results.
  */
 export async function geocodeLocation(query) {
   if (!query || query.trim().length === 0) return null;
 
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=en`;
-
+  // ── Primary: Photon ──────────────────────────────────────────────────────
   try {
-    const res = await fetch(url);
-
-    if (!res.ok) {
-      console.error('Geocoding HTTP error', res.status, res.statusText);
-      return null;
+    const res = await fetch(
+      `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=en`
+    );
+    if (res.ok) {
+      const geojson = await res.json();
+      const feature = geojson?.features?.[0];
+      if (feature) {
+        const [longitude, latitude] = feature.geometry.coordinates;
+        const p = feature.properties;
+        return {
+          latitude,
+          longitude,
+          displayName: [p.name, p.city, p.state, p.country].filter(Boolean).join(', '),
+        };
+      }
     }
+  } catch { /* Photon unavailable — fall through to backup */ }
 
-    const geojson = await res.json();
-    const feature = geojson?.features?.[0];
-    if (!feature) {
-      console.warn('[geocode] Photon returned no results for:', query);
-      return null;
-    }
-
-    // GeoJSON coordinates are [longitude, latitude] — note the order
-    const [longitude, latitude] = feature.geometry.coordinates;
-    const p = feature.properties;
-    const result = {
-      latitude,
-      longitude,
-      displayName: [p.name, p.city, p.state, p.country].filter(Boolean).join(', '),
+  // ── Fallback: Open-Meteo Geocoding ───────────────────────────────────────
+  try {
+    const res = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const r = data?.results?.[0];
+    if (!r) return null;
+    return {
+      latitude:    r.latitude,
+      longitude:   r.longitude,
+      displayName: [r.name, r.admin1, r.country].filter(Boolean).join(', '),
     };
-    console.log('[geocode] Resolved:', query, '→', result);
-    return result;
   } catch (err) {
-    console.error('Geocoding network error', err);
+    console.error('[geocode] Both Photon and Open-Meteo failed:', err);
   }
 
   return null;
