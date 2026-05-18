@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card } from '@/components/ui/card';
 import {
   User, Phone, MapPin, CreditCard, ShieldCheck,
-  CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertTriangle, Fingerprint, Bike
+  CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertTriangle, Bike
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -92,7 +92,6 @@ const STEPS = [
   { id: 'personal', label: 'Personal Info',  icon: User        },
   { id: 'identity', label: 'Identity',       icon: CreditCard  },
   { id: 'verify',   label: 'Verification',   icon: ShieldCheck },
-  { id: 'account',  label: 'Account Setup',  icon: Fingerprint },
 ];
 
 export default function Onboarding() {
@@ -120,8 +119,6 @@ export default function Onboarding() {
     sa_id:               '',
     passport:            '',
     passport_country:    '',
-    // Security
-    sign_in_method:      'password',
   });
 
   const update = (field, val) => setForm(p => ({ ...p, [field]: val }));
@@ -228,7 +225,6 @@ export default function Onboarding() {
     sa_id:                form.sa_id || undefined,
     passport:             form.passport || undefined,
     passport_country:     form.passport_country || undefined,
-    sign_in_method:       form.sign_in_method,
     verified:             verificationResult?.verified || false,
     kyc_completed:        true,
     subscription_active:  false,
@@ -554,63 +550,6 @@ export default function Onboarding() {
                   )}
                 </div>
               ) : null}
-            </div>
-          )}
-
-          {/* ── Step 3: Account Setup ─────────────────────────────────────── */}
-          {step === 3 && (
-            <div className="space-y-4">
-              <h2 className="font-semibold text-lg">Security Settings</h2>
-              <p className="text-sm text-muted-foreground">Choose how you want to sign in to Skootlink.</p>
-
-              <div className="space-y-3">
-                {[
-                  { value: 'password',  label: 'Password',                       desc: 'Sign in with your email and password',             icon: '🔑' },
-                  { value: 'biometric', label: 'Biometric (Face / Fingerprint)', desc: "Use your phone's fingerprint or face ID",          icon: '🪪' },
-                  { value: 'both',      label: 'Both',                           desc: 'Password as fallback, biometric as primary',       icon: '🔐' },
-                ].map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => update('sign_in_method', opt.value)}
-                    className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${form.sign_in_method === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
-                  >
-                    <span className="text-2xl">{opt.icon}</span>
-                    <div>
-                      <p className="font-medium text-sm">{opt.label}</p>
-                      <p className="text-xs text-muted-foreground">{opt.desc}</p>
-                    </div>
-                    {form.sign_in_method === opt.value && (
-                      <CheckCircle2 className="w-5 h-5 text-primary ml-auto shrink-0" />
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              {(form.sign_in_method === 'biometric' || form.sign_in_method === 'both') && (
-                <div className="bg-primary/5 rounded-xl p-4 flex items-start gap-3">
-                  <Fingerprint className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground">Biometric authentication uses your device's secure hardware. Skootlink never stores your biometric data — it's handled entirely by your phone's OS.</p>
-                </div>
-              )}
-
-              {/* Summary */}
-              <div className="border border-border rounded-xl p-4 bg-muted/40 mt-4">
-                <p className="text-xs font-semibold text-muted-foreground mb-2">ACCOUNT SUMMARY</p>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Location</span>
-                    <span className="font-medium text-right max-w-[55%] truncate">{buildLocation() || '—'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Identity</span>
-                    <span className="font-medium">{verificationResult?.verified ? '✅ Verified' : '⏳ Pending'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Sign-in</span>
-                    <span className="font-medium capitalize">{form.sign_in_method}</span>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 
