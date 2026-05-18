@@ -143,6 +143,29 @@ export default function Profile() {
             passport: sensitive.passport || '',
           });
         }
+
+        // Backfill geo_location if the user has a location text but no coordinates.
+        // This silently fixes anyone who completed onboarding before geo_location
+        // saving was added — they just need to visit their Profile page once.
+        if (u.location && !cancelled) {
+          const { data: row } = await supabase
+            .from('profiles')
+            .select('geo_location')
+            .eq('id', u.id)
+            .single();
+          if (!cancelled && !row?.geo_location) {
+            try {
+              const coords = await geocodeLocation(u.location);
+              if (coords && !cancelled) {
+                await supabase.rpc('set_user_geo_location', {
+                  p_user_id: u.id,
+                  p_lng:     coords.longitude,
+                  p_lat:     coords.latitude,
+                });
+              }
+            } catch { /* non-fatal */ }
+          }
+        }
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setUserLoading(false); });
@@ -242,19 +265,22 @@ export default function Profile() {
         toast.success('Confirmation email sent to ' + form.email + '. Please verify to complete the change.');
       }
 
-      // Geocode the location text and write coordinates to geo_location so
-      // the nearby_drivers / nearby_vehicles RPC can find this user by radius.
-      // Non-fatal — text-match search still works if geocoding fails.
+      // Geocode the location text and write coordinates via an SQL helper function.
+      // Direct WKT updates via PostgREST don't cast to geography automatically, so
+      // we call set_user_geo_location() which runs ST_SetSRID(ST_MakePoint(...))
+      // server-side.  Non-fatal — text-match search still works if geocoding fails.
       if (form.location) {
         try {
           const coords = await geocodeLocation(form.location);
           if (coords) {
-            await supabase
-              .from('profiles')
-              .update({ geo_location: `POINT(${coords.longitude} ${coords.latitude})` })
-              .eq('id', user.id);
+            const { error: rpcErr } = await supabase.rpc('set_user_geo_location', {
+              p_user_id: user.id,
+              p_lng:     coords.longitude,
+              p_lat:     coords.latitude,
+            });
+            if (rpcErr) console.error('[Profile] set_user_geo_location RPC error:', rpcErr);
           }
-        } catch { /* non-fatal */ }
+        } catch (geoErr) { console.error('[Profile] geocode error:', geoErr); }
       }
 
       // Refresh local state so the header reflects the new values immediately
