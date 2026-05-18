@@ -1,8 +1,8 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 
-const RESEND_API_KEY  = Deno.env.get('RESEND_API_KEY') ?? '';
-const SUPPORT_EMAIL   = 'support@skootlink.co.za';
-const FROM_ADDRESS    = 'noreply@skootlink.co.za'; // must be a verified domain in Resend
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
+const SUPPORT_EMAIL  = 'support@skootlink.co.za';
+const FROM_ADDRESS   = 'noreply@skootlink.co.za'; // verified domain in Resend
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin':  '*',
@@ -17,18 +17,41 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 serve(async (req) => {
-  // Handle CORS pre-flight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS });
   }
 
   try {
-    const { from_name, from_email, subject, category, message, user_id } =
-      await req.json();
+    // Safely parse the body regardless of how the test panel sends it
+    let body: Record<string, unknown> = {};
+    const contentType = req.headers.get('content-type') ?? '';
+    const raw = await req.text();
 
-    if (!subject || !category || !message || !from_email) {
+    if (raw) {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        // body was not valid JSON — body stays empty, validation below will catch it
+        console.error('[send-contact-email] Could not parse body:', raw);
+      }
+    }
+
+    const from_name  = String(body.from_name  ?? '').trim();
+    const from_email = String(body.from_email ?? '').trim();
+    const subject    = String(body.subject    ?? '').trim();
+    const category   = String(body.category   ?? '').trim();
+    const message    = String(body.message    ?? '').trim();
+    const user_id    = body.user_id ?? null;
+
+    const missing: string[] = [];
+    if (!from_email) missing.push('from_email');
+    if (!subject)    missing.push('subject');
+    if (!category)   missing.push('category');
+    if (!message)    missing.push('message');
+
+    if (missing.length > 0) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields' }),
+        JSON.stringify({ error: 'Missing required fields', missing }),
         { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } },
       );
     }
@@ -46,7 +69,7 @@ serve(async (req) => {
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
             <tr style="background: #f8fafc;">
               <td style="padding: 10px 14px; font-weight: 600; width: 120px; border: 1px solid #e2e8f0;">From</td>
-              <td style="padding: 10px 14px; border: 1px solid #e2e8f0;">${from_name} &lt;${from_email}&gt;</td>
+              <td style="padding: 10px 14px; border: 1px solid #e2e8f0;">${from_name || 'Unknown'} &lt;${from_email}&gt;</td>
             </tr>
             <tr>
               <td style="padding: 10px 14px; font-weight: 600; border: 1px solid #e2e8f0; background: #f8fafc;">Category</td>
@@ -98,6 +121,7 @@ ${message}
       JSON.stringify({ success: true }),
       { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } },
     );
+
   } catch (err) {
     console.error('[send-contact-email]', err);
     return new Response(
