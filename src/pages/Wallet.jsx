@@ -215,8 +215,8 @@ export default function Wallet() {
                           </p>
                         </div>
                       </div>
-                      <span className={`font-bold text-sm ${isReceived ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {isReceived ? '+' : '-'} R {t.amount}
+                      <span className={`font-bold text-sm whitespace-nowrap shrink-0 ml-3 ${isReceived ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {isReceived ? '+' : '-'} R {parseFloat(t.amount).toFixed(2)}
                       </span>
                     </div>
                   </Card>
