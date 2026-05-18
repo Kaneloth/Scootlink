@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import {
   Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
-  AlertTriangle, ShieldCheck, Info, Type,
+  AlertTriangle, ShieldCheck, Info, Type, LifeBuoy,
 } from 'lucide-react';
 
 import { toast } from 'sonner';
@@ -144,8 +144,6 @@ export default function Settings() {
   const [signInMethod, setSignInMethod] = useState('password');
   const [selectedPlan, setSelectedPlan] = useState('driver');
   const [processingPlan, setProcessingPlan] = useState(false);
-  const [cancellingPlan, setCancellingPlan] = useState(false);
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [user, setUser] = useState(null);
   const [notifications, setNotifications] = useState(true);
   const [biometricLoading, setBiometricLoading] = useState(false);
@@ -394,30 +392,10 @@ export default function Settings() {
       await supabase.auth.updateUser({ data: { subscription_plan: selectedPlan } });
       toast.success('Subscription updated!');
       setUser(await auth.me());
-      setShowCancelConfirm(false);
     } catch {
       toast.error('Failed to update subscription');
     } finally {
       setProcessingPlan(false);
-    }
-  };
-
-  const handleCancelSubscription = async () => {
-    setCancellingPlan(true);
-    try {
-      await auth.updateMe({
-        subscription_active: false,
-        subscription_expires: new Date().toISOString(),
-      });
-      await supabase.auth.updateUser({ data: { subscription_active: false } });
-      toast.success('Subscription cancelled. Your access remains until the end of your billing period.');
-      const updated = await auth.me();
-      setUser(updated);
-      setShowCancelConfirm(false);
-    } catch {
-      toast.error('Failed to cancel subscription. Please try again.');
-    } finally {
-      setCancellingPlan(false);
     }
   };
 
@@ -551,6 +529,17 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
+            <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors" onClick={() => navigate('/contact')}>
+              <div className="flex items-center gap-3">
+                <LifeBuoy className="w-5 h-5 text-muted-foreground" />
+                <div className="text-left">
+                  <p className="text-sm font-medium text-foreground">Contact Support</p>
+                  <p className="text-xs text-muted-foreground">Get help from our team</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </div>
+
             <button
               onClick={handleLogout}
               className="w-full mt-4 flex items-center justify-center gap-2 p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20"
@@ -563,40 +552,7 @@ export default function Settings() {
         {/* ── Plan tab ── */}
         <TabsContent value="plan">
           <div className="space-y-4">
-
-            {/* Current subscription status banner */}
-            {user?.subscription_active ? (
-              <Card className="p-4 border border-primary/30 bg-primary/5">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Crown className="w-5 h-5 text-primary shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold capitalize">
-                        {PLANS.find(p => p.id === user.subscription_plan)?.name || user.subscription_plan || 'Active'} Plan
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {user.subscription_expires
-                          ? `Renews ${new Date(user.subscription_expires).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}`
-                          : 'Active subscription'}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="shrink-0 text-[10px] bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 px-2 py-0.5 rounded-full font-medium">● Active</span>
-                </div>
-              </Card>
-            ) : (
-              <Card className="p-4 border border-border/50 bg-muted/30">
-                <div className="flex items-center gap-3">
-                  <Crown className="w-5 h-5 text-muted-foreground shrink-0" />
-                  <div>
-                    <p className="text-sm font-semibold text-muted-foreground">No active subscription</p>
-                    <p className="text-xs text-muted-foreground">Choose a plan below to get started</p>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            <p className="text-sm text-muted-foreground">{user?.subscription_active ? 'Switch to a different plan:' : 'Choose a plan:'}</p>
+            <p className="text-sm text-muted-foreground">Choose a plan.</p>
             <div className="grid grid-cols-1 gap-4">
               {PLANS.map((p) => {
                 const Icon = p.icon;
@@ -629,56 +585,11 @@ export default function Settings() {
                 );
               })}
             </div>
-
             <Button onClick={handleSubscribe} disabled={processingPlan} className="w-full gap-2">
               {processingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              {processingPlan ? 'Processing...' : user?.subscription_active ? 'Switch Plan' : 'Subscribe Now'}
+              {processingPlan ? 'Processing...' : 'Subscribe Now'}
             </Button>
-
-            {/* Cancel subscription */}
-            {user?.subscription_active && !showCancelConfirm && (
-              <button
-                onClick={() => setShowCancelConfirm(true)}
-                className="w-full text-sm text-destructive/70 hover:text-destructive underline underline-offset-2 py-1 transition-colors"
-              >
-                Cancel subscription
-              </button>
-            )}
-
-            {user?.subscription_active && showCancelConfirm && (
-              <Card className="p-4 border border-destructive/30 bg-destructive/5 space-y-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                  <div className="text-xs text-destructive/80 space-y-1">
-                    <p className="font-semibold">Cancel your subscription?</p>
-                    <p>You'll lose access to all paid features at the end of your current billing period. Your data will be kept.</p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => setShowCancelConfirm(false)}
-                    disabled={cancellingPlan}
-                  >
-                    Keep Plan
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="flex-1 gap-1.5"
-                    onClick={handleCancelSubscription}
-                    disabled={cancellingPlan}
-                  >
-                    {cancellingPlan
-                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Cancelling…</>
-                      : 'Yes, Cancel'}
-                  </Button>
-                </div>
-              </Card>
-            )}
-
+            <p className="text-xs text-center text-muted-foreground">Current plan: {user?.subscription_plan || 'None'}</p>
           </div>
         </TabsContent>
 
