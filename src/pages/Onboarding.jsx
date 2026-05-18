@@ -232,19 +232,22 @@ export default function Onboarding() {
     onboarding_completed: true,
   });
 
-  // Geocode the user's location and persist the coordinates so nearby_drivers
-  // / nearby_vehicles RPC can find them in radius searches. Non-fatal.
+  // Geocode the location text and call set_user_geo_location() — a Supabase SQL
+  // function that runs ST_SetSRID(ST_MakePoint(...)) server-side.
+  // Direct WKT updates via PostgREST don't cast to geography automatically.
   const saveGeoLocation = async (locationText, userId) => {
     if (!locationText || !userId) return;
     try {
       const coords = await geocodeLocation(locationText);
       if (coords) {
-        await supabase
-          .from('profiles')
-          .update({ geo_location: `POINT(${coords.longitude} ${coords.latitude})` })
-          .eq('id', userId);
+        const { error } = await supabase.rpc('set_user_geo_location', {
+          p_user_id: userId,
+          p_lng:     coords.longitude,
+          p_lat:     coords.latitude,
+        });
+        if (error) console.error('[Onboarding] set_user_geo_location error:', error);
       }
-    } catch { /* non-fatal — text-match still works */ }
+    } catch (err) { console.error('[Onboarding] geocode error:', err); }
   };
 
   const handleComplete = async () => {
