@@ -24,6 +24,9 @@ import Profile from '@/pages/Profile';
 import Onboarding from '@/pages/Onboarding';
 import Subscription from '@/pages/Subscription';
 import Messages from '@/pages/Messages';
+import ContactUs from '@/pages/ContactUs';
+// inside your <Routes>:
+
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
@@ -73,6 +76,7 @@ const AuthenticatedApp = () => {
         <Route path="/profile" element={<Profile />} />
        <Route path="/mysearch" element={<SearchPage />} />
         <Route path="/messages" element={<Messages />} />
+		<Route path="/contact" element={<ContactUs />} />
       </Route>
 
       <Route path="*" element={<PageNotFound />} />
