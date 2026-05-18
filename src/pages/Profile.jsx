@@ -225,23 +225,31 @@ export default function Profile() {
       await auth.updateMe(metadataUpdates);
 
       // ── 1b. Sync key fields to the profiles table so counterparties can see
-      //        this user's name. auth.updateMe() only writes to auth metadata;
-      //        the profiles table is what other users can query.
-      await supabase.from('profiles').upsert(
-        {
-          id: user.id,
-          full_name: form.full_name || null,
-          email: form.email || user.email,
-          phone: form.phone || null,
-          location: form.location || null,
-          license_year: form.license_year ? parseInt(form.license_year) : null,
+      //        this user's details. auth.updateMe() syncs PROFILE_FIELDS; this
+      //        call covers the extra columns not in that list.
+      //        Use .update() (not .upsert()) — upsert requires both INSERT and
+      //        UPDATE RLS policies. Profile tables typically only grant UPDATE
+      //        to the row owner, so upsert silently no-ops and changes are lost.
+      const { error: profileUpdateErr } = await supabase
+        .from('profiles')
+        .update({
+          full_name:      form.full_name      || null,
+          email:          form.email          || user.email || null,
+          phone:          form.phone          || null,
+          location:       form.location       || null,
+          license_year:   form.license_year   ? parseInt(form.license_year) : null,
           license_number: form.license_number || null,
-          // Sync avatar so counterparties can see the photo and visibility setting
-          avatar_url: avatarUrl || null,
+          avatar_url:     avatarUrl           || null,
           avatar_visible: avatarVisible,
-        },
-        { onConflict: 'id' }
-      );
+        })
+        .eq('id', user.id);
+
+      if (profileUpdateErr) {
+        console.error('[Profile] profiles.update error:', profileUpdateErr);
+        toast.error('Could not save profile: ' + profileUpdateErr.message);
+        setSaving(false);
+        return;
+      }
 
       // ── 2. Upsert sensitive fields in the isolated table ───────────────────
       // RLS ensures only this user's row can be written.
