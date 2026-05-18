@@ -230,14 +230,35 @@ export default function Onboarding() {
       canvas.width  = 400;
       canvas.height = 400;
       canvas.getContext('2d').drawImage(video, 0, 0, 400, 400);
+
+      // ── Face detection (Chrome/Android native API) ──────────────────────────
+      // FaceDetector is available in Chrome 70+ on Android and desktop.
+      // On unsupported browsers (Safari/Firefox) we skip the check gracefully.
+      if ('FaceDetector' in window) {
+        try {
+          const detector = new window.FaceDetector({ fastMode: false, maxDetectedFaces: 1 });
+          const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+          const bitmap = await createImageBitmap(blob);
+          const faces = await detector.detect(bitmap);
+          bitmap.close();
+          if (faces.length === 0) {
+            setCapturing(false);
+            toast.error('No face detected. Look directly at the camera, ensure good lighting, and try again.');
+            return; // abort — camera stays open for retake
+          }
+        } catch (detErr) {
+          // Hardware / OS limitation — allow through without blocking the user
+          console.warn('Face detection unavailable on this device:', detErr);
+        }
+      }
+
       stopCamera();
 
       const { supabase } = await import('@/api/supabaseClient');
       const { data: { user } } = await supabase.auth.getUser();
       const blob     = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
-      // Use a unique filename each time so the upload is always an INSERT
-      // (upsert/UPDATE can fail when the RLS policy only permits INSERT)
-      const filePath = `${user.id}/selfie_${Date.now()}.jpg`;
+      // Store under verification/ so it is clearly separate from profile avatars
+      const filePath = `verification/${user.id}/selfie_${Date.now()}.jpg`;
       const { error } = await supabase.storage.from('profile-images').upload(filePath, blob, { contentType: 'image/jpeg' });
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from('profile-images').getPublicUrl(filePath);
