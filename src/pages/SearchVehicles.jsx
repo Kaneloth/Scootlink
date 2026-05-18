@@ -160,8 +160,13 @@ export default function SearchVehicles() {
     if (isError && error) toast.error(`Could not load vehicles: ${error.message}`);
   }, [isError, error]);
 
-  const vehicles  = (data?.pages.flat() ?? []).filter(v => !user || v.owner_id !== user.id);
-  const totalLoaded = data?.pages.flat().length ?? 0;
+  // Defensively flatten pages — stale/transitioning query state can leave
+  // undefined entries in pages[], which crash .filter() on the next render.
+  const allVehicles = (data?.pages ?? [])
+    .flatMap(page => (Array.isArray(page) ? page : []))
+    .filter(v => v != null);
+  const vehicles    = allVehicles.filter(v => !user || v.owner_id !== user.id);
+  const totalLoaded = allVehicles.length;
 
   const commitRadius = (km) =>
     // Bump a copy of locationCoords so the queryKey changes and results refresh
@@ -247,7 +252,7 @@ export default function SearchVehicles() {
             </div>
 
             {/* Radius slider — only visible when a location is typed */}
-            {localLocation && (
+            {filters.location && (
               <div className="sm:col-span-2">
                 <Label className="text-xs">
                   Search Radius: <span className="font-semibold text-foreground">{localRadiusKm} km</span>
@@ -340,13 +345,16 @@ export default function SearchVehicles() {
       ) : vehicles.length > 0 ? (
         <>
           <div className="space-y-3">
-            {vehicles.map((v) => {
+            {(() => {
               const isAdmin     = ['kanelothelejane@gmail.com'].includes(user?.email);
               const canInteract = isAdmin || (user?.subscription_active && user?.verified);
               const lockLabel   = !user?.subscription_active ? 'Subscribe to rent' : 'Verification pending';
               const lockMessage = !user?.subscription_active
                 ? 'You need an active subscription to request a rental'
                 : "Your account is awaiting verification — you'll be able to rent once approved";
+
+              return vehicles.map((v) => {
+              if (!v?.id) return null;
 
               if (canInteract) {
                 return (
@@ -365,7 +373,8 @@ export default function SearchVehicles() {
                   </div>
                 </div>
               );
-            })}
+            });
+            })()}
           </div>
 
           {hasNextPage && (
