@@ -67,7 +67,12 @@ export const auth = {
     if (Object.keys(profileUpdates).length > 0) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        await supabase.from('profiles').update(profileUpdates).eq('id', user.id);
+        // Use upsert so the row is created if it doesn't exist yet.
+        // Plain .update() silently no-ops when the row is missing, leaving
+        // the profiles table stale and auth.me() returning old values.
+        await supabase
+          .from('profiles')
+          .upsert({ id: user.id, ...profileUpdates }, { onConflict: 'id' });
       }
     }
 

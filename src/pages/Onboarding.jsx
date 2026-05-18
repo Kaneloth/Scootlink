@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth } from '@/api/supabaseData';
+import { auth, supabase } from '@/api/supabaseData';
+import { geocodeLocation } from '@/lib/geocode';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -231,10 +232,27 @@ export default function Onboarding() {
     onboarding_completed: true,
   });
 
+  // Geocode the user's location and persist the coordinates so nearby_drivers
+  // / nearby_vehicles RPC can find them in radius searches. Non-fatal.
+  const saveGeoLocation = async (locationText, userId) => {
+    if (!locationText || !userId) return;
+    try {
+      const coords = await geocodeLocation(locationText);
+      if (coords) {
+        await supabase
+          .from('profiles')
+          .update({ geo_location: `POINT(${coords.longitude} ${coords.latitude})` })
+          .eq('id', userId);
+      }
+    } catch { /* non-fatal — text-match still works */ }
+  };
+
   const handleComplete = async () => {
     setSaving(true);
     try {
       await auth.updateMe(buildProfilePayload());
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      await saveGeoLocation(buildLocation(), authUser?.id);
       toast.success('Profile setup complete! Please subscribe to get started.');
       navigate('/subscription');
     } catch (err) {
@@ -248,6 +266,8 @@ export default function Onboarding() {
     setSaving(true);
     try {
       await auth.updateMe(buildProfilePayload());
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      await saveGeoLocation(buildLocation(), authUser?.id);
       toast.success('Profile saved! You can subscribe any time from Settings.');
       navigate('/');
     } catch (err) {
