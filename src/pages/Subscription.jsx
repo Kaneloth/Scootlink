@@ -360,6 +360,18 @@ export default function Subscription() {
           </div>
         </Card>
 
+        {/* Skip — only for new users who haven't subscribed yet */}
+        {!user?.subscription_active && (
+          <div className="text-center mb-4">
+            <button
+              onClick={() => navigate('/')}
+              className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+            >
+              Skip for now — I'll subscribe later
+            </button>
+          </div>
+        )}
+
         {/* Cancel subscription */}
         {user?.subscription_active && !showCancelConfirm && (
           <div className="text-center mb-4">
