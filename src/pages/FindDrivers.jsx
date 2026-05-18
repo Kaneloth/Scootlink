@@ -153,7 +153,7 @@ export default function FindDrivers() {
       if (filters.minRating > 0 && (u.rating || 0) < filters.minRating) return false;
       return true;
     });
-  }, [rpcDrivers, users, filters, locationCoords, currentYear]);
+  }, [rpcDrivers, users, filters, locationCoords, currentYear, currentUser]);
 
   const fetchDriverReviews = async (driverId) => {
     setLoadingReviews(true);
