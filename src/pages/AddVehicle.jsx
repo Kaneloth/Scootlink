@@ -55,8 +55,6 @@ export default function AddVehicle() {
         try {
           const coords = await geocodeLocation(dbRow.location);
           if (coords) {
-            dbRow.latitude     = coords.latitude;
-            dbRow.longitude    = coords.longitude;
             dbRow.geo_location = `SRID=4326;POINT(${coords.longitude} ${coords.latitude})`;
           }
         } catch { /* non-fatal — vehicle still lists without coordinates */ }
