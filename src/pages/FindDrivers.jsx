@@ -146,6 +146,7 @@ export default function FindDrivers() {
     }
 
     return source.filter(u => {
+      if (currentUser?.id && u.id === currentUser.id) return false; // never show yourself
       if (u.account_type !== 'driver' && u.account_type !== 'both') return false;
       if (!locationCoords && filters.location && !(u.location || '').toLowerCase().includes(filters.location.toLowerCase())) return false;
       if (filters.minExperience > 0 && u.license_year && (currentYear - u.license_year) < filters.minExperience) return false;
