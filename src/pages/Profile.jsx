@@ -239,8 +239,6 @@ export default function Profile() {
           location:       form.location       || null,
           license_year:   form.license_year   ? parseInt(form.license_year) : null,
           license_number: form.license_number || null,
-          avatar_url:     avatarUrl           || null,
-          avatar_visible: avatarVisible,
         })
         .eq('id', user.id);
 
