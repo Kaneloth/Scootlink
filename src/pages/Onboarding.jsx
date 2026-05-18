@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
@@ -6,9 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
-  User, Phone, MapPin, CreditCard, Camera, ShieldCheck,
+  User, Phone, MapPin, CreditCard, ShieldCheck,
   CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertTriangle, Fingerprint, Bike
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -92,24 +91,15 @@ function normalisePhone(raw) {
 const STEPS = [
   { id: 'personal', label: 'Personal Info',  icon: User        },
   { id: 'identity', label: 'Identity',       icon: CreditCard  },
-  { id: 'selfie',   label: 'Selfie',         icon: Camera      },
   { id: 'verify',   label: 'Verification',   icon: ShieldCheck },
   { id: 'account',  label: 'Account Setup',  icon: Fingerprint },
 ];
 
 export default function Onboarding() {
   const navigate   = useNavigate();
-  const videoRef   = useRef(null);
-  const canvasRef  = useRef(null);
-  const streamRef  = useRef(null);
-
   const [step,               setStep]               = useState(0);
   const [verifying,          setVerifying]          = useState(false);
   const [verificationResult, setVerificationResult] = useState(null);
-  const [selfieUrl,          setSelfieUrl]          = useState(null);
-  const [cameraActive,       setCameraActive]       = useState(false);
-  const [videoReady,         setVideoReady]         = useState(false);
-  const [capturing,          setCapturing]          = useState(false);
   const [saving,             setSaving]             = useState(false);
 
   const [form, setForm] = useState({
@@ -198,80 +188,6 @@ export default function Onboarding() {
     return true;
   };
 
-  // ── Camera ──────────────────────────────────────────────────────────────────
-  const startCamera = async () => {
-    try {
-      setVideoReady(false);
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setCameraActive(true);
-    } catch {
-      toast.error('Camera access denied or not available. Please allow camera access and try again.');
-    }
-  };
-
-  const stopCamera = () => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    setCameraActive(false);
-    setVideoReady(false);
-  };
-
-  const captureSelfie = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    setCapturing(true);
-    try {
-      const video  = videoRef.current;
-      const canvas = canvasRef.current;
-      await new Promise(r => setTimeout(r, 200));
-      canvas.width  = 400;
-      canvas.height = 400;
-      canvas.getContext('2d').drawImage(video, 0, 0, 400, 400);
-
-      // ── Face detection (Chrome/Android native API) ──────────────────────────
-      // FaceDetector is available in Chrome 70+ on Android and desktop.
-      // On unsupported browsers (Safari/Firefox) we skip the check gracefully.
-      if ('FaceDetector' in window) {
-        try {
-          const detector = new window.FaceDetector({ fastMode: false, maxDetectedFaces: 1 });
-          const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-          const bitmap = await createImageBitmap(blob);
-          const faces = await detector.detect(bitmap);
-          bitmap.close();
-          if (faces.length === 0) {
-            setCapturing(false);
-            toast.error('No face detected. Look directly at the camera, ensure good lighting, and try again.');
-            return; // abort — camera stays open for retake
-          }
-        } catch (detErr) {
-          // Hardware / OS limitation — allow through without blocking the user
-          console.warn('Face detection unavailable on this device:', detErr);
-        }
-      }
-
-      stopCamera();
-
-      const { supabase } = await import('@/api/supabaseClient');
-      const { data: { user } } = await supabase.auth.getUser();
-      const blob     = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
-      // Store under verification/ so it is clearly separate from profile avatars
-      const filePath = `verification/${user.id}/selfie_${Date.now()}.jpg`;
-      const { error } = await supabase.storage.from('profile-images').upload(filePath, blob, { contentType: 'image/jpeg' });
-      if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from('profile-images').getPublicUrl(filePath);
-      setSelfieUrl(publicUrl);
-      toast.success('Selfie captured!');
-    } catch (err) {
-      toast.error('Failed to capture selfie: ' + err.message);
-    }
-    setCapturing(false);
-  };
-
-  useEffect(() => { return () => stopCamera(); }, []);
-
   // ── Home Affairs verification (DEMO MODE — auto-passes when required fields filled) ──
   const runVerification = async () => {
     setVerifying(true);
@@ -299,7 +215,7 @@ export default function Onboarding() {
     setVerifying(false);
   };
 
-  useEffect(() => { if (step === 3) runVerification(); }, [step]);
+  useEffect(() => { if (step === 2) runVerification(); }, [step]);
 
   // ── Save helpers ──────────────────────────────────────────────────────────
   const buildProfilePayload = () => ({
@@ -313,7 +229,6 @@ export default function Onboarding() {
     passport:             form.passport || undefined,
     passport_country:     form.passport_country || undefined,
     sign_in_method:       form.sign_in_method,
-    selfie_url:           selfieUrl,
     verified:             verificationResult?.verified || false,
     kyc_completed:        true,
     subscription_active:  false,
@@ -349,7 +264,6 @@ export default function Onboarding() {
   const nextStep = () => {
     if (step === 0 && !validatePersonal())  return;
     if (step === 1 && !validateIdentity())  return;
-    if (step === 2 && !selfieUrl) { toast.error('Please take a selfie to continue'); return; }
     setStep(s => s + 1);
   };
 
@@ -581,67 +495,8 @@ export default function Onboarding() {
             </div>
           )}
 
-          {/* ── Step 2: Selfie ────────────────────────────────────────────── */}
+          {/* ── Step 2: Verification ──────────────────────────────────────── */}
           {step === 2 && (
-            <div className="space-y-4">
-              <h2 className="font-semibold text-lg">Take a Selfie</h2>
-              <p className="text-sm text-muted-foreground">We need a clear photo of your face to match against your ID document.</p>
-
-              {selfieUrl ? (
-                <div className="relative">
-                  <img src={selfieUrl} alt="Selfie" className="w-full h-64 object-cover rounded-xl" />
-                  <div className="absolute top-3 right-3">
-                    <Badge className="bg-emerald-500 text-white gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> Captured
-                    </Badge>
-                  </div>
-                  <Button variant="outline" size="sm" className="mt-3 w-full" onClick={() => { setSelfieUrl(null); startCamera(); }}>
-                    Retake Selfie
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="relative rounded-xl overflow-hidden bg-black h-64 flex items-center justify-center">
-                    <video ref={videoRef} autoPlay playsInline muted className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`} onCanPlay={() => setVideoReady(true)} />
-                    {!cameraActive && (
-                      <div className="flex flex-col items-center gap-3">
-                        <Camera className="w-10 h-10 text-gray-400" />
-                        <p className="text-sm text-gray-400">Camera not started</p>
-                      </div>
-                    )}
-                    {cameraActive && (
-                      <div className="absolute inset-0 pointer-events-none">
-                        <div className="absolute inset-8 border-2 border-white/40 rounded-full" />
-                      </div>
-                    )}
-                  </div>
-                  <canvas ref={canvasRef} className="hidden" />
-
-                  {!cameraActive ? (
-                    <Button onClick={startCamera} className="w-full gap-2">
-                      <Camera className="w-4 h-4" /> Open Camera
-                    </Button>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button type="button" variant="outline" onClick={stopCamera}>Cancel</Button>
-                      <Button type="button" onClick={captureSelfie} className="gap-2" disabled={!videoReady || capturing}>
-                        {capturing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-                        {!videoReady ? 'Starting...' : capturing ? 'Capturing...' : 'Capture'}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="bg-amber-50 rounded-xl p-3 flex gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-700">Make sure your face is clearly visible, well-lit, and remove glasses or hats.</p>
-              </div>
-            </div>
-          )}
-
-          {/* ── Step 3: Verification ──────────────────────────────────────── */}
-          {step === 3 && (
             <div className="space-y-4">
               <h2 className="font-semibold text-lg">Home Affairs Verification</h2>
 
@@ -702,8 +557,8 @@ export default function Onboarding() {
             </div>
           )}
 
-          {/* ── Step 4: Account Setup ─────────────────────────────────────── */}
-          {step === 4 && (
+          {/* ── Step 3: Account Setup ─────────────────────────────────────── */}
+          {step === 3 && (
             <div className="space-y-4">
               <h2 className="font-semibold text-lg">Security Settings</h2>
               <p className="text-sm text-muted-foreground">Choose how you want to sign in to Skootlink.</p>
@@ -751,10 +606,6 @@ export default function Onboarding() {
                     <span className="font-medium">{verificationResult?.verified ? '✅ Verified' : '⏳ Pending'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Selfie</span>
-                    <span className="font-medium">{selfieUrl ? '✅ Captured' : '❌ Missing'}</span>
-                  </div>
-                  <div className="flex justify-between">
                     <span className="text-muted-foreground">Sign-in</span>
                     <span className="font-medium capitalize">{form.sign_in_method}</span>
                   </div>
@@ -776,8 +627,8 @@ export default function Onboarding() {
               </Button>
 
               {step < STEPS.length - 1 ? (
-                <Button onClick={nextStep} className="gap-2" disabled={step === 3 && verifying}>
-                  {step === 3 && verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                <Button onClick={nextStep} className="gap-2" disabled={step === 2 && verifying}>
+                  {step === 2 && verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                   Continue <ArrowRight className="w-4 h-4" />
                 </Button>
               ) : (
