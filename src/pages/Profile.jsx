@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
+import { geocodeLocation } from '@/lib/geocode';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -239,6 +240,41 @@ export default function Profile() {
         const { error } = await supabase.auth.updateUser({ email: form.email });
         if (error) throw error;
         toast.success('Confirmation email sent to ' + form.email + '. Please verify to complete the change.');
+      }
+
+      // Geocode the location text and write coordinates to geo_location so
+      // the nearby_drivers / nearby_vehicles RPC can find this user by radius.
+      // Non-fatal — text-match search still works if geocoding fails.
+      if (form.location) {
+        try {
+          const coords = await geocodeLocation(form.location);
+          if (coords) {
+            await supabase
+              .from('profiles')
+              .update({ geo_location: `POINT(${coords.longitude} ${coords.latitude})` })
+              .eq('id', user.id);
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      // Refresh local state so the header reflects the new values immediately
+      // and the user sees correct data if they navigate back without a full reload.
+      const freshUser = await auth.me().catch(() => null);
+      if (freshUser) {
+        setUser(freshUser);
+        setAvatarUrl(freshUser.avatar_url || null);
+        setAvatarVisible(freshUser.avatar_visible !== false);
+        setForm({
+          full_name:            freshUser.full_name || '',
+          email:                freshUser.email || '',
+          phone:                freshUser.phone || '',
+          gender:               freshUser.gender || '',
+          location:             freshUser.location || '',
+          residential_address:  freshUser.residential_address || '',
+          license_number:       freshUser.license_number || '',
+          license_year:         freshUser.license_year ? String(freshUser.license_year) : '',
+          citizenship:          freshUser.citizenship || 'South African',
+        });
       }
 
       toast.success('Profile updated!');
