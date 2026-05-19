@@ -2,12 +2,13 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 /**
  * send-contact-email — Brevo (Sendinblue) version.
- * Expects JSON body: { from_name, from_email, subject, category, message }
- * Sends a transactional email to support@skootlink.co.za via Brevo SMTP API.
+ * Expects JSON body: { from_name, from_email, subject, category, message, user_id? }
  *
- * Required secrets:
- *   BREVO_SMTP_USER  – your Brevo login email
- *   BREVO_SMTP_KEY   – the SMTP key generated in Brevo
+ * Required Supabase secret:
+ *   BREVO_API_KEY  — Brevo REST API key (Settings → API Keys, NOT the SMTP key)
+ *
+ * The sender domain (skootlink.co.za) must be verified in Brevo under
+ * Settings → Senders & IP → Domains before emails will be accepted.
  */
 
 const SUPPORT_EMAIL = 'support@skootlink.co.za';
@@ -27,11 +28,33 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: CORS_HEADERS });
+    return new Response('ok', { status: 200, headers: CORS_HEADERS });
+  }
+
+  // ── Guard: API key must be set ─────────────────────────────────────────────
+  const apiKey = Deno.env.get('BREVO_API_KEY') ?? '';
+  if (!apiKey) {
+    console.error('[send-contact-email] BREVO_API_KEY secret is not set');
+    return new Response(
+      JSON.stringify({ error: 'Server configuration error: BREVO_API_KEY missing' }),
+      { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } },
+    );
   }
 
   try {
-    const { from_name, from_email, subject, category, message, user_id } = await req.json();
+    let body: Record<string, unknown> = {};
+    const raw = await req.text();
+    if (raw) {
+      try { body = JSON.parse(raw); }
+      catch { console.error('[send-contact-email] Could not parse body:', raw); }
+    }
+
+    const from_name  = String(body.from_name  ?? '').trim();
+    const from_email = String(body.from_email ?? '').trim();
+    const subject    = String(body.subject    ?? '').trim();
+    const category   = String(body.category   ?? '').trim();
+    const message    = String(body.message    ?? '').trim();
+    const user_id    = body.user_id ?? null;
 
     const missing: string[] = [];
     if (!from_email) missing.push('from_email');
@@ -44,11 +67,6 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } },
       );
     }
-
-    const smtpKey = Deno.env.get('BREVO_SMTP_KEY') || '';
-if (!smtpKey) {
-  throw new Error('SMTP key not configured');
-}
 
     const categoryLabel = CATEGORY_LABELS[category] ?? category;
 
@@ -91,11 +109,11 @@ if (!smtpKey) {
     const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
-        'api-key':        smtpKey,
-        'Content-Type':   'application/json',
+        'api-key':      apiKey,   // ← Brevo REST API key, not the SMTP key
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        sender:      { name: 'Skootlink Support', email: `noreply@skootlink.co.za` },
+        sender:      { name: 'Skootlink Support', email: 'noreply@skootlink.co.za' },
         to:          [{ email: SUPPORT_EMAIL }],
         replyTo:     { email: from_email },
         subject:     `[${categoryLabel}] ${subject}`,
@@ -105,7 +123,7 @@ if (!smtpKey) {
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error('Brevo API error:', errText);
+      console.error('[send-contact-email] Brevo API error:', errText);
       throw new Error(`Brevo API error: ${errText}`);
     }
 
