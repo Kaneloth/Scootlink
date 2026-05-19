@@ -218,12 +218,18 @@ export default function Auth() {
       const { data: updateData, error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
 
-      // Send SMS notification to the user's registered phone
-      const userId = updateData?.user?.id;
+      // Send SMS notification to the user's registered phone.
+      // updateUser may not return user.id in a recovery session, so fall back
+      // to getUser() which always returns the current authenticated user.
+      let userId = updateData?.user?.id;
+      if (!userId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        userId = user?.id ?? null;
+      }
       if (userId) {
         const phone = await fetchUserPhone(userId);
         if (phone) {
-          sendSMS(phone, 'Your Skootlink password was just changed. If this was not you, please contact support immediately.');
+          await sendSMS(phone, 'Your Skootlink password was just changed. If this was not you, please contact support immediately.');
         }
       }
 
