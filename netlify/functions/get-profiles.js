@@ -6,8 +6,7 @@
  * returned — even for profiles that are not the calling user's own.
  *
  * POST body: { ids: string[] }
- * Returns:   Profile[] with id, full_name, email, phone, avatar_url,
- *            avatar_visible, verified, wallet_balance, rating
+ * Returns:   Profile[] with id, full_name, email, phone, verified, wallet_balance
  */
 
 exports.handler = async (event) => {
@@ -37,7 +36,6 @@ exports.handler = async (event) => {
 
   let ids;
   try {
-    // Netlify may base64-encode the body for binary content types
     const rawBody = event.isBase64Encoded
       ? Buffer.from(event.body || '', 'base64').toString('utf8')
       : (event.body || '{}');
@@ -50,9 +48,9 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: '`ids` must be a non-empty array' }) };
   }
 
-  // PostgREST IN filter: id=in.(uuid1,uuid2,...)
+  // Only select columns confirmed to exist in the profiles table
   const inList = ids.join(',');
-  const select = 'id,full_name,email,phone,avatar_url,avatar_visible,verified,wallet_balance,rating';
+  const select = 'id,full_name,email,phone,verified,wallet_balance';
   const url    = `${supabaseUrl}/rest/v1/profiles?id=in.(${inList})&select=${select}`;
 
   try {
