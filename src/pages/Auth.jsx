@@ -132,11 +132,11 @@ async function fetchUserPhone(userId) {
     const res = await fetch('/.netlify/functions/get-profiles', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_ids: [userId] }),
+      body: JSON.stringify({ ids: [userId] }),
     });
     if (!res.ok) return null;
     const profiles = await res.json();
-    return profiles?.[0]?.phone_number ?? null;
+    return profiles?.[0]?.phone ?? null;
   } catch {
     return null;
   }
