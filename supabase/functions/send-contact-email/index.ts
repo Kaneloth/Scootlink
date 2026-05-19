@@ -45,11 +45,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    const smtpUser = Deno.env.get('BREVO_SMTP_USER') || '';
-    const smtpKey  = Deno.env.get('BREVO_SMTP_KEY')  || '';
-    if (!smtpUser || !smtpKey) {
-      throw new Error('SMTP credentials not configured');
-    }
+    const smtpKey = Deno.env.get('BREVO_SMTP_KEY') || '';
+if (!smtpKey) {
+  throw new Error('SMTP key not configured');
+}
 
     const categoryLabel = CATEGORY_LABELS[category] ?? category;
 
