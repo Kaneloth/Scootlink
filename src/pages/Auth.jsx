@@ -171,17 +171,28 @@ export default function Auth() {
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
   // ── Detect PASSWORD_RECOVERY from reset link ─────────────────────────────
-  // Two-pronged: check the URL hash immediately (Supabase embeds type=recovery
-  // there) AND listen for the auth event, because the event can fire before the
-  // component mounts and the listener is registered.
+  // Three-pronged approach to catch the recovery token regardless of timing:
+  //   1. Check URL hash (implicit flow: #type=recovery)
+  //   2. Check sessionStorage flag (survives React Router navigation)
+  //   3. onAuthStateChange event (PKCE flow: code exchanged async)
   useEffect(() => {
-    // Immediate hash check — reliable even if the event already fired
-    if (window.location.hash.includes('type=recovery')) {
+    const hash = window.location.hash;
+    const params = new URLSearchParams(window.location.search);
+
+    const isRecoveryUrl =
+      hash.includes('type=recovery') ||
+      params.get('type') === 'recovery';
+
+    const isRecoveryStored = sessionStorage.getItem('skootlink_recovery') === '1';
+
+    if (isRecoveryUrl || isRecoveryStored) {
+      sessionStorage.setItem('skootlink_recovery', '1');
       setRecoveryMode(true);
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
+        sessionStorage.setItem('skootlink_recovery', '1');
         setRecoveryMode(true);
       }
     });
@@ -216,6 +227,7 @@ export default function Auth() {
         }
       }
 
+      sessionStorage.removeItem('skootlink_recovery');
       toast.success('Password updated! Please sign in with your new password.');
       setRecoveryMode(false);
       setNewPassword('');
