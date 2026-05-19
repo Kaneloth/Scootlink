@@ -1,66 +1,78 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
+// These headers must be on EVERY response, including errors and the OPTIONS preflight.
+const CORS = {
+  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+/** Normalise any SA phone number to E.164 (+27XXXXXXXXX). */
+function normaliseSAPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (raw.startsWith('+') && digits.length >= 10) return raw;
+  if (digits.startsWith('27') && digits.length === 11) return '+' + digits;
+  if (digits.startsWith('0')  && digits.length === 10) return '+27' + digits.slice(1);
+  if (digits.length === 9)                              return '+27' + digits;
+  return raw;
+}
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...CORS },
+  });
+
 Deno.serve(async (req) => {
+  // ── 1. OPTIONS preflight — browsers send this before every cross-origin POST ──
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { status: 200, headers: CORS });
+  }
+
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+    return json({ error: 'Method not allowed' }, 405);
   }
 
   try {
     const { to, message } = await req.json();
 
     if (!to || !message) {
-      return new Response(
-        JSON.stringify({ error: 'Missing "to" or "message" in request body' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return json({ error: 'Missing "to" or "message" in request body' }, 400);
     }
 
-    const tokenId = Deno.env.get('BULKSMS_TOKEN_ID');
+    const tokenId     = Deno.env.get('BULKSMS_TOKEN_ID');
     const tokenSecret = Deno.env.get('BULKSMS_TOKEN_SECRET');
 
     if (!tokenId || !tokenSecret) {
-      return new Response(
-        JSON.stringify({ error: 'Server configuration error' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
+      console.error('send-sms: BULKSMS credentials not set');
+      return json({ error: 'Server configuration error: BulkSMS credentials missing' }, 500);
     }
 
-    const authHeader = 'Basic ' + btoa(`${tokenId}:${tokenSecret}`);
-
-    const payload = {
-      to: to,
-      body: message,
-    };
+    const normalisedTo = normaliseSAPhone(String(to));
+    console.log(`send-sms: sending to ${normalisedTo} (original: ${to})`);
 
     const response = await fetch('https://api.bulksms.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Authorization': authHeader,
+        Authorization:  'Basic ' + btoa(`${tokenId}:${tokenSecret}`),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ to: normalisedTo, body: message }),
     });
 
     const result = await response.json();
 
     if (!response.ok) {
-      console.error('BulkSMS error:', result);
-      return new Response(
-        JSON.stringify({ error: result.title || 'SMS sending failed' }),
-        { status: response.status, headers: { 'Content-Type': 'application/json' } }
-      );
+      console.error('send-sms: BulkSMS API error:', JSON.stringify(result));
+      return json({ error: result.title || result.detail || 'SMS sending failed', detail: result }, response.status);
     }
 
-    return new Response(
-      JSON.stringify({ success: true, messageId: result.id || result[0]?.id }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    );
+    const msgId = Array.isArray(result) ? result[0]?.id : result.id;
+    console.log('send-sms: success, id =', msgId);
+    return json({ success: true, messageId: msgId });
 
   } catch (err) {
-    console.error('Edge Function error:', err);
-    return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    console.error('send-sms: unhandled error:', err);
+    return json({ error: 'Internal server error' }, 500);
   }
 });
