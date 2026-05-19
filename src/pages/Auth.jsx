@@ -128,6 +128,7 @@ async function triggerBiometricLogin() {
 
 // ── Fetch phone number via service-role Netlify function ─────────────────────
 async function fetchUserPhone(userId) {
+  if (!userId) return null;
   try {
     const res = await fetch('/.netlify/functions/get-profiles', {
       method: 'POST',
@@ -215,17 +216,15 @@ export default function Auth() {
     }
     setLoading(true);
     try {
-      const { data: updateData, error } = await supabase.auth.updateUser({ password: newPassword });
+      // Get user ID BEFORE updating the password — the recovery session token
+      // is consumed by updateUser(), so getUser() returns null if called after.
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const userId = currentUser?.id ?? null;
+
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
 
-      // Send SMS notification to the user's registered phone.
-      // updateUser may not return user.id in a recovery session, so fall back
-      // to getUser() which always returns the current authenticated user.
-      let userId = updateData?.user?.id;
-      if (!userId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        userId = user?.id ?? null;
-      }
+      // Send SMS notification to the user's registered phone
       if (userId) {
         const phone = await fetchUserPhone(userId);
         if (phone) {
