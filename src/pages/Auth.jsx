@@ -170,8 +170,16 @@ export default function Auth() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
-  // ── Detect PASSWORD_RECOVERY event from Supabase reset link ──────────────
+  // ── Detect PASSWORD_RECOVERY from reset link ─────────────────────────────
+  // Two-pronged: check the URL hash immediately (Supabase embeds type=recovery
+  // there) AND listen for the auth event, because the event can fire before the
+  // component mounts and the listener is registered.
   useEffect(() => {
+    // Immediate hash check — reliable even if the event already fired
+    if (window.location.hash.includes('type=recovery')) {
+      setRecoveryMode(true);
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         setRecoveryMode(true);
