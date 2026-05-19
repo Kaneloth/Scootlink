@@ -225,10 +225,19 @@ export default function Auth() {
       if (error) throw error;
 
       // Send SMS notification to the user's registered phone
-      if (userId) {
+      if (!userId) {
+        console.warn('[Auth] SMS skipped — could not get user ID before updateUser');
+        toast.error('Password updated, but SMS skipped: could not identify user.');
+      } else {
         const phone = await fetchUserPhone(userId);
-        if (phone) {
-          await sendSMS(phone, 'Your Skootlink password was just changed. If this was not you, please contact support immediately.');
+        if (!phone) {
+          console.warn('[Auth] SMS skipped — no phone number found for user:', userId);
+          toast.error('Password updated, but no phone number found on your profile.');
+        } else {
+          const smsResult = await sendSMS(phone, 'Your Skootlink password was just changed. If this was not you, please contact support immediately.');
+          if (!smsResult.success) {
+            console.warn('[Auth] SMS failed:', smsResult.error);
+          }
         }
       }
 
