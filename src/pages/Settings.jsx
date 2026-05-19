@@ -11,6 +11,7 @@ import {
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
   AlertTriangle, ShieldCheck, Info, Type, LifeBuoy,
 } from 'lucide-react';
+import { sendSMS } from '@/lib/sms';
 
 import { toast } from 'sonner';
 
@@ -413,6 +414,11 @@ export default function Settings() {
       toast.success('Password updated!');
       setShowPasswordForm(false);
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+      try {
+        if (user?.phone) {
+          await sendSMS(user.phone, `Your Skootlink password was just changed. If this wasn't you, contact support immediately at support@skootlink.co.za.`);
+        }
+      } catch { /* SMS failure must never block the main flow */ }
     } catch (err) {
       setPasswordError(err.message || 'Failed. Try logging out and using Forgot password.');
     } finally {
