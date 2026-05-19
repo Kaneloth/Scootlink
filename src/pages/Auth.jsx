@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
 import { saveBiometricRefreshToken, loadBiometricRefreshToken, clearBiometricRefreshToken } from '@/api/supabaseData';
+import { sendSMS } from '@/lib/sms';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Bike, LogIn, ArrowRight, Loader2, Fingerprint, AlertTriangle } from 'lucide-react';
+import { Bike, LogIn, ArrowRight, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
 
@@ -61,10 +62,7 @@ async function triggerBiometricLogin() {
     throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
   }
 
-  // ── Fingerprint passed — restore the Supabase session ──────────────────────
-
-  // Path 1: Supabase JS has a live session in memory/localStorage (the normal
-  // case after a biometric logout that did NOT call signOut).
+  // Path 1: Supabase JS has a live session in memory/localStorage
   try {
     const { data: r1 } = await supabase.auth.refreshSession();
     if (r1?.session) {
@@ -74,8 +72,7 @@ async function triggerBiometricLogin() {
     }
   } catch { /* fall through to Path 2 */ }
 
-  // Path 2: Exchange the stored refresh_token via Supabase REST API.
-  // Used when the in-memory session is gone (e.g. page was reloaded after logout).
+  // Path 2: Exchange the stored refresh_token via Supabase REST API
   const backup  = loadBiometricRefreshToken();
   const storedRt = backup?.refresh_token ?? null;
   if (storedRt) {
@@ -105,14 +102,12 @@ async function triggerBiometricLogin() {
         }
       } else {
         const errTxt = await tokenRes.text().catch(() => '');
-        // Only clear the backup when Supabase confirms the token is dead —
-        // transient errors (network, 5xx) should leave it intact for retry.
         if (errTxt.includes('refresh_token_not_found')) clearBiometricRefreshToken();
       }
     } catch { /* fall through to Path 3 */ }
   }
 
-  // Path 3: httpOnly cookie via Netlify function.
+  // Path 3: httpOnly cookie via Netlify function
   try {
     const res = await fetch('/.netlify/functions/auth-refresh', {
       method: 'POST',
@@ -131,12 +126,23 @@ async function triggerBiometricLogin() {
   throw biometricError('session-expired', 'session-expired');
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Fetch phone number via service-role Netlify function ─────────────────────
+async function fetchUserPhone(userId) {
+  try {
+    const res = await fetch('/.netlify/functions/get-profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_ids: [userId] }),
+    });
+    if (!res.ok) return null;
+    const profiles = await res.json();
+    return profiles?.[0]?.phone_number ?? null;
+  } catch {
+    return null;
+  }
+}
 
-// bannerReason controls the message shown on the password form:
-//   'session-expired' — biometric session timed out, sign in once to refresh
-//   'no-passkey'      — fingerprint not registered on this domain, must re-register
-//   null              — no banner
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -149,14 +155,97 @@ export default function Auth() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
+  // Forgot-password inline stage
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  // ── Sign In button ────────────────────────────────────────────────────────
+  // Password recovery state
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
+  // ── Detect PASSWORD_RECOVERY event from Supabase reset link ──────────────
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecoveryMode(true);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Set new password handler ──────────────────────────────────────────────
+  const handleSetNewPassword = async () => {
+    if (!newPassword || !confirmNewPassword) {
+      toast.error('Please fill in both fields');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data: updateData, error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
+      // Send SMS notification to the user's registered phone
+      const userId = updateData?.user?.id;
+      if (userId) {
+        const phone = await fetchUserPhone(userId);
+        if (phone) {
+          sendSMS(phone, 'Your Skootlink password was just changed. If this was not you, please contact support immediately.');
+        }
+      }
+
+      toast.success('Password updated! Please sign in with your new password.');
+      setRecoveryMode(false);
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setLoginStage('password');
+      setIsLogin(true);
+    } catch (err) {
+      toast.error(err.message || 'Failed to update password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Forgot password — inline form ─────────────────────────────────────────
+  const handleShowForgotPassword = () => {
+    // Pre-fill with whatever the user already typed in the login email field
+    setResetEmail(loginEmail);
+    setResetSent(false);
+    setLoginStage('forgot-password');
+  };
+
+  const handleSendResetEmail = async () => {
+    if (!resetEmail) { toast.error('Please enter your email address'); return; }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: window.location.origin + '/auth',
+      });
+      if (error) throw error;
+      setResetSent(true);
+    } catch (err) {
+      toast.error(err.message || 'Failed to send reset email');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Sign In button ────────────────────────────────────────────────────────
   const handleSignInTap = async () => {
     const method = localStorage.getItem('scootlink_signin_method') || 'password';
     if (method !== 'biometric') { setLoginStage('password'); return; }
@@ -169,13 +258,10 @@ export default function Auth() {
       navigate('/');
     } catch (err) {
       if (err.code === 'no-session' || err.code === 'session-expired') {
-        // Temporary diagnostic toast — shows exactly which path failed and why.
         if (err.detail) toast.error(`Debug: ${err.detail}`, { duration: 15000 });
         setBannerReason('session-expired');
         setLoginStage('password');
       } else if (err.code === 'no-credential') {
-        // Either no passkey stored, or passkey registered on a different domain.
-        // Clear the stale credential ID and fall back to password.
         if (err.message === 'no-passkey-on-domain') {
           localStorage.removeItem('scootlink_biometric_credential_id');
           localStorage.setItem('scootlink_signin_method', 'password');
@@ -194,7 +280,6 @@ export default function Auth() {
   };
 
   // ── Password login ────────────────────────────────────────────────────────
-
   const handleLogin = async () => {
     if (!loginEmail || !loginPassword) { toast.error('Please fill in all fields'); return; }
     setLoading(true);
@@ -216,7 +301,6 @@ export default function Auth() {
   };
 
   // ── Register ──────────────────────────────────────────────────────────────
-
   const handleRegister = async () => {
     if (!regName || !regEmail || !regPassword) { toast.error('Please fill in all required fields'); return; }
     if (regPassword !== regConfirmPassword) { toast.error('Passwords do not match'); return; }
@@ -235,22 +319,6 @@ export default function Auth() {
       toast.error(err.message || 'Registration failed');
     } finally {
       setLoading(false);
-    }
-  };
-
-  // ── Forgot password ───────────────────────────────────────────────────────
-
-  const handleForgotPassword = async () => {
-    const email = prompt('Enter your email address to reset your password:');
-    if (!email) return;
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + '/auth',
-      });
-      if (error) throw error;
-      toast.success('Password reset email sent! Check your inbox.');
-    } catch (err) {
-      toast.error(err.message || 'Failed to send reset email');
     }
   };
 
@@ -278,10 +346,47 @@ export default function Auth() {
         </div>
 
         <Card className="p-6 border border-border/50">
-          {isLogin ? (
+
+          {/* ── Password Recovery Form (from reset link) ───────────────────── */}
+          {recoveryMode ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-primary" />
+                <h2 className="text-lg font-semibold text-foreground">Set New Password</h2>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Choose a new password for your account.
+              </p>
+              <div>
+                <Label>New Password</Label>
+                <Input
+                  type="password"
+                  placeholder="Enter new password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <Label>Confirm New Password</Label>
+                <Input
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSetNewPassword()}
+                />
+              </div>
+              <Button onClick={handleSetNewPassword} className="w-full gap-2" disabled={loading}>
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                Update Password
+              </Button>
+            </div>
+
+          ) : isLogin ? (
             <div className="space-y-4">
               <h2 className="text-lg font-semibold text-foreground">
-                {loginStage === 'idle' ? 'Welcome back' : 'Sign in'}
+                {loginStage === 'idle' ? 'Welcome back' : loginStage === 'forgot-password' ? 'Reset Password' : 'Sign in'}
               </h2>
 
               {/* Idle: single Sign In button */}
@@ -320,7 +425,7 @@ export default function Auth() {
                 </div>
               )}
 
-              {/* Biometric: hardware error (wrong finger, cancelled on correct domain) */}
+              {/* Biometric: hardware error */}
               {loginStage === 'biometric-error' && (
                 <div className="flex flex-col items-center gap-4 py-6">
                   <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -376,7 +481,7 @@ export default function Auth() {
                   <div className="text-left">
                     <button
                       type="button"
-                      onClick={handleForgotPassword}
+                      onClick={handleShowForgotPassword}
                       className="text-sm text-primary hover:underline"
                     >
                       Forgot your password?
@@ -393,6 +498,58 @@ export default function Auth() {
                   >
                     ← Back
                   </button>
+                </>
+              )}
+
+              {/* Forgot-password inline form */}
+              {loginStage === 'forgot-password' && (
+                <>
+                  {resetSent ? (
+                    <div className="flex flex-col items-center gap-4 py-4 text-center">
+                      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Mail className="w-8 h-8 text-primary" />
+                      </div>
+                      <p className="text-sm text-foreground font-medium">Reset link sent!</p>
+                      <p className="text-sm text-muted-foreground">
+                        Check your inbox at <span className="font-medium">{resetEmail}</span> and click the link to set a new password.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { setResetSent(false); setLoginStage('password'); }}
+                        className="text-sm text-primary hover:underline"
+                      >
+                        Back to sign in
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm text-muted-foreground">
+                        Enter your registered email address and we'll send you a link to reset your password.
+                      </p>
+                      <div>
+                        <Label>Email Address</Label>
+                        <Input
+                          type="email"
+                          placeholder="your@email.com"
+                          value={resetEmail}
+                          onChange={(e) => setResetEmail(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleSendResetEmail()}
+                          autoFocus
+                        />
+                      </div>
+                      <Button onClick={handleSendResetEmail} className="w-full gap-2" disabled={loading}>
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                        Send Reset Link
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => setLoginStage('password')}
+                        className="w-full text-sm text-muted-foreground hover:text-foreground"
+                      >
+                        ← Back
+                      </button>
+                    </>
+                  )}
                 </>
               )}
 
