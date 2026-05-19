@@ -54,14 +54,30 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
           return;
         }
 
-        const { data: profiles, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, full_name, email, verified, wallet_balance, phone')
-          .in('id', ids);
+        // Use the service-role Netlify function so phone numbers are always
+        // returned even when RLS restricts direct reads of other users' rows.
+        let profiles = [];
+        try {
+          const res = await fetch('/.netlify/functions/get-profiles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids }),
+          });
+          if (res.ok) {
+            profiles = await res.json();
+          } else {
+            throw new Error('get-profiles unavailable');
+          }
+        } catch {
+          // Fallback: direct query (phone may be null if RLS restricts it)
+          const { data: fallback } = await supabase
+            .from('profiles')
+            .select('id, full_name, email, verified, wallet_balance, phone')
+            .in('id', ids);
+          profiles = fallback || [];
+        }
 
-        if (profileError) throw profileError;
-
-        setCounterparties(profiles || []);
+        setCounterparties(profiles);
       } catch (err) {
         console.error('PayModal fetch error:', err);
         toast.error('Could not load contacts');
