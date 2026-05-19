@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -25,7 +25,6 @@ import Onboarding from '@/pages/Onboarding';
 import Subscription from '@/pages/Subscription';
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
-// inside your <Routes>:
 
 
 const AuthenticatedApp = () => {
@@ -34,7 +33,17 @@ const AuthenticatedApp = () => {
 
   React.useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session && window.location.pathname !== '/auth') {
+      const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
+
+      if (isRecovery) {
+        // Always land on /auth so Auth.jsx can show the Set New Password form.
+        // Do NOT redirect to dashboard even if a session exists.
+        if (window.location.pathname !== '/auth') {
+          window.location.href = '/auth';
+        } else {
+          setSupabaseChecked(true);
+        }
+      } else if (!session && window.location.pathname !== '/auth') {
         window.location.href = '/auth';
       } else {
         setSupabaseChecked(true);
@@ -74,17 +83,33 @@ const AuthenticatedApp = () => {
         <Route path="/wallet" element={<Wallet />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
-       <Route path="/mysearch" element={<SearchPage />} />
+        <Route path="/mysearch" element={<SearchPage />} />
         <Route path="/messages" element={<Messages />} />
-		<Route path="/contact" element={<ContactUs />} />
+        <Route path="/contact" element={<ContactUs />} />
       </Route>
 
       <Route path="*" element={<PageNotFound />} />
-        </Routes>
+    </Routes>
   );
 };
 
 function App() {
+  // Register the PASSWORD_RECOVERY listener as early as possible — useMemo runs
+  // synchronously during render, before any child component mounts. This ensures
+  // we catch the event even if Supabase fires it before Auth.jsx is mounted.
+  // The flag is stored in sessionStorage so it survives React Router navigation.
+  useMemo(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        sessionStorage.setItem('skootlink_recovery', '1');
+      }
+    });
+    // Not cleaning up here intentionally — this listener must live for the
+    // entire app session so it catches the event regardless of which component
+    // is mounted at the time.
+    return subscription;
+  }, []);
+
   // Apply saved theme on initial load
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
