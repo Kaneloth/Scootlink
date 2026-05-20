@@ -153,6 +153,14 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [bannerReason, setBannerReason] = useState(null);
 
+  // Post-signup confirmation screen
+  const [signupDone, setSignupDone] = useState(false);
+  const [signupEmail, setSignupEmail] = useState('');
+
+  // "Email not confirmed" login state
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState('');
+  const [resendLoading, setResendLoading] = useState(false);
+
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
@@ -313,16 +321,38 @@ export default function Auth() {
     }
   };
 
+  // ── Resend confirmation email ─────────────────────────────────────────────
+  const handleResendConfirmation = async (emailToResend) => {
+    setResendLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email: emailToResend });
+      if (error) throw error;
+      toast.success('Confirmation email resent — check your inbox.');
+    } catch (err) {
+      toast.error(err.message || 'Could not resend confirmation email.');
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
   // ── Password login ────────────────────────────────────────────────────────
   const handleLogin = async () => {
     if (!loginEmail || !loginPassword) { toast.error('Please fill in all fields'); return; }
+    setUnconfirmedEmail('');
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: loginEmail,
         password: loginPassword,
       });
-      if (error) throw error;
+      if (error) {
+        // Supabase returns this message when email confirmation is still pending
+        if (error.message?.toLowerCase().includes('email not confirmed')) {
+          setUnconfirmedEmail(loginEmail);
+          return;
+        }
+        throw error;
+      }
       saveBiometricRefreshToken(data.session);
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       setUser({ id: data.user.id, email: data.user.email });
@@ -347,8 +377,9 @@ export default function Auth() {
         options: { data: { full_name: regName, account_type: 'driver' } },
       });
       if (error) throw error;
-      toast.success('Account created! Please check your email to confirm your address.');
-      setIsLogin(true);
+      // Show the dedicated confirmation screen instead of a disappearing toast
+      setSignupEmail(regEmail);
+      setSignupDone(true);
     } catch (err) {
       toast.error(err.message || 'Registration failed');
     } finally {
@@ -381,8 +412,41 @@ export default function Auth() {
 
         <Card className="p-6 border border-border/50">
 
-          {/* ── Password Recovery Form (from reset link) ───────────────────── */}
-          {recoveryMode ? (
+          {/* ── Post-signup: Check your inbox ──────────────────────────────── */}
+          {signupDone ? (
+            <div className="flex flex-col items-center gap-4 py-4 text-center">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <Mail className="w-8 h-8 text-primary" />
+              </div>
+              <h2 className="text-lg font-semibold text-foreground">Check your inbox</h2>
+              <p className="text-sm text-muted-foreground">
+                We sent a confirmation link to{' '}
+                <span className="font-medium text-foreground">{signupEmail}</span>.
+                Click it to activate your account before signing in.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Can't find it? Check your spam folder.
+              </p>
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() => handleResendConfirmation(signupEmail)}
+                disabled={resendLoading}
+              >
+                {resendLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                Resend confirmation email
+              </Button>
+              <button
+                type="button"
+                onClick={() => { setSignupDone(false); setIsLogin(true); setLoginStage('password'); setLoginEmail(signupEmail); }}
+                className="text-sm text-primary hover:underline"
+              >
+                Already confirmed? Sign in →
+              </button>
+            </div>
+
+          ) : /* ── Password Recovery Form (from reset link) ───────────────────── */
+          recoveryMode ? (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <KeyRound className="w-5 h-5 text-primary" />
@@ -490,6 +554,27 @@ export default function Auth() {
                       <p className="text-xs text-amber-700 dark:text-amber-400">
                         {bannerContent[bannerReason]}
                       </p>
+                    </div>
+                  )}
+
+                  {/* Email not confirmed banner */}
+                  {unconfirmedEmail && (
+                    <div className="flex flex-col gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-start gap-2">
+                        <Mail className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                        <p className="text-xs text-blue-700 dark:text-blue-400">
+                          Your email address hasn't been confirmed yet. Check your inbox at{' '}
+                          <span className="font-medium">{unconfirmedEmail}</span> and click the confirmation link.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleResendConfirmation(unconfirmedEmail)}
+                        disabled={resendLoading}
+                        className="text-xs text-blue-700 dark:text-blue-400 underline hover:no-underline self-start disabled:opacity-50"
+                      >
+                        {resendLoading ? 'Sending…' : 'Resend confirmation email'}
+                      </button>
                     </div>
                   )}
                   <div>
