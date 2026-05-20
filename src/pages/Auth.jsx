@@ -436,13 +436,17 @@ export default function Auth() {
                 {resendLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                 Resend confirmation email
               </Button>
-              <button
-                type="button"
-                onClick={() => { setSignupDone(false); setIsLogin(true); setLoginStage('password'); setLoginEmail(signupEmail); }}
-                className="text-sm text-primary hover:underline"
-              >
-                Already confirmed? Sign in →
-              </button>
+              <p className="text-xs text-muted-foreground">
+                Once you've clicked the link in the email,{' '}
+                <button
+                  type="button"
+                  onClick={() => { setSignupDone(false); setIsLogin(true); setLoginStage('password'); setLoginEmail(signupEmail); }}
+                  className="text-primary hover:underline"
+                >
+                  sign in here
+                </button>
+                .
+              </p>
             </div>
 
           ) : /* ── Password Recovery Form (from reset link) ───────────────────── */
