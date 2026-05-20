@@ -12,9 +12,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
  */
 
 // Configurable via Supabase secret SUPPORT_EMAIL — change it there without
-// redeploying the function. Falls back to kaneloth@skootlink.co.za once that
+// redeploying the function. Falls back to help@skootlink.co.za once that
 // inbox is active.
-const SUPPORT_EMAIL = Deno.env.get('SUPPORT_EMAIL') || 'kaneloth@skootlink.co.za';
+const SUPPORT_EMAIL = Deno.env.get('SUPPORT_EMAIL') || 'help@skootlink.co.za';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin':  '*',
