@@ -265,10 +265,12 @@ export default function Profile() {
       if (sensitiveError) throw sensitiveError;
 
       // ── 3. Handle email change separately (requires confirmation) ──────────
+      let emailChangePending = false;
       if (form.email !== user.email) {
         const { error } = await supabase.auth.updateUser({ email: form.email });
         if (error) throw error;
-        toast.success('Confirmation email sent to ' + form.email + '. Please verify to complete the change.');
+        emailChangePending = true;
+        toast.success('Confirmation email sent to ' + form.email + '. Click the link to activate your new address.');
       }
 
       // Geocode the location text and write coordinates via an SQL helper function.
@@ -309,8 +311,12 @@ export default function Profile() {
         });
       }
 
-      toast.success('Profile updated!');
-      navigate('/');
+      // Only show the generic success toast / navigate away when no email
+      // confirmation is pending — the confirmation toast above is enough.
+      if (!emailChangePending) {
+        toast.success('Profile updated!');
+        navigate('/');
+      }
     } catch (err) {
       toast.error('Update failed: ' + (err.message || 'Unknown error'));
     } finally {
