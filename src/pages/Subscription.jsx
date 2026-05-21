@@ -17,7 +17,7 @@ const PLANS = [
   {
     id: 'driver',
     name: 'Driver',
-    price: 39,
+    price: 49,
     period: 'month',
     icon: Bike,
     color: 'bg-blue-50 border-blue-200',
@@ -33,7 +33,7 @@ const PLANS = [
   {
     id: 'owner',
     name: 'Owner',
-    price: 49,
+    price: 59,
     period: 'month',
     icon: Crown,
     color: 'bg-amber-50 border-amber-200',
@@ -51,7 +51,7 @@ const PLANS = [
   {
     id: 'both',
     name: 'Fleet Pro',
-    price: 59,
+    price: 79,
     period: 'month',
     icon: Users,
     color: 'bg-primary/5 border-primary/30',
@@ -135,18 +135,11 @@ export default function Subscription() {
     }
     setProcessing(true);
     try {
-      const isFirstSubscription = !user?.subscription_active;
-      // New subscribers get a free month — subscription covers 60 days
-      // (free month 1 + first paid month 2). Renewals/switches get 30 days.
-      const durationMs = isFirstSubscription
-        ? 60 * 24 * 60 * 60 * 1000
-        : 30 * 24 * 60 * 60 * 1000;
-
       const profileUpdate = {
         subscription_active: true,
         subscription_plan: selected,
         subscription_start: new Date().toISOString(),
-        subscription_expires: new Date(Date.now() + durationMs).toISOString(),
+        subscription_expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       };
       if (needsLicence && licenceStatus === 'verified') {
         profileUpdate.license_number = licenceNumber.trim().toUpperCase();
@@ -160,11 +153,7 @@ export default function Subscription() {
         console.error('Failed to sync auth metadata', error);
         toast.warning('Plan updated, but you may need to re-login.');
       }
-      toast.success(
-        isFirstSubscription
-          ? 'Subscription activated! Your first month is on us — enjoy Skootlink!'
-          : 'Plan updated! Welcome back to Skootlink.'
-      );
+      toast.success('Subscription activated! Welcome to Skootlink.');
       window.location.href = '/';
     } catch {
       toast.error('Something went wrong. Please try again.');
@@ -210,27 +199,13 @@ export default function Subscription() {
           </button>
         </div>
 
-        <div className="text-center mb-6">
+        <div className="text-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-4 shadow-lg">
             <Crown className="w-7 h-7 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-foreground">Choose Your Plan</h1>
           <p className="text-sm text-muted-foreground mt-1">Subscribe to unlock full platform access</p>
         </div>
-
-        {/* ── Free first month banner (new subscribers only) ── */}
-        {!user?.subscription_active && (
-          <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Your first month is free!</p>
-              <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
-                Subscribe today and enjoy full access at no charge for the first 30 days.
-                Your first payment only begins in month two — no surprises.
-              </p>
-            </div>
-          </div>
-        )}
 
         {/* Current plan badge */}
         {user?.subscription_active && currentPlanName && (
@@ -366,15 +341,10 @@ export default function Subscription() {
 
         {/* Summary + subscribe */}
         <Card className="p-5 border border-border/50 mb-4">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Selected Plan</p>
               <p className="font-bold text-lg">{plan?.name} — R {plan?.price}/month</p>
-              {!user?.subscription_active && (
-                <p className="text-xs text-emerald-600 mt-0.5 font-medium">
-                  First month free · billing starts day 31
-                </p>
-              )}
               {needsLicence && licenceStatus !== 'verified' && (
                 <p className="text-xs text-amber-600 mt-0.5">Licence verification required to continue</p>
               )}
@@ -382,7 +352,7 @@ export default function Subscription() {
             <Button
               onClick={handleSubscribe}
               disabled={processing || (needsLicence && licenceStatus !== 'verified')}
-              className="gap-2 px-6 shrink-0"
+              className="gap-2 px-6"
             >
               {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
               {processing ? 'Processing...' : user?.subscription_active ? 'Switch Plan' : 'Subscribe Now'}
