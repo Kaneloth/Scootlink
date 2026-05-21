@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
+// npm: prefix is Deno's native npm compatibility — more reliable than esm.sh CDN
+import { PDFDocument, StandardFonts, rgb } from 'npm:pdf-lib@1.17.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,29 +11,31 @@ const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY') ?? '';
 const FROM_EMAIL = 'noreply@skootlink.co.za';
 const FROM_NAME = 'Skootlink';
 
+// ── PDF generation ────────────────────────────────────────────────────────────
+
 async function generatePdf(contractText: string): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
-  const font = await pdfDoc.embedFont(StandardFonts.Courier);
+  const font     = await pdfDoc.embedFont(StandardFonts.Courier);
   const boldFont = await pdfDoc.embedFont(StandardFonts.CourierBold);
 
-  const pageWidth = 595;
-  const pageHeight = 842;
-  const marginX = 50;
-  const marginY = 60;
-  const fontSize = 9;
-  const lineHeight = fontSize * 1.5;
-  const maxWidth = pageWidth - marginX * 2;
+  const PAGE_W    = 595;  // A4 width  (pt)
+  const PAGE_H    = 842;  // A4 height (pt)
+  const MARGIN_X  = 50;
+  const MARGIN_Y  = 60;
+  const FONT_SIZE = 9;
+  const LINE_H    = FONT_SIZE * 1.5;
+  const MAX_W     = PAGE_W - MARGIN_X * 2;
+  const HEADER_H  = 40;
 
-  // Simple word-wrap: split each source line into display lines
+  // Word-wrap a single source line into display lines
   const wrapLine = (line: string): string[] => {
-    if (line.length === 0) return [''];
+    if (!line.trim()) return [''];
     const words = line.split(' ');
     const out: string[] = [];
     let cur = '';
     for (const word of words) {
       const test = cur ? `${cur} ${word}` : word;
-      const w = font.widthOfTextAtSize(test, fontSize);
-      if (w <= maxWidth) {
+      if (font.widthOfTextAtSize(test, FONT_SIZE) <= MAX_W) {
         cur = test;
       } else {
         if (cur) out.push(cur);
@@ -43,79 +46,98 @@ async function generatePdf(contractText: string): Promise<Uint8Array> {
     return out.length ? out : [''];
   };
 
-  const rawLines = contractText.split('\n');
+  // Build display-line list, detecting section headings for bold
   const displayLines: Array<{ text: string; bold: boolean }> = [];
-  for (const raw of rawLines) {
-    const wrapped = wrapLine(raw);
-    const isBold = raw === raw.toUpperCase() && raw.trim().length > 0 && raw.trim().length < 60;
-    for (const wl of wrapped) {
+  for (const raw of contractText.split('\n')) {
+    const stripped = raw.trim();
+    const isBold =
+      stripped === stripped.toUpperCase() &&
+      stripped.length > 0 &&
+      stripped.length < 60;
+    for (const wl of wrapLine(raw)) {
       displayLines.push({ text: wl, bold: isBold });
     }
   }
 
-  let page = pdfDoc.addPage([pageWidth, pageHeight]);
-  let y = pageHeight - marginY;
+  const addHeader = (page: ReturnType<typeof pdfDoc.addPage>, cont = false) => {
+    page.drawRectangle({
+      x: 0, y: PAGE_H - HEADER_H,
+      width: PAGE_W, height: HEADER_H,
+      color: rgb(0.06, 0.46, 0.82),
+    });
+    page.drawText('SKOOTLINK', {
+      x: MARGIN_X, y: PAGE_H - 27,
+      size: 14, font: boldFont, color: rgb(1, 1, 1),
+    });
+    page.drawText(cont ? 'Rental Agreement (cont.)' : 'Rental Agreement', {
+      x: MARGIN_X + 108, y: PAGE_H - 27,
+      size: 10, font, color: rgb(0.85, 0.93, 1),
+    });
+  };
 
-  // Header banner
-  page.drawRectangle({ x: 0, y: pageHeight - 40, width: pageWidth, height: 40, color: rgb(0.06, 0.46, 0.82) });
-  page.drawText('SKOOTLINK', { x: marginX, y: pageHeight - 27, size: 14, font: boldFont, color: rgb(1, 1, 1) });
-  page.drawText('Rental Agreement', { x: marginX + 100, y: pageHeight - 27, size: 10, font, color: rgb(0.85, 0.93, 1) });
-  y = pageHeight - marginY - 10;
+  let page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+  addHeader(page);
+  let y = PAGE_H - HEADER_H - 18;
 
   for (const { text, bold } of displayLines) {
-    if (y < marginY) {
-      page = pdfDoc.addPage([pageWidth, pageHeight]);
-      // Repeat header on new pages
-      page.drawRectangle({ x: 0, y: pageHeight - 40, width: pageWidth, height: 40, color: rgb(0.06, 0.46, 0.82) });
-      page.drawText('SKOOTLINK', { x: marginX, y: pageHeight - 27, size: 14, font: boldFont, color: rgb(1, 1, 1) });
-      page.drawText('Rental Agreement (cont.)', { x: marginX + 100, y: pageHeight - 27, size: 10, font, color: rgb(0.85, 0.93, 1) });
-      y = pageHeight - marginY - 10;
+    if (y < MARGIN_Y + LINE_H) {
+      page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+      addHeader(page, true);
+      y = PAGE_H - HEADER_H - 18;
     }
     page.drawText(text, {
-      x: marginX,
-      y,
-      size: fontSize,
+      x: MARGIN_X, y,
+      size: FONT_SIZE,
       font: bold ? boldFont : font,
-      color: rgb(0.1, 0.1, 0.1),
+      color: rgb(0.08, 0.08, 0.08),
     });
-    y -= lineHeight;
+    y -= LINE_H;
   }
 
   // Footer on last page
-  page.drawLine({ start: { x: marginX, y: marginY - 10 }, end: { x: pageWidth - marginX, y: marginY - 10 }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
-  page.drawText(`Generated by Skootlink · ${new Date().toLocaleDateString('en-ZA')} · help@skootlink.co.za`, {
-    x: marginX,
-    y: marginY - 22,
-    size: 7,
-    font,
-    color: rgb(0.5, 0.5, 0.5),
+  page.drawLine({
+    start: { x: MARGIN_X, y: MARGIN_Y - 10 },
+    end:   { x: PAGE_W - MARGIN_X, y: MARGIN_Y - 10 },
+    thickness: 0.5, color: rgb(0.7, 0.7, 0.7),
   });
+  page.drawText(
+    `Generated by Skootlink · ${new Date().toLocaleDateString('en-ZA')} · help@skootlink.co.za`,
+    { x: MARGIN_X, y: MARGIN_Y - 22, size: 7, font, color: rgb(0.5, 0.5, 0.5) },
+  );
 
   return await pdfDoc.save();
 }
 
-async function sendEmail(
-  toEmail: string,
-  toName: string,
-  subject: string,
-  htmlBody: string,
-  pdfBytes: Uint8Array,
-  fileName: string,
-) {
-  // Uint8Array → base64 in chunks to avoid call stack overflow on large PDFs
-  const CHUNK = 8192;
+// ── Brevo email ───────────────────────────────────────────────────────────────
+
+async function sendEmail(params: {
+  toEmail: string;
+  toName: string;
+  subject: string;
+  html: string;
+  pdfBytes?: Uint8Array;
+  fileName?: string;
+}) {
+  const { toEmail, toName, subject, html, pdfBytes, fileName } = params;
+
+  // Convert Uint8Array → base64 in safe chunks
   let b64 = '';
-  for (let i = 0; i < pdfBytes.length; i += CHUNK) {
-    b64 += btoa(String.fromCharCode(...pdfBytes.subarray(i, i + CHUNK)));
+  if (pdfBytes) {
+    const CHUNK = 8192;
+    for (let i = 0; i < pdfBytes.length; i += CHUNK) {
+      b64 += btoa(String.fromCharCode(...pdfBytes.subarray(i, i + CHUNK)));
+    }
   }
 
-  const payload = {
-    sender: { email: FROM_EMAIL, name: FROM_NAME },
-    to: [{ email: toEmail, name: toName }],
+  const payload: Record<string, unknown> = {
+    sender:      { email: FROM_EMAIL, name: FROM_NAME },
+    to:          [{ email: toEmail, name: toName }],
     subject,
-    htmlContent: htmlBody,
-    attachment: [{ content: b64, name: fileName }],
+    htmlContent: html,
   };
+  if (b64 && fileName) {
+    payload.attachment = [{ content: b64, name: fileName }];
+  }
 
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
@@ -124,51 +146,48 @@ async function sendEmail(
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Brevo error (${res.status}): ${err}`);
+    const body = await res.text();
+    throw new Error(`Brevo ${res.status}: ${body}`);
   }
 }
 
-function buildHtml(name: string, vehicleInfo: string): string {
-  return `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"></head>
+// ── HTML email body ───────────────────────────────────────────────────────────
+
+function buildHtml(name: string, vehicleInfo: string, hasPdf: boolean): string {
+  const pdfNote = hasPdf
+    ? '<p style="color:#444;line-height:1.6">📎 The signed agreement is <strong>attached as a PDF</strong>. Please save it for your records.</p>'
+    : `<div style="background:#fffbeb;border-left:4px solid #f59e0b;padding:14px 18px;border-radius:0 8px 8px 0;margin:20px 0">
+         <p style="margin:0;color:#92400e;font-size:14px">⚠️ The PDF could not be attached this time. Your agreement text is preserved in the Skootlink app and can be retrieved at any time.</p>
+       </div>`;
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,sans-serif">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fb;padding:32px 0">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
-        <tr><td style="background:#0f74d1;padding:24px 32px">
-          <span style="color:#fff;font-size:22px;font-weight:bold">Skootlink</span>
-          <span style="color:#b3d9ff;font-size:13px;margin-left:12px">Vehicle Rental Platform</span>
-        </td></tr>
-        <tr><td style="padding:32px">
-          <h2 style="margin:0 0 16px;color:#1a1a1a">Your Rental Agreement is Signed ✅</h2>
-          <p style="color:#444;line-height:1.6">Hi <strong>${name}</strong>,</p>
-          <p style="color:#444;line-height:1.6">
-            Great news — your Skootlink rental agreement has been <strong>signed by both parties</strong> and the rental is now <strong>active</strong>.
-          </p>
-          ${vehicleInfo ? `<p style="color:#444;line-height:1.6"><strong>Vehicle:</strong> ${vehicleInfo}</p>` : ''}
-          <div style="background:#f0f7ff;border-left:4px solid #0f74d1;padding:14px 18px;border-radius:0 8px 8px 0;margin:20px 0">
-            <p style="margin:0;color:#1a4b7a;font-size:14px">
-              📎 The signed agreement is attached to this email as a PDF. Please save it for your records.
-            </p>
-          </div>
-          <p style="color:#444;line-height:1.6">
-            If you have any questions or concerns, please contact us at
-            <a href="mailto:help@skootlink.co.za" style="color:#0f74d1">help@skootlink.co.za</a>.
-          </p>
-          <p style="color:#888;font-size:13px;margin-top:32px">— The Skootlink Team</p>
-        </td></tr>
-        <tr><td style="background:#f9fafb;padding:16px 32px;text-align:center;border-top:1px solid #eee">
-          <p style="margin:0;color:#aaa;font-size:11px">© ${new Date().getFullYear()} Skootlink · help@skootlink.co.za</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fb;padding:32px 0">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+      <tr><td style="background:#0f74d1;padding:24px 32px">
+        <span style="color:#fff;font-size:22px;font-weight:bold">Skootlink</span>
+        <span style="color:#b3d9ff;font-size:13px;margin-left:12px">Vehicle Rental Platform</span>
+      </td></tr>
+      <tr><td style="padding:32px">
+        <h2 style="margin:0 0 16px;color:#1a1a1a">Your Rental Agreement is Signed ✅</h2>
+        <p style="color:#444;line-height:1.6">Hi <strong>${name}</strong>,</p>
+        <p style="color:#444;line-height:1.6">Your Skootlink rental agreement has been <strong>signed by both parties</strong> and the rental is now <strong>active</strong>.</p>
+        ${vehicleInfo ? `<p style="color:#444;line-height:1.6"><strong>Vehicle:</strong> ${vehicleInfo}</p>` : ''}
+        ${pdfNote}
+        <p style="color:#444;line-height:1.6">Questions? Email us at <a href="mailto:help@skootlink.co.za" style="color:#0f74d1">help@skootlink.co.za</a>.</p>
+        <p style="color:#888;font-size:13px;margin-top:32px">— The Skootlink Team</p>
+      </td></tr>
+      <tr><td style="background:#f9fafb;padding:16px 32px;text-align:center;border-top:1px solid #eee">
+        <p style="margin:0;color:#aaa;font-size:11px">© ${new Date().getFullYear()} Skootlink · help@skootlink.co.za</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
 }
+
+// ── Handler ───────────────────────────────────────────────────────────────────
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -176,40 +195,67 @@ serve(async (req) => {
   }
 
   try {
-    const { contractText, ownerEmail, ownerName, driverEmail, driverName, vehicleInfo } = await req.json();
-
-    if (!contractText || !ownerEmail || !driverEmail) {
-      return new Response(JSON.stringify({ error: 'Missing required fields: contractText, ownerEmail, driverEmail' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     if (!BREVO_API_KEY) {
-      return new Response(JSON.stringify({ error: 'BREVO_API_KEY secret not set' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      throw new Error('BREVO_API_KEY secret is not set in Supabase edge function secrets.');
     }
 
-    const pdfBytes = await generatePdf(contractText);
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const { contractText, ownerEmail, ownerName, driverEmail, driverName, vehicleInfo } =
+      await req.json();
+
+    if (!contractText) throw new Error('contractText is required');
+    if (!driverEmail)  throw new Error('driverEmail is required');
+
+    const dateStr  = new Date().toISOString().slice(0, 10);
     const fileName = `Skootlink_Rental_Agreement_${dateStr}.pdf`;
-    const subject = `Your Skootlink Rental Agreement${vehicleInfo ? ` — ${vehicleInfo}` : ''}`;
+    const subject  = `Your Skootlink Rental Agreement${vehicleInfo ? ` — ${vehicleInfo}` : ''}`;
 
-    await Promise.all([
-      sendEmail(ownerEmail, ownerName || 'Owner', subject, buildHtml(ownerName || 'Owner', vehicleInfo || ''), pdfBytes, fileName),
-      sendEmail(driverEmail, driverName || 'Driver', subject, buildHtml(driverName || 'Driver', vehicleInfo || ''), pdfBytes, fileName),
-    ]);
+    // Try to generate PDF; fall back to email-without-attachment on failure
+    let pdfBytes: Uint8Array | undefined;
+    try {
+      pdfBytes = await generatePdf(contractText);
+    } catch (pdfErr) {
+      console.error('PDF generation failed, sending email without attachment:', pdfErr);
+    }
 
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    const hasPdf = !!pdfBytes;
+
+    const emailJobs: Promise<void>[] = [
+      sendEmail({
+        toEmail: driverEmail,
+        toName:  driverName || 'Driver',
+        subject,
+        html:    buildHtml(driverName || 'Driver', vehicleInfo || '', hasPdf),
+        pdfBytes,
+        fileName,
+      }),
+    ];
+
+    // Only send to owner if we have their email
+    if (ownerEmail) {
+      emailJobs.push(
+        sendEmail({
+          toEmail: ownerEmail,
+          toName:  ownerName || 'Owner',
+          subject,
+          html:    buildHtml(ownerName || 'Owner', vehicleInfo || '', hasPdf),
+          pdfBytes,
+          fileName,
+        }),
+      );
+    }
+
+    await Promise.all(emailJobs);
+
+    return new Response(
+      JSON.stringify({ success: true, hasPdf, ownerEmailed: !!ownerEmail }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   } catch (err) {
-    console.error('send-contract-email error:', err);
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('send-contract-email fatal error:', msg);
+    return new Response(
+      JSON.stringify({ error: msg }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   }
 });
