@@ -341,12 +341,48 @@ export default function Dashboard() {
       );
       await Vehicle.update(rental.vehicle_id, { status: 'rented' });
       toast.success('Rental confirmed! Vehicle assigned.');
+
+      // Fetch owner profile once — reused for SMS and email
       try {
         const [ownerProfile] = await fetchProfilesViaFunction([rental.owner_id]);
+
+        // SMS notification to owner
         if (ownerProfile?.phone) {
           await sendSMS(ownerProfile.phone, 'Great news! The driver has confirmed the Skootlink rental. The rental is now active.');
         }
-      } catch { /* SMS failure must never block the main flow */ }
+
+        // Email signed agreement PDF to both parties
+        const vehicle =
+          vehicles.find(v => v.id === rental.vehicle_id) ||
+          allVehiclesLookup.find(v => v.id === rental.vehicle_id) ||
+          allVehicles.find(v => v.id === rental.vehicle_id);
+
+        const ownerEmail = ownerProfile?.email || rental.owner_email || '';
+        const ownerName  = ownerProfile?.full_name || getCounterpartyName(rental.owner_id) || 'Owner';
+        const driverEmail = user?.email || '';
+        const driverName  = user?.full_name || 'Driver';
+        const vehicleInfo = vehicle
+          ? `${vehicle.make} ${vehicle.model}${vehicle.year ? ` (${vehicle.year})` : ''}`.trim()
+          : '';
+
+        if (ownerEmail && driverEmail) {
+          // Fire-and-forget — email failure must never block the main flow
+          supabase.functions.invoke('send-contract-email', {
+            body: {
+              contractText: editableContractText,
+              ownerEmail,
+              ownerName,
+              driverEmail,
+              driverName,
+              vehicleInfo,
+            },
+          }).then(({ error }) => {
+            if (error) console.error('Contract email failed:', error);
+          }).catch(() => {});
+          toast.info('Signed agreement emailed to both parties.');
+        }
+      } catch { /* SMS / email failure must never block the main flow */ }
+
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
