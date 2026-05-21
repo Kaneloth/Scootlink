@@ -136,11 +136,11 @@ export default function Subscription() {
     setProcessing(true);
     try {
       const isFirstSubscription = !user?.subscription_active;
-      // First-time subscribers get a free month — their subscription covers 2 months
-      // (free month 1 + first paid month 2). Returning subscribers get the standard 30 days.
+      // New subscribers get a free month — subscription covers 60 days
+      // (free month 1 + first paid month 2). Renewals/switches get 30 days.
       const durationMs = isFirstSubscription
-        ? 60 * 24 * 60 * 60 * 1000   // 60 days (free month + first paid month)
-        : 30 * 24 * 60 * 60 * 1000;  // 30 days (renewal)
+        ? 60 * 24 * 60 * 60 * 1000
+        : 30 * 24 * 60 * 60 * 1000;
 
       const profileUpdate = {
         subscription_active: true,
@@ -218,7 +218,7 @@ export default function Subscription() {
           <p className="text-sm text-muted-foreground mt-1">Subscribe to unlock full platform access</p>
         </div>
 
-        {/* ── Free first month banner ── */}
+        {/* ── Free first month banner (new subscribers only) ── */}
         {!user?.subscription_active && (
           <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
