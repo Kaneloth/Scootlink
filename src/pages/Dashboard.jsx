@@ -369,18 +369,21 @@ export default function Dashboard() {
           : '';
 
         if (driverEmail) {
-          const { error: fnErr } = await supabase.functions.invoke('send-contract-email', {
-            body: {
+          const emailRes = await fetch('/.netlify/functions/send-contract-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
               contractText: editableContractText,
               ownerEmail,
               ownerName,
               driverEmail,
               driverName,
               vehicleInfo,
-            },
+            }),
           });
-          if (fnErr) {
-            console.error('Contract email error:', fnErr);
+          if (!emailRes.ok) {
+            const errBody = await emailRes.json().catch(() => ({}));
+            console.error('Contract email error:', errBody);
             toast.warning('Rental confirmed, but the agreement email could not be sent. Please contact support.');
           } else {
             toast.info('Signed agreement emailed to both parties.');
