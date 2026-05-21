@@ -101,40 +101,26 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
     }
 
     try {
-      // 1. Fetch current balances
-      const [senderProfile, recipientProfile] = await Promise.all([
-        supabase.from('profiles').select('wallet_balance').eq('id', user.id).single(),
-        supabase.from('profiles').select('wallet_balance').eq('id', selectedId).single(),
-      ]);
+      // Amounts in the wallets table are stored in cents (BIGINT)
+      const amountCents = Math.round(amt * 100);
 
-      const senderBalance = (user.wallet_balance || 0) - amt;
-      const recipientBalance = (recipientProfile?.data?.wallet_balance || 0) + amt;
+      // 1. Atomic transfer via SECURITY DEFINER RPC — handles balance check,
+      //    debit, credit, and transaction row in a single DB transaction.
+      const { error: rpcError } = await supabase.rpc('pay', {
+        p_sender_id:   user.id,
+        p_receiver_id: selectedId,
+        p_amount:      amountCents,
+      });
+      if (rpcError) throw rpcError;
 
-      // 2. Update sender's balance (via auth.updateMe for immediate UI) and also profiles table
+      // 2. Sync profiles.wallet_balance for both users so the rest of the app
+      //    (which reads auth.me() → profiles) shows the correct balance.
+      const newSenderBalance = Math.max(0, (user.wallet_balance || 0) - amt);
       await Promise.all([
-        auth.updateMe({ wallet_balance: senderBalance }),
-        supabase.from('profiles').update({ wallet_balance: senderBalance }).eq('id', user.id),
+        auth.updateMe({ wallet_balance: newSenderBalance }),
+        supabase.from('profiles').update({ wallet_balance: newSenderBalance }).eq('id', user.id),
+        // Recipient balance is fetched fresh next time they open the app
       ]);
-
-      // 3. Update recipient's balance in profiles table
-      const { error: updateRecipientError } = await supabase
-        .from('profiles')
-        .update({ wallet_balance: recipientBalance })
-        .eq('id', selectedId);
-      if (updateRecipientError) throw updateRecipientError;
-
-      // 4. Insert transaction record
-      const { error: txError } = await supabase.from('transactions').insert([
-        {
-          from_user_id: user.id,
-          to_user_id: selectedId,
-          amount: amt,
-          type: 'payment',
-          description: note || `Payment to ${selectedUser?.full_name || 'User'}`,
-          created_at: new Date().toISOString(),
-        },
-      ]);
-      if (txError) throw txError;
 
       toast.success(`R ${amt.toFixed(2)} sent to ${selectedUser?.full_name || 'User'}`);
       // ── SMS notifications ─────────────────────────────────────────────────
