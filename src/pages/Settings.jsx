@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import {
   Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
-  AlertTriangle, ShieldCheck, Info, Type, LifeBuoy,
+  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy,
 } from 'lucide-react';
 import { sendSMS } from '@/lib/sms';
 
@@ -172,6 +172,16 @@ export default function Settings() {
   const [adminFilter, setAdminFilter] = useState('');
   const [togglingId, setTogglingId] = useState(null);
 
+  // ── Plan tab — licence verification ─────────────────────────────────────
+  const [licencePlanNumber, setLicencePlanNumber] = useState('');
+  const [licencePlanYear, setLicencePlanYear] = useState('');
+  const [licencePlanStatus, setLicencePlanStatus] = useState('idle');
+  const [licencePlanMsg, setLicencePlanMsg] = useState('');
+
+  // ── Plan tab — cancel subscription ──────────────────────────────────────
+  const [showPlanCancelConfirm, setShowPlanCancelConfirm] = useState(false);
+  const [cancellingPlan, setCancellingPlan] = useState(false);
+
   useEffect(() => {
     const isDark = localStorage.getItem('theme') === 'dark';
     setDarkMode(isDark);
@@ -323,6 +333,61 @@ export default function Settings() {
     }
   };
 
+  // ── Plan tab computed ─────────────────────────────────────────────────────
+
+  const needsLicencePlan = selectedPlan === 'driver' || selectedPlan === 'both';
+
+  // Reset licence status whenever the selected plan changes
+  useEffect(() => {
+    setLicencePlanStatus('idle');
+    setLicencePlanMsg('');
+  }, [selectedPlan]);
+
+  // Pre-fill licence fields from saved profile when user loads
+  useEffect(() => {
+    if (user?.license_number) setLicencePlanNumber(user.license_number);
+    if (user?.license_year)   setLicencePlanYear(String(user.license_year));
+  }, [user]);
+
+  // ── Plan tab — verify licence ─────────────────────────────────────────────
+
+  const handleVerifyLicencePlan = async () => {
+    if (!licencePlanNumber.trim()) { toast.error('Please enter your licence number'); return; }
+    if (!licencePlanYear.trim())   { toast.error('Please enter the year your licence was issued'); return; }
+    const year = parseInt(licencePlanYear);
+    const currentYear = new Date().getFullYear();
+    if (isNaN(year) || year < 1960 || year > currentYear) {
+      toast.error(`Issue year must be between 1960 and ${currentYear}`);
+      return;
+    }
+    setLicencePlanStatus('verifying');
+    setLicencePlanMsg('');
+    await new Promise(r => setTimeout(r, 1200));
+    setLicencePlanStatus('verified');
+    setLicencePlanMsg('Licence verified successfully (demo mode)');
+    toast.success('Driving licence verified!');
+  };
+
+  // ── Plan tab — cancel subscription ───────────────────────────────────────
+
+  const handleCancelPlan = async () => {
+    setCancellingPlan(true);
+    try {
+      await auth.updateMe({
+        subscription_active: false,
+        subscription_expires: new Date().toISOString(),
+      });
+      await supabase.auth.updateUser({ data: { subscription_active: false } });
+      toast.success('Subscription cancelled. You can resubscribe any time.');
+      setUser(await auth.me());
+      setShowPlanCancelConfirm(false);
+    } catch {
+      toast.error('Failed to cancel subscription. Please try again.');
+    } finally {
+      setCancellingPlan(false);
+    }
+  };
+
   // ── Admin helpers ─────────────────────────────────────────────────────────
 
   const isAdmin = user && ADMIN_EMAILS.includes(user.email);
@@ -382,16 +447,34 @@ export default function Settings() {
   // ── Plan ─────────────────────────────────────────────────────────────────
 
   const handleSubscribe = async () => {
+    if (needsLicencePlan && licencePlanStatus !== 'verified') {
+      toast.error('Please verify your driving licence before subscribing as a Driver');
+      return;
+    }
     setProcessingPlan(true);
     try {
-      await auth.updateMe({
+      const isFirstSubscription = !user?.subscription_active;
+      const durationMs = isFirstSubscription
+        ? 60 * 24 * 60 * 60 * 1000
+        : 30 * 24 * 60 * 60 * 1000;
+
+      const profileUpdate = {
         subscription_active: true,
         subscription_plan: selectedPlan,
         subscription_start: new Date().toISOString(),
-        subscription_expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      });
+        subscription_expires: new Date(Date.now() + durationMs).toISOString(),
+      };
+      if (needsLicencePlan && licencePlanStatus === 'verified') {
+        profileUpdate.license_number = licencePlanNumber.trim().toUpperCase();
+        profileUpdate.license_year = parseInt(licencePlanYear);
+      }
+      await auth.updateMe(profileUpdate);
       await supabase.auth.updateUser({ data: { subscription_plan: selectedPlan } });
-      toast.success('Subscription updated!');
+      toast.success(
+        isFirstSubscription
+          ? 'Subscription activated! Your first month is on us — enjoy Skootlink!'
+          : 'Plan updated!'
+      );
       setUser(await auth.me());
     } catch {
       toast.error('Failed to update subscription');
@@ -558,17 +641,46 @@ export default function Settings() {
         {/* ── Plan tab ── */}
         <TabsContent value="plan">
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Choose a plan.</p>
+
+            {/* Active subscription badge */}
+            {user?.subscription_active && (
+              <div className="flex justify-center">
+                <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 text-xs font-medium">
+                  ● Active: {PLANS.find(p => p.id === user.subscription_plan)?.name || user.subscription_plan} Plan
+                </span>
+              </div>
+            )}
+
+            {/* Free first month banner — new subscribers only */}
+            {!user?.subscription_active && (
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Your first month is free!</p>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
+                    Subscribe today and enjoy full access at no charge for the first 30 days.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Plan cards */}
             <div className="grid grid-cols-1 gap-4">
               {PLANS.map((p) => {
                 const Icon = p.icon;
                 const isSel = selectedPlan === p.id;
+                const isCurrent = user?.subscription_plan === p.id && user?.subscription_active;
                 return (
                   <Card
                     key={p.id}
                     onClick={() => setSelectedPlan(p.id)}
-                    className={`p-4 cursor-pointer border-2 transition-colors ${isSel ? 'border-primary' : 'border-border'}`}
+                    className={`p-4 cursor-pointer border-2 transition-colors relative ${isSel ? 'border-primary' : 'border-border'}`}
                   >
+                    {isCurrent && (
+                      <div className="absolute -top-3 right-4">
+                        <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full">Current</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className="p-2 rounded-xl border"><Icon className="w-4 h-4" /></div>
@@ -591,10 +703,122 @@ export default function Settings() {
                 );
               })}
             </div>
-            <Button onClick={handleSubscribe} disabled={processingPlan} className="w-full gap-2">
+
+            {/* Driving licence verification (driver / both plans only) */}
+            {needsLicencePlan && (
+              <Card className="p-4 border border-border/50 space-y-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary shrink-0" />
+                  <p className="font-semibold text-sm">Driving Licence Required</p>
+                  {licencePlanStatus === 'verified' && (
+                    <ShieldCheck className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  A valid driving licence is required to drive vehicles on Skootlink.
+                  Your licence will be verified before activation.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs font-medium">Licence Number *</Label>
+                    <Input
+                      className="mt-1"
+                      placeholder="e.g. DL1234567"
+                      value={licencePlanNumber}
+                      onChange={e => { setLicencePlanNumber(e.target.value); setLicencePlanStatus('idle'); }}
+                      disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium">Year Issued *</Label>
+                    <Input
+                      className="mt-1"
+                      type="number"
+                      placeholder="e.g. 2018"
+                      value={licencePlanYear}
+                      onChange={e => { setLicencePlanYear(e.target.value); setLicencePlanStatus('idle'); }}
+                      disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
+                    />
+                  </div>
+                </div>
+                {licencePlanStatus === 'verified' && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm">
+                    <ShieldCheck className="w-4 h-4 shrink-0" />
+                    <span>{licencePlanMsg}</span>
+                  </div>
+                )}
+                {licencePlanStatus === 'failed' && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-700 text-sm">
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span>{licencePlanMsg}</span>
+                  </div>
+                )}
+                {licencePlanStatus !== 'verified' && (
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2"
+                    onClick={handleVerifyLicencePlan}
+                    disabled={licencePlanStatus === 'verifying' || !licencePlanNumber.trim() || !licencePlanYear.trim()}
+                  >
+                    {licencePlanStatus === 'verifying'
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
+                      : <><ShieldCheck className="w-4 h-4" /> Verify Licence</>}
+                  </Button>
+                )}
+                {licencePlanStatus === 'verified' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground"
+                    onClick={() => { setLicencePlanStatus('idle'); setLicencePlanMsg(''); }}
+                  >
+                    Use a different licence
+                  </Button>
+                )}
+              </Card>
+            )}
+
+            <Button
+              onClick={handleSubscribe}
+              disabled={processingPlan || (needsLicencePlan && licencePlanStatus !== 'verified')}
+              className="w-full gap-2"
+            >
               {processingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              {processingPlan ? 'Processing...' : 'Subscribe Now'}
+              {processingPlan ? 'Processing...' : user?.subscription_active ? 'Switch Plan' : 'Subscribe Now'}
             </Button>
+
+            {/* Cancel subscription */}
+            {user?.subscription_active && !showPlanCancelConfirm && (
+              <div className="text-center">
+                <button
+                  onClick={() => setShowPlanCancelConfirm(true)}
+                  className="text-sm text-destructive/70 hover:text-destructive underline underline-offset-2 transition-colors"
+                >
+                  Cancel my subscription
+                </button>
+              </div>
+            )}
+
+            {user?.subscription_active && showPlanCancelConfirm && (
+              <Card className="p-4 border border-destructive/30 bg-destructive/5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                  <div className="text-sm text-destructive/80 space-y-1">
+                    <p className="font-semibold">Cancel your subscription?</p>
+                    <p className="text-xs">You'll lose access to all paid features at the end of your current billing period. Your profile and data will be kept.</p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="outline" className="flex-1" onClick={() => setShowPlanCancelConfirm(false)} disabled={cancellingPlan}>
+                    Keep My Plan
+                  </Button>
+                  <Button variant="destructive" className="flex-1 gap-2" onClick={handleCancelPlan} disabled={cancellingPlan}>
+                    {cancellingPlan ? <><Loader2 className="w-4 h-4 animate-spin" /> Cancelling…</> : 'Yes, Cancel'}
+                  </Button>
+                </div>
+              </Card>
+            )}
+
             <p className="text-xs text-center text-muted-foreground">Current plan: {user?.subscription_plan || 'None'}</p>
           </div>
         </TabsContent>
