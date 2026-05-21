@@ -27,15 +27,15 @@ const ADMIN_EMAILS = ['kanelothelejane@gmail.com'];
 
 const PLANS = [
   {
-    id: 'driver', name: 'Driver', price: 49, icon: Bike,
+    id: 'driver', name: 'Driver', price: 39, icon: Bike,
     features: ['Search & rent vehicles', 'GPS Tracking access', 'Wallet & payments', 'Up to 2 active rentals', 'Driver profile & reviews'],
   },
   {
-    id: 'owner', name: 'Owner', price: 59, icon: Crown, popular: true,
+    id: 'owner', name: 'Owner', price: 49, icon: Crown, popular: true,
     features: ['List unlimited vehicles', 'Find & hire drivers', 'Real-time GPS tracking', 'Wallet & payouts', 'Priority listing visibility', 'Owner analytics dashboard'],
   },
   {
-    id: 'both', name: 'Fleet Pro', price: 79, icon: Users,
+    id: 'both', name: 'Fleet Pro', price: 59, icon: Users,
     features: ['Everything in Owner +', 'Unlimited active rentals', 'Drive other vehicles too', 'Multi-vehicle fleet management', 'Priority support', 'Advanced analytics'],
   },
 ];
@@ -416,7 +416,7 @@ export default function Settings() {
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
       try {
         if (user?.phone) {
-          await sendSMS(user.phone, `Your Skootlink password was just changed. If this wasn't you, contact support immediately at support@skootlink.co.za.`);
+          await sendSMS(user.phone, `Your Skootlink password was just changed. If this wasn't you, contact support immediately at help@skootlink.co.za.`);
         }
       } catch { /* SMS failure must never block the main flow */ }
     } catch (err) {
