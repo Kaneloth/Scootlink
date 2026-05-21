@@ -357,17 +357,19 @@ export default function Dashboard() {
           allVehiclesLookup.find(v => v.id === rental.vehicle_id) ||
           allVehicles.find(v => v.id === rental.vehicle_id);
 
-        const ownerEmail = ownerProfile?.email || rental.owner_email || '';
+        // owner_email on the rental row is the most reliable source — the
+        // profiles function may not return emails due to RLS.
+        const ownerEmail = rental.owner_email || ownerProfile?.email || '';
         const ownerName  = ownerProfile?.full_name || getCounterpartyName(rental.owner_id) || 'Owner';
+        // driver is the current user — their session always has an email.
         const driverEmail = user?.email || '';
         const driverName  = user?.full_name || 'Driver';
         const vehicleInfo = vehicle
           ? `${vehicle.make} ${vehicle.model}${vehicle.year ? ` (${vehicle.year})` : ''}`.trim()
           : '';
 
-        if (ownerEmail && driverEmail) {
-          // Fire-and-forget — email failure must never block the main flow
-          supabase.functions.invoke('send-contract-email', {
+        if (driverEmail) {
+          const { error: fnErr } = await supabase.functions.invoke('send-contract-email', {
             body: {
               contractText: editableContractText,
               ownerEmail,
@@ -376,12 +378,18 @@ export default function Dashboard() {
               driverName,
               vehicleInfo,
             },
-          }).then(({ error }) => {
-            if (error) console.error('Contract email failed:', error);
-          }).catch(() => {});
-          toast.info('Signed agreement emailed to both parties.');
+          });
+          if (fnErr) {
+            console.error('Contract email error:', fnErr);
+            toast.warning('Rental confirmed, but the agreement email could not be sent. Please contact support.');
+          } else {
+            toast.info('Signed agreement emailed to both parties.');
+          }
         }
-      } catch { /* SMS / email failure must never block the main flow */ }
+      } catch (emailErr) {
+        // Email/SMS failure must never block the main rental flow
+        console.error('Post-confirm notification error:', emailErr);
+      }
 
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
