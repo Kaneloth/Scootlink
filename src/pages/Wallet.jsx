@@ -94,10 +94,18 @@ export default function Wallet() {
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
 
+  // authUserId is the Supabase Auth UUID — used for all wallet/RPC operations.
+  // user.id may be a numeric profile PK; authUserId is always the real UUID.
+  const [authUserId, setAuthUserId] = useState(null);
+
   const refreshUser = async () => {
     try {
-      const updated = await auth.me();
+      const [updated, { data: authData }] = await Promise.all([
+        auth.me(),
+        supabase.auth.getUser(),
+      ]);
       setUser(updated);
+      setAuthUserId(authData?.user?.id ?? null);
     } catch (_) {
       // ignore
     } finally {
@@ -109,24 +117,24 @@ export default function Wallet() {
 
   // ── Wallet balance from wallets table (source of truth, in cents) ───────────
   const { data: walletRow, refetch: refetchWallet } = useQuery({
-    queryKey: ['wallet-balance', user?.id],
+    queryKey: ['wallet-balance', authUserId],
     queryFn: async () => {
       const { data } = await supabase
         .from('wallets')
         .select('balance')
-        .eq('user_id', user.id)
+        .eq('user_id', authUserId)
         .maybeSingle();
       return data;
     },
-    enabled: !!user?.id,
+    enabled: !!authUserId,
   });
 
   // Balance in ZAR (wallets table stores cents)
   const walletBalanceZar = walletRow ? walletRow.balance / 100 : (user?.wallet_balance ?? 0);
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ['wallet-balance', user?.id] });
-    queryClient.invalidateQueries({ queryKey: ['transactions', user?.id] });
+    queryClient.invalidateQueries({ queryKey: ['wallet-balance', authUserId] });
+    queryClient.invalidateQueries({ queryKey: ['transactions', authUserId] });
   };
 
   // ── Add Funds via Paystack popup ─────────────────────────────────────────────
@@ -141,7 +149,7 @@ export default function Wallet() {
       const initRes = await fetch('/.netlify/functions/paystack-initialize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount_zar: amt, email: user.email, user_id: user.id }),
+        body: JSON.stringify({ amount_zar: amt, email: user.email, user_id: authUserId }),
       });
       const initData = await initRes.json();
       if (!initRes.ok) throw new Error(initData.error || 'Could not start payment');
@@ -196,7 +204,7 @@ export default function Wallet() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id:        user.id,
+          user_id:        authUserId,
           amount_zar:     amt,
           bank_code:      bankCode,
           account_number: accountNumber.trim(),
@@ -241,13 +249,13 @@ export default function Wallet() {
 
   // ── Transactions query ────────────────────────────────────────────────────────
   const { data: transactions = [], isLoading: txLoading } = useQuery({
-    queryKey: ['transactions', user?.id],
+    queryKey: ['transactions', authUserId],
     queryFn: async () => {
-      if (!user?.id) return [];
+      if (!authUserId) return [];
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
-        .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
+        .or(`from_user_id.eq.${authUserId},to_user_id.eq.${authUserId}`)
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -265,14 +273,14 @@ export default function Wallet() {
         (profiles || []).forEach(p => { nameMap[p.id] = p.full_name || p.email || 'User'; });
         return data.map(t => ({
           ...t,
-          counterpartyName: t.to_user_id === user.id
+          counterpartyName: t.to_user_id === authUserId
             ? (nameMap[t.from_user_id] || 'Unknown')
             : (nameMap[t.to_user_id]   || 'Unknown'),
         }));
       }
       return data.map(t => ({ ...t, counterpartyName: 'Unknown' }));
     },
-    enabled: !!user?.id,
+    enabled: !!authUserId,
   });
 
   // ── Render ────────────────────────────────────────────────────────────────────
@@ -308,7 +316,7 @@ export default function Wallet() {
           ) : transactions.length > 0 ? (
             <div className="space-y-2">
               {transactions.map(t => {
-                const isReceived = t.to_user_id === user?.id;
+                const isReceived = t.to_user_id === authUserId;
                 // Amount is stored in cents — display in ZAR
                 const displayAmt = (parseFloat(t.amount) / 100).toFixed(2);
                 const typeLabel = t.type === 'top_up' ? 'Top-up' : t.type === 'withdrawal' ? 'Withdrawal' : 'Transfer';
