@@ -100,12 +100,14 @@ export default function Wallet() {
 
   const refreshUser = async () => {
     try {
-      const [updated, { data: authData }] = await Promise.all([
+      // getSession() reads from localStorage — instant and reliable.
+      // getUser() makes a network round-trip and can fail silently.
+      const [updated, { data: sessionData }] = await Promise.all([
         auth.me(),
-        supabase.auth.getUser(),
+        supabase.auth.getSession(),
       ]);
       setUser(updated);
-      setAuthUserId(authData?.user?.id ?? null);
+      setAuthUserId(sessionData?.session?.user?.id ?? null);
     } catch (_) {
       // ignore
     } finally {
@@ -192,6 +194,7 @@ export default function Wallet() {
   // ── Withdraw to bank account ──────────────────────────────────────────────────
   const handleWithdraw = async () => {
     const amt = parseFloat(withdrawAmount);
+    if (!authUserId)                { toast.error('Session expired — please log out and back in'); return; }
     if (!amt || amt < 10)           { toast.error('Minimum withdrawal is R 10'); return; }
     if (amt > walletBalanceZar)     { toast.error('Insufficient wallet balance'); return; }
     if (!bankCode)                  { toast.error('Please select a bank'); return; }
