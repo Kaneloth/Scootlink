@@ -11,7 +11,10 @@ import { Send, Loader2, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { sendSMS } from '@/lib/sms';
 
-export default function PayModal({ open, onClose, user, onSuccess }) {
+export default function PayModal({ open, onClose, user, walletBalance: walletBalanceProp, onSuccess }) {
+  // walletBalanceProp comes from Wallet.jsx (wallets table, ZAR). Fall back to
+  // profiles.wallet_balance so the modal still works if the prop isn't passed.
+  const availableBalance = walletBalanceProp ?? (user?.wallet_balance || 0);
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState('');
   const [amount, setAmount] = useState('');
@@ -95,7 +98,7 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
       toast.error('Invalid amount');
       return;
     }
-    if (amt > (user?.wallet_balance || 0)) {
+    if (amt > availableBalance) {
       toast.error('Insufficient balance');
       return;
     }
@@ -115,7 +118,7 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
 
       // 2. Sync profiles.wallet_balance for both users so the rest of the app
       //    (which reads auth.me() → profiles) shows the correct balance.
-      const newSenderBalance = Math.max(0, (user.wallet_balance || 0) - amt);
+      const newSenderBalance = Math.max(0, availableBalance - amt);
       await Promise.all([
         auth.updateMe({ wallet_balance: newSenderBalance }),
         supabase.from('profiles').update({ wallet_balance: newSenderBalance }).eq('id', user.id),
@@ -252,7 +255,7 @@ export default function PayModal({ open, onClose, user, onSuccess }) {
                   onChange={e => setAmount(e.target.value)}
                 />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Available: R {(user?.wallet_balance || 0).toFixed(2)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Available: R {availableBalance.toFixed(2)}</p>
             </div>
 
             <div>

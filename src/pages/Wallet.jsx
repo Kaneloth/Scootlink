@@ -447,6 +447,7 @@ export default function Wallet() {
         open={payModal}
         onClose={() => setPayModal(false)}
         user={user}
+        walletBalance={walletBalanceZar}
         onSuccess={handlePaymentSuccess}
       />
     </div>
