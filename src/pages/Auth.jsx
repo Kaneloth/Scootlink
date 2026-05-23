@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Bike, LogIn, ArrowRight, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff } from 'lucide-react';
+import { Bike, LogIn, ArrowRight, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
 
@@ -179,6 +179,10 @@ export default function Auth() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
+  // Email OTP confirmation
+  const [signupOtp, setSignupOtp] = useState('');
+  const [otpLoading, setOtpLoading] = useState(false);
+
   // Show/hide password toggles
   const [showLoginPw, setShowLoginPw] = useState(false);
   const [showRegPw, setShowRegPw] = useState(false);
@@ -328,15 +332,43 @@ export default function Auth() {
     }
   };
 
+  // ── Verify email OTP ──────────────────────────────────────────────────────
+  const handleVerifyOtp = async () => {
+    if (signupOtp.length !== 6) { toast.error('Please enter the full 6-digit code'); return; }
+    setOtpLoading(true);
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email: signupEmail,
+        token: signupOtp,
+        type: 'signup',
+      });
+      if (error) throw error;
+      // Verification succeeded — sign out any auto-created session so the user
+      // goes through the normal sign-in flow (biometrics, remember-me, etc.)
+      await supabase.auth.signOut();
+      toast.success('Email confirmed! You can now sign in.');
+      setSignupDone(false);
+      setSignupOtp('');
+      setIsLogin(true);
+      setLoginStage('password');
+      setLoginEmail(signupEmail);
+    } catch (err) {
+      toast.error(err.message?.includes('expired') ? 'Code expired — request a new one below.' : (err.message || 'Invalid code. Try again.'));
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
   // ── Resend confirmation email ─────────────────────────────────────────────
   const handleResendConfirmation = async (emailToResend) => {
     setResendLoading(true);
+    setSignupOtp('');
     try {
       const { error } = await supabase.auth.resend({ type: 'signup', email: emailToResend });
       if (error) throw error;
-      toast.success('Confirmation email resent — check your inbox.');
+      toast.success('New code sent — check your inbox.');
     } catch (err) {
-      toast.error(err.message || 'Could not resend confirmation email.');
+      toast.error(err.message || 'Could not resend confirmation code.');
     } finally {
       setResendLoading(false);
     }
@@ -437,34 +469,41 @@ export default function Auth() {
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
                 <Mail className="w-8 h-8 text-primary" />
               </div>
-              <h2 className="text-lg font-semibold text-foreground">Check your inbox</h2>
+              <h2 className="text-lg font-semibold text-foreground">Confirm your email</h2>
               <p className="text-sm text-muted-foreground">
-                We sent a confirmation link to{' '}
+                We sent a 6-digit code to{' '}
                 <span className="font-medium text-foreground">{signupEmail}</span>.
-                Click it to activate your account before signing in.
+                Enter it below to activate your account.
               </p>
-              <p className="text-xs text-muted-foreground">
-                Can't find it? Check your spam folder.
-              </p>
+              <div className="w-full">
+                <Input
+                  placeholder="000000"
+                  value={signupOtp}
+                  onChange={(e) => setSignupOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="text-center text-2xl tracking-[0.4em] font-mono h-14"
+                  maxLength={6}
+                  inputMode="numeric"
+                  autoFocus
+                  onKeyDown={(e) => e.key === 'Enter' && handleVerifyOtp()}
+                />
+              </div>
               <Button
-                variant="outline"
+                onClick={handleVerifyOtp}
                 className="w-full gap-2"
-                onClick={() => handleResendConfirmation(signupEmail)}
-                disabled={resendLoading}
+                disabled={otpLoading || signupOtp.length !== 6}
               >
-                {resendLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-                Resend confirmation email
+                {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                Confirm Email
               </Button>
-              <p className="text-xs text-muted-foreground">
-                Once you've clicked the link, come back to this page and sign in — you won't be able to access your account until the email is confirmed.
-              </p>
               <button
                 type="button"
-                onClick={() => { setSignupDone(false); setIsLogin(true); setLoginStage('idle'); }}
-                className="text-xs text-muted-foreground hover:text-foreground underline"
+                onClick={() => handleResendConfirmation(signupEmail)}
+                disabled={resendLoading}
+                className="text-xs text-muted-foreground hover:text-foreground underline disabled:opacity-50"
               >
-                Already confirmed? Sign in
+                {resendLoading ? 'Sending…' : "Didn't receive it? Resend code"}
               </button>
+              <p className="text-xs text-muted-foreground">Can't find it? Check your spam folder.</p>
             </div>
 
           ) : /* ── Password Recovery Form (from reset link) ───────────────────── */
