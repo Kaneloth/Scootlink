@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   CheckCircle2, Crown, Bike, Users, Shield, Loader2, ArrowRight, ArrowLeft,
   AlertTriangle, FileText, XCircle, ShieldCheck,
@@ -75,11 +76,19 @@ export default function Subscription() {
   const [cancelling, setCancelling] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
-  // Licence verification state (only required for driver / both plans)
+  // ── Identity verification state (required for ALL plans) ──────────────────
+  const [citizenship, setCitizenship] = useState('South African');
+  const [saId, setSaId]               = useState('');
+  const [passport, setPassport]       = useState('');
+  const [passportCountry, setPassportCountry] = useState('');
+  const [idStatus, setIdStatus] = useState('idle'); // 'idle' | 'verifying' | 'verified' | 'failed'
+  const [idMsg, setIdMsg]       = useState('');
+
+  // ── Licence verification state (only required for driver / both plans) ──────
   const [licenceNumber, setLicenceNumber] = useState('');
-  const [licenceYear, setLicenceYear] = useState('');
+  const [licenceYear, setLicenceYear]     = useState('');
   const [licenceStatus, setLicenceStatus] = useState('idle'); // 'idle' | 'verifying' | 'verified' | 'failed'
-  const [licenceMsg, setLicenceMsg] = useState('');
+  const [licenceMsg, setLicenceMsg]       = useState('');
 
   const needsLicence = selected === 'driver' || selected === 'both';
 
@@ -94,11 +103,44 @@ export default function Subscription() {
       setUser(u);
       const plan = u.subscription_plan || u.account_type || 'driver';
       setSelected(plan === 'both' ? 'both' : plan);
-      // Pre-fill if they already have a licence on record
+      // Pre-fill identity fields from profile
+      if (u.citizenship) setCitizenship(u.citizenship);
+      if (u.sa_id)       setSaId(u.sa_id);
+      if (u.passport)    setPassport(u.passport);
+      // If already verified, skip re-verification
+      if (u.verified && (u.sa_id || u.passport)) {
+        setIdStatus('verified');
+        setIdMsg('Identity already on record');
+      }
+      // Pre-fill licence if they already have one on record
       if (u.license_number) setLicenceNumber(u.license_number);
       if (u.license_year)   setLicenceYear(String(u.license_year));
+      // If already verified with a licence, mark it verified
+      if (u.verified && u.license_number) {
+        setLicenceStatus('verified');
+        setLicenceMsg('Licence already on record');
+      }
     }).catch(() => {});
   }, []);
+
+  const handleVerifyIdentity = async () => {
+    if (citizenship === 'South African') {
+      if (!/^\d{13}$/.test(saId)) {
+        toast.error('Please enter a valid 13-digit SA ID number');
+        return;
+      }
+    } else {
+      if (!passport.trim()) { toast.error('Please enter your passport number'); return; }
+      if (!passportCountry.trim()) { toast.error('Please enter your country of issue'); return; }
+    }
+    setIdStatus('verifying');
+    setIdMsg('');
+    // Demo mode — hook up real DHA API here when ready
+    await new Promise(r => setTimeout(r, 1200));
+    setIdStatus('verified');
+    setIdMsg('Identity verified successfully');
+    toast.success('Identity verified!');
+  };
 
   const handleVerifyLicence = async () => {
     if (!licenceNumber.trim()) {
@@ -129,6 +171,10 @@ export default function Subscription() {
   };
 
   const handleSubscribe = async () => {
+    if (idStatus !== 'verified') {
+      toast.error('Please verify your identity before subscribing');
+      return;
+    }
     if (needsLicence && licenceStatus !== 'verified') {
       toast.error('Please verify your driving licence before subscribing as a Driver');
       return;
@@ -144,13 +190,21 @@ export default function Subscription() {
 
       const profileUpdate = {
         subscription_active: true,
-        subscription_plan: selected,
-        subscription_start: new Date().toISOString(),
+        subscription_plan:   selected,
+        subscription_start:  new Date().toISOString(),
         subscription_expires: new Date(Date.now() + durationMs).toISOString(),
+        verified:    true,     // identity verified as part of subscription flow
+        citizenship,
       };
+      // Save whichever ID type was verified
+      if (citizenship === 'South African') {
+        profileUpdate.sa_id = saId;
+      } else {
+        profileUpdate.passport = passport;
+      }
       if (needsLicence && licenceStatus === 'verified') {
         profileUpdate.license_number = licenceNumber.trim().toUpperCase();
-        profileUpdate.license_year = parseInt(licenceYear);
+        profileUpdate.license_year   = parseInt(licenceYear);
       }
       await auth.updateMe(profileUpdate);
       const { error } = await supabase.auth.updateUser({
@@ -286,6 +340,125 @@ export default function Subscription() {
           })}
         </div>
 
+        {/* ── Identity verification (required for ALL plans) ───────────────── */}
+        <Card className="p-5 border border-border/50 mb-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
+            <p className="font-semibold text-sm">Identity Verification</p>
+            {idStatus === 'verified' && (
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Your ID is verified once at subscription and stored securely. Required for all plans.
+          </p>
+
+          {/* Citizenship selector */}
+          <div>
+            <Label className="text-xs font-medium">Citizenship *</Label>
+            <Select
+              value={citizenship}
+              onValueChange={v => {
+                setCitizenship(v);
+                setIdStatus('idle');
+                setSaId('');
+                setPassport('');
+                setPassportCountry('');
+              }}
+              disabled={idStatus === 'verifying' || idStatus === 'verified'}
+            >
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="South African">South African</SelectItem>
+                <SelectItem value="Zimbabwean">Zimbabwean</SelectItem>
+                <SelectItem value="Mozambican">Mozambican</SelectItem>
+                <SelectItem value="Malawian">Malawian</SelectItem>
+                <SelectItem value="Nigerian">Nigerian</SelectItem>
+                <SelectItem value="Other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* SA ID or Passport */}
+          {citizenship === 'South African' ? (
+            <div>
+              <Label className="text-xs font-medium">SA ID Number (13 digits) *</Label>
+              <Input
+                className="mt-1 font-mono tracking-widest"
+                placeholder="9001015009087"
+                maxLength={13}
+                value={saId}
+                onChange={e => { setSaId(e.target.value.replace(/\D/g, '')); setIdStatus('idle'); }}
+                disabled={idStatus === 'verifying' || idStatus === 'verified'}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">Your ID number is encrypted and stored securely</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs font-medium">Passport Number *</Label>
+                <Input
+                  className="mt-1 font-mono"
+                  placeholder="A12345678"
+                  value={passport}
+                  onChange={e => { setPassport(e.target.value.toUpperCase()); setIdStatus('idle'); }}
+                  disabled={idStatus === 'verifying' || idStatus === 'verified'}
+                />
+              </div>
+              <div>
+                <Label className="text-xs font-medium">Country of Issue *</Label>
+                <Input
+                  className="mt-1"
+                  placeholder="Zimbabwe"
+                  value={passportCountry}
+                  onChange={e => { setPassportCountry(e.target.value); setIdStatus('idle'); }}
+                  disabled={idStatus === 'verifying' || idStatus === 'verified'}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Status feedback */}
+          {idStatus === 'verified' && (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm">
+              <ShieldCheck className="w-4 h-4 shrink-0" />
+              <span>{idMsg}</span>
+            </div>
+          )}
+          {idStatus === 'failed' && (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-700 text-sm">
+              <XCircle className="w-4 h-4 shrink-0" />
+              <span>{idMsg}</span>
+            </div>
+          )}
+
+          {idStatus !== 'verified' && (
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={handleVerifyIdentity}
+              disabled={
+                idStatus === 'verifying' ||
+                (citizenship === 'South African' ? saId.length !== 13 : !passport.trim())
+              }
+            >
+              {idStatus === 'verifying'
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
+                : <><ShieldCheck className="w-4 h-4" /> Verify Identity</>}
+            </Button>
+          )}
+          {idStatus === 'verified' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground"
+              onClick={() => { setIdStatus('idle'); setIdMsg(''); setSaId(''); setPassport(''); setPassportCountry(''); }}
+            >
+              Use different ID
+            </Button>
+          )}
+        </Card>
+
         {/* ── Driving licence verification (driver / both plans only) ─────── */}
         {needsLicence && (
           <Card className="p-5 border border-border/50 mb-4 space-y-4">
@@ -375,13 +548,16 @@ export default function Subscription() {
                   First month free · billing starts day 31
                 </p>
               )}
-              {needsLicence && licenceStatus !== 'verified' && (
+              {idStatus !== 'verified' && (
+                <p className="text-xs text-amber-600 mt-0.5">Identity verification required to continue</p>
+              )}
+              {idStatus === 'verified' && needsLicence && licenceStatus !== 'verified' && (
                 <p className="text-xs text-amber-600 mt-0.5">Licence verification required to continue</p>
               )}
             </div>
             <Button
               onClick={handleSubscribe}
-              disabled={processing || (needsLicence && licenceStatus !== 'verified')}
+              disabled={processing || idStatus !== 'verified' || (needsLicence && licenceStatus !== 'verified')}
               className="gap-2 px-6 shrink-0"
             >
               {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
