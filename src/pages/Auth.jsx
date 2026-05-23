@@ -634,21 +634,36 @@ export default function Auth() {
 
                   {/* Email not confirmed banner */}
                   {unconfirmedEmail && (
-                    <div className="flex flex-col gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                    <div className="flex flex-col gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
                       <div className="flex items-start gap-2">
                         <Mail className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                         <p className="text-xs text-blue-700 dark:text-blue-400">
-                          Your email address hasn't been confirmed yet. Check your inbox at{' '}
-                          <span className="font-medium">{unconfirmedEmail}</span> and click the confirmation link.
+                          Your email hasn't been confirmed yet. We sent a 6-digit code to{' '}
+                          <span className="font-medium">{unconfirmedEmail}</span> — enter it to activate your account.
                         </p>
                       </div>
+                      <Button
+                        size="sm"
+                        className="w-full gap-2"
+                        onClick={() => {
+                          setSignupEmail(unconfirmedEmail);
+                          setSignupOtp('');
+                          setSignupDone(true);
+                        }}
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" /> Enter my confirmation code
+                      </Button>
                       <button
                         type="button"
-                        onClick={() => handleResendConfirmation(unconfirmedEmail)}
+                        onClick={async () => {
+                          await handleResendConfirmation(unconfirmedEmail);
+                          setSignupEmail(unconfirmedEmail);
+                          setSignupDone(true);
+                        }}
                         disabled={resendLoading}
                         className="text-xs text-blue-700 dark:text-blue-400 underline hover:no-underline self-start disabled:opacity-50"
                       >
-                        {resendLoading ? 'Sending…' : 'Resend confirmation email'}
+                        {resendLoading ? 'Sending…' : 'Send a new code instead'}
                       </button>
                     </div>
                   )}
