@@ -1,11 +1,10 @@
 /**
- * Supabase data layer — mirrors the Base44 entity API surface.
- * Tables expected in Supabase: vehicles, rentals, transactions, reviews, profiles
+ * Supabase data layer
+ * Tables: vehicles, rentals, transactions, reviews, profiles
  * The `profiles` table stores extended user data keyed by user id (uuid).
  */
 import { supabase } from './supabaseClient';
 export { supabase };
-import { base44 } from './base44Client';
 
 // Fields that must be kept in sync between auth metadata and the profiles table.
 // profiles is the source of truth — auth metadata is secondary.
