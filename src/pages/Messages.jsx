@@ -393,11 +393,12 @@ export default function Messages() {
 
   // ── Send — with optimistic update ────────────────────────────────────────
   const isAdmin    = ['kanelothelejane@gmail.com'].includes(user?.email);
-  const canMessage = isAdmin || (user?.subscription_active && user?.verified);
+  const isSubscribed = isAdmin || Boolean(user?.subscription_active);
+  const canMessage   = isSubscribed;
 
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedChat) return;
-    if (!canMessage) { toast.warning('You need an active subscription and verification to send messages'); return; }
+    if (!canMessage) { toast.warning('You need an active subscription to send messages'); return; }
 
     const tempId      = `temp-${Date.now()}`;
     const msgBody     = newMessage.trim();
@@ -450,7 +451,7 @@ export default function Messages() {
   // ── New chat ──────────────────────────────────────────────────────────────
   const handleNewChat = async () => {
     if (!newChatEmail.trim()) return;
-    if (!canMessage) { toast.warning('Subscribe and get verified to start new conversations'); return; }
+    if (!canMessage) { toast.warning('Subscribe to start new conversations'); return; }
     const { data, error } = await supabase
       .from('profiles').select('id, full_name, email').eq('email', newChatEmail.trim()).single();
     if (error || !data) { toast.error('User not found'); return; }
@@ -579,7 +580,7 @@ export default function Messages() {
             <h2 className="text-2xl font-bold text-foreground">Messages</h2>
             <button
               onClick={() => {
-                if (!canMessage) { toast.warning('Subscribe and get verified to start new conversations'); return; }
+                if (!canMessage) { toast.warning('Subscribe to start new conversations'); return; }
                 setStartNewChat(!startNewChat);
               }}
               className="flex items-center gap-1 text-sm text-primary hover:underline"
@@ -609,8 +610,8 @@ export default function Messages() {
                   key={conv.otherUserId}
                   className={`p-4 cursor-pointer hover:bg-accent transition-colors select-none ${conv.unread ? 'border-primary' : 'border-border/50'}`}
                   onClick={() => openChat(conv.otherUserId)}
-                  onContextMenu={(e) => { e.preventDefault(); showConvMenu(conv); }}
-                  onTouchStart={startLongPress(() => showConvMenu(conv))}
+                  onContextMenu={(e) => { e.preventDefault(); if (isSubscribed) showConvMenu(conv); }}
+                  onTouchStart={startLongPress(() => { if (isSubscribed) showConvMenu(conv); })}
                   onTouchEnd={cancelLongPress}
                   onTouchMove={cancelLongPress}
                 >
@@ -625,12 +626,18 @@ export default function Messages() {
                       </div>
                       <div>
                         <p className="text-sm font-medium text-foreground">{conv.otherUserName}</p>
-                        <p className="text-xs text-muted-foreground truncate max-w-[180px] flex items-center gap-1">
-                          {conv.lastSenderId === user?.id && (
-                            <MsgStatus status={undefined} read={conv.lastRead} />
-                          )}
-                          {conv.lastMessage}
-                        </p>
+                        {isSubscribed ? (
+                          <p className="text-xs text-muted-foreground truncate max-w-[180px] flex items-center gap-1">
+                            {conv.lastSenderId === user?.id && (
+                              <MsgStatus status={undefined} read={conv.lastRead} />
+                            )}
+                            {conv.lastMessage}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-primary/70 flex items-center gap-1 font-medium">
+                            <Lock className="w-3 h-3 shrink-0" /> Subscribe to read
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -677,6 +684,21 @@ export default function Messages() {
           <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto" id="messages-container" style={{ touchAction: 'pan-y' }}>
             {chatLoading ? (
               <MessagesSkeleton />
+            ) : !isSubscribed ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center">
+                  <Lock className="w-7 h-7 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">Messages are locked</p>
+                  <p className="text-sm text-muted-foreground mt-1 max-w-[220px] leading-snug">
+                    Subscribe to read and reply to messages on Skootlink.
+                  </p>
+                </div>
+                <Button size="sm" className="mt-1" onClick={() => navigate('/subscription')}>
+                  View Plans
+                </Button>
+              </div>
             ) : (
               visibleMessages.map((msg) => {
                 // Defensive: only true when user.id is known AND matches sender
@@ -746,11 +768,9 @@ export default function Messages() {
               </div>
               <p className="text-sm font-medium text-foreground">Messaging locked</p>
               <p className="text-xs text-muted-foreground">
-                {!user?.subscription_active
-                  ? 'You need an active subscription to send messages'
-                  : 'Your account is awaiting verification — messaging will unlock once approved'}
+                Subscribe to send and receive messages on Skootlink.
               </p>
-              <Button size="sm" variant="outline" className="mt-1" onClick={() => navigate('/settings')}>
+              <Button size="sm" variant="outline" className="mt-1" onClick={() => navigate('/subscription')}>
                 View Plans
               </Button>
             </div>
