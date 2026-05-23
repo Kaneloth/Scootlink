@@ -392,9 +392,10 @@ export default function Messages() {
   const closeChat = () => setSelectedChat(null);
 
   // ── Send — with optimistic update ────────────────────────────────────────
-  const isAdmin    = ['kanelothelejane@gmail.com'].includes(user?.email);
-  const isSubscribed = isAdmin || Boolean(user?.subscription_active);
-  const canMessage   = isSubscribed;
+  const isAdmin      = ['kanelothelejane@gmail.com'].includes(user?.email);
+  const canMessage   = isAdmin || (Boolean(user?.subscription_active) && Boolean(user?.verified));
+  // showLocked: show locked conversation previews / chat lock for unverified/unsubscribed users
+  const isSubscribed = canMessage;
 
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedChat) return;
@@ -691,8 +692,8 @@ export default function Messages() {
                 </div>
                 <div>
                   <p className="font-semibold text-foreground">Messages are locked</p>
-                  <p className="text-sm text-muted-foreground mt-1 max-w-[220px] leading-snug">
-                    Subscribe to read and reply to messages on Skootlink.
+                  <p className="text-sm text-muted-foreground mt-1 max-w-[240px] leading-snug">
+                    Subscribe and verify your identity to read and reply to messages.
                   </p>
                 </div>
                 <Button size="sm" className="mt-1" onClick={() => navigate('/subscription')}>
@@ -768,7 +769,7 @@ export default function Messages() {
               </div>
               <p className="text-sm font-medium text-foreground">Messaging locked</p>
               <p className="text-xs text-muted-foreground">
-                Subscribe to send and receive messages on Skootlink.
+                Subscribe and verify your identity to send and receive messages.
               </p>
               <Button size="sm" variant="outline" className="mt-1" onClick={() => navigate('/subscription')}>
                 View Plans
