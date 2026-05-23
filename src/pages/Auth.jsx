@@ -353,6 +353,13 @@ export default function Auth() {
         }
         throw error;
       }
+      // Double-check client-side: block sign-in if email hasn't been confirmed yet.
+      // This guards against the Supabase dashboard "Email confirmations" setting being toggled off.
+      if (data.user && !data.user.email_confirmed_at) {
+        await supabase.auth.signOut();
+        setUnconfirmedEmail(loginEmail);
+        return;
+      }
       saveBiometricRefreshToken(data.session);
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       setUser({ id: data.user.id, email: data.user.email });
@@ -371,12 +378,17 @@ export default function Auth() {
     if (!agreedToTerms) { toast.error('You must agree to the Terms and Conditions'); return; }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data: signupData, error } = await supabase.auth.signUp({
         email: regEmail,
         password: regPassword,
         options: { data: { full_name: regName, account_type: 'driver' } },
       });
       if (error) throw error;
+      // Supabase may return an active session before the email is confirmed.
+      // Sign it out immediately so the user cannot enter the app without clicking the link.
+      if (signupData?.session) {
+        await supabase.auth.signOut();
+      }
       // Show the dedicated confirmation screen instead of a disappearing toast
       setSignupEmail(regEmail);
       setSignupDone(true);
@@ -437,16 +449,15 @@ export default function Auth() {
                 Resend confirmation email
               </Button>
               <p className="text-xs text-muted-foreground">
-                Once you've clicked the link in the email,{' '}
-                <button
-                  type="button"
-                  onClick={() => { setSignupDone(false); setIsLogin(true); setLoginStage('password'); setLoginEmail(signupEmail); }}
-                  className="text-primary hover:underline"
-                >
-                  sign in here
-                </button>
-                .
+                Once you've clicked the link, come back to this page and sign in — you won't be able to access your account until the email is confirmed.
               </p>
+              <button
+                type="button"
+                onClick={() => { setSignupDone(false); setIsLogin(true); setLoginStage('idle'); }}
+                className="text-xs text-muted-foreground hover:text-foreground underline"
+              >
+                Already confirmed? Sign in
+              </button>
             </div>
 
           ) : /* ── Password Recovery Form (from reset link) ───────────────────── */
