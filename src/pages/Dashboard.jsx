@@ -63,6 +63,7 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
   ) : null;
 
   return (
+    <>
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-card rounded-2xl shadow-xl max-w-md w-full border border-border flex flex-col max-h-[88vh]" onClick={e => e.stopPropagation()}>
 
@@ -130,6 +131,7 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
       </div>
     </div>
     <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+    </>
   );
 }
 
