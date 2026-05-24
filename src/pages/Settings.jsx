@@ -548,7 +548,7 @@ export default function Settings() {
       await supabase.auth.updateUser({ data: { subscription_plan: selectedPlan } });
       toast.success(
         isFirstSubscription
-          ? 'Subscription activated! Your first month is on us — enjoy Skootlink!'
+          ? 'Subscription activated! 35% discount applied for your first 2 months — enjoy Skootlink!'
           : 'Plan updated!'
       );
       setUser(await auth.me());
@@ -727,14 +727,14 @@ export default function Settings() {
               </div>
             )}
 
-            {/* Free first month banner — new subscribers only */}
+            {/* 35% discount banner — new subscribers only */}
             {!user?.subscription_active && (
               <div className="flex items-start gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Your first month is free!</p>
+                  <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">35% off your first 2 months!</p>
                   <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
-                    Subscribe today and enjoy full access at no charge for the first 30 days.
+                    Subscribe today to lock in 35% off for your first two months. Full price applies from month three.
                   </p>
                 </div>
               </div>
