@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { auth } from '@/api/supabaseData';
 import { supabase } from '@/api/supabaseClient';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -94,6 +94,7 @@ async function fetchVehiclePage({ pageParam = 0, filters }) {
 }
 
 export default function SearchVehicles() {
+  const navigate = useNavigate();
   const [showFilters, setShowFilters] = useState(false);
 
   const [filters, setFilters] = useState({
@@ -358,18 +359,14 @@ export default function SearchVehicles() {
 
               if (canInteract) {
                 return (
-                  <Link key={v.id} to={`/rental-request?vehicleId=${v.id}`}>
-                    <VehicleCard vehicle={v} />
-                  </Link>
+                  <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
                 );
               }
               return (
-                <div key={v.id} onClick={() => toast.warning(lockMessage)} className="cursor-pointer">
-                  <div className="relative">
-                    <VehicleCard vehicle={v} />
-                    <div className="absolute bottom-0 left-0 right-0 bg-amber-500/90 text-white text-[11px] font-medium px-3 py-1.5 rounded-b-xl flex items-center justify-center gap-1.5">
-                      <Lock className="w-3 h-3 shrink-0" /> {lockLabel}
-                    </div>
+                <div key={v.id} className="relative">
+                  <VehicleCard vehicle={v} onClick={() => toast.warning(lockMessage)} />
+                  <div className="absolute bottom-0 left-0 right-0 bg-amber-500/90 text-white text-[11px] font-medium px-3 py-1.5 rounded-b-xl flex items-center justify-center gap-1.5 pointer-events-none">
+                    <Lock className="w-3 h-3 shrink-0" /> {lockLabel}
                   </div>
                 </div>
               );

@@ -750,7 +750,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       {vehicles.length > 0 ? (
         <div className="space-y-3">
           {vehicles.map(v => (
-            <Link key={v.id} to={`/edit-vehicle?id=${v.id}`}><VehicleCard vehicle={v} /></Link>
+            <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/edit-vehicle?id=${v.id}`)} />
           ))}
         </div>
       ) : (
@@ -910,11 +910,9 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
             const isAdminUser = ['kanelothelejane@gmail.com'].includes(user?.email);
             const canRent = isAdminUser || (user?.subscription_active && user?.verified);
             return canRent ? (
-              <Link key={v.id} to={`/rental-request?vehicleId=${v.id}`}><VehicleCard vehicle={v} /></Link>
+              <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
             ) : (
-              <div key={v.id} onClick={() => toast.warning('Subscribe and complete verification to rent vehicles')} className="cursor-pointer">
-                <VehicleCard vehicle={v} />
-              </div>
+              <VehicleCard key={v.id} vehicle={v} onClick={() => toast.warning('Subscribe and complete verification to rent vehicles')} />
             );
           })}
         </div>
