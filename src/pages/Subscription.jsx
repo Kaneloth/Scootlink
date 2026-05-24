@@ -324,19 +324,8 @@ export default function Subscription() {
                 </div>
                 <h3 className="font-bold text-foreground">{p.name}</h3>
                 <div className="mt-1 mb-4">
-                  {!user?.subscription_active ? (
-                    <>
-                      <span className="text-2xl font-extrabold text-emerald-600">R {Math.round(p.price * 0.65)}</span>
-                      <span className="text-xs text-muted-foreground line-through ml-1">R {p.price}</span>
-                      <span className="text-xs text-muted-foreground">/{p.period}</span>
-                      <p className="text-[10px] text-emerald-600 font-medium mt-0.5">for first 2 months</p>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-2xl font-extrabold">R {p.price}</span>
-                      <span className="text-xs text-muted-foreground">/{p.period}</span>
-                    </>
-                  )}
+                  <span className="text-2xl font-extrabold">R {p.price}</span>
+                  <span className="text-xs text-muted-foreground">/{p.period}</span>
                 </div>
                 <ul className="space-y-1.5">
                   {p.features.map((f, i) => (
@@ -556,7 +545,7 @@ export default function Subscription() {
               <p className="font-bold text-lg">{plan?.name} — R {plan?.price}/month</p>
               {!user?.subscription_active && (
                 <p className="text-xs text-emerald-600 mt-0.5 font-medium">
-                  35% off · R {Math.round((plan?.price ?? 0) * 0.65)}/month for first 2 months
+                  First month free · billing starts day 31
                 </p>
               )}
               {idStatus !== 'verified' && (
