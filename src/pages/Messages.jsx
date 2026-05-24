@@ -10,6 +10,7 @@ import {
   Copy, Trash2, Trash, Check, CheckCheck, Clock, AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { sendSMS } from '@/lib/sms';
 
 // ── localStorage helpers for client-side "delete for me" ─────────────────────
 const HIDDEN_KEY       = (uid) => `scootlink_hidden_msgs_${uid}`;
@@ -432,6 +433,13 @@ export default function Messages() {
     } else if (inserted) {
       // Replace optimistic with real DB message
       setMessages((prev) => prev.map((m) => m.id === tempId ? inserted : m));
+      try {
+        const { data: recipientProfile } = await supabase
+          .from('profiles').select('phone').eq('id', selectedChat.otherUserId).single();
+        if (recipientProfile?.phone) {
+          await sendSMS(recipientProfile.phone, `You have a new message from ${user.full_name || 'a Skootlink user'}. Open the app to reply.`);
+        }
+      } catch { /* SMS failure must never block the main flow */ }
     }
   };
 
@@ -739,7 +747,7 @@ export default function Messages() {
             <div ref={messagesEndRef} />
           </div>
 
-          {canMessage ? (
+          {canMessage && (
             <div className="border-t border-border pt-4">
               <Textarea
                 placeholder="Type your message…"
@@ -752,19 +760,6 @@ export default function Messages() {
               <Button onClick={handleSend} disabled={!newMessage.trim() || loading} className="w-full gap-2">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 {loading ? 'Sending…' : 'Send'}
-              </Button>
-            </div>
-          ) : (
-            <div className="border-t border-border pt-5 flex flex-col items-center gap-2 text-center">
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                <Lock className="w-5 h-5 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium text-foreground">Messaging locked</p>
-              <p className="text-xs text-muted-foreground">
-                Subscribe and verify your identity to send and receive messages.
-              </p>
-              <Button size="sm" variant="outline" className="mt-1" onClick={() => navigate('/subscription')}>
-                View Plans
               </Button>
             </div>
           )}
