@@ -207,6 +207,15 @@ export default function Profile() {
   };
 
   const handleSave = async () => {
+    if (!form.full_name.trim()) { toast.error('Full name is required'); return; }
+    if (!form.phone.trim()) { toast.error('Phone number is required'); return; }
+    if (!form.license_number.trim()) { toast.error('License number is required'); return; }
+    if (form.citizenship === 'South African' && !sensitiveForm.sa_id.trim()) {
+      toast.error('SA ID number is required'); return;
+    }
+    if (form.citizenship !== 'South African' && !sensitiveForm.passport.trim()) {
+      toast.error('Passport number is required'); return;
+    }
     setSaving(true);
     try {
       // ── 1. Update non-sensitive user metadata ──────────────────────────────
@@ -409,7 +418,7 @@ export default function Profile() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
-                    <Label>Full Name</Label>
+                    <Label>Full Name <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
                       value={form.full_name}
@@ -436,7 +445,7 @@ export default function Profile() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label>Phone</Label>
+                    <Label>Phone <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
                       placeholder="+27 123 456 789"
@@ -491,7 +500,7 @@ export default function Profile() {
                 {/* Sensitive identity fields — saved to a separate RLS-protected table */}
                 {form.citizenship === 'South African' ? (
                   <div>
-                    <Label>SA ID Number</Label>
+                    <Label>SA ID Number <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
                       placeholder="13-digit ID"
@@ -501,7 +510,7 @@ export default function Profile() {
                   </div>
                 ) : (
                   <div>
-                    <Label>Passport Number</Label>
+                    <Label>Passport Number <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
                       placeholder="Passport number"
@@ -513,7 +522,7 @@ export default function Profile() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label>License Number</Label>
+                    <Label>License Number <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
                       placeholder="DL123"
