@@ -511,7 +511,7 @@ export default function Auth() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => navigate('/contact')}
+                  onClick={() => navigate('/contact', { state: { backTo: '/auth' } })}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
                 >
                   <Mail className="w-3.5 h-3.5" />
