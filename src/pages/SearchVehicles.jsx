@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { auth } from '@/api/supabaseData';
 import { supabase } from '@/api/supabaseClient';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
@@ -95,6 +95,7 @@ async function fetchVehiclePage({ pageParam = 0, filters }) {
 
 export default function SearchVehicles() {
   const navigate = useNavigate();
+  const autoLocationRef = useRef(null);
   const [showFilters, setShowFilters] = useState(false);
 
   const [filters, setFilters] = useState({
@@ -113,12 +114,27 @@ export default function SearchVehicles() {
   // while filters.location updates live so text-match responds immediately.
   const [geocodeTarget,  setGeocodeTarget]  = useState('');
 
+  // Auto-detect user's location on mount for default 50 km proximity filter.
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, displayName: 'Your location' };
+        autoLocationRef.current = coords;
+        setFilters(prev => ({ ...prev, locationCoords: coords, location: 'Your location' }));
+      },
+      () => {}, // silently ignore denied / unavailable
+      { timeout: 8000, maximumAge: 5 * 60 * 1000 },
+    );
+  }, []);
+
   // Geocode only when the user commits a location (blur or Enter).
   // Requires ≥3 characters — shorter strings fall back to text-match silently.
   useEffect(() => {
     if (!geocodeTarget || geocodeTarget.trim().length < 3) {
       setGeocoding(false);
-      setFilters(prev => ({ ...prev, locationCoords: null }));
+      // Restore auto-location when the user clears the location input.
+      setFilters(prev => ({ ...prev, locationCoords: autoLocationRef.current, location: autoLocationRef.current ? 'Your location' : '' }));
       return;
     }
     let cancelled = false;
@@ -181,7 +197,14 @@ export default function SearchVehicles() {
     setLocalMaxPrice(3000);
     setLocalRadiusKm(50);
     setGeocodeTarget('');
-    setFilters({ type: 'all', maxPrice: 3000, location: '', minRating: 0, radiusKm: 50, locationCoords: null });
+    setFilters({
+      type:           'all',
+      maxPrice:       3000,
+      location:       autoLocationRef.current ? 'Your location' : '',
+      minRating:      0,
+      radiusKm:       50,
+      locationCoords: autoLocationRef.current,
+    });
   };
 
   return (

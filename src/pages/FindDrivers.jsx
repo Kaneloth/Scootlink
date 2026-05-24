@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, auth, Vehicle, fetchProfilesByIds } from '@/api/supabaseData';
 import { useQuery } from '@tanstack/react-query';
@@ -33,6 +33,7 @@ export default function FindDrivers() {
   const [lightboxSrc,      setLightboxSrc]      = useState(null);
 
   // Proximity state
+  const autoLocationRef = useRef(null);
   const [locationCoords,   setLocationCoords]   = useState(null);
   const [geocoding,        setGeocoding]        = useState(false);
   const [rpcDrivers,       setRpcDrivers]       = useState(null); // null = use User.list(); array = RPC results
@@ -73,12 +74,29 @@ export default function FindDrivers() {
       .catch(() => {});
   }, [users]);
 
+  // Auto-detect user's location on mount for default 50 km proximity filter.
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, displayName: 'Your location' };
+        autoLocationRef.current = coords;
+        setLocationCoords(coords);
+        setFilters(prev => ({ ...prev, location: 'Your location' }));
+      },
+      () => {}, // silently ignore denied / unavailable
+      { timeout: 8000, maximumAge: 5 * 60 * 1000 },
+    );
+  }, []);
+
   // Effect 1: Geocode only when the user commits a location (blur or Enter).
   // Requires ≥3 characters — shorter strings fall back to text-match silently.
   useEffect(() => {
     if (!geocodeTarget || geocodeTarget.trim().length < 3) {
       setGeocoding(false);
-      setLocationCoords(null);
+      // Restore auto-location when the user clears the location input.
+      setLocationCoords(autoLocationRef.current);
+      if (autoLocationRef.current) setFilters(prev => ({ ...prev, location: 'Your location' }));
       setRpcDrivers(null);
       return;
     }
@@ -237,8 +255,8 @@ export default function FindDrivers() {
 
   const clearFilters = () => {
     setGeocodeTarget('');
-    setFilters({ location: '', minExperience: 0, minRating: 0, radius: 50 });
-    setLocationCoords(null);
+    setFilters({ location: autoLocationRef.current ? 'Your location' : '', minExperience: 0, minRating: 0, radius: 50 });
+    setLocationCoords(autoLocationRef.current);
     setRpcDrivers(null);
   };
 
