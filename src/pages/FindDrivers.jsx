@@ -15,6 +15,7 @@ import EmptyState from '@/components/common/EmptyState';
 import { toast } from 'sonner';
 import { supabase } from '@/api/supabaseClient';
 import { geocodeLocation } from '@/lib/geocode';
+import ImageLightbox from '@/components/ui/ImageLightbox';
 
 export default function FindDrivers() {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ export default function FindDrivers() {
 
   const [selectedDriver,   setSelectedDriver]   = useState(null);
   const [avatarMap,        setAvatarMap]        = useState({});
+  const [lightboxSrc,      setLightboxSrc]      = useState(null);
 
   // Proximity state
   const [locationCoords,   setLocationCoords]   = useState(null);
@@ -366,9 +368,12 @@ export default function FindDrivers() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary shrink-0 overflow-hidden">
+                    <div
+                      className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary shrink-0 overflow-hidden cursor-zoom-in"
+                      onClick={(e) => { const av = avatarMap[d.id]; if (av?.avatar_visible !== false && av?.avatar_url) { e.stopPropagation(); setLightboxSrc(av.avatar_url); } }}
+                    >
                       {(() => { const av = avatarMap[d.id]; return av?.avatar_visible !== false && av?.avatar_url
-                        ? <img src={av.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ? <img src={av.avatar_url} alt="" className="w-full h-full object-cover pointer-events-none" />
                         : (d.full_name?.[0] || '?'); })()}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -422,9 +427,12 @@ export default function FindDrivers() {
               </div>
 
               <div className="flex items-center gap-4 mb-4">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0 overflow-hidden">
+                <div
+                  className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0 overflow-hidden cursor-zoom-in"
+                  onClick={() => { const av = avatarMap[selectedDriver.id]; if (av?.avatar_visible !== false && av?.avatar_url) setLightboxSrc(av.avatar_url); }}
+                >
                   {(() => { const av = avatarMap[selectedDriver.id]; return av?.avatar_visible !== false && av?.avatar_url
-                    ? <img src={av.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ? <img src={av.avatar_url} alt="" className="w-full h-full object-cover pointer-events-none" />
                     : (selectedDriver.full_name?.[0] || '?'); })()}
                 </div>
                 <div className="min-w-0">
@@ -596,6 +604,8 @@ export default function FindDrivers() {
           </div>
         </div>
       )}
+
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 }
