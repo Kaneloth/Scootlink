@@ -1094,7 +1094,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         <Card className="p-4 border-2 border-primary/30 bg-primary/5 mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Crown className="w-5 h-5 text-primary shrink-0" />
-            <div><p className="text-sm font-semibold text-foreground">Subscribe to unlock full access</p><p className="text-xs text-muted-foreground">Plans from R 49/month</p></div>
+            <div><p className="text-sm font-semibold text-foreground">Subscribe to unlock full access</p><p className="text-xs text-muted-foreground">Plans from R 39/month</p></div>
           </div>
           <Link to="/subscription"><Button size="sm" className="shrink-0">Subscribe</Button></Link>
         </Card>
