@@ -164,6 +164,16 @@ export default function Onboarding() {
       toast.error('Please fill in all required fields');
       return false;
     }
+    // 18+ age gate — no exceptions
+    const dob = new Date(form.date_of_birth);
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+    if (age < 18) {
+      toast.error('You must be 18 or older to register on Skootlink');
+      return false;
+    }
     const digits = form.phone.replace(/\D/g, '');
     if (!form.phone.startsWith('+') || digits.length < 10 || digits.length > 15) {
       toast.error('Please enter a valid phone number');
@@ -359,8 +369,10 @@ export default function Onboarding() {
 
                 {/* Date of Birth */}
                 <div className="col-span-2">
-                  <Label className="text-xs font-medium">Date of Birth *</Label>
-                  <Input className="mt-1" type="date" value={form.date_of_birth} onChange={e => update('date_of_birth', e.target.value)} />
+                  <Label className="text-xs font-medium">
+                    Date of Birth * <span className="text-muted-foreground font-normal">(must be 18 or older)</span>
+                  </Label>
+                  <Input className="mt-1" type="date" value={form.date_of_birth} onChange={e => update('date_of_birth', e.target.value)} max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]} />
                 </div>
 
               </div>
@@ -470,7 +482,7 @@ export default function Onboarding() {
                   Continue <ArrowRight className="w-4 h-4" />
                 </Button>
               ) : (
-                <Button onClick={nextStep} className="gap-2" disabled={saving}>
+                <Button onClick={() => saveAndNavigate('subscription')} className="gap-2" disabled={saving}>
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                   {saving ? 'Saving...' : 'Subscribe & Get Started'}
                 </Button>
@@ -483,7 +495,7 @@ export default function Onboarding() {
                 variant="ghost"
                 size="sm"
                 className="w-full text-muted-foreground hover:text-foreground"
-                onClick={() => { if (validatePersonal()) saveAndNavigate('home'); }}
+                onClick={() => saveAndNavigate('home')}
                 disabled={saving}
               >
                 Skip subscription for now

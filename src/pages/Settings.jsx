@@ -178,6 +178,11 @@ export default function Settings() {
   const [licencePlanStatus, setLicencePlanStatus] = useState('idle');
   const [licencePlanMsg, setLicencePlanMsg] = useState('');
 
+  // ── Plan tab — SA ID / Passport ──────────────────────────────────────────
+  const [idDocType, setIdDocType] = useState('sa_id');   // 'sa_id' | 'passport'
+  const [idDocNumber, setIdDocNumber] = useState('');
+  const [idDocError, setIdDocError] = useState('');
+
   // ── Plan tab — cancel subscription ──────────────────────────────────────
   const [showPlanCancelConfirm, setShowPlanCancelConfirm] = useState(false);
   const [cancellingPlan, setCancellingPlan] = useState(false);
@@ -333,6 +338,49 @@ export default function Settings() {
     }
   };
 
+  // ── SA ID DOB extraction ──────────────────────────────────────────────────
+
+  // Returns age from a 13-digit SA ID number, or null if invalid format.
+  function ageFromSAId(idNum) {
+    const clean = idNum.replace(/\s/g, '');
+    if (!/^\d{13}$/.test(clean)) return null;
+    const yy = parseInt(clean.slice(0, 2), 10);
+    const mm = parseInt(clean.slice(2, 4), 10);
+    const dd = parseInt(clean.slice(4, 6), 10);
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+    const currentYY = new Date().getFullYear() % 100;
+    const fullYear = yy <= currentYY ? 2000 + yy : 1900 + yy;
+    const dob = new Date(fullYear, mm - 1, dd);
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const mo = today.getMonth() - dob.getMonth();
+    if (mo < 0 || (mo === 0 && today.getDate() < dob.getDate())) age--;
+    return age;
+  }
+
+  // Validate SA ID doc number on change and auto-flag under-18
+  const handleIdDocChange = (val) => {
+    setIdDocNumber(val);
+    setIdDocError('');
+    if (idDocType === 'sa_id') {
+      const clean = val.replace(/\s/g, '');
+      if (clean.length === 13) {
+        const age = ageFromSAId(clean);
+        if (age === null) {
+          setIdDocError('ID number format is invalid — please double-check.');
+        } else if (age < 18) {
+          setIdDocError('Your SA ID shows you are under 18. Skootlink is for adults only.');
+        }
+      }
+    }
+  };
+
+  // Pre-fill ID from saved profile when user loads
+  useEffect(() => {
+    if (user?.id_document_number) setIdDocNumber(user.id_document_number);
+    if (user?.id_document_type)   setIdDocType(user.id_document_type);
+  }, [user]);
+
   // ── Plan tab computed ─────────────────────────────────────────────────────
 
   const needsLicencePlan = selectedPlan === 'driver' || selectedPlan === 'both';
@@ -396,7 +444,7 @@ export default function Settings() {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, subscription_active, subscription_plan')
+      .select('id, email, full_name, verified, subscription_active, subscription_plan, date_of_birth, account_type')
       .order('email', { ascending: true });
     if (!error) {
       setAdminUsers(data || []);
@@ -447,6 +495,30 @@ export default function Settings() {
   // ── Plan ─────────────────────────────────────────────────────────────────
 
   const handleSubscribe = async () => {
+    // 18+ hard gate — check stored DOB before allowing subscription
+    if (user?.date_of_birth) {
+      const dob = new Date(user.date_of_birth);
+      const today = new Date();
+      let age = today.getFullYear() - dob.getFullYear();
+      const mo = today.getMonth() - dob.getMonth();
+      if (mo < 0 || (mo === 0 && today.getDate() < dob.getDate())) age--;
+      if (age < 18) {
+        toast.error('You must be 18 or older to subscribe to Skootlink');
+        return;
+      }
+    }
+    // SA ID — block subscription if ID number shows under 18
+    if (idDocType === 'sa_id' && idDocNumber.trim().length === 13) {
+      const age = ageFromSAId(idDocNumber.trim());
+      if (age !== null && age < 18) {
+        toast.error('Your SA ID indicates you are under 18. Skootlink is for adults only.');
+        return;
+      }
+    }
+    if (idDocError) {
+      toast.error('Please fix the ID document error before subscribing.');
+      return;
+    }
     if (needsLicencePlan && licencePlanStatus !== 'verified') {
       toast.error('Please verify your driving licence before subscribing as a Driver');
       return;
@@ -467,6 +539,10 @@ export default function Settings() {
       if (needsLicencePlan && licencePlanStatus === 'verified') {
         profileUpdate.license_number = licencePlanNumber.trim().toUpperCase();
         profileUpdate.license_year = parseInt(licencePlanYear);
+      }
+      if (idDocNumber.trim()) {
+        profileUpdate.id_document_number = idDocNumber.trim().toUpperCase();
+        profileUpdate.id_document_type = idDocType;
       }
       await auth.updateMe(profileUpdate);
       await supabase.auth.updateUser({ data: { subscription_plan: selectedPlan } });
@@ -778,9 +854,63 @@ export default function Settings() {
               </Card>
             )}
 
+            {/* ── Identity document — SA ID or Passport ────────────────── */}
+            <Card className="p-4 border border-border/50 space-y-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
+                <p className="font-semibold text-sm">Identity Document</p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Required to confirm you are 18 or older. Verified by the Skootlink admin team before account activation.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-medium">Document Type</Label>
+                  <select
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+                    value={idDocType}
+                    onChange={e => { setIdDocType(e.target.value); setIdDocNumber(''); setIdDocError(''); }}
+                  >
+                    <option value="sa_id">SA ID Number</option>
+                    <option value="passport">Passport</option>
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">
+                    {idDocType === 'sa_id' ? 'SA ID Number *' : 'Passport Number *'}
+                  </Label>
+                  <Input
+                    className={`mt-1 ${idDocError ? 'border-red-500 focus-visible:ring-red-400' : ''}`}
+                    placeholder={idDocType === 'sa_id' ? '13-digit ID number' : 'e.g. A01234567'}
+                    value={idDocNumber}
+                    maxLength={idDocType === 'sa_id' ? 13 : 20}
+                    onChange={e => handleIdDocChange(e.target.value.replace(/\s/g, ''))}
+                  />
+                </div>
+              </div>
+              {idDocError && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-700 text-xs dark:bg-red-900/20 dark:text-red-400">
+                  <XCircle className="w-4 h-4 shrink-0" />
+                  <span>{idDocError}</span>
+                </div>
+              )}
+              {idDocType === 'sa_id' && !idDocError && idDocNumber.replace(/\s/g,'').length === 13 && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-xs dark:bg-emerald-900/20 dark:text-emerald-400">
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span>SA ID format looks good — age confirmed via your ID number.</span>
+                </div>
+              )}
+              {idDocType === 'passport' && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50 text-xs text-muted-foreground">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>Passport holders: our admin team will verify your age against the date of birth you provided during registration.</span>
+                </div>
+              )}
+            </Card>
+
             <Button
               onClick={handleSubscribe}
-              disabled={processingPlan || (needsLicencePlan && licencePlanStatus !== 'verified')}
+              disabled={processingPlan || (needsLicencePlan && licencePlanStatus !== 'verified') || !!idDocError || !idDocNumber.trim()}
               className="w-full gap-2"
             >
               {processingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
@@ -1105,6 +1235,22 @@ export default function Settings() {
                           <p className="text-xs text-muted-foreground mt-0.5">
                             Plan: <span className="font-medium capitalize">{u.subscription_plan || 'none'}</span>
                           </p>
+                          {u.date_of_birth && (() => {
+                            const dob = new Date(u.date_of_birth);
+                            const today = new Date();
+                            let age = today.getFullYear() - dob.getFullYear();
+                            const mo = today.getMonth() - dob.getMonth();
+                            if (mo < 0 || (mo === 0 && today.getDate() < dob.getDate())) age--;
+                            const under18 = age < 18;
+                            return (
+                              <p className={`text-xs mt-0.5 ${under18 ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>
+                                DOB: {u.date_of_birth} ({age} yrs{under18 ? ' — UNDER 18' : ''})
+                              </p>
+                            );
+                          })()}
+                          {!u.date_of_birth && (
+                            <p className="text-xs text-amber-600 mt-0.5">DOB not on record</p>
+                          )}
                         </div>
                         <div className="flex flex-col items-end gap-1.5 shrink-0">
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.verified ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'}`}>
