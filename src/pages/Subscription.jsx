@@ -182,7 +182,7 @@ export default function Subscription() {
     setProcessing(true);
     try {
       const isFirstSubscription = !user?.subscription_active;
-      // New subscribers get a free first month — 60 days total access.
+      // New subscribers get 35% off for 2 months — 60 days total access.
       // Renewals / plan switches get the standard 30 days.
       const durationMs = isFirstSubscription
         ? 60 * 24 * 60 * 60 * 1000
@@ -216,7 +216,7 @@ export default function Subscription() {
       }
       toast.success(
         isFirstSubscription
-          ? 'Subscription activated! Your first month is on us — enjoy Skootlink!'
+          ? 'Subscription activated! 35% discount applied for your first 2 months — enjoy Skootlink!'
           : 'Plan updated! Welcome back to Skootlink.'
       );
       window.location.href = '/';
@@ -272,15 +272,15 @@ export default function Subscription() {
           <p className="text-sm text-muted-foreground mt-1">Subscribe to unlock full platform access</p>
         </div>
 
-        {/* Free first month banner — new subscribers only */}
+        {/* 35% discount banner — new subscribers only */}
         {!user?.subscription_active && (
           <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Your first month is free!</p>
+              <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">35% off your first 2 months!</p>
               <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
-                Subscribe today and enjoy full access at no charge for the first 30 days.
-                Your first payment only begins in month two — no surprises.
+                Verify your identity and subscribe today to lock in 35% off for your first two months.
+                Full price applies from month three — no surprises.
               </p>
             </div>
           </div>
@@ -324,8 +324,19 @@ export default function Subscription() {
                 </div>
                 <h3 className="font-bold text-foreground">{p.name}</h3>
                 <div className="mt-1 mb-4">
-                  <span className="text-2xl font-extrabold">R {p.price}</span>
-                  <span className="text-xs text-muted-foreground">/{p.period}</span>
+                  {!user?.subscription_active ? (
+                    <>
+                      <span className="text-2xl font-extrabold text-emerald-600">R {Math.round(p.price * 0.65)}</span>
+                      <span className="text-xs text-muted-foreground line-through ml-1">R {p.price}</span>
+                      <span className="text-xs text-muted-foreground">/{p.period}</span>
+                      <p className="text-[10px] text-emerald-600 font-medium mt-0.5">for first 2 months</p>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-2xl font-extrabold">R {p.price}</span>
+                      <span className="text-xs text-muted-foreground">/{p.period}</span>
+                    </>
+                  )}
                 </div>
                 <ul className="space-y-1.5">
                   {p.features.map((f, i) => (
@@ -545,7 +556,7 @@ export default function Subscription() {
               <p className="font-bold text-lg">{plan?.name} — R {plan?.price}/month</p>
               {!user?.subscription_active && (
                 <p className="text-xs text-emerald-600 mt-0.5 font-medium">
-                  First month free · billing starts day 31
+                  35% off · R {Math.round((plan?.price ?? 0) * 0.65)}/month for first 2 months
                 </p>
               )}
               {idStatus !== 'verified' && (
