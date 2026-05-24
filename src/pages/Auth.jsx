@@ -784,16 +784,16 @@ export default function Auth() {
               <h2 className="text-lg font-semibold text-foreground">Create Account</h2>
               <div>
                 <Label>Full Name</Label>
-                <Input placeholder="Your full name" value={regName} onChange={(e) => setRegName(e.target.value)} />
+                <Input placeholder="Your full name" value={regName} onChange={(e) => setRegName(e.target.value)} autoComplete="name" />
               </div>
               <div>
                 <Label>Email</Label>
-                <Input type="email" placeholder="your@email.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
+                <Input type="email" placeholder="your@email.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} autoComplete="email" />
               </div>
               <div>
                 <Label>Password</Label>
                 <div className="relative">
-                  <Input type={showRegPw ? 'text' : 'password'} placeholder="Create a password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} className="pr-10" />
+                  <Input type={showRegPw ? 'text' : 'password'} placeholder="Create a password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} className="pr-10" autoComplete="new-password" />
                   <button type="button" tabIndex={-1} onClick={() => setShowRegPw(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showRegPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -803,7 +803,7 @@ export default function Auth() {
               <div>
                 <Label>Confirm Password</Label>
                 <div className="relative">
-                  <Input type={showRegConfirmPw ? 'text' : 'password'} placeholder="Confirm your password" value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} className="pr-10" />
+                  <Input type={showRegConfirmPw ? 'text' : 'password'} placeholder="Confirm your password" value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} className="pr-10" autoComplete="new-password" />
                   <button type="button" tabIndex={-1} onClick={() => setShowRegConfirmPw(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showRegConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
