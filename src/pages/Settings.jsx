@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import {
   Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
-  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy,
+  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy,
 } from 'lucide-react';
 import { sendSMS } from '@/lib/sms';
 
@@ -444,7 +444,7 @@ export default function Settings() {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, subscription_active, subscription_plan, date_of_birth, account_type')
+      .select('id, email, full_name, verified, subscription_active, subscription_plan, date_of_birth, account_type, customer_code')
       .order('email', { ascending: true });
     if (!error) {
       setAdminUsers(data || []);
@@ -606,6 +606,26 @@ export default function Settings() {
         {/* ── General tab ── */}
         <TabsContent value="general">
           <div className="space-y-1">
+            {/* Customer Code card */}
+            {user?.customer_code && (
+              <div className="mb-3 p-4 rounded-xl bg-primary/5 border border-primary/20">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Your Customer Code</p>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-lg font-bold tracking-widest text-foreground font-mono">{user.customer_code}</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(user.customer_code);
+                      toast.success('Customer code copied!');
+                    }}
+                    className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1.5">Quote this code whenever you contact Skootlink support.</p>
+              </div>
+            )}
+
             <button onClick={() => navigate('/profile')} className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors">
               <div className="flex items-center gap-3">
                 <UserIcon className="w-5 h-5 text-muted-foreground" />
@@ -1202,7 +1222,7 @@ export default function Settings() {
               </div>
 
               <Input
-                placeholder="Search by email or name…"
+                placeholder="Search by email, name or customer code…"
                 value={adminFilter}
                 onChange={e => setAdminFilter(e.target.value)}
                 className="text-sm"
@@ -1224,7 +1244,10 @@ export default function Settings() {
                 {adminUsers
                   .filter(u => {
                     const q = adminFilter.toLowerCase();
-                    return !q || (u.email || '').toLowerCase().includes(q) || (u.full_name || '').toLowerCase().includes(q);
+                    return !q
+                      || (u.email || '').toLowerCase().includes(q)
+                      || (u.full_name || '').toLowerCase().includes(q)
+                      || (u.customer_code || '').toLowerCase().includes(q);
                   })
                   .map(u => (
                     <Card key={u.id} className="p-3 space-y-2">
@@ -1232,6 +1255,9 @@ export default function Settings() {
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{u.full_name || '—'}</p>
                           <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                          {u.customer_code && (
+                            <p className="text-xs font-mono text-primary mt-0.5">{u.customer_code}</p>
+                          )}
                           <p className="text-xs text-muted-foreground mt-0.5">
                             Plan: <span className="font-medium capitalize">{u.subscription_plan || 'none'}</span>
                           </p>
