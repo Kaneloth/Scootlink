@@ -10,7 +10,6 @@ import {
   Copy, Trash2, Trash, Check, CheckCheck, Clock, AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { sendSMS } from '@/lib/sms';
 
 // ── localStorage helpers for client-side "delete for me" ─────────────────────
 const HIDDEN_KEY       = (uid) => `scootlink_hidden_msgs_${uid}`;
@@ -433,13 +432,6 @@ export default function Messages() {
     } else if (inserted) {
       // Replace optimistic with real DB message
       setMessages((prev) => prev.map((m) => m.id === tempId ? inserted : m));
-      try {
-        const { data: recipientProfile } = await supabase
-          .from('profiles').select('phone').eq('id', selectedChat.otherUserId).single();
-        if (recipientProfile?.phone) {
-          await sendSMS(recipientProfile.phone, `You have a new message from ${user.full_name || 'a Skootlink user'}. Open the app to reply.`);
-        }
-      } catch { /* SMS failure must never block the main flow */ }
     }
   };
 
