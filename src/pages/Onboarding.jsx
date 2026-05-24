@@ -470,7 +470,7 @@ export default function Onboarding() {
                   Continue <ArrowRight className="w-4 h-4" />
                 </Button>
               ) : (
-                <Button onClick={() => saveAndNavigate('subscription')} className="gap-2" disabled={saving}>
+                <Button onClick={nextStep} className="gap-2" disabled={saving}>
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                   {saving ? 'Saving...' : 'Subscribe & Get Started'}
                 </Button>
@@ -483,7 +483,7 @@ export default function Onboarding() {
                 variant="ghost"
                 size="sm"
                 className="w-full text-muted-foreground hover:text-foreground"
-                onClick={() => saveAndNavigate('home')}
+                onClick={() => { if (validatePersonal()) saveAndNavigate('home'); }}
                 disabled={saving}
               >
                 Skip subscription for now
