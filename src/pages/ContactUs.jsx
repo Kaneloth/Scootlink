@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +20,8 @@ const CATEGORIES = [
 ];
 
 export default function ContactUs() {
+  const location = useLocation();
+  const backTo = location.state?.backTo ?? '/settings';
   const [user,    setUser]    = useState(null);
   const [sending, setSending] = useState(false);
   const [sent,    setSent]    = useState(false);
@@ -78,7 +81,7 @@ export default function ContactUs() {
   if (sent) {
     return (
       <div className="p-4 lg:p-8 max-w-xl mx-auto">
-        <PageHeader title="Contact Support" backTo="/settings" />
+        <PageHeader title="Contact Support" backTo={backTo} />
         <Card className="p-8 border border-border/50 text-center space-y-4">
           <div className="flex justify-center">
             <CheckCircle2 className="w-14 h-14 text-emerald-500" />
@@ -108,7 +111,7 @@ export default function ContactUs() {
       <PageHeader
         title="Contact Support"
         subtitle="We typically respond within 24 hours"
-        backTo="/settings"
+        backTo={backTo}
       />
 
       <Card className="p-6 border border-border/50">
