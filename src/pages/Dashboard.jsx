@@ -20,6 +20,7 @@ import RentalCard from '@/components/dashboard/RentalCard';
 import EmptyState from '@/components/common/EmptyState';
 import LeaveReviewModal from '@/components/reviews/LeaveReviewModal';
 import StarRating from '@/components/reviews/StarRating';
+import ImageLightbox from '@/components/ui/ImageLightbox';
 
 // Skeleton for the stat cards row while user is loading
 function StatCardsSkeleton() {
@@ -53,6 +54,7 @@ function ActionButtonsSkeleton() {
 // Standalone component so it can be used as a direct child of createPortal
 // without the broken .map() pattern.
 function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, canMessage, onMessageBlocked }) {
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   const row = (label, value, extra = {}) => value ? (
     <div className={`flex justify-between px-4 py-2.5 ${extra.wrap ? 'gap-4' : ''}`}>
       <span className="text-muted-foreground shrink-0">{label}</span>
@@ -75,9 +77,12 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
 
           {/* Avatar + name + verified badge */}
           <div className="flex items-center gap-4 mb-5">
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden shrink-0">
+            <div
+              className={`w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden shrink-0 ${profile.avatar_visible !== false && profile.avatar_url ? 'cursor-zoom-in' : ''}`}
+              onClick={() => { if (profile.avatar_visible !== false && profile.avatar_url) setLightboxSrc(profile.avatar_url); }}
+            >
               {profile.avatar_visible !== false && profile.avatar_url
-                ? <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                ? <img src={profile.avatar_url} alt="" className="w-full h-full object-cover pointer-events-none" />
                 : (profile.full_name?.[0]?.toUpperCase() || '?')}
             </div>
             <div>
@@ -124,6 +129,7 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
         </div>
       </div>
     </div>
+    <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
   );
 }
 
