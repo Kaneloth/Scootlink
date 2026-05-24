@@ -15,6 +15,7 @@ const CATEGORIES = [
   { value: 'payment', label: 'Payment Issue'     },
   { value: 'rental',  label: 'Rental Problem'    },
   { value: 'account', label: 'Account Support'   },
+  { value: 'other',   label: 'Other'             },
 ];
 
 export default function ContactUs() {

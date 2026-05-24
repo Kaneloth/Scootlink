@@ -504,6 +504,20 @@ export default function Auth() {
                 {resendLoading ? 'Sending…' : "Didn't receive it? Resend code"}
               </button>
               <p className="text-xs text-muted-foreground">Can't find it? Check your spam folder.</p>
+
+              <div className="w-full border-t border-border/50 pt-3 mt-1 space-y-2 text-center">
+                <p className="text-xs text-muted-foreground">
+                  Still not receiving the code? Some work and government email addresses block automated emails.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/contact')}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  Contact Support
+                </button>
+              </div>
             </div>
 
           ) : /* ── Password Recovery Form (from reset link) ───────────────────── */
