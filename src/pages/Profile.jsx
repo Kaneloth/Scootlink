@@ -444,7 +444,7 @@ export default function Profile() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
+                  <div className="col-span-2">
                     <Label>Phone <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
