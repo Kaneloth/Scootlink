@@ -65,14 +65,14 @@ const SA_PROVINCE_CITIES = {
 };
 
 // ── Customer code generator ───────────────────────────────────────────────────
-// Generates a unique customer reference e.g. "SKT-A3K9MX2"
-// Uses unambiguous characters (no 0/O/1/I) for easy reading over the phone.
+// Generates a unique customer reference e.g. "SKT-12345ABC"
+// Format: SKT- + 5 digits + 3 uppercase letters
 function generateCustomerCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const digits  = '0123456789';
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   let code = 'SKT-';
-  for (let i = 0; i < 7; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
+  for (let i = 0; i < 5; i++) code += digits[Math.floor(Math.random() * 10)];
+  for (let i = 0; i < 3; i++) code += letters[Math.floor(Math.random() * 26)];
   return code;
 }
 

@@ -196,7 +196,7 @@ export default function Settings() {
     document.documentElement.style.fontSize = savedSize;
     setSignInMethod(localStorage.getItem('scootlink_signin_method') || 'password');
     setNotifications(localStorage.getItem('scootlink_notifications') !== 'false');
-    auth.me().then((u) => {
+    loadUser().then((u) => {
       setUser(u);
       const plan = u?.subscription_plan || u?.account_type || 'driver';
       setSelectedPlan(plan === 'both' ? 'both' : plan);
@@ -427,13 +427,28 @@ export default function Settings() {
       });
       await supabase.auth.updateUser({ data: { subscription_active: false } });
       toast.success('Subscription cancelled. You can resubscribe any time.');
-      setUser(await auth.me());
+      setUser(await loadUser());
       setShowPlanCancelConfirm(false);
     } catch {
       toast.error('Failed to cancel subscription. Please try again.');
     } finally {
       setCancellingPlan(false);
     }
+  };
+
+  // ── User loader (merges customer_code which auth.me() may omit) ──────────
+
+  const loadUser = async () => {
+    const u = await auth.me();
+    if (u?.id) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('customer_code')
+        .eq('id', u.id)
+        .single();
+      if (data?.customer_code) return { ...u, customer_code: data.customer_code };
+    }
+    return u;
   };
 
   // ── Admin helpers ─────────────────────────────────────────────────────────
@@ -551,7 +566,7 @@ export default function Settings() {
           ? 'Subscription activated! 35% discount applied for your first 2 months — enjoy Skootlink!'
           : 'Plan updated!'
       );
-      setUser(await auth.me());
+      setUser(await loadUser());
     } catch {
       toast.error('Failed to update subscription');
     } finally {
