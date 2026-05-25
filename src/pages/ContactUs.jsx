@@ -21,27 +21,42 @@ const CATEGORIES = [
 
 export default function ContactUs() {
   const location = useLocation();
-  const backTo = location.state?.backTo ?? '/settings';
+  const backTo       = location.state?.backTo        ?? '/settings';
+  const passedCode   = location.state?.customerCode  ?? '';
+  const passedName   = location.state?.userName      ?? '';
+  const passedEmail  = location.state?.userEmail     ?? '';
   const [user,    setUser]    = useState(null);
   const [sending, setSending] = useState(false);
   const [sent,    setSent]    = useState(false);
 
   const [form, setForm] = useState({
-    name:     '',
-    email:    '',
-    subject:  '',
-    category: '',
-    message:  '',
+    name:          passedName,
+    email:         passedEmail,
+    customer_code: passedCode,
+    subject:       '',
+    category:      '',
+    message:       '',
   });
 
   useEffect(() => {
-    auth.me().then(u => {
+    auth.me().then(async u => {
       if (!u) return;
       setUser(u);
+      // Fetch customer_code directly — auth.me() may not include it
+      let code = passedCode;
+      if (!code && u.id) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('customer_code')
+          .eq('id', u.id)
+          .single();
+        code = data?.customer_code || '';
+      }
       setForm(f => ({
         ...f,
-        name:  u.full_name || '',
-        email: u.email     || '',
+        name:          f.name  || u.full_name || '',
+        email:         f.email || u.email     || '',
+        customer_code: f.customer_code || code,
       }));
     }).catch(() => {});
   }, []);
@@ -59,12 +74,13 @@ export default function ContactUs() {
     try {
       const { error } = await supabase.functions.invoke('send-contact-email', {
         body: {
-          from_name:  form.name    || 'Skootlink User',
-          from_email: form.email,
-          subject:    form.subject,
-          category:   form.category,
-          message:    form.message,
-          user_id:    user?.id ?? null,
+          from_name:     form.name    || 'Skootlink User',
+          from_email:    form.email,
+          subject:       form.subject,
+          category:      form.category,
+          message:       form.message,
+          user_id:       user?.id          ?? null,
+          customer_code: form.customer_code || null,
         },
       });
 
@@ -116,6 +132,17 @@ export default function ContactUs() {
 
       <Card className="p-6 border border-border/50">
         <form onSubmit={handleSubmit} className="space-y-5">
+
+          {/* Customer code — read-only, auto-filled from profile */}
+          {form.customer_code && (
+            <div className="flex items-center justify-between px-3 py-2 rounded-md bg-primary/5 border border-primary/20">
+              <div>
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Customer Code</p>
+                <p className="text-sm font-mono font-bold text-primary">{form.customer_code}</p>
+              </div>
+              <span className="text-[11px] text-muted-foreground">auto-filled</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
