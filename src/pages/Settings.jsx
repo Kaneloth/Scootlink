@@ -187,6 +187,12 @@ export default function Settings() {
   const [showPlanCancelConfirm, setShowPlanCancelConfirm] = useState(false);
   const [cancellingPlan, setCancellingPlan] = useState(false);
 
+  // ── Contact support form ─────────────────────────────────────────────────
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [contactSubject, setContactSubject] = useState('');
+  const [contactMessage, setContactMessage] = useState('');
+  const [sendingContact, setSendingContact] = useState(false);
+
   useEffect(() => {
     const isDark = localStorage.getItem('theme') === 'dark';
     setDarkMode(isDark);
@@ -600,6 +606,36 @@ export default function Settings() {
     }
   };
 
+  // ── Contact support submit ────────────────────────────────────────────────
+
+  const handleContactSubmit = async () => {
+    if (!contactSubject.trim()) { toast.error('Please enter a subject'); return; }
+    if (!contactMessage.trim()) { toast.error('Please describe your issue'); return; }
+    setSendingContact(true);
+    try {
+      const code    = user?.customer_code || 'N/A';
+      const name    = user?.full_name     || '';
+      const email   = user?.email         || '';
+      const body    = [
+        `Customer Code: ${code}`,
+        `Name: ${name}`,
+        `Email: ${email}`,
+        '',
+        contactMessage.trim(),
+      ].join('\n');
+      const mailto = `mailto:help@skootlink.co.za`
+        + `?subject=${encodeURIComponent(`[${code}] ${contactSubject.trim()}`)}`
+        + `&body=${encodeURIComponent(body)}`;
+      window.location.href = mailto;
+      toast.success('Opening your email app…');
+      setContactSubject('');
+      setContactMessage('');
+      setShowContactForm(false);
+    } finally {
+      setSendingContact(false);
+    }
+  };
+
   // Whether the delete verify step uses the password input
   const deleteUsesPassword = signInMethod === 'password' || biometricFallback;
 
@@ -729,15 +765,85 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors" onClick={() => navigate('/contact')}>
-              <div className="flex items-center gap-3">
-                <LifeBuoy className="w-5 h-5 text-muted-foreground" />
-                <div className="text-left">
-                  <p className="text-sm font-medium text-foreground">Contact Support</p>
-                  <p className="text-xs text-muted-foreground">Get help from our team</p>
+            {/* ── Contact Support — inline form ─────────────────────── */}
+            <div className="rounded-xl border border-border/60 overflow-hidden">
+              <button
+                onClick={() => setShowContactForm(v => !v)}
+                className="w-full flex items-center justify-between p-4 hover:bg-accent transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <LifeBuoy className="w-5 h-5 text-muted-foreground" />
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-foreground">Contact Support</p>
+                    <p className="text-xs text-muted-foreground">Get help from our team</p>
+                  </div>
                 </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${showContactForm ? 'rotate-90' : ''}`} />
+              </button>
+
+              {showContactForm && (
+                <div className="px-4 pb-4 pt-2 border-t border-border/50 space-y-3 bg-muted/20">
+
+                  {/* Customer code — read-only, auto-filled */}
+                  <div>
+                    <Label className="text-xs font-medium">Your Customer Code</Label>
+                    <div className="mt-1 flex items-center gap-2 px-3 py-2 rounded-md border border-border bg-muted/50">
+                      <span className="text-sm font-mono font-semibold text-primary flex-1">
+                        {user?.customer_code || '—'}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">auto-filled</span>
+                    </div>
+                  </div>
+
+                  {/* Name + email — auto-filled, read-only */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs font-medium">Name</Label>
+                      <Input className="mt-1 bg-muted/50" value={user?.full_name || ''} readOnly />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Email</Label>
+                      <Input className="mt-1 bg-muted/50" value={user?.email || ''} readOnly />
+                    </div>
+                  </div>
+
+                  {/* Subject */}
+                  <div>
+                    <Label className="text-xs font-medium">Subject *</Label>
+                    <Input
+                      className="mt-1"
+                      placeholder="e.g. Payment issue, can't log in…"
+                      value={contactSubject}
+                      onChange={e => setContactSubject(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Message */}
+                  <div>
+                    <Label className="text-xs font-medium">Message *</Label>
+                    <textarea
+                      className="mt-1 w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                      placeholder="Describe your issue in detail…"
+                      value={contactMessage}
+                      onChange={e => setContactMessage(e.target.value)}
+                    />
+                  </div>
+
+                  <Button
+                    className="w-full gap-2"
+                    onClick={handleContactSubmit}
+                    disabled={sendingContact || !contactSubject.trim() || !contactMessage.trim()}
+                  >
+                    {sendingContact
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Opening…</>
+                      : <><LifeBuoy className="w-4 h-4" /> Send to Support</>}
+                  </Button>
+
+                  <p className="text-[11px] text-center text-muted-foreground">
+                    Opens your email app with your customer code pre-filled so our team can find you instantly.
+                  </p>
+                </div>
+              )}
             </div>
 
             <button
