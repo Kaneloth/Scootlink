@@ -57,7 +57,8 @@ Deno.serve(async (req) => {
     const subject    = String(body.subject    ?? '').trim();
     const category   = String(body.category   ?? '').trim();
     const message    = String(body.message    ?? '').trim();
-    const user_id    = body.user_id ?? null;
+    const user_id       = body.user_id ?? null;
+    const customer_code = String(body.customer_code ?? '').trim();
 
     const missing: string[] = [];
     if (!from_email) missing.push('from_email');
@@ -98,6 +99,11 @@ Deno.serve(async (req) => {
       <tr>
         <td style="padding:10px 14px;font-weight:600;border:1px solid #e2e8f0;background:#f8fafc;">User ID</td>
         <td style="padding:10px 14px;border:1px solid #e2e8f0;font-family:monospace;font-size:13px;">${user_id}</td>
+      </tr>` : ''}
+      ${customer_code ? `
+      <tr style="background:#eff6ff;">
+        <td style="padding:10px 14px;font-weight:600;border:1px solid #e2e8f0;">Customer Code</td>
+        <td style="padding:10px 14px;border:1px solid #e2e8f0;font-family:monospace;font-size:14px;font-weight:700;color:#1d4ed8;">${customer_code}</td>
       </tr>` : ''}
     </table>
 
