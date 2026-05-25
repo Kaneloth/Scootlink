@@ -459,7 +459,7 @@ export default function Settings() {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, subscription_active, subscription_plan, date_of_birth, account_type, customer_code')
+      .select('id, email, full_name, verified, subscription_active, subscription_plan, account_type, customer_code')
       .order('email', { ascending: true });
     if (!error) {
       setAdminUsers(data || []);
@@ -1276,22 +1276,6 @@ export default function Settings() {
                           <p className="text-xs text-muted-foreground mt-0.5">
                             Plan: <span className="font-medium capitalize">{u.subscription_plan || 'none'}</span>
                           </p>
-                          {u.date_of_birth && (() => {
-                            const dob = new Date(u.date_of_birth);
-                            const today = new Date();
-                            let age = today.getFullYear() - dob.getFullYear();
-                            const mo = today.getMonth() - dob.getMonth();
-                            if (mo < 0 || (mo === 0 && today.getDate() < dob.getDate())) age--;
-                            const under18 = age < 18;
-                            return (
-                              <p className={`text-xs mt-0.5 ${under18 ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>
-                                DOB: {u.date_of_birth} ({age} yrs{under18 ? ' — UNDER 18' : ''})
-                              </p>
-                            );
-                          })()}
-                          {!u.date_of_birth && (
-                            <p className="text-xs text-amber-600 mt-0.5">DOB not on record</p>
-                          )}
                         </div>
                         <div className="flex flex-col items-end gap-1.5 shrink-0">
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.verified ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'}`}>
