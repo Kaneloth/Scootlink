@@ -23,7 +23,7 @@ const TEXT_SIZES = [
 ];
 
 // ── Put your admin email(s) here ────────────────────────────────────────────
-const ADMIN_EMAILS = ['kanelothelejane@gmail.com'];
+const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 const PLANS = [
   {
@@ -171,6 +171,11 @@ export default function Settings() {
   const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
   const [adminFilter, setAdminFilter] = useState('');
   const [togglingId, setTogglingId] = useState(null);
+  const [blacklistingId, setBlacklistingId] = useState(null);
+  const [adminSelectedUser, setAdminSelectedUser] = useState(null); // user open in detail/edit modal
+  const [adminEditForm, setAdminEditForm] = useState(null);          // edit form state
+  const [adminSaving, setAdminSaving] = useState(false);
+  const [adminModalTab, setAdminModalTab] = useState('view');        // 'view' | 'edit'
 
   // ── Plan tab — licence verification ─────────────────────────────────────
   const [licencePlanNumber, setLicencePlanNumber] = useState('');
@@ -459,8 +464,8 @@ export default function Settings() {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, subscription_active, subscription_plan, account_type, customer_code')
-      .order('email', { ascending: true });
+      .select('id, email, full_name, verified, subscription_active, subscription_plan, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, id_document_number, id_document_type, created_at')
+      .order('created_at', { ascending: false });
     if (!error) {
       setAdminUsers(data || []);
     } else {
@@ -507,9 +512,139 @@ export default function Settings() {
     setTogglingId(null);
   };
 
+  const blacklistUser = async (userId, currentBlacklisted) => {
+    setBlacklistingId(userId);
+    const banning = !currentBlacklisted;
+
+    // 1. Toggle the blacklisted flag on the profile
+    const { error } = await supabase
+      .from('profiles')
+      .update({ blacklisted: banning })
+      .eq('id', userId);
+
+    if (error) {
+      toast.error('Failed to update blacklist: ' + (error.message || 'unknown error'));
+      setBlacklistingId(null);
+      return;
+    }
+
+    // 2. Look up the user's SA ID / passport from user_sensitive_info
+    //    (the authoritative source — not profiles.id_document_number)
+    const { data: sensitiveRow } = await supabase
+      .from('user_sensitive_info')
+      .select('sa_id, passport')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const idNum = (sensitiveRow?.sa_id || sensitiveRow?.passport || '').trim().toUpperCase();
+
+    if (idNum) {
+      if (banning) {
+        await supabase
+          .from('blacklisted_id_numbers')
+          .upsert({ id_number: idNum }, { onConflict: 'id_number' });
+      } else {
+        await supabase
+          .from('blacklisted_id_numbers')
+          .delete()
+          .eq('id_number', idNum);
+      }
+    }
+
+    // 3. Ban / unban at the Supabase Auth level and revoke all active sessions.
+    //    This blocks any new sign-in attempt and immediately invalidates existing
+    //    sessions so the user is kicked out of the app without waiting for the
+    //    access token to expire naturally.
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (accessToken) {
+        await fetch('/.netlify/functions/admin-ban-user', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ userId, ban: banning }),
+        });
+      }
+    } catch {
+      // Non-fatal — profiles.blacklisted still blocks app access on next load
+    }
+
+    setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, blacklisted: banning } : u));
+    if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, blacklisted: banning }));
+    toast.success(currentBlacklisted ? 'User unblacklisted ✓' : 'User blacklisted ⛔');
+    setBlacklistingId(null);
+  };
+
+  const openAdminUser = (u) => {
+    setAdminSelectedUser(u);
+    setAdminEditForm({
+      full_name:           u.full_name || '',
+      phone:               u.phone || '',
+      location:            u.location || '',
+      residential_address: u.residential_address || '',
+      license_number:      u.license_number || '',
+      license_year:        u.license_year ? String(u.license_year) : '',
+      account_type:        u.account_type || 'driver',
+    });
+    setAdminModalTab('view');
+  };
+
+  const saveAdminEdit = async () => {
+    if (!adminSelectedUser || !adminEditForm) return;
+    setAdminSaving(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        full_name:           adminEditForm.full_name,
+        phone:               adminEditForm.phone,
+        location:            adminEditForm.location,
+        residential_address: adminEditForm.residential_address,
+        license_number:      adminEditForm.license_number || null,
+        license_year:        adminEditForm.license_year ? parseInt(adminEditForm.license_year) : null,
+        account_type:        adminEditForm.account_type,
+      })
+      .eq('id', adminSelectedUser.id);
+    if (!error) {
+      const updated = { ...adminSelectedUser, ...adminEditForm, license_year: adminEditForm.license_year ? parseInt(adminEditForm.license_year) : null };
+      setAdminUsers(prev => prev.map(u => u.id === adminSelectedUser.id ? updated : u));
+      setAdminSelectedUser(updated);
+      toast.success('Profile updated ✓');
+      setAdminModalTab('view');
+    } else {
+      toast.error('Failed to save: ' + error.message);
+    }
+    setAdminSaving(false);
+  };
+
   // ── Plan ─────────────────────────────────────────────────────────────────
 
   const handleSubscribe = async () => {
+    // Admin bypass — no age/ID/licence checks
+    if (isAdmin) {
+      setProcessingPlan(true);
+      try {
+        const profileUpdate = {
+          subscription_active: true,
+          subscription_plan: selectedPlan,
+          subscription_start: new Date().toISOString(),
+          subscription_expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+          verified: true,
+        };
+        await auth.updateMe(profileUpdate);
+        await supabase.auth.updateUser({ data: { subscription_plan: selectedPlan } });
+        toast.success('Admin subscription activated!');
+        setUser(await loadUser());
+      } catch {
+        toast.error('Failed to update subscription');
+      } finally {
+        setProcessingPlan(false);
+      }
+      return;
+    }
     // 18+ hard gate — check stored DOB before allowing subscription
     if (user?.date_of_birth) {
       const dob = new Date(user.date_of_birth);
@@ -556,7 +691,23 @@ export default function Settings() {
         profileUpdate.license_year = parseInt(licencePlanYear);
       }
       if (idDocNumber.trim()) {
-        profileUpdate.id_document_number = idDocNumber.trim().toUpperCase();
+        const cleanId = idDocNumber.trim().toUpperCase();
+        // Check if this ID/passport number has been permanently blacklisted.
+        // This catches users who create a new account to evade a ban.
+        const { data: bannedId } = await supabase
+          .from('blacklisted_id_numbers')
+          .select('id_number')
+          .eq('id_number', cleanId)
+          .maybeSingle();
+        if (bannedId) {
+          toast.error(
+            'Your ID/passport number has been flagged. Please contact support at help@skootlink.co.za to resolve this.',
+            { duration: 8000 }
+          );
+          setProcessingPlan(false);
+          return;
+        }
+        profileUpdate.id_document_number = cleanId;
         profileUpdate.id_document_type = idDocType;
       }
       await auth.updateMe(profileUpdate);
@@ -945,7 +1096,7 @@ export default function Settings() {
 
             <Button
               onClick={handleSubscribe}
-              disabled={processingPlan || (needsLicencePlan && licencePlanStatus !== 'verified') || !!idDocError || !idDocNumber.trim()}
+              disabled={processingPlan || (!isAdmin && ((needsLicencePlan && licencePlanStatus !== 'verified') || !!idDocError || !idDocNumber.trim()))}
               className="w-full gap-2"
             >
               {processingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
@@ -1229,7 +1380,7 @@ export default function Settings() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-semibold">User Management</h3>
-                  <p className="text-xs text-muted-foreground">Verify users and manage subscriptions</p>
+                  <p className="text-xs text-muted-foreground">{adminUsers.length > 0 ? `${adminUsers.length} total users` : 'Verify, manage and blacklist users'}</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={fetchAdminUsers} disabled={loadingAdminUsers} className="gap-1.5">
                   {loadingAdminUsers ? <Loader2 className="w-3 h-3 animate-spin" /> : '↻'} Refresh
@@ -1265,32 +1416,45 @@ export default function Settings() {
                       || (u.customer_code || '').toLowerCase().includes(q);
                   })
                   .map(u => (
-                    <Card key={u.id} className="p-3 space-y-2">
+                    <Card key={u.id} className={`p-3 space-y-2 ${u.blacklisted ? 'border-red-300 bg-red-50/40 dark:bg-red-900/10' : ''}`}>
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{u.full_name || '—'}</p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium truncate">{u.full_name || '—'}</p>
+                            {u.blacklisted && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400">⛔ BLACKLISTED</span>
+                            )}
+                          </div>
                           <p className="text-xs text-muted-foreground truncate">{u.email}</p>
                           {u.customer_code && (
                             <p className="text-xs font-mono text-primary mt-0.5">{u.customer_code}</p>
                           )}
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Plan: <span className="font-medium capitalize">{u.subscription_plan || 'none'}</span>
-                          </p>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.verified ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'}`}>
+                              {u.verified ? '✓ Verified' : '⏳ Unverified'}
+                            </span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.subscription_active ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
+                              {u.subscription_active ? `● ${u.subscription_plan || 'sub'}` : '○ No sub'}
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 capitalize">
+                              {u.account_type || 'n/a'}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex flex-col items-end gap-1.5 shrink-0">
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.verified ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'}`}>
-                            {u.verified ? '✓ Verified' : '⏳ Unverified'}
-                          </span>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.subscription_active ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
-                            {u.subscription_active ? '● Subscribed' : '○ No sub'}
-                          </span>
-                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs shrink-0"
+                          onClick={() => openAdminUser(u)}
+                        >
+                          <UserIcon className="w-3 h-3 mr-1" /> View
+                        </Button>
                       </div>
-                      <div className="flex gap-2 pt-1 border-t border-border/50">
+                      <div className="grid grid-cols-4 gap-1.5 pt-1 border-t border-border/50">
                         <Button
                           size="sm"
                           variant={u.verified ? 'outline' : 'default'}
-                          className="flex-1 h-7 text-xs gap-1"
+                          className="h-7 text-[10px] gap-0.5 px-1"
                           disabled={togglingId === u.id}
                           onClick={() => toggleVerified(u.id, u.verified)}
                         >
@@ -1302,14 +1466,26 @@ export default function Settings() {
                         <Button
                           size="sm"
                           variant={u.subscription_active ? 'outline' : 'secondary'}
-                          className="flex-1 h-7 text-xs gap-1"
+                          className="h-7 text-[10px] gap-0.5 px-1"
                           disabled={togglingId === u.id + '_sub'}
                           onClick={() => toggleSubscription(u.id, u.subscription_active, u.subscription_plan)}
                         >
                           {togglingId === u.id + '_sub'
                             ? <Loader2 className="w-3 h-3 animate-spin" />
                             : <Crown className="w-3 h-3" />}
-                          {u.subscription_active ? 'Deactivate' : 'Activate sub'}
+                          {u.subscription_active ? 'Deactivate' : 'Activate'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={u.blacklisted ? 'default' : 'outline'}
+                          className={`h-7 text-[10px] gap-0.5 px-1 col-span-2 ${u.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
+                          disabled={blacklistingId === u.id}
+                          onClick={() => blacklistUser(u.id, u.blacklisted)}
+                        >
+                          {blacklistingId === u.id
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : null}
+                          {u.blacklisted ? 'Remove Blacklist' : '⛔ Blacklist User'}
                         </Button>
                       </div>
                     </Card>
@@ -1317,6 +1493,201 @@ export default function Settings() {
               </div>
             </div>
           </TabsContent>
+        )}
+
+        {/* ── Admin User Detail / Edit Modal ── */}
+        {isAdmin && adminSelectedUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setAdminSelectedUser(null)}>
+            <div
+              className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[90vh]"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Modal header */}
+              <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-primary" />
+                  <h3 className="font-semibold text-sm">
+                    {adminModalTab === 'edit' ? 'Edit Profile' : 'User Profile'}
+                  </h3>
+                  {adminSelectedUser.blacklisted && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-bold">⛔ BLACKLISTED</span>
+                  )}
+                </div>
+                <button onClick={() => setAdminSelectedUser(null)} className="text-muted-foreground hover:text-foreground">
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Tab switcher */}
+              <div className="flex border-b border-border shrink-0">
+                <button
+                  className={`flex-1 py-2 text-xs font-medium transition-colors ${adminModalTab === 'view' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                  onClick={() => setAdminModalTab('view')}
+                >
+                  View Details
+                </button>
+                <button
+                  className={`flex-1 py-2 text-xs font-medium transition-colors ${adminModalTab === 'edit' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                  onClick={() => setAdminModalTab('edit')}
+                >
+                  Edit Profile
+                </button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 p-4">
+                {adminModalTab === 'view' ? (
+                  <div className="space-y-3">
+                    {/* Identity */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Identity</p>
+                      <div className="rounded-xl border border-border/50 divide-y divide-border/50">
+                        {[
+                          ['Full Name', adminSelectedUser.full_name || '—'],
+                          ['Email', adminSelectedUser.email || '—'],
+                          ['Customer Code', adminSelectedUser.customer_code || '—'],
+                          ['Account Type', adminSelectedUser.account_type || '—'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex justify-between items-center px-3 py-2">
+                            <span className="text-xs text-muted-foreground">{label}</span>
+                            <span className="text-xs font-medium text-right ml-4 break-all">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Contact & Location */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Contact & Location</p>
+                      <div className="rounded-xl border border-border/50 divide-y divide-border/50">
+                        {[
+                          ['Phone', adminSelectedUser.phone || '—'],
+                          ['Location', adminSelectedUser.location || '—'],
+                          ['Address', adminSelectedUser.residential_address || '—'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex justify-between items-center px-3 py-2">
+                            <span className="text-xs text-muted-foreground">{label}</span>
+                            <span className="text-xs font-medium text-right ml-4 break-all">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Licence */}
+                    {(adminSelectedUser.license_number || adminSelectedUser.license_year) && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Driving Licence</p>
+                        <div className="rounded-xl border border-border/50 divide-y divide-border/50">
+                          {[
+                            ['Licence Number', adminSelectedUser.license_number || '—'],
+                            ['Year Issued', adminSelectedUser.license_year ? String(adminSelectedUser.license_year) : '—'],
+                          ].map(([label, value]) => (
+                            <div key={label} className="flex justify-between items-center px-3 py-2">
+                              <span className="text-xs text-muted-foreground">{label}</span>
+                              <span className="text-xs font-medium">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Status */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Status</p>
+                      <div className="rounded-xl border border-border/50 divide-y divide-border/50">
+                        {[
+                          ['Verified', adminSelectedUser.verified ? '✓ Yes' : '✗ No'],
+                          ['Subscription', adminSelectedUser.subscription_active ? `Active — ${adminSelectedUser.subscription_plan || '?'}` : 'Inactive'],
+                          ['Blacklisted', adminSelectedUser.blacklisted ? '⛔ Yes' : '✓ No'],
+                          ['Member Since', adminSelectedUser.created_at ? new Date(adminSelectedUser.created_at).toLocaleDateString() : '—'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex justify-between items-center px-3 py-2">
+                            <span className="text-xs text-muted-foreground">{label}</span>
+                            <span className="text-xs font-medium">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Quick actions */}
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        variant={adminSelectedUser.verified ? 'outline' : 'default'}
+                        className="h-8 text-xs gap-1"
+                        disabled={togglingId === adminSelectedUser.id}
+                        onClick={() => toggleVerified(adminSelectedUser.id, adminSelectedUser.verified)}
+                      >
+                        <ShieldCheck className="w-3 h-3" />
+                        {adminSelectedUser.verified ? 'Unverify' : 'Verify'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={adminSelectedUser.subscription_active ? 'outline' : 'secondary'}
+                        className="h-8 text-xs gap-1"
+                        disabled={togglingId === adminSelectedUser.id + '_sub'}
+                        onClick={() => toggleSubscription(adminSelectedUser.id, adminSelectedUser.subscription_active, adminSelectedUser.subscription_plan)}
+                      >
+                        <Crown className="w-3 h-3" />
+                        {adminSelectedUser.subscription_active ? 'Deactivate' : 'Activate'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={adminSelectedUser.blacklisted ? 'default' : 'outline'}
+                        className={`h-8 text-xs gap-1 ${adminSelectedUser.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
+                        disabled={blacklistingId === adminSelectedUser.id}
+                        onClick={() => blacklistUser(adminSelectedUser.id, adminSelectedUser.blacklisted)}
+                      >
+                        {adminSelectedUser.blacklisted ? 'Unban' : '⛔ Ban'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Edit tab */
+                  adminEditForm && (
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-xs">Full Name</Label>
+                        <Input className="mt-1" value={adminEditForm.full_name} onChange={e => setAdminEditForm(f => ({ ...f, full_name: e.target.value }))} />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Phone</Label>
+                        <Input className="mt-1" value={adminEditForm.phone} onChange={e => setAdminEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="+27..." />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Location</Label>
+                        <Input className="mt-1" value={adminEditForm.location} onChange={e => setAdminEditForm(f => ({ ...f, location: e.target.value }))} placeholder="e.g. Soweto, Gauteng" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Residential Address</Label>
+                        <Input className="mt-1" value={adminEditForm.residential_address} onChange={e => setAdminEditForm(f => ({ ...f, residential_address: e.target.value }))} />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Account Type</Label>
+                        <select
+                          className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+                          value={adminEditForm.account_type}
+                          onChange={e => setAdminEditForm(f => ({ ...f, account_type: e.target.value }))}
+                        >
+                          <option value="driver">Driver</option>
+                          <option value="owner">Owner</option>
+                          <option value="both">Fleet Pro (Both)</option>
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Licence Number</Label>
+                          <Input className="mt-1" value={adminEditForm.license_number} onChange={e => setAdminEditForm(f => ({ ...f, license_number: e.target.value }))} placeholder="e.g. DL1234567" />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Year Issued</Label>
+                          <Input className="mt-1" type="number" value={adminEditForm.license_year} onChange={e => setAdminEditForm(f => ({ ...f, license_year: e.target.value }))} placeholder="e.g. 2018" />
+                        </div>
+                      </div>
+                      <Button className="w-full gap-2 mt-2" onClick={saveAdminEdit} disabled={adminSaving}>
+                        {adminSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save Changes'}
+                      </Button>
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
       </Tabs>

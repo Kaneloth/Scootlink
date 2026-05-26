@@ -258,14 +258,40 @@ export default function Profile() {
         return;
       }
 
-      // ── 2. Upsert sensitive fields in the isolated table ───────────────────
+      // ── 2. Blacklist check — block saving if the ID / passport is banned ──
+      // A user who creates a new account to evade a ban will be caught here
+      // when they try to save their identity document for the first time.
+      const submittedId = (
+        form.citizenship === 'South African'
+          ? sensitiveForm.sa_id
+          : sensitiveForm.passport
+      )?.trim().toUpperCase();
+
+      if (submittedId) {
+        const { data: bannedId } = await supabase
+          .from('blacklisted_id_numbers')
+          .select('id_number')
+          .eq('id_number', submittedId)
+          .maybeSingle();
+
+        if (bannedId) {
+          toast.error(
+            'Your ID / passport number has been flagged. Please contact support at help@skootlink.co.za to resolve this.',
+            { duration: 8000 }
+          );
+          setSaving(false);
+          return;
+        }
+      }
+
+      // ── 3. Upsert sensitive fields in the isolated table ───────────────────
       // RLS ensures only this user's row can be written.
       const { error: sensitiveError } = await supabase
         .from('user_sensitive_info')
         .upsert(
           {
             user_id: user.id,
-            sa_id: sensitiveForm.sa_id || null,
+            sa_id:    sensitiveForm.sa_id    || null,
             passport: sensitiveForm.passport || null,
           },
           { onConflict: 'user_id' }
@@ -273,7 +299,7 @@ export default function Profile() {
 
       if (sensitiveError) throw sensitiveError;
 
-      // ── 3. Handle email change separately (requires confirmation) ──────────
+      // ── 4. Handle email change separately (requires confirmation) ──────────
       let emailChangePending = false;
       if (form.email !== user.email) {
         const { error } = await supabase.auth.updateUser({ email: form.email });

@@ -154,6 +154,16 @@ export default function SearchVehicles() {
     retry:     false,
   });
 
+  // Fetch blacklisted owner IDs so their vehicles are hidden from search
+  const { data: blacklistedOwnerIds = [] } = useQuery({
+    queryKey:  ['blacklisted-users'],
+    queryFn:   async () => {
+      const { data } = await supabase.from('profiles').select('id').eq('blacklisted', true);
+      return (data || []).map(p => p.id);
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   const {
     data,
     isLoading,
@@ -182,7 +192,7 @@ export default function SearchVehicles() {
   const allVehicles = (data?.pages ?? [])
     .flatMap(page => (Array.isArray(page) ? page : []))
     .filter(v => v != null);
-  const vehicles    = allVehicles.filter(v => !user || v.owner_id !== user.id);
+  const vehicles    = allVehicles.filter(v => (!user || v.owner_id !== user.id) && !blacklistedOwnerIds.includes(v.owner_id));
   const totalLoaded = allVehicles.length;
 
   const commitRadius = (km) =>
