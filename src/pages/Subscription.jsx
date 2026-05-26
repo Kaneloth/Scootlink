@@ -14,6 +14,8 @@ import {
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
+const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
+
 const PLANS = [
   {
     id: 'driver',
@@ -103,6 +105,14 @@ export default function Subscription() {
       setUser(u);
       const plan = u.subscription_plan || u.account_type || 'driver';
       setSelected(plan === 'both' ? 'both' : plan);
+      // Admin account — auto-verify everything, no checks required
+      if (ADMIN_EMAILS.includes(u.email)) {
+        setIdStatus('verified');
+        setIdMsg('Admin account — verification exempt');
+        setLicenceStatus('verified');
+        setLicenceMsg('Admin account — verification exempt');
+        return;
+      }
       // Pre-fill identity fields from profile
       if (u.citizenship) setCitizenship(u.citizenship);
       if (u.sa_id)       setSaId(u.sa_id);
@@ -171,6 +181,27 @@ export default function Subscription() {
   };
 
   const handleSubscribe = async () => {
+    // Admin bypass — skip all verification and age checks
+    if (ADMIN_EMAILS.includes(user?.email)) {
+      setProcessing(true);
+      try {
+        const profileUpdate = {
+          subscription_active: true,
+          subscription_plan: selected,
+          subscription_start: new Date().toISOString(),
+          subscription_expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+          verified: true,
+        };
+        await auth.updateMe(profileUpdate);
+        await supabase.auth.updateUser({ data: { subscription_plan: selected } });
+        toast.success('Admin subscription activated!');
+        window.location.href = '/';
+      } catch {
+        toast.error('Something went wrong. Please try again.');
+        setProcessing(false);
+      }
+      return;
+    }
     if (idStatus !== 'verified') {
       toast.error('Please verify your identity before subscribing');
       return;
@@ -557,7 +588,7 @@ export default function Subscription() {
             </div>
             <Button
               onClick={handleSubscribe}
-              disabled={processing || idStatus !== 'verified' || (needsLicence && licenceStatus !== 'verified')}
+              disabled={processing || (!ADMIN_EMAILS.includes(user?.email) && (idStatus !== 'verified' || (needsLicence && licenceStatus !== 'verified')))}
               className="gap-2 px-6 shrink-0"
             >
               {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}

@@ -55,7 +55,7 @@ function NavigationProgressBar({ pathname }) {
 // ─── Verification gate ────────────────────────────────────────────────────────
 // Routes the user can always reach even before verification is complete.
 const GATE_EXEMPT = ['/onboarding', '/subscription', '/settings', '/profile'];
-const ADMIN_EMAILS = ['kanelothelejane@gmail.com'];
+const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 function VerificationGate({ user, userLoading, children }) {
   const location = useLocation();
@@ -197,8 +197,9 @@ export default function AppLayout() {
   const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
   const [slideClass, setSlideClass] = useState('');
-  const [gateUser, setGateUser]     = useState(null);
+  const [gateUser, setGateUser]       = useState(null);
   const [userLoading, setUserLoading] = useState(true);
+  const [isBlacklisted, setIsBlacklisted] = useState(false);
 
   const mainRef = useRef(null);
   const prevLocationRef = useRef(location.pathname);
@@ -230,9 +231,23 @@ export default function AppLayout() {
   }, [location.pathname]);
 
   useEffect(() => {
-    auth.me().then(user => {
+    auth.me().then(async (user) => {
       // Unsubscribed users preview both owner + driver navigation
       setAccountType(user?.subscription_active ? (user?.subscription_plan || 'driver') : 'both');
+      if (user?.id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('blacklisted')
+          .eq('id', user.id)
+          .single();
+        if (profile?.blacklisted) {
+          // Sign out silently and show the suspended screen — do not grant app access
+          try { await supabase.auth.signOut(); } catch { /* non-fatal */ }
+          setIsBlacklisted(true);
+          setUserLoading(false);
+          return;
+        }
+      }
       setGateUser(user ?? null);
     }).catch(() => {}).finally(() => setUserLoading(false));
   }, []);
@@ -320,6 +335,44 @@ export default function AppLayout() {
       window.removeEventListener('touchcancel', onTouchCancel);
     };
   }, [getCurrentTabIndex, getSearchPath, navigate]);
+
+  // Suspended account — user was signed out; show full-page blocked screen
+  if (isBlacklisted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm text-center space-y-6">
+          <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mx-auto">
+            <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-2xl font-bold text-red-700">Account Suspended</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Your Skootlink account has been suspended and you cannot access the platform at this time.
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              If you believe this is a mistake, please contact our support team and we will review your account.
+            </p>
+          </div>
+          <div className="space-y-3 pt-2">
+            <a
+              href="mailto:help@skootlink.co.za"
+              className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+              </svg>
+              Contact Support — help@skootlink.co.za
+            </a>
+            <p className="text-xs text-muted-foreground">
+              Reference your registered email address when contacting support.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <VerificationGate user={gateUser} userLoading={userLoading}>

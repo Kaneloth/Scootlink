@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
 import { geocodeLocation } from '@/lib/geocode';
@@ -11,6 +11,8 @@ import {
   User, Users, Crown, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Bike, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 // ── Location data ─────────────────────────────────────────────────────────────
 const SA_PROVINCES = [
@@ -128,6 +130,11 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep]   = useState(0);
   const [saving, setSaving] = useState(false);
+  const [currentEmail, setCurrentEmail] = useState('');
+
+  useEffect(() => {
+    auth.me().then(u => { if (u?.email) setCurrentEmail(u.email); }).catch(() => {});
+  }, []);
 
   const [form, setForm] = useState({
     role:                'driver',
@@ -176,15 +183,18 @@ export default function Onboarding() {
       toast.error('Please fill in all required fields');
       return false;
     }
-    // 18+ age gate — no exceptions
-    const dob = new Date(form.date_of_birth);
-    const today = new Date();
-    let age = today.getFullYear() - dob.getFullYear();
-    const m = today.getMonth() - dob.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-    if (age < 18) {
-      toast.error('You must be 18 or older to register on Skootlink');
-      return false;
+    // 18+ age gate — skipped for admin accounts
+    const isAdminAccount = ADMIN_EMAILS.includes(currentEmail);
+    if (!isAdminAccount) {
+      const dob = new Date(form.date_of_birth);
+      const today = new Date();
+      let age = today.getFullYear() - dob.getFullYear();
+      const m = today.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+      if (age < 18) {
+        toast.error('You must be 18 or older to register on Skootlink');
+        return false;
+      }
     }
     const digits = form.phone.replace(/\D/g, '');
     if (!form.phone.startsWith('+') || digits.length < 10 || digits.length > 15) {

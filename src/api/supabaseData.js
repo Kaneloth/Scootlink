@@ -9,8 +9,18 @@ export { supabase };
 // Fields that must be kept in sync between auth metadata and the profiles table.
 // profiles is the source of truth — auth metadata is secondary.
 const PROFILE_FIELDS = [
-  'subscription_active', 'subscription_plan', 'subscription_start',
-  'subscription_expires', 'verified', 'full_name', 'phone', 'location',
+  // Subscription
+  'subscription_active', 'subscription_plan', 'subscription_start', 'subscription_expires',
+  // Identity & verification
+  'verified', 'id_document_number', 'id_document_type',
+  // Profile
+  'full_name', 'phone', 'location', 'residential_address',
+  'gender', 'date_of_birth', 'account_type',
+  // Onboarding
+  'onboarding_completed', 'customer_code',
+  // Licence
+  'license_number', 'license_year',
+  // Avatar
   'avatar_url', 'avatar_visible',
 ];
 

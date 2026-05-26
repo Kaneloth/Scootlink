@@ -152,6 +152,7 @@ export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [bannerReason, setBannerReason] = useState(null);
+  const [isBlacklisted, setIsBlacklisted] = useState(false);
 
   // Post-signup confirmation screen
   const [signupDone, setSignupDone] = useState(false);
@@ -307,6 +308,36 @@ export default function Auth() {
     setLoading(true);
     try {
       const session = await triggerBiometricLogin();
+      // Blacklist check layer 1 — profiles.blacklisted flag
+      const { data: bioProfile } = await supabase
+        .from('profiles')
+        .select('blacklisted')
+        .eq('id', session.user.id)
+        .single();
+      if (bioProfile?.blacklisted) {
+        await supabase.auth.signOut();
+        setIsBlacklisted(true);
+        return;
+      }
+      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers
+      const { data: bioSensitive } = await supabase
+        .from('user_sensitive_info')
+        .select('sa_id, passport')
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+      const bioIdNum = (bioSensitive?.sa_id || bioSensitive?.passport || '').trim().toUpperCase();
+      if (bioIdNum) {
+        const { data: bioBannedRow } = await supabase
+          .from('blacklisted_id_numbers')
+          .select('id_number')
+          .eq('id_number', bioIdNum)
+          .maybeSingle();
+        if (bioBannedRow) {
+          await supabase.auth.signOut();
+          setIsBlacklisted(true);
+          return;
+        }
+      }
       setUser({ id: session.user.id, email: session.user.email });
       navigate('/');
     } catch (err) {
@@ -399,6 +430,38 @@ export default function Auth() {
         setUnconfirmedEmail(loginEmail);
         return;
       }
+      // Blacklist check layer 1 — profiles.blacklisted flag
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('blacklisted')
+        .eq('id', data.user.id)
+        .single();
+      if (profile?.blacklisted) {
+        await supabase.auth.signOut();
+        setIsBlacklisted(true);
+        return;
+      }
+      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers.
+      // Catches cases where the profile flag wasn't set, or the user created
+      // a brand-new account using an already-banned identity document.
+      const { data: sensitive } = await supabase
+        .from('user_sensitive_info')
+        .select('sa_id, passport')
+        .eq('user_id', data.user.id)
+        .maybeSingle();
+      const idNum = (sensitive?.sa_id || sensitive?.passport || '').trim().toUpperCase();
+      if (idNum) {
+        const { data: bannedIdRow } = await supabase
+          .from('blacklisted_id_numbers')
+          .select('id_number')
+          .eq('id_number', idNum)
+          .maybeSingle();
+        if (bannedIdRow) {
+          await supabase.auth.signOut();
+          setIsBlacklisted(true);
+          return;
+        }
+      }
       saveBiometricRefreshToken(data.session);
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       setUser({ id: data.user.id, email: data.user.email });
@@ -439,6 +502,49 @@ export default function Auth() {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  // Suspended account — sign in was blocked; show full-page message
+  if (isBlacklisted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm text-center space-y-6">
+          <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mx-auto">
+            <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-2xl font-bold text-red-700">Account Suspended</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Your Skootlink account has been suspended and you cannot access the platform at this time.
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              If you believe this is a mistake, please contact our support team and we will review your account.
+            </p>
+          </div>
+          <div className="space-y-3 pt-2">
+            <a
+              href="mailto:help@skootlink.co.za"
+              className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors"
+            >
+              <Mail className="w-4 h-4" />
+              Contact Support — help@skootlink.co.za
+            </a>
+            <p className="text-xs text-muted-foreground">
+              Reference your registered email address when contacting support.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsBlacklisted(false)}
+            className="text-xs text-muted-foreground hover:text-foreground underline"
+          >
+            ← Back to sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const savedMethod = localStorage.getItem('scootlink_signin_method') || 'password';
 
