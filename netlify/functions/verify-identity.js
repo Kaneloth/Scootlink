@@ -4,7 +4,8 @@ const { randomUUID } = require('crypto');
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const VERIFYNOW_API_KEY = process.env.VERIFYNOW_API_KEY;
-// ⚠️  SANDBOX MODE — remove the mode field from the payload below when going live
+
+// ⚠️ SANDBOX MODE — Remove the `mode` field from both payloads below when going live
 
 exports.handler = async (event) => {
   const headers = {
@@ -63,22 +64,18 @@ exports.handler = async (event) => {
   }
 
   // ── Call VerifyNow ────────────────────────────────────────────────────────
-  // VerifyNow uses reportType for SA ID checks, bundle for passport/document checks.
-  // SA ID: reportType = 'said_verification'
-  // Passport: bundle = 'document_authentication'
-  let payload;
+  // SA ID:     reportType = 'said_verification'
+  // Passport:  reportType = 'document_authentication'   (confirm with VerifyNow if needed)
+  const payload = {
+    mode: 'sandbox', // ← remove this line for production (or set to 'live')
+  };
+
   if (documentType === 'sa_id') {
-    payload = {
-      reportType: 'said_verification',
-      idNumber: cleanId,
-      mode: 'sandbox', // ← remove for production
-    };
+    payload.reportType = 'said_verification';
+    payload.idNumber = cleanId;
   } else {
-    payload = {
-      bundle: 'document_authentication',
-      passportNumber: cleanId,
-      mode: 'sandbox', // ← remove for production
-    };
+    payload.reportType = 'document_authentication';
+    payload.passportNumber = cleanId;
   }
 
   let vnResult;
@@ -96,7 +93,7 @@ exports.handler = async (event) => {
     vnHttpStatus = vnRes.status;
     vnResult = await vnRes.json();
     console.log('[verify-identity] VerifyNow raw response:', JSON.stringify(vnResult));
-    // Surface any VerifyNow API-level errors directly (e.g. wrong bundle name, bad key)
+
     if (!vnRes.ok) {
       const errMsg = vnResult?.message || vnResult?.error || `VerifyNow error ${vnHttpStatus}`;
       return {
@@ -113,7 +110,6 @@ exports.handler = async (event) => {
   }
 
   // ── Interpret result ──────────────────────────────────────────────────────
-  // VerifyNow returns various shapes — normalise to a boolean
   const verified =
     vnResult.status === 'verified' ||
     vnResult.verified === true ||
@@ -124,8 +120,6 @@ exports.handler = async (event) => {
   const reference = vnResult.reference || vnResult.id || vnResult.data?.reference || null;
 
   if (verified) {
-    // id_document_number and id_document_type already live in sensitive_user_info
-    // — only write the verification outcome to profiles
     const { error: updateErr } = await supabase
       .from('profiles')
       .update({
