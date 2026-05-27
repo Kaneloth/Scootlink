@@ -110,14 +110,47 @@ exports.handler = async (event) => {
   }
 
   // ── Interpret result ──────────────────────────────────────────────────────
-  const verified =
-    vnResult.status === 'verified' ||
-    vnResult.verified === true ||
-    vnResult.result === 'pass' ||
-    vnResult.result === 'verified' ||
-    (vnResult.data && (vnResult.data.verified === true || vnResult.data.status === 'verified'));
+  // Handle nested results (e.g., said_verification) and fall back to other fields.
+  let verified = false;
+  let message = '';
 
-  const reference = vnResult.reference || vnResult.id || vnResult.data?.reference || null;
+  // Determine which report type key to look for in the results object
+  const reportKey = documentType === 'sa_id' ? 'said_verification' : 'document_authentication';
+  const reportResult = vnResult.results?.[reportKey];
+
+  if (reportResult) {
+    // SA ID: check Status and realTimeResults.Status
+    if (
+      reportResult.Status === 'Success' ||
+      reportResult.realTimeResults?.Status === 'ID Number Valid'
+    ) {
+      verified = true;
+      message = 'Identity verified successfully.';
+    } else {
+      // Failure case — extract a meaningful message if available
+      message =
+        reportResult.realTimeResults?.Status ||
+        reportResult.message ||
+        'Verification failed.';
+    }
+  } else if (vnResult.success === true) {
+    // Some report types (like document authentication) might only have success flag
+    verified = true;
+    message = 'Identity verified successfully.';
+  } else {
+    // Fallback: check top‑level or data fields for older API shapes
+    verified =
+      vnResult.status === 'verified' ||
+      vnResult.verified === true ||
+      vnResult.result === 'pass' ||
+      vnResult.result === 'verified' ||
+      (vnResult.data && (vnResult.data.verified === true || vnResult.data.status === 'verified'));
+    message = verified
+      ? 'Identity verified successfully.'
+      : (vnResult.message || vnResult.reason || 'Could not verify your identity. Check your details and try again.');
+  }
+
+  const reference = vnResult.requestId || vnResult.reference || vnResult.id || vnResult.data?.reference || null;
 
   if (verified) {
     const { error: updateErr } = await supabase
@@ -141,12 +174,6 @@ exports.handler = async (event) => {
 
   return {
     statusCode: 200, headers,
-    body: JSON.stringify({
-      verified,
-      reference,
-      message: verified
-        ? 'Identity verified successfully.'
-        : (vnResult.message || vnResult.reason || 'Could not verify your identity. Check your details and try again.'),
-    }),
+    body: JSON.stringify({ verified, reference, message }),
   };
 };
