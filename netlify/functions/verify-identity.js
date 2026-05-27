@@ -4,7 +4,7 @@ const { randomUUID } = require('crypto');
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const VERIFYNOW_API_KEY = process.env.VERIFYNOW_API_KEY;
-const VERIFYNOW_MODE = process.env.VERIFYNOW_MODE || 'sandbox';
+// ⚠️  SANDBOX MODE — remove the mode field from the payload below when going live
 
 exports.handler = async (event) => {
   const headers = {
@@ -64,7 +64,7 @@ exports.handler = async (event) => {
 
   // ── Call VerifyNow ────────────────────────────────────────────────────────
   const bundle = documentType === 'sa_id' ? 'id_verification' : 'document_authentication';
-  const payload = { bundle, mode: VERIFYNOW_MODE };
+  const payload = { bundle, mode: 'sandbox' }; // ← remove this line for production
   if (documentType === 'sa_id') {
     payload.idNumber = cleanId;
   } else {
@@ -103,12 +103,12 @@ exports.handler = async (event) => {
   const reference = vnResult.reference || vnResult.id || vnResult.data?.reference || null;
 
   if (verified) {
+    // id_document_number and id_document_type already live in sensitive_user_info
+    // — only write the verification outcome to profiles
     const { error: updateErr } = await supabase
       .from('profiles')
       .update({
         verified: true,
-        id_document_number: cleanId,
-        id_document_type: documentType,
         verification_reference: reference,
         verification_date: new Date().toISOString(),
       })
@@ -120,11 +120,7 @@ exports.handler = async (event) => {
 
     // Sync to auth metadata so auth.me() reflects it immediately
     await supabase.auth.admin.updateUserById(user.id, {
-      user_metadata: {
-        verified: true,
-        id_document_number: cleanId,
-        id_document_type: documentType,
-      },
+      user_metadata: { verified: true },
     });
   }
 
