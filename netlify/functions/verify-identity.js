@@ -63,15 +63,22 @@ exports.handler = async (event) => {
   }
 
   // ── Call VerifyNow ────────────────────────────────────────────────────────
-  // Bundle names must match exactly what is enabled in your VerifyNow account.
-  // Log into verifynow.co.za → API / Bundles to confirm the exact names.
-  // Common SA ID bundle: 'id_verification' — passport: 'document_authentication'
-  const bundle = documentType === 'sa_id' ? 'id_verification' : 'document_authentication';
-  const payload = { bundle, mode: 'sandbox' }; // ← remove this line for production
+  // VerifyNow uses reportType for SA ID checks, bundle for passport/document checks.
+  // SA ID: reportType = 'said_verification'
+  // Passport: bundle = 'document_authentication'
+  let payload;
   if (documentType === 'sa_id') {
-    payload.idNumber = cleanId;
+    payload = {
+      reportType: 'said_verification',
+      idNumber: cleanId,
+      mode: 'sandbox', // ← remove for production
+    };
   } else {
-    payload.passportNumber = cleanId;
+    payload = {
+      bundle: 'document_authentication',
+      passportNumber: cleanId,
+      mode: 'sandbox', // ← remove for production
+    };
   }
 
   let vnResult;
