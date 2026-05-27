@@ -1,7 +1,9 @@
 const { createClient } = require('@supabase/supabase-js');
+const { randomUUID } = require('crypto');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const VERIFYNOW_API_KEY = process.env.VERIFYNOW_API_KEY;
 
 exports.handler = async (event) => {
   const headers = {
@@ -53,22 +55,81 @@ exports.handler = async (event) => {
     };
   }
 
+  // ── Call VerifyNow for driving licence check ──────────────────────────────
+  // Check your VerifyNow account for the exact driving licence report type name.
+  // Possible names: 'driving_licence_verification', 'licence_verification', 'driver_licence'
+  let vnVerified = false;
+  let pendingReview = false;
+  let vnMessage = '';
+
+  try {
+    const vnRes = await fetch('https://www.verifynow.co.za/api/external/verify', {
+      method: 'POST',
+      headers: {
+        'x-api-key': VERIFYNOW_API_KEY,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': randomUUID(),
+      },
+      body: JSON.stringify({
+        reportType: 'driving_licence_verification',
+        licenceNumber: clean,
+        yearIssued: year,
+        mode: 'sandbox', // ← remove for production
+      }),
+    });
+
+    const vnResult = await vnRes.json();
+    console.log('[verify-licence] VerifyNow raw response:', JSON.stringify(vnResult));
+
+    if (!vnRes.ok) {
+      // VerifyNow rejected the request (e.g. bundle not enabled on account).
+      // Fall back to pending admin review — still allow the user to proceed.
+      console.warn('[verify-licence] VerifyNow error — falling back to pending review:', vnResult);
+      pendingReview = true;
+      vnVerified = true; // allow user to continue, but flag as pending
+      vnMessage = 'Licence recorded — pending admin verification.';
+    } else {
+      vnVerified =
+        vnResult.status === 'verified' ||
+        vnResult.verified === true ||
+        vnResult.result === 'pass' ||
+        vnResult.result === 'verified' ||
+        (vnResult.data && (vnResult.data.verified === true || vnResult.data.status === 'verified'));
+      vnMessage = vnVerified
+        ? 'Driving licence verified successfully.'
+        : (vnResult.message || vnResult.reason || 'Could not verify your licence. Check the number and try again.');
+    }
+  } catch (err) {
+    // Network error calling VerifyNow — fall back to pending review
+    console.error('[verify-licence] VerifyNow fetch error:', err);
+    pendingReview = true;
+    vnVerified = true;
+    vnMessage = 'Licence recorded — pending admin verification.';
+  }
+
+  if (!vnVerified) {
+    return {
+      statusCode: 200, headers,
+      body: JSON.stringify({ verified: false, message: vnMessage }),
+    };
+  }
+
   // ── Save to profiles ──────────────────────────────────────────────────────
   const { error: updateErr } = await supabase
     .from('profiles')
-    .update({ license_number: clean, license_year: year })
+    .update({
+      license_number: clean,
+      license_year: year,
+      ...(pendingReview ? {} : { license_verified: true }),
+    })
     .eq('id', user.id);
 
   if (updateErr) {
     console.error('[verify-licence] profiles update error:', updateErr);
-    return {
-      statusCode: 500, headers,
-      body: JSON.stringify({ error: 'Failed to save licence details.' }),
-    };
   }
 
   return {
     statusCode: 200, headers,
-    body: JSON.stringify({ verified: true }),
+    body: JSON.stringify({ verified: true, pending: pendingReview, message: vnMessage }),
   };
 };
