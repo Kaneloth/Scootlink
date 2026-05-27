@@ -192,6 +192,10 @@ export default function Settings() {
   const [showPlanCancelConfirm, setShowPlanCancelConfirm] = useState(false);
   const [cancellingPlan, setCancellingPlan] = useState(false);
 
+  // ── Identity verification (VerifyNow) ────────────────────────────────────
+  const [verifyIdStatus, setVerifyIdStatus] = useState('idle'); // idle | verifying | verified | failed
+  const [verifyIdMsg, setVerifyIdMsg] = useState('');
+
   useEffect(() => {
     const isDark = localStorage.getItem('theme') === 'dark';
     setDarkMode(isDark);
@@ -384,6 +388,11 @@ export default function Settings() {
   useEffect(() => {
     if (user?.id_document_number) setIdDocNumber(user.id_document_number);
     if (user?.id_document_type)   setIdDocType(user.id_document_type);
+    // If already verified, reflect that in the UI immediately
+    if (user?.verified) {
+      setVerifyIdStatus('verified');
+      setVerifyIdMsg('Identity previously verified ✓');
+    }
   }, [user]);
 
   // ── Plan tab computed ─────────────────────────────────────────────────────
@@ -395,6 +404,49 @@ export default function Settings() {
     setLicencePlanStatus('idle');
     setLicencePlanMsg('');
   }, [selectedPlan]);
+
+  // ── Identity document verification via VerifyNow ─────────────────────────
+
+  const handleVerifyId = async () => {
+    if (!idDocNumber.trim()) { toast.error('Please enter your ID/passport number first'); return; }
+    if (idDocType === 'sa_id' && idDocNumber.replace(/\s/g, '').length !== 13) {
+      toast.error('SA ID number must be exactly 13 digits'); return;
+    }
+    if (idDocError) { toast.error('Please fix the ID error before verifying'); return; }
+    setVerifyIdStatus('verifying');
+    setVerifyIdMsg('');
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      const res = await fetch('/.netlify/functions/verify-identity', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          idNumber: idDocNumber.trim().toUpperCase(),
+          documentType: idDocType,
+        }),
+      });
+      const data = await res.json();
+      if (data.verified) {
+        setVerifyIdStatus('verified');
+        setVerifyIdMsg(data.message || 'Identity verified successfully');
+        toast.success('Identity verified! You can now subscribe.');
+        setUser(await loadUser());
+      } else {
+        setVerifyIdStatus('failed');
+        setVerifyIdMsg(data.message || 'Verification failed. Check your details and try again.');
+        toast.error(data.message || 'Verification failed. Contact support if this continues.');
+      }
+    } catch (err) {
+      setVerifyIdStatus('failed');
+      setVerifyIdMsg('Verification service unavailable. Please try again later.');
+      toast.error('Verification error: ' + (err.message || 'Unknown error'));
+    }
+  };
 
   // Pre-fill licence fields from saved profile when user loads
   useEffect(() => {
@@ -671,6 +723,11 @@ export default function Settings() {
     }
     if (needsLicencePlan && licencePlanStatus !== 'verified') {
       toast.error('Please verify your driving licence before subscribing as a Driver');
+      return;
+    }
+    // Identity must be verified via VerifyNow before subscribing
+    if (verifyIdStatus !== 'verified' && !user?.verified) {
+      toast.error('Please verify your identity (SA ID or passport) before subscribing');
       return;
     }
     setProcessingPlan(true);
@@ -1089,14 +1146,52 @@ export default function Settings() {
               {idDocType === 'passport' && (
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50 text-xs text-muted-foreground">
                   <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>Passport holders: our admin team will verify your age against the date of birth you provided during registration.</span>
+                  <span>Passport holders: identity is verified against international document records.</span>
                 </div>
+              )}
+
+              {/* VerifyNow status messages */}
+              {verifyIdStatus === 'verified' && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm dark:bg-emerald-900/20 dark:text-emerald-400">
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span>{verifyIdMsg}</span>
+                </div>
+              )}
+              {verifyIdStatus === 'failed' && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-700 text-sm dark:bg-red-900/20 dark:text-red-400">
+                  <XCircle className="w-4 h-4 shrink-0" />
+                  <span>{verifyIdMsg}</span>
+                </div>
+              )}
+
+              {/* Verify button — hidden once verified */}
+              {verifyIdStatus !== 'verified' && (
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={handleVerifyId}
+                  disabled={verifyIdStatus === 'verifying' || !idDocNumber.trim() || !!idDocError}
+                >
+                  {verifyIdStatus === 'verifying'
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying identity…</>
+                    : <><ShieldCheck className="w-4 h-4" /> Verify Identity</>}
+                </Button>
+              )}
+              {verifyIdStatus === 'verified' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground"
+                  onClick={() => { setVerifyIdStatus('idle'); setVerifyIdMsg(''); }}
+                >
+                  Use a different document
+                </Button>
               )}
             </Card>
 
             <Button
               onClick={handleSubscribe}
-              disabled={processingPlan || (!isAdmin && ((needsLicencePlan && licencePlanStatus !== 'verified') || !!idDocError || !idDocNumber.trim()))}
+              disabled={processingPlan || (!isAdmin && ((needsLicencePlan && licencePlanStatus !== 'verified') || !!idDocError || !idDocNumber.trim() || (verifyIdStatus !== 'verified' && !user?.verified)))}
               className="w-full gap-2"
             >
               {processingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
