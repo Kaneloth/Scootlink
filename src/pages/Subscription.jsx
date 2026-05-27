@@ -145,11 +145,35 @@ export default function Subscription() {
     }
     setIdStatus('verifying');
     setIdMsg('');
-    // Demo mode — hook up real DHA API here when ready
-    await new Promise(r => setTimeout(r, 1200));
-    setIdStatus('verified');
-    setIdMsg('Identity verified successfully');
-    toast.success('Identity verified!');
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      const res = await fetch('/.netlify/functions/verify-identity', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          idNumber: citizenship === 'South African' ? saId : passport.trim().toUpperCase(),
+          documentType: citizenship === 'South African' ? 'sa_id' : 'passport',
+        }),
+      });
+      const data = await res.json();
+      if (data.verified) {
+        setIdStatus('verified');
+        setIdMsg(data.message || 'Identity verified successfully');
+        toast.success('Identity verified! You can now subscribe.');
+      } else {
+        setIdStatus('failed');
+        setIdMsg(data.message || 'Verification failed. Check your details and try again.');
+        toast.error(data.message || 'Verification failed. Contact support if this continues.');
+      }
+    } catch (err) {
+      setIdStatus('failed');
+      setIdMsg('Verification service unavailable. Please try again later.');
+      toast.error('Verification error: ' + (err.message || 'Unknown error'));
+    }
   };
 
   const handleVerifyLicence = async () => {
@@ -169,15 +193,41 @@ export default function Subscription() {
       return;
     }
 
+    const licenceClean = licenceNumber.trim().toUpperCase();
+    if (!/^[A-Z0-9]{6,20}$/.test(licenceClean)) {
+      toast.error('Please enter a valid driving licence number (6–20 alphanumeric characters)');
+      return;
+    }
+
     setLicenceStatus('verifying');
     setLicenceMsg('');
 
-    // Demo mode: simulate a short verification delay then approve
-    await new Promise(r => setTimeout(r, 1200));
-
-    setLicenceStatus('verified');
-    setLicenceMsg('Licence verified successfully (demo mode)');
-    toast.success('Driving licence verified!');
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      const res = await fetch('/.netlify/functions/verify-licence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ licenceNumber: licenceClean, yearIssued: year }),
+      });
+      const result = await res.json();
+      if (result.verified) {
+        setLicenceStatus('verified');
+        setLicenceMsg('Driving licence verified successfully.');
+        toast.success('Driving licence verified!');
+      } else {
+        setLicenceStatus('failed');
+        setLicenceMsg(result.message || 'Could not verify your licence. Check the number and try again.');
+        toast.error(result.message || 'Licence verification failed.');
+      }
+    } catch {
+      setLicenceStatus('failed');
+      setLicenceMsg('Verification service unavailable. Please try again.');
+      toast.error('Licence verification failed. Please try again.');
+    }
   };
 
   const handleSubscribe = async () => {
@@ -285,10 +335,7 @@ export default function Subscription() {
         {/* Header bar */}
         <div className="flex items-center justify-between mb-8">
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow">
-              <Bike className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-lg font-bold text-foreground">Skootlink</span>
+            <img src="/logo.png" alt="Skootlink" className="h-9 w-auto" />
           </Link>
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="w-4 h-4" /> Back
