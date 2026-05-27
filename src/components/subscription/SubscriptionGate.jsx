@@ -1,32 +1,32 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Crown, Lock } from 'lucide-react';
+import { Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
-export default function SubscriptionGate({ user, children, loading = false }) {
-  const isActive = user?.subscription_active === true;
+/**
+ * Wraps content that requires an active subscription.
+ * Unsubscribed users see a prompt that links to the Settings Plan tab.
+ */
+export default function SubscriptionGate({ user, loading, children }) {
+  if (loading) return null;
 
-  // Don't flash the gate while user is still loading
-  if (loading || user === null) return null;
-
-  if (!isActive) {
+  if (!user?.subscription_active) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center px-6 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center mb-5">
-          <Crown className="w-8 h-8 text-amber-500" />
+      <Card className="p-6 border border-primary/20 bg-primary/5 flex flex-col items-center text-center gap-4 mt-6">
+        <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+          <Crown className="w-6 h-6 text-primary" />
         </div>
-        <h2 className="text-xl font-bold text-foreground mb-2">Subscription Required</h2>
-        <p className="text-sm text-muted-foreground max-w-xs mb-6">
-          You need an active Scootlink subscription to access this feature. Plans start from R 49/month. Driver · Owner · Fleet Pro.
-        </p>
-        <Link to="/subscription">
-          <Button className="gap-2 px-6">
-            <Crown className="w-4 h-4" />
-            View Plans & Subscribe
+        <div>
+          <p className="font-semibold text-foreground">Subscribe to unlock this feature</p>
+          <p className="text-sm text-muted-foreground mt-1">Plans from R 39/month. Verify your identity and subscribe to get full access.</p>
+        </div>
+        <Link to="/settings?tab=plan">
+          <Button className="gap-2">
+            <Crown className="w-4 h-4" /> View Plans
           </Button>
         </Link>
-        <p className="text-xs text-muted-foreground mt-4">New to Scootlink? <Link to="/onboarding" className="text-primary underline">Complete your profile first</Link></p>
-      </div>
+      </Card>
     );
   }
 

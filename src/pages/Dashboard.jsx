@@ -897,7 +897,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         <Card className="p-4 border border-primary/20 bg-primary/5 flex items-center gap-3">
           <Crown className="w-5 h-5 text-primary shrink-0" />
           <div className="flex-1"><p className="text-sm font-medium">Subscribe to manage rental assignments</p><p className="text-xs text-muted-foreground">Plans from R 39/month</p></div>
-          <Link to="/subscription"><Button size="sm">Subscribe</Button></Link>
+          <Link to="/settings?tab=plan"><Button size="sm">Subscribe</Button></Link>
         </Card>
       )}
     </>
@@ -1096,7 +1096,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
             <Crown className="w-5 h-5 text-primary shrink-0" />
             <div><p className="text-sm font-semibold text-foreground">Subscribe to unlock full access</p><p className="text-xs text-muted-foreground">Plans from R 39/month</p></div>
           </div>
-          <Link to="/subscription"><Button size="sm" className="shrink-0">Subscribe</Button></Link>
+          <Link to="/settings?tab=plan"><Button size="sm" className="shrink-0">Subscribe</Button></Link>
         </Card>
       )}
 
