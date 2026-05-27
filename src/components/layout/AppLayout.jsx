@@ -142,9 +142,7 @@ function MobileHeader() {
     <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card z-30 shrink-0">
       {/* Logo */}
       <Link to="/" className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-          <Bike className="w-4 h-4 text-white" />
-        </div>
+        <img src="/favicon.png" alt="Skootlink" className="w-8 h-8" />
         <span className="text-base font-bold text-foreground">Skootlink</span>
       </Link>
 
