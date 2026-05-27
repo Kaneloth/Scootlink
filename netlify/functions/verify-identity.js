@@ -63,6 +63,9 @@ exports.handler = async (event) => {
   }
 
   // ── Call VerifyNow ────────────────────────────────────────────────────────
+  // Bundle names must match exactly what is enabled in your VerifyNow account.
+  // Log into verifynow.co.za → API / Bundles to confirm the exact names.
+  // Common SA ID bundle: 'id_verification' — passport: 'document_authentication'
   const bundle = documentType === 'sa_id' ? 'id_verification' : 'document_authentication';
   const payload = { bundle, mode: 'sandbox' }; // ← remove this line for production
   if (documentType === 'sa_id') {
@@ -72,6 +75,7 @@ exports.handler = async (event) => {
   }
 
   let vnResult;
+  let vnHttpStatus;
   try {
     const vnRes = await fetch('https://www.verifynow.co.za/api/external/verify', {
       method: 'POST',
@@ -82,7 +86,17 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify(payload),
     });
+    vnHttpStatus = vnRes.status;
     vnResult = await vnRes.json();
+    console.log('[verify-identity] VerifyNow raw response:', JSON.stringify(vnResult));
+    // Surface any VerifyNow API-level errors directly (e.g. wrong bundle name, bad key)
+    if (!vnRes.ok) {
+      const errMsg = vnResult?.message || vnResult?.error || `VerifyNow error ${vnHttpStatus}`;
+      return {
+        statusCode: 200, headers,
+        body: JSON.stringify({ verified: false, message: errMsg, _debug: vnResult }),
+      };
+    }
   } catch (err) {
     console.error('[verify-identity] VerifyNow fetch error:', err);
     return {
