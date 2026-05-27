@@ -465,12 +465,39 @@ export default function Settings() {
       toast.error(`Issue year must be between 1960 and ${currentYear}`);
       return;
     }
+    // SA driving licence: alphanumeric, 6–20 characters
+    const licenceClean = licencePlanNumber.trim().toUpperCase();
+    if (!/^[A-Z0-9]{6,20}$/.test(licenceClean)) {
+      toast.error('Please enter a valid driving licence number (6–20 alphanumeric characters)');
+      return;
+    }
     setLicencePlanStatus('verifying');
     setLicencePlanMsg('');
-    await new Promise(r => setTimeout(r, 1200));
-    setLicencePlanStatus('verified');
-    setLicencePlanMsg('Licence verified successfully (demo mode)');
-    toast.success('Driving licence verified!');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/.netlify/functions/verify-licence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ licenceNumber: licenceClean, yearIssued: year }),
+      });
+      const result = await res.json();
+      if (result.verified) {
+        setLicencePlanStatus('verified');
+        setLicencePlanMsg('Driving licence verified successfully.');
+        toast.success('Driving licence verified!');
+      } else {
+        setLicencePlanStatus('failed');
+        setLicencePlanMsg(result.message || 'Could not verify your licence. Check the number and try again.');
+        toast.error(result.message || 'Licence verification failed.');
+      }
+    } catch {
+      setLicencePlanStatus('failed');
+      setLicencePlanMsg('Verification service unavailable. Please try again.');
+      toast.error('Licence verification failed. Please try again.');
+    }
   };
 
   // ── Plan tab — cancel subscription ───────────────────────────────────────
