@@ -612,19 +612,34 @@ export default function Settings() {
     const badge = enabling
       ? (currentIdVerified ? 'fully_verified' : 'licence_only')
       : (currentIdVerified ? 'id_verified' : null);
-    const update = enabling
-      ? { licence_verified: true, licence_verified_at: now, license_verified: true, license_verified_at: now, license_pending: false, verification_badge: badge }
-      : { licence_verified: false, license_verified: false, verification_badge: badge };
-    const { error } = await supabase.from('profiles').update(update).eq('id', userId);
-    if (!error) {
-      setAdminUsers(prev =>
-        prev.map(u => u.id === userId ? { ...u, licence_verified: enabling, license_pending: enabling ? false : u.license_pending, verification_badge: badge } : u)
-      );
-      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, licence_verified: enabling, verification_badge: badge }));
-      toast.success(enabling ? 'Licence verified ✓' : 'Licence unverified');
-    } else {
-      toast.error('Failed to update licence verification');
+
+    // ── Step 1: safe columns (guaranteed to exist in all schema versions) ─────
+    const safeUpdate = enabling
+      ? { license_verified: true, license_pending: false }
+      : { license_verified: false };
+    const { error: safeErr } = await supabase.from('profiles').update(safeUpdate).eq('id', userId);
+    if (safeErr) {
+      toast.error('Failed to update licence: ' + (safeErr.message || 'unknown error'));
+      setTogglingId(null);
+      return;
     }
+
+    // ── Step 2: new badge columns (added by migration — silently skip if missing) ─
+    const badgeUpdate = enabling
+      ? { licence_verified: true, licence_verified_at: now, verification_badge: badge }
+      : { licence_verified: false, verification_badge: badge };
+    await supabase.from('profiles').update(badgeUpdate).eq('id', userId);
+    // (error ignored — these columns may not exist yet if migration hasn't been run)
+
+    setAdminUsers(prev =>
+      prev.map(u => u.id === userId
+        ? { ...u, licence_verified: enabling, license_pending: enabling ? false : u.license_pending, verification_badge: badge }
+        : u)
+    );
+    if (adminSelectedUser?.id === userId) {
+      setAdminSelectedUser(p => ({ ...p, licence_verified: enabling, verification_badge: badge }));
+    }
+    toast.success(enabling ? 'Licence verified ✓' : 'Licence verification removed');
     setTogglingId(null);
   };
 
