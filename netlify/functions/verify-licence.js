@@ -98,6 +98,8 @@ exports.handler = async (event) => {
   // Top-level try-catch — ANY uncaught error returns 200 with the message
   // so you can see the real problem instead of a generic 500
   try {
+    console.log('[verify-licence] START method=%s body-length=%s', event.httpMethod, (event.body || '').length);
+
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
@@ -105,7 +107,10 @@ exports.handler = async (event) => {
 
     // ── Auth ────────────────────────────────────────────────────────────────
     const token = (event.headers.authorization || event.headers.Authorization || '').replace('Bearer ', '');
-    if (!token) return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized' }) };
+    if (!token) {
+      console.log('[verify-licence] EARLY EXIT: no token');
+      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized — no token provided' }) };
+    }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
