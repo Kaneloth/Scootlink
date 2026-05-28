@@ -35,27 +35,28 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body); }
   catch { return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
-  const { licenceImageBase64 } = body;
-  if (!licenceImageBase64) {
+  const { licenceFrontImageBase64, licenceBackImageBase64 } = body;
+  if (!licenceFrontImageBase64 || !licenceBackImageBase64) {
     return {
       statusCode: 400, headers,
-      body: JSON.stringify({ error: 'licenceImageBase64 (back/barcode side of licence) is required' }),
+      body: JSON.stringify({ error: 'Both licenceFrontImageBase64 and licenceBackImageBase64 are required' }),
     };
   }
 
-  // ── Strip data-URL prefix and convert to Buffer ───────────────────────────
-  const raw = licenceImageBase64.includes(',') ? licenceImageBase64.split(',')[1] : licenceImageBase64;
-  const imageBuffer = Buffer.from(raw, 'base64');
+  // ── Strip data-URL prefix and convert to Buffers ──────────────────────────
+  const toBuffer = b64 => {
+    const raw = b64.includes(',') ? b64.split(',')[1] : b64;
+    return Buffer.from(raw, 'base64');
+  };
+  const frontBuffer = toBuffer(licenceFrontImageBase64);
+  const backBuffer  = toBuffer(licenceBackImageBase64);
 
   // ── Build multipart form (native Node 18 FormData — no npm package needed) ─
   const form = new FormData();
-  form.append('bundle', 'sadl_decode');
+  form.append('bundle', 'id_document_verification');
   if (USE_SANDBOX) form.append('mode', 'sandbox');
-  form.append(
-    'front_image',
-    new Blob([imageBuffer], { type: 'image/jpeg' }),
-    'licence-back.jpg',
-  );
+  form.append('front_image', new Blob([frontBuffer], { type: 'image/jpeg' }), 'licence-front.jpg');
+  form.append('back_image',  new Blob([backBuffer],  { type: 'image/jpeg' }), 'licence-back.jpg');
 
   // ── Call VerifyNow ─────────────────────────────────────────────────────────
   let vnRes, vnResult;
