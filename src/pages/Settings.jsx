@@ -1151,7 +1151,7 @@ export default function Settings() {
                 </p>
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50 text-xs text-muted-foreground">
                   <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>Upload clear photos of <strong>both sides</strong> of your credit-card driving licence. The front shows your photo and details; the back has the barcode used for instant verification.</span>
+                  <span>Upload clear photos of <strong>both sides</strong> of your driving licence card. The front shows your photo and details; the back has the barcode used for instant verification.</span>
                 </div>
 
                 {/* Front of licence */}
