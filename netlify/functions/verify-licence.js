@@ -1,12 +1,71 @@
 const { createClient } = require('@supabase/supabase-js');
+const https = require('https');
 const { randomUUID } = require('crypto');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const VERIFYNOW_API_KEY = process.env.VERIFYNOW_API_KEY;
 
-// ⚠️ SANDBOX MODE — set to false for production
+// ⚠️ Set to false for production
 const USE_SANDBOX = true;
+
+// ── Multipart builder — works on Node 14/16/18/20, no npm needed ─────────────
+function buildMultipart(textFields, fileFields) {
+  const boundary = `----VNBoundary${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+  const CRLF = '\r\n';
+  const parts = [];
+
+  for (const [name, value] of Object.entries(textFields)) {
+    parts.push(Buffer.from(
+      `--${boundary}${CRLF}` +
+      `Content-Disposition: form-data; name="${name}"${CRLF}` +
+      `${CRLF}${value}${CRLF}`
+    ));
+  }
+
+  for (const { name, buffer, filename } of fileFields) {
+    parts.push(Buffer.from(
+      `--${boundary}${CRLF}` +
+      `Content-Disposition: form-data; name="${name}"; filename="${filename}"${CRLF}` +
+      `Content-Type: image/jpeg${CRLF}` +
+      CRLF
+    ));
+    parts.push(buffer);
+    parts.push(Buffer.from(CRLF));
+  }
+
+  parts.push(Buffer.from(`--${boundary}--${CRLF}`));
+
+  return {
+    body: Buffer.concat(parts),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+}
+
+// ── HTTPS POST — works on any Node version, no fetch needed ──────────────────
+function httpsPost(url, headers, body) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const req = https.request({
+      hostname: parsed.hostname,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      headers,
+    }, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let json;
+        try { json = JSON.parse(text); } catch { json = { _raw: text }; }
+        resolve({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300, json });
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
 
 exports.handler = async (event) => {
   const headers = {
@@ -51,28 +110,29 @@ exports.handler = async (event) => {
   const frontBuffer = toBuffer(licenceFrontImageBase64);
   const backBuffer  = toBuffer(licenceBackImageBase64);
 
-  // ── Build multipart form (native Node 18 FormData — no npm package needed) ─
-  const form = new FormData();
-  form.append('bundle', 'id_document_verification');
-  if (USE_SANDBOX) form.append('mode', 'sandbox');
-  form.append('front_image', new Blob([frontBuffer], { type: 'image/jpeg' }), 'licence-front.jpg');
-  form.append('back_image',  new Blob([backBuffer],  { type: 'image/jpeg' }), 'licence-back.jpg');
+  // ── Build multipart form ───────────────────────────────────────────────────
+  const textFields = { bundle: 'id_document_verification' };
+  if (USE_SANDBOX) textFields.mode = 'sandbox';
+
+  const { body: formBody, contentType } = buildMultipart(textFields, [
+    { name: 'front_image', buffer: frontBuffer, filename: 'licence-front.jpg' },
+    { name: 'back_image',  buffer: backBuffer,  filename: 'licence-back.jpg'  },
+  ]);
 
   // ── Call VerifyNow ─────────────────────────────────────────────────────────
-  let vnRes, vnResult;
+  let vnRes;
   try {
-    vnRes = await fetch('https://www.verifynow.co.za/api/external/id-document-verify', {
-      method: 'POST',
-      headers: {
-        'x-api-key':       VERIFYNOW_API_KEY,
-        'Idempotency-Key': randomUUID(),
-        // ⚠️ Do NOT set Content-Type — fetch sets it with the correct multipart boundary
+    vnRes = await httpsPost(
+      'https://www.verifynow.co.za/api/external/id-document-verify',
+      {
+        'x-api-key':        VERIFYNOW_API_KEY,
+        'Idempotency-Key':  randomUUID(),
+        'Content-Type':     contentType,
+        'Content-Length':   formBody.length,
       },
-      body: form,
-    });
-    vnResult = await vnRes.json();
+      formBody,
+    );
   } catch (err) {
-    // Network failure — save as pending so the user isn't stuck
     console.error('[verify-licence] Network error calling VerifyNow:', err.message);
     await updateProfileWithLicence(supabase, user.id, false, 'pending_network_error');
     return {
@@ -85,22 +145,20 @@ exports.handler = async (event) => {
     };
   }
 
-  // ── Always log the full VerifyNow response ────────────────────────────────
+  const vnResult = vnRes.json;
   console.log('[verify-licence] HTTP status:', vnRes.status);
   console.log('[verify-licence] VerifyNow response:', JSON.stringify(vnResult));
 
   // ── Handle VerifyNow API errors ───────────────────────────────────────────
   if (!vnRes.ok) {
-    // Extract the most useful error message from the response
     const errMsg =
       vnResult?.message ||
       vnResult?.error ||
-      vnResult?.errors?.join(', ') ||
+      (Array.isArray(vnResult?.errors) ? vnResult.errors.join(', ') : null) ||
       `VerifyNow returned HTTP ${vnRes.status}`;
 
-    console.warn('[verify-licence] VerifyNow API error:', errMsg, JSON.stringify(vnResult));
+    console.warn('[verify-licence] VerifyNow API error:', errMsg);
 
-    // 5xx = their server is down → save as pending so user doesn't lose their submission
     if (vnRes.status >= 500) {
       await updateProfileWithLicence(supabase, user.id, false, 'pending_service_down');
       return {
@@ -113,33 +171,24 @@ exports.handler = async (event) => {
       };
     }
 
-    // 4xx = client error (bad bundle name, bundle not enabled, bad image, etc.)
-    // Return the real error so it shows in the app — do NOT silently save as pending.
-    // This way you can see exactly what VerifyNow is rejecting.
+    // 4xx — return real error so you can see exactly what VerifyNow rejects
     return {
       statusCode: 200, headers,
-      body: JSON.stringify({
-        verified: false,
-        pending:  false,
-        message:  `Verification failed: ${errMsg}`,
-        _debug:   vnResult,  // full VerifyNow response visible in browser network tab
-      }),
+      body: JSON.stringify({ verified: false, pending: false, message: `Verification failed: ${errMsg}`, _debug: vnResult }),
     };
   }
 
-  // ── Interpret sadl_decode result ───────────────────────────────────────────
-  // Log the exact shape so you can see what field to check
-  console.log('[verify-licence] Full result object keys:', Object.keys(vnResult));
-
+  // ── Interpret result ───────────────────────────────────────────────────────
   const isVerified =
     vnResult.success === true ||
     vnResult.status === 'completed' ||
     vnResult.status === 'verified' ||
     vnResult.status === 'success' ||
     vnResult.verified === true ||
-    (vnResult.results?.sadl_decode?.Status === 'Success') ||
-    (vnResult.result?.status === 'success') ||
-    (vnResult.data?.status === 'verified');
+    vnResult.results?.id_document_verification?.Status === 'Success' ||
+    vnResult.results?.id_document_verification?.status === 'success' ||
+    vnResult.result?.status === 'success' ||
+    vnResult.data?.status === 'verified';
 
   if (isVerified) {
     await updateProfileWithLicence(supabase, user.id, true, null);
@@ -149,12 +198,11 @@ exports.handler = async (event) => {
     };
   }
 
-  // Verification ran but result is not a clear pass
   const failMsg =
     vnResult.message ||
     vnResult.reason ||
-    vnResult.results?.sadl_decode?.Message ||
-    'Licence could not be verified. Ensure the image shows the barcode clearly and try again.';
+    vnResult.results?.id_document_verification?.Message ||
+    'Licence could not be verified. Ensure both images are clear and try again.';
 
   console.warn('[verify-licence] Verification not passed. Result:', JSON.stringify(vnResult));
   await updateProfileWithLicence(supabase, user.id, false, null);
@@ -168,17 +216,15 @@ exports.handler = async (event) => {
 async function updateProfileWithLicence(supabase, userId, verified, pending) {
   const now = new Date().toISOString();
 
-  // Step 1: safe columns (exist in all schema versions)
   const safeUpdate = verified
-    ? { license_verified: true, license_pending: false }
+    ? { license_verified: true,  license_pending: false }
     : pending
-      ? { license_verified: false, license_pending: true }
+      ? { license_verified: false, license_pending: true  }
       : { license_verified: false };
 
   const { error: e1 } = await supabase.from('profiles').update(safeUpdate).eq('id', userId);
   if (e1) console.error('[verify-licence] Safe update error:', e1.message);
 
-  // Step 2: new badge columns (silently ignored if migration not yet run)
   if (verified) {
     const { data: profile } = await supabase
       .from('profiles').select('id_verified').eq('id', userId).single();
