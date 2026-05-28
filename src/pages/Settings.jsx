@@ -1444,7 +1444,7 @@ export default function Settings() {
               </Card>
             )}
 
-            <p className="text-xs text-center text-muted-foreground">Current plan: {user?.subscription_plan || 'None'}</p>
+            
           </div>
         </TabsContent>
 
