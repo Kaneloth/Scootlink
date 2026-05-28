@@ -224,7 +224,7 @@ exports.handler = async (event) => {
       await updateProfile(user.id, { license_verified: true, license_pending: false });
       try {
         const profile = await getProfile(user.id);
-        const badge   = profile?.id_verified ? 'fully_verified' : 'licence_only';
+        const badge   = profile?.id_verified ? 'fully_verified' : 'dl_verified';
         await updateProfile(user.id, { licence_verified: true, licence_verified_at: now, verification_badge: badge });
       } catch (e) {
         console.warn('[verify-licence] Badge update skipped:', e.message);

@@ -153,32 +153,34 @@ exports.handler = async (event) => {
   const reference = vnResult.requestId || vnResult.reference || vnResult.id || vnResult.data?.reference || null;
 
   if (verified) {
-    const now = new Date().toISOString();
-
-    // ── Determine badge level ─────────────────────────────────────────────
-    // If the user already has their licence verified, they earn Fully Verified.
-    const { data: existingProfile } = await supabase
-      .from('profiles')
-      .select('licence_verified')
-      .eq('id', user.id)
-      .single();
-
-    const badge = existingProfile?.licence_verified ? 'fully_verified' : 'id_verified';
-
     const { error: updateErr } = await supabase
       .from('profiles')
       .update({
-        verified:                true,          // legacy column — keep in sync
-        id_verified:             true,           // new badge column
-        id_verified_at:          now,
-        verification_badge:      badge,
-        verification_reference:  reference,
-        verification_date:       now,
+        verified: true,
+        verification_reference: reference,
+        verification_date: new Date().toISOString(),
       })
       .eq('id', user.id);
 
     if (updateErr) {
       console.error('[verify-identity] profiles update error:', updateErr);
+    }
+
+    // ── Badge columns (silently skipped if migration hasn't been run yet) ──
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('licence_verified')
+        .eq('id', user.id)
+        .single();
+      const badge = profile?.licence_verified ? 'fully_verified' : 'id_verified';
+      await supabase.from('profiles').update({
+        id_verified:    true,
+        id_verified_at: new Date().toISOString(),
+        verification_badge: badge,
+      }).eq('id', user.id);
+    } catch (e) {
+      console.warn('[verify-identity] Badge update skipped:', e.message);
     }
 
     // Sync to auth metadata so auth.me() reflects it immediately

@@ -636,7 +636,7 @@ export default function Settings() {
     const enabling = !currentLicenceVerified;
     const now = new Date().toISOString();
     const badge = enabling
-      ? (currentIdVerified ? 'fully_verified' : 'licence_only')
+      ? (currentIdVerified ? 'fully_verified' : 'dl_verified')
       : (currentIdVerified ? 'id_verified' : null);
 
     // ── Step 1: safe columns (guaranteed to exist in all schema versions) ─────
@@ -1151,7 +1151,7 @@ export default function Settings() {
                 </p>
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50 text-xs text-muted-foreground">
                   <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>Upload clear photos of <strong>both sides</strong> of your driving licence card. The front shows your photo and details; the back has the barcode used for instant verification.</span>
+                  <span>Upload clear photos of <strong>both sides</strong> of your credit-card driving licence. The front shows your photo and details; the back has the barcode used for instant verification.</span>
                 </div>
 
                 {/* Front of licence */}
@@ -1444,7 +1444,7 @@ export default function Settings() {
               </Card>
             )}
 
-            
+            <p className="text-xs text-center text-muted-foreground">Current plan: {user?.subscription_plan || 'None'}</p>
           </div>
         </TabsContent>
 
