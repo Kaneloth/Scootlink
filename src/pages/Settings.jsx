@@ -536,6 +536,9 @@ export default function Settings() {
         }),
       });
       const result = await res.json();
+      // result.error = early-exit errors (auth, missing fields, etc.)
+      // result.message = VerifyNow result messages
+      const displayMsg = result.message || result.error || 'Could not verify your licence. Please try again.';
       if (result.verified || result.pending) {
         setLicencePlanStatus('verified');
         setLicencePlanMsg(result.message || 'Driving licence verified successfully.');
@@ -545,13 +548,16 @@ export default function Settings() {
         setUser(await loadUser());
       } else {
         setLicencePlanStatus('failed');
-        setLicencePlanMsg(result.message || 'Could not verify your licence. Please try again.');
-        toast.error(result.message || 'Licence verification failed.');
+        setLicencePlanMsg(displayMsg);
+        toast.error(displayMsg);
+        // Log full server response to browser console for debugging
+        console.error('[verify-licence] Server response:', result);
       }
-    } catch {
+    } catch (err) {
       setLicencePlanStatus('failed');
       setLicencePlanMsg('Verification service unavailable. Please try again later.');
       toast.error('Licence verification error. Please try again.');
+      console.error('[verify-licence] Fetch/parse error:', err);
     }
   };
 
