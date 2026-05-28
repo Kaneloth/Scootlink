@@ -578,7 +578,7 @@ export default function Settings() {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, subscription_active, subscription_plan, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, id_document_number, id_document_type, created_at')
+      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, subscription_active, subscription_plan, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, id_document_number, id_document_type, created_at')
       .order('created_at', { ascending: false });
     if (!error) {
       setAdminUsers(data || []);
@@ -601,6 +601,29 @@ export default function Settings() {
       toast.success(currentVerified ? 'User unverified' : 'User verified ✓');
     } else {
       toast.error('Failed to update verification');
+    }
+    setTogglingId(null);
+  };
+
+  const toggleLicenceVerified = async (userId, currentLicenceVerified, currentIdVerified) => {
+    setTogglingId(userId + '_lic');
+    const enabling = !currentLicenceVerified;
+    const now = new Date().toISOString();
+    const badge = enabling
+      ? (currentIdVerified ? 'fully_verified' : 'licence_only')
+      : (currentIdVerified ? 'id_verified' : null);
+    const update = enabling
+      ? { licence_verified: true, licence_verified_at: now, license_verified: true, license_verified_at: now, license_pending: false, verification_badge: badge }
+      : { licence_verified: false, license_verified: false, verification_badge: badge };
+    const { error } = await supabase.from('profiles').update(update).eq('id', userId);
+    if (!error) {
+      setAdminUsers(prev =>
+        prev.map(u => u.id === userId ? { ...u, licence_verified: enabling, license_pending: enabling ? false : u.license_pending, verification_badge: badge } : u)
+      );
+      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, licence_verified: enabling, verification_badge: badge }));
+      toast.success(enabling ? 'Licence verified ✓' : 'Licence unverified');
+    } else {
+      toast.error('Failed to update licence verification');
     }
     setTogglingId(null);
   };
@@ -1641,7 +1664,10 @@ export default function Settings() {
                           )}
                           <div className="flex flex-wrap gap-1.5 mt-1">
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.verified ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'}`}>
-                              {u.verified ? '✓ Verified' : '⏳ Unverified'}
+                              {u.verified ? '✅ ID' : '⏳ ID'}
+                            </span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.licence_verified ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : u.license_pending ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
+                              {u.licence_verified ? '🛡️ Licence' : u.license_pending ? '⏳ Lic Pending' : '— Licence'}
                             </span>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.subscription_active ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
                               {u.subscription_active ? `● ${u.subscription_plan || 'sub'}` : '○ No sub'}
@@ -1660,41 +1686,53 @@ export default function Settings() {
                           <UserIcon className="w-3 h-3 mr-1" /> View
                         </Button>
                       </div>
-                      <div className="grid grid-cols-4 gap-1.5 pt-1 border-t border-border/50">
-                        <Button
-                          size="sm"
-                          variant={u.verified ? 'outline' : 'default'}
-                          className="h-7 text-[10px] gap-0.5 px-1"
-                          disabled={togglingId === u.id}
-                          onClick={() => toggleVerified(u.id, u.verified)}
-                        >
-                          {togglingId === u.id
-                            ? <Loader2 className="w-3 h-3 animate-spin" />
-                            : <ShieldCheck className="w-3 h-3" />}
-                          {u.verified ? 'Unverify' : 'Verify'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={u.subscription_active ? 'outline' : 'secondary'}
-                          className="h-7 text-[10px] gap-0.5 px-1"
-                          disabled={togglingId === u.id + '_sub'}
-                          onClick={() => toggleSubscription(u.id, u.subscription_active, u.subscription_plan)}
-                        >
-                          {togglingId === u.id + '_sub'
-                            ? <Loader2 className="w-3 h-3 animate-spin" />
-                            : <Crown className="w-3 h-3" />}
-                          {u.subscription_active ? 'Deactivate' : 'Activate'}
-                        </Button>
+                      <div className="flex flex-col gap-1.5 pt-1 border-t border-border/50">
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <Button
+                            size="sm"
+                            variant={u.verified ? 'outline' : 'default'}
+                            className="h-7 text-[10px] gap-0.5 px-1"
+                            disabled={togglingId === u.id}
+                            onClick={() => toggleVerified(u.id, u.verified)}
+                          >
+                            {togglingId === u.id
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <ShieldCheck className="w-3 h-3" />}
+                            {u.verified ? 'Un-ID' : '✅ ID'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={u.licence_verified ? 'outline' : u.license_pending ? 'secondary' : 'default'}
+                            className="h-7 text-[10px] gap-0.5 px-1"
+                            disabled={togglingId === u.id + '_lic'}
+                            onClick={() => toggleLicenceVerified(u.id, u.licence_verified, u.id_verified)}
+                          >
+                            {togglingId === u.id + '_lic'
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <FileText className="w-3 h-3" />}
+                            {u.licence_verified ? 'Un-Lic' : u.license_pending ? '⏳ Approve' : '🛡️ Lic'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={u.subscription_active ? 'outline' : 'secondary'}
+                            className="h-7 text-[10px] gap-0.5 px-1"
+                            disabled={togglingId === u.id + '_sub'}
+                            onClick={() => toggleSubscription(u.id, u.subscription_active, u.subscription_plan)}
+                          >
+                            {togglingId === u.id + '_sub'
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Crown className="w-3 h-3" />}
+                            {u.subscription_active ? 'Deactivate' : 'Activate'}
+                          </Button>
+                        </div>
                         <Button
                           size="sm"
                           variant={u.blacklisted ? 'default' : 'outline'}
-                          className={`h-7 text-[10px] gap-0.5 px-1 col-span-2 ${u.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
+                          className={`h-7 text-[10px] gap-0.5 px-1 w-full ${u.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
                           disabled={blacklistingId === u.id}
                           onClick={() => blacklistUser(u.id, u.blacklisted)}
                         >
-                          {blacklistingId === u.id
-                            ? <Loader2 className="w-3 h-3 animate-spin" />
-                            : null}
+                          {blacklistingId === u.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
                           {u.blacklisted ? 'Remove Blacklist' : '⛔ Blacklist User'}
                         </Button>
                       </div>
