@@ -5,8 +5,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const VERIFYNOW_API_KEY = process.env.VERIFYNOW_API_KEY;
 
-// ⚠️ SANDBOX MODE — remove the mode field when going live
-const USE_SANDBOX = true; // set to false for production
+// ⚠️ SANDBOX MODE — set to false for production
+const USE_SANDBOX = true;
 
 exports.handler = async (event) => {
   const headers = {
@@ -64,11 +64,11 @@ exports.handler = async (event) => {
   // Common names: 'driving_licence_verification', 'driver_licence', 'licence_verification'
   const licenceBundle = 'driving_licence_verification'; // <-- replace with your bundle name
   const payload = {
-    reportType: licenceBundle,          // or "bundle" if your account uses that
+    reportType: licenceBundle,
     licenceNumber: clean,
     yearIssued: year,
   };
-  if (USE_SANDBOX) payload.mode = 'sandbox';   // remove for live
+  if (USE_SANDBOX) payload.mode = 'sandbox'; // remove for live
 
   try {
     const vnRes = await fetch('https://www.verifynow.co.za/api/external/verify', {
@@ -99,13 +99,13 @@ exports.handler = async (event) => {
     }
 
     // ── Interpret result ────────────────────────────────────────────────
-    const verified =
+    const isVerified =
       vnResult.status === 'verified' ||
       vnResult.verified === true ||
       vnResult.result === 'pass' ||
       (vnResult.data && vnResult.data.verified === true);
 
-    if (verified) {
+    if (isVerified) {
       await saveLicenceToProfile(supabase, user.id, clean, year, true, null);
       return {
         statusCode: 200, headers,
@@ -134,19 +134,36 @@ exports.handler = async (event) => {
   }
 };
 
-// ── Helper: update profiles table ───────────────────────────────────────
+// ── Helper: update profiles table ───────────────────────────────────────────
 async function saveLicenceToProfile(supabase, userId, licenceNumber, year, verified, pending) {
   const update = {
     license_number: licenceNumber,
-    license_year: year,
+    license_year:   year,
   };
+
   if (verified) {
-    update.license_verified = true;
-    update.license_verified_at = new Date().toISOString();
-    update.license_pending = false;
+    const now = new Date().toISOString();
+
+    // ── Determine badge level ──────────────────────────────────────────
+    // If the user already has their identity verified, they earn Fully Verified.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id_verified')
+      .eq('id', userId)
+      .single();
+
+    const badge = profile?.id_verified ? 'fully_verified' : 'id_verified';
+
+    update.licence_verified     = true;   // new badge column (British spelling matches frontend)
+    update.licence_verified_at  = now;
+    update.license_verified     = true;   // legacy column — keep in sync
+    update.license_verified_at  = now;
+    update.license_pending      = false;
+    update.verification_badge   = badge;
   } else if (pending) {
-    update.license_pending = true;
-    update.license_verified = false;
+    update.license_pending   = true;
+    update.license_verified  = false;
+    update.licence_verified  = false;
   }
 
   const { error } = await supabase
@@ -157,70 +174,4 @@ async function saveLicenceToProfile(supabase, userId, licenceNumber, year, verif
   if (error) {
     console.error('[verify-licence] Failed to update profile:', error);
   }
-}KEY,
-        'Content-Type': 'application/json',
-        'Idempotency-Key': randomUUID(),
-      },
-      body: JSON.stringify({
-        reportType: 'driving_licence_verification',
-        licenceNumber: clean,
-        yearIssued: year,
-        mode: 'sandbox', // ← remove for production
-      }),
-    });
-
-    const vnResult = await vnRes.json();
-    console.log('[verify-licence] VerifyNow raw response:', JSON.stringify(vnResult));
-
-    if (!vnRes.ok) {
-      // VerifyNow rejected the request (e.g. bundle not enabled on account).
-      // Fall back to pending admin review — still allow the user to proceed.
-      console.warn('[verify-licence] VerifyNow error — falling back to pending review:', vnResult);
-      pendingReview = true;
-      vnVerified = true; // allow user to continue, but flag as pending
-      vnMessage = 'Licence recorded — pending admin verification.';
-    } else {
-      vnVerified =
-        vnResult.status === 'verified' ||
-        vnResult.verified === true ||
-        vnResult.result === 'pass' ||
-        vnResult.result === 'verified' ||
-        (vnResult.data && (vnResult.data.verified === true || vnResult.data.status === 'verified'));
-      vnMessage = vnVerified
-        ? 'Driving licence verified successfully.'
-        : (vnResult.message || vnResult.reason || 'Could not verify your licence. Check the number and try again.');
-    }
-  } catch (err) {
-    // Network error calling VerifyNow — fall back to pending review
-    console.error('[verify-licence] VerifyNow fetch error:', err);
-    pendingReview = true;
-    vnVerified = true;
-    vnMessage = 'Licence recorded — pending admin verification.';
-  }
-
-  if (!vnVerified) {
-    return {
-      statusCode: 200, headers,
-      body: JSON.stringify({ verified: false, message: vnMessage }),
-    };
-  }
-
-  // ── Save to profiles ──────────────────────────────────────────────────────
-  const { error: updateErr } = await supabase
-    .from('profiles')
-    .update({
-      license_number: clean,
-      license_year: year,
-      ...(pendingReview ? {} : { license_verified: true }),
-    })
-    .eq('id', user.id);
-
-  if (updateErr) {
-    console.error('[verify-licence] profiles update error:', updateErr);
-  }
-
-  return {
-    statusCode: 200, headers,
-    body: JSON.stringify({ verified: true, pending: pendingReview, message: vnMessage }),
-  };
-};
+}

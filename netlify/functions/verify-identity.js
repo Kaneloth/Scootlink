@@ -153,12 +153,27 @@ exports.handler = async (event) => {
   const reference = vnResult.requestId || vnResult.reference || vnResult.id || vnResult.data?.reference || null;
 
   if (verified) {
+    const now = new Date().toISOString();
+
+    // ── Determine badge level ─────────────────────────────────────────────
+    // If the user already has their licence verified, they earn Fully Verified.
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('licence_verified')
+      .eq('id', user.id)
+      .single();
+
+    const badge = existingProfile?.licence_verified ? 'fully_verified' : 'id_verified';
+
     const { error: updateErr } = await supabase
       .from('profiles')
       .update({
-        verified: true,
-        verification_reference: reference,
-        verification_date: new Date().toISOString(),
+        verified:                true,          // legacy column — keep in sync
+        id_verified:             true,           // new badge column
+        id_verified_at:          now,
+        verification_badge:      badge,
+        verification_reference:  reference,
+        verification_date:       now,
       })
       .eq('id', user.id);
 
