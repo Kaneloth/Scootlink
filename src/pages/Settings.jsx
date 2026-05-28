@@ -180,10 +180,12 @@ export default function Settings() {
   const [adminModalTab, setAdminModalTab] = useState('view');        // 'view' | 'edit'
 
   // ── Plan tab — licence verification ─────────────────────────────────────
-  const [licencePlanNumber, setLicencePlanNumber] = useState('');
-  const [licencePlanYear, setLicencePlanYear] = useState('');
   const [licencePlanStatus, setLicencePlanStatus] = useState('idle');
-  const [licencePlanMsg, setLicencePlanMsg] = useState('');
+  const [licencePlanMsg, setLicencePlanMsg]       = useState('');
+  const [frontLicenceFile, setFrontLicenceFile]   = useState(null);
+  const [backLicenceFile,  setBackLicenceFile]    = useState(null);
+  const frontLicenceInputRef = useRef(null);
+  const backLicenceInputRef  = useRef(null);
 
   // ── Plan tab — SA ID / Passport ──────────────────────────────────────────
   const [idDocType, setIdDocType] = useState('sa_id');   // 'sa_id' | 'passport'
@@ -485,32 +487,27 @@ export default function Settings() {
     }
   };
 
-  // Pre-fill licence fields from saved profile when user loads
-  useEffect(() => {
-    if (user?.license_number) setLicencePlanNumber(user.license_number);
-    if (user?.license_year)   setLicencePlanYear(String(user.license_year));
-  }, [user]);
+  // Pre-fill: licence fields removed (image upload replaces number/year inputs)
 
-  // ── Plan tab — verify licence ─────────────────────────────────────────────
+  // ── Plan tab — verify licence (image upload) ──────────────────────────────
 
   const handleVerifyLicencePlan = async () => {
-    if (!licencePlanNumber.trim()) { toast.error('Please enter your licence number'); return; }
-    if (!licencePlanYear.trim())   { toast.error('Please enter the year your licence was issued'); return; }
-    const year = parseInt(licencePlanYear);
-    const currentYear = new Date().getFullYear();
-    if (isNaN(year) || year < 1960 || year > currentYear) {
-      toast.error(`Issue year must be between 1960 and ${currentYear}`);
-      return;
-    }
-    // SA driving licence: alphanumeric, 6–20 characters
-    const licenceClean = licencePlanNumber.trim().toUpperCase();
-    if (!/^[A-Z0-9]{6,20}$/.test(licenceClean)) {
-      toast.error('Please enter a valid driving licence number (6–20 alphanumeric characters)');
+    if (!frontLicenceFile || !backLicenceFile) {
+      toast.error('Please upload both front and back images of your licence card');
       return;
     }
     setLicencePlanStatus('verifying');
     setLicencePlanMsg('');
     try {
+      const toBase64 = file => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result); // data:image/...;base64,...
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const frontBase64 = await toBase64(frontLicenceFile);
+      const backBase64  = await toBase64(backLicenceFile);
+
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/.netlify/functions/verify-licence', {
         method: 'POST',
@@ -518,22 +515,28 @@ export default function Settings() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ licenceNumber: licenceClean, yearIssued: year }),
+        body: JSON.stringify({
+          frontImageBase64: frontBase64,
+          backImageBase64:  backBase64,
+        }),
       });
       const result = await res.json();
-      if (result.verified) {
+      if (result.verified || result.pending) {
         setLicencePlanStatus('verified');
-        setLicencePlanMsg('Driving licence verified successfully.');
-        toast.success('Driving licence verified!');
+        setLicencePlanMsg(result.message || 'Driving licence verified successfully.');
+        toast.success(result.pending
+          ? 'Licence submitted — pending admin review. 🛡️'
+          : 'Driving licence verified! 🛡️ Fully Verified badge earned.');
+        setUser(await loadUser());
       } else {
         setLicencePlanStatus('failed');
-        setLicencePlanMsg(result.message || 'Could not verify your licence. Check the number and try again.');
+        setLicencePlanMsg(result.message || 'Could not verify your licence. Please try again.');
         toast.error(result.message || 'Licence verification failed.');
       }
     } catch {
       setLicencePlanStatus('failed');
-      setLicencePlanMsg('Verification service unavailable. Please try again.');
-      toast.error('Licence verification failed. Please try again.');
+      setLicencePlanMsg('Verification service unavailable. Please try again later.');
+      toast.error('Licence verification error. Please try again.');
     }
   };
 
@@ -797,10 +800,6 @@ export default function Settings() {
         subscription_start: new Date().toISOString(),
         subscription_expires: new Date(Date.now() + durationMs).toISOString(),
       };
-      if (needsLicencePlan && licencePlanStatus === 'verified') {
-        profileUpdate.license_number = licencePlanNumber.trim().toUpperCase();
-        profileUpdate.license_year = parseInt(licencePlanYear);
-      }
       if (idDocNumber.trim()) {
         const cleanId = idDocNumber.trim().toUpperCase();
         // Check if this ID/passport number has been permanently blacklisted.
@@ -1091,37 +1090,88 @@ export default function Settings() {
                   Verify your driving licence to earn the 🛡️ Fully Verified badge on your profile.
                   This is optional — you can subscribe without verifying.
                 </p>
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50 text-xs text-muted-foreground">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>Upload clear photos of the front and back of your credit-card-sized licence. Images are sent securely to our verification provider and are not stored.</span>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
+                  {/* Front of licence */}
                   <div>
-                    <Label className="text-xs font-medium">Licence Number *</Label>
-                    <Input
-                      className="mt-1"
-                      placeholder="e.g. DL1234567"
-                      value={licencePlanNumber}
-                      onChange={e => { setLicencePlanNumber(e.target.value); setLicencePlanStatus('idle'); }}
-                      disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
-                    />
+                    <Label className="text-xs font-medium">Front of Licence *</Label>
+                    <div className="mt-1 flex flex-col items-start gap-1">
+                      {frontLicenceFile
+                        ? <p className="text-xs text-emerald-600 font-medium">✓ {frontLicenceFile.name}</p>
+                        : <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full gap-1"
+                            disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
+                            onClick={() => frontLicenceInputRef.current?.click()}
+                          >
+                            <Upload className="w-3 h-3" /> Choose File
+                          </Button>
+                      }
+                      <input
+                        ref={frontLicenceInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => { if (e.target.files?.[0]) { setFrontLicenceFile(e.target.files[0]); setLicencePlanStatus('idle'); } }}
+                      />
+                      {frontLicenceFile && licencePlanStatus !== 'verified' && (
+                        <button
+                          className="text-xs text-muted-foreground underline"
+                          onClick={() => { setFrontLicenceFile(null); if (frontLicenceInputRef.current) frontLicenceInputRef.current.value = ''; }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
                   </div>
+                  {/* Back of licence */}
                   <div>
-                    <Label className="text-xs font-medium">Year Issued *</Label>
-                    <Input
-                      className="mt-1"
-                      type="number"
-                      placeholder="e.g. 2018"
-                      value={licencePlanYear}
-                      onChange={e => { setLicencePlanYear(e.target.value); setLicencePlanStatus('idle'); }}
-                      disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
-                    />
+                    <Label className="text-xs font-medium">Back of Licence *</Label>
+                    <div className="mt-1 flex flex-col items-start gap-1">
+                      {backLicenceFile
+                        ? <p className="text-xs text-emerald-600 font-medium">✓ {backLicenceFile.name}</p>
+                        : <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full gap-1"
+                            disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
+                            onClick={() => backLicenceInputRef.current?.click()}
+                          >
+                            <Upload className="w-3 h-3" /> Choose File
+                          </Button>
+                      }
+                      <input
+                        ref={backLicenceInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => { if (e.target.files?.[0]) { setBackLicenceFile(e.target.files[0]); setLicencePlanStatus('idle'); } }}
+                      />
+                      {backLicenceFile && licencePlanStatus !== 'verified' && (
+                        <button
+                          className="text-xs text-muted-foreground underline"
+                          onClick={() => { setBackLicenceFile(null); if (backLicenceInputRef.current) backLicenceInputRef.current.value = ''; }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
+
                 {licencePlanStatus === 'verified' && (
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm">
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm dark:bg-emerald-900/20 dark:text-emerald-400">
                     <ShieldCheck className="w-4 h-4 shrink-0" />
                     <span>{licencePlanMsg}</span>
                   </div>
                 )}
                 {licencePlanStatus === 'failed' && (
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-700 text-sm">
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-700 text-sm dark:bg-red-900/20 dark:text-red-400">
                     <XCircle className="w-4 h-4 shrink-0" />
                     <span>{licencePlanMsg}</span>
                   </div>
@@ -1131,7 +1181,7 @@ export default function Settings() {
                     variant="outline"
                     className="w-full gap-2"
                     onClick={handleVerifyLicencePlan}
-                    disabled={licencePlanStatus === 'verifying' || !licencePlanNumber.trim() || !licencePlanYear.trim()}
+                    disabled={licencePlanStatus === 'verifying' || !frontLicenceFile || !backLicenceFile}
                   >
                     {licencePlanStatus === 'verifying'
                       ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
@@ -1143,7 +1193,7 @@ export default function Settings() {
                     variant="ghost"
                     size="sm"
                     className="text-xs text-muted-foreground"
-                    onClick={() => { setLicencePlanStatus('idle'); setLicencePlanMsg(''); }}
+                    onClick={() => { setLicencePlanStatus('idle'); setLicencePlanMsg(''); setFrontLicenceFile(null); setBackLicenceFile(null); }}
                   >
                     Use a different licence
                   </Button>
