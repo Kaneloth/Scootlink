@@ -1,6 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
-const https = require('https');
 const { randomUUID } = require('crypto');
+const FormData = require('form-data');   // npm install form-data
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -8,64 +8,6 @@ const VERIFYNOW_API_KEY = process.env.VERIFYNOW_API_KEY;
 
 // ⚠️ Set to false for production
 const USE_SANDBOX = true;
-
-// ── Multipart builder — works on Node 14/16/18/20, no npm needed ─────────────
-function buildMultipart(textFields, fileFields) {
-  const boundary = `----VNBoundary${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
-  const CRLF = '\r\n';
-  const parts = [];
-
-  for (const [name, value] of Object.entries(textFields)) {
-    parts.push(Buffer.from(
-      `--${boundary}${CRLF}` +
-      `Content-Disposition: form-data; name="${name}"${CRLF}` +
-      `${CRLF}${value}${CRLF}`
-    ));
-  }
-
-  for (const { name, buffer, filename } of fileFields) {
-    parts.push(Buffer.from(
-      `--${boundary}${CRLF}` +
-      `Content-Disposition: form-data; name="${name}"; filename="${filename}"${CRLF}` +
-      `Content-Type: image/jpeg${CRLF}` +
-      CRLF
-    ));
-    parts.push(buffer);
-    parts.push(Buffer.from(CRLF));
-  }
-
-  parts.push(Buffer.from(`--${boundary}--${CRLF}`));
-
-  return {
-    body: Buffer.concat(parts),
-    contentType: `multipart/form-data; boundary=${boundary}`,
-  };
-}
-
-// ── HTTPS POST — works on any Node version, no fetch needed ──────────────────
-function httpsPost(url, headers, body) {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const req = https.request({
-      hostname: parsed.hostname,
-      path: parsed.pathname + parsed.search,
-      method: 'POST',
-      headers,
-    }, (res) => {
-      const chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end', () => {
-        const text = Buffer.concat(chunks).toString('utf8');
-        let json;
-        try { json = JSON.parse(text); } catch { json = { _raw: text }; }
-        resolve({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300, json });
-      });
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
 
 exports.handler = async (event) => {
   const headers = {
@@ -79,7 +21,7 @@ exports.handler = async (event) => {
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
+  // ── Auth ──────────────────────────────────────────────────────────────
   const token = (event.headers.authorization || event.headers.Authorization || '').replace('Bearer ', '');
   if (!token) return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized' }) };
 
@@ -89,152 +31,128 @@ exports.handler = async (event) => {
     return { statusCode: 401, headers, body: JSON.stringify({ error: 'Invalid session' }) };
   }
 
-  // ── Parse body ─────────────────────────────────────────────────────────────
+  // ── Parse body ────────────────────────────────────────────────────────
   let body;
   try { body = JSON.parse(event.body); }
   catch { return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
-  const { licenceFrontImageBase64, licenceBackImageBase64 } = body;
-  if (!licenceFrontImageBase64 || !licenceBackImageBase64) {
-    return {
-      statusCode: 400, headers,
-      body: JSON.stringify({ error: 'Both licenceFrontImageBase64 and licenceBackImageBase64 are required' }),
-    };
+  const { licenceBackImageBase64 } = body;
+  if (!licenceBackImageBase64) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'licenceBackImageBase64 (back of licence) is required' }) };
   }
 
-  // ── Strip data-URL prefix and convert to Buffers ──────────────────────────
-  const toBuffer = b64 => {
-    const raw = b64.includes(',') ? b64.split(',')[1] : b64;
+  // Convert base64 to buffer (strip possible data URI prefix)
+  const toBuffer = (b64) => {
+    const raw = b64.includes('base64,') ? b64.split('base64,')[1] : b64;
     return Buffer.from(raw, 'base64');
   };
-  const frontBuffer = toBuffer(licenceFrontImageBase64);
-  const backBuffer  = toBuffer(licenceBackImageBase64);
 
-  // ── Build multipart form ───────────────────────────────────────────────────
-  const textFields = { bundle: 'id_document_verification' };
-  if (USE_SANDBOX) textFields.mode = 'sandbox';
+  let imageBuffer;
+  try { imageBuffer = toBuffer(licenceBackImageBase64); }
+  catch { return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid base64 image data' }) }; }
 
-  const { body: formBody, contentType } = buildMultipart(textFields, [
-    { name: 'front_image', buffer: frontBuffer, filename: 'licence-front.jpg' },
-    { name: 'back_image',  buffer: backBuffer,  filename: 'licence-back.jpg'  },
-  ]);
+  // ── Call VerifyNow ────────────────────────────────────────────────────
+  const form = new FormData();
+  form.append('bundle', 'sadl_decode');          // ✅ correct SADL bundle
+  if (USE_SANDBOX) form.append('mode', 'sandbox');
+  form.append('front_image', imageBuffer, { filename: 'licence-back.jpg' });
 
-  // ── Call VerifyNow ─────────────────────────────────────────────────────────
-  let vnRes;
+  let vnRes, vnResult;
   try {
-    vnRes = await httpsPost(
-      'https://www.verifynow.co.za/api/external/id-document-verify',
-      {
-        'x-api-key':        VERIFYNOW_API_KEY,
-        'Idempotency-Key':  randomUUID(),
-        'Content-Type':     contentType,
-        'Content-Length':   formBody.length,
+    vnRes = await fetch('https://www.verifynow.co.za/api/external/id-document-verify', {
+      method: 'POST',
+      headers: {
+        'x-api-key': VERIFYNOW_API_KEY,
+        'Idempotency-Key': randomUUID(),
+        ...form.getHeaders(),
       },
-      formBody,
-    );
+      body: form,
+    });
+
+    vnResult = await vnRes.json();
+    console.log('[verify-licence] VerifyNow response:', JSON.stringify(vnResult));
   } catch (err) {
-    console.error('[verify-licence] Network error calling VerifyNow:', err.message);
-    await updateProfileWithLicence(supabase, user.id, false, 'pending_network_error');
+    console.error('[verify-licence] Network error:', err);
+    await updateProfileSafe(supabase, user.id, { license_pending: true, licence_verified: false });
     return {
       statusCode: 200, headers,
       body: JSON.stringify({
         verified: false,
-        pending:  true,
-        message:  'Could not reach the verification service. Your image has been saved — pending manual review.',
+        pending: true,
+        message: 'Verification service unreachable. Your image has been saved — pending manual review.',
       }),
     };
   }
 
-  const vnResult = vnRes.json;
-  console.log('[verify-licence] HTTP status:', vnRes.status);
-  console.log('[verify-licence] VerifyNow response:', JSON.stringify(vnResult));
-
-  // ── Handle VerifyNow API errors ───────────────────────────────────────────
   if (!vnRes.ok) {
-    const errMsg =
-      vnResult?.message ||
-      vnResult?.error ||
-      (Array.isArray(vnResult?.errors) ? vnResult.errors.join(', ') : null) ||
-      `VerifyNow returned HTTP ${vnRes.status}`;
-
-    console.warn('[verify-licence] VerifyNow API error:', errMsg);
-
-    if (vnRes.status >= 500) {
-      await updateProfileWithLicence(supabase, user.id, false, 'pending_service_down');
+    const errMsg = vnResult?.message || vnResult?.error || `VerifyNow HTTP ${vnRes.status}`;
+    // If the bundle isn't recognised, fallback to pending review
+    if (errMsg.toLowerCase().includes('bundle') || vnRes.status === 404) {
+      await updateProfileSafe(supabase, user.id, { license_pending: true, licence_verified: false });
       return {
         statusCode: 200, headers,
         body: JSON.stringify({
           verified: false,
-          pending:  true,
-          message:  `Verification service error (${vnRes.status}). Your image has been saved — pending manual review.`,
+          pending: true,
+          message: 'Licence images submitted — pending manual review.',
         }),
       };
     }
-
-    // 4xx — return real error so you can see exactly what VerifyNow rejects
     return {
       statusCode: 200, headers,
-      body: JSON.stringify({ verified: false, pending: false, message: `Verification failed: ${errMsg}`, _debug: vnResult }),
+      body: JSON.stringify({ verified: false, message: `Verification failed: ${errMsg}`, _debug: vnResult }),
     };
   }
 
-  // ── Interpret result ───────────────────────────────────────────────────────
+  // ── Interpret result ──────────────────────────────────────────────────
   const isVerified =
     vnResult.success === true ||
     vnResult.status === 'completed' ||
     vnResult.status === 'verified' ||
-    vnResult.status === 'success' ||
-    vnResult.verified === true ||
-    vnResult.results?.id_document_verification?.Status === 'Success' ||
-    vnResult.results?.id_document_verification?.status === 'success' ||
-    vnResult.result?.status === 'success' ||
-    vnResult.data?.status === 'verified';
+    (vnResult.results?.sadl_decode?.Status === 'Success');
 
   if (isVerified) {
-    await updateProfileWithLicence(supabase, user.id, true, null);
+    await updateProfileSafe(supabase, user.id, {
+      licence_verified: true,
+      licence_verified_at: new Date().toISOString(),
+      license_verified: true,
+      license_verified_at: new Date().toISOString(),
+      license_pending: false,
+    });
+    // Determine badge level
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id_verified')
+        .eq('id', user.id)
+        .single();
+      const badge = profile?.id_verified ? 'fully_verified' : 'licence_only';
+      await supabase.from('profiles').update({ verification_badge: badge }).eq('id', user.id);
+    } catch { /* badge update failure is non‑critical */ }
+
     return {
       statusCode: 200, headers,
       body: JSON.stringify({ verified: true, message: 'Driving licence verified successfully.' }),
     };
+  } else {
+    await updateProfileSafe(supabase, user.id, { licence_verified: false });
+    return {
+      statusCode: 200, headers,
+      body: JSON.stringify({
+        verified: false,
+        message: vnResult.message || vnResult.reason || 'Licence could not be verified. Please ensure the image is clear.',
+        _debug: vnResult,
+      }),
+    };
   }
-
-  const failMsg =
-    vnResult.message ||
-    vnResult.reason ||
-    vnResult.results?.id_document_verification?.Message ||
-    'Licence could not be verified. Ensure both images are clear and try again.';
-
-  console.warn('[verify-licence] Verification not passed. Result:', JSON.stringify(vnResult));
-  await updateProfileWithLicence(supabase, user.id, false, null);
-  return {
-    statusCode: 200, headers,
-    body: JSON.stringify({ verified: false, message: failMsg, _debug: vnResult }),
-  };
 };
 
-// ── Helper ────────────────────────────────────────────────────────────────────
-async function updateProfileWithLicence(supabase, userId, verified, pending) {
-  const now = new Date().toISOString();
-
-  const safeUpdate = verified
-    ? { license_verified: true,  license_pending: false }
-    : pending
-      ? { license_verified: false, license_pending: true  }
-      : { license_verified: false };
-
-  const { error: e1 } = await supabase.from('profiles').update(safeUpdate).eq('id', userId);
-  if (e1) console.error('[verify-licence] Safe update error:', e1.message);
-
-  if (verified) {
-    const { data: profile } = await supabase
-      .from('profiles').select('id_verified').eq('id', userId).single();
-    const badge = profile?.id_verified ? 'fully_verified' : 'licence_only';
-    await supabase.from('profiles').update({
-      licence_verified:    true,
-      licence_verified_at: now,
-      verification_badge:  badge,
-    }).eq('id', userId);
-  } else if (!pending) {
-    await supabase.from('profiles').update({ licence_verified: false }).eq('id', userId);
+// ── Safe profile updater (wrapped in try‑catch) ──────────────────────────
+async function updateProfileSafe(supabase, userId, fields) {
+  try {
+    await supabase.from('profiles').update(fields).eq('id', userId);
+  } catch (err) {
+    console.error('[verify-licence] Profile update failed:', err.message);
+    // Don't throw – let the function continue gracefully
   }
 }
