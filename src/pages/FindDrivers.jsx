@@ -22,7 +22,7 @@ export default function FindDrivers() {
   const [driverReviews,    setDriverReviews]    = useState([]);
   const [loadingReviews,   setLoadingReviews]   = useState(false);
   const [showFilters,      setShowFilters]      = useState(false);
-  const [filters,          setFilters]          = useState({ location: '', minExperience: 0, minRating: 0, radius: 50, verificationFilter: 'all' });
+  const [filters,          setFilters]          = useState({ location: '', minExperience: 0, minRating: 0, radius: 50 });
   // geocodeTarget only changes on blur/Enter — keeps geocoding off every keystroke
   // while filters.location updates live so text-match responds immediately.
   const [geocodeTarget,    setGeocodeTarget]    = useState('');
@@ -177,8 +177,6 @@ export default function FindDrivers() {
         if (filters.minExperience > 0 && u.license_year && (currentYear - u.license_year) < filters.minExperience) return false;
         if (filters.minRating > 0 && (u.rating || 0) < filters.minRating) return false;
       }
-      if (filters.verificationFilter === 'id_verified' && !u.id_verified) return false;
-      if (filters.verificationFilter === 'fully_verified' && !(u.id_verified && u.licence_verified)) return false;
       return true;
     });
   }, [rpcDrivers, users, filters, locationCoords, currentYear, currentUser]);
@@ -265,7 +263,7 @@ export default function FindDrivers() {
 
   const clearFilters = () => {
     setGeocodeTarget('');
-    setFilters({ location: autoLocationRef.current ? 'Your location' : '', minExperience: 0, minRating: 0, radius: 50, verificationFilter: 'all' });
+    setFilters({ location: autoLocationRef.current ? 'Your location' : '', minExperience: 0, minRating: 0, radius: 50 });
     setLocationCoords(autoLocationRef.current);
     setRpcDrivers(null);
   };
@@ -371,17 +369,6 @@ export default function FindDrivers() {
                 <span>5 km</span><span>200 km</span>
               </div>
             </div>
-            <div>
-              <Label className="text-xs">Verification Status</Label>
-              <Select value={filters.verificationFilter} onValueChange={v => setFilters(p => ({ ...p, verificationFilter: v }))}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Drivers</SelectItem>
-                  <SelectItem value="id_verified">✅ ID Verified</SelectItem>
-                  <SelectItem value="fully_verified">🛡️ Fully Verified</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
           {locationCoords && (
@@ -416,13 +403,15 @@ export default function FindDrivers() {
                         : (d.full_name?.[0] || '?'); })()}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="font-semibold text-foreground text-sm truncate">{d.full_name || 'Driver'}</h4>
-                        {d.id_verified && d.licence_verified
-                          ? <span className="text-xs text-green-700 font-medium shrink-0">🛡️</span>
-                          : d.id_verified
-                            ? <span className="text-xs text-green-600 font-medium shrink-0">✅</span>
-                            : null}
+                        {(d.verification_badge === 'fully_verified' || d.verification_badge === 'id_verified') && (
+                          <span className="text-xs text-green-600 font-medium leading-none">✅ ID</span>
+                        )}
+                        {(d.verification_badge === 'fully_verified' || d.verification_badge === 'dl_verified' || d.verification_badge === 'licence_only') && (
+                          <span className="text-xs text-blue-600 font-medium leading-none">🛡️ DL</span>
+                        )}
+                        {!d.verification_badge && d.verified && <ShieldCheck className="w-4 h-4 text-primary shrink-0" />}
                       </div>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted-foreground">
                         {d.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{d.location}</span>}
@@ -480,11 +469,20 @@ export default function FindDrivers() {
                 </div>
                 <div className="min-w-0">
                   <p className="font-semibold text-lg truncate">{selectedDriver.full_name || 'Driver'}</p>
-                  {selectedDriver.id_verified && selectedDriver.licence_verified
-                    ? <span className="text-xs text-green-700 font-medium">🛡️ Fully Verified</span>
-                    : selectedDriver.id_verified
-                      ? <span className="text-xs text-green-600 font-medium">✅ ID Verified</span>
-                      : null}
+                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                    {(selectedDriver.verification_badge === 'fully_verified' || selectedDriver.verification_badge === 'id_verified') && (
+                      <span className="text-xs text-green-600 font-medium">✅ ID Verified</span>
+                    )}
+                    {(selectedDriver.verification_badge === 'fully_verified' || selectedDriver.verification_badge === 'dl_verified' || selectedDriver.verification_badge === 'licence_only') && (
+                      <span className="text-xs text-blue-600 font-medium">🛡️ DL Verified</span>
+                    )}
+                    {!selectedDriver.verification_badge && selectedDriver.verified && (
+                      <span className="text-xs text-green-600 font-medium">✅ Verified</span>
+                    )}
+                    {!selectedDriver.verification_badge && !selectedDriver.verified && (
+                      <span className="text-xs text-amber-600 font-medium">⏳ Pending verification</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
