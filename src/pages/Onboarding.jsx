@@ -246,6 +246,12 @@ export default function Onboarding() {
     try {
       await auth.updateMe(buildProfilePayload());
       const { data: { user: authUser } } = await supabase.auth.getUser();
+      // Write residential_address directly to profiles — auth.updateMe() does not sync it
+      if (authUser?.id && form.residential_address) {
+        await supabase.from('profiles').update({
+          residential_address: form.residential_address,
+        }).eq('id', authUser.id);
+      }
       await saveGeoLocation(buildLocation(), authUser?.id);
       if (destination === 'subscription') {
         toast.success('Profile set up! Choose a plan to unlock full access.');
