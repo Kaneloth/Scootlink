@@ -242,12 +242,13 @@ export default function Profile() {
       const { error: profileUpdateErr } = await supabase
         .from('profiles')
         .update({
-          full_name:      form.full_name      || null,
-          email:          form.email          || user.email || null,
-          phone:          form.phone          || null,
-          location:       form.location       || null,
-          license_year:   form.license_year   ? parseInt(form.license_year) : null,
-          license_number: form.license_number || null,
+          full_name:           form.full_name           || null,
+          email:               form.email               || user.email || null,
+          phone:               form.phone               || null,
+          location:            form.location            || null,
+          residential_address: form.residential_address || null,
+          license_year:        form.license_year        ? parseInt(form.license_year) : null,
+          license_number:      form.license_number      || null,
         })
         .eq('id', user.id);
 
