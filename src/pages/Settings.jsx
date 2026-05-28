@@ -182,10 +182,9 @@ export default function Settings() {
   // ── Plan tab — licence verification ─────────────────────────────────────
   const [licencePlanStatus, setLicencePlanStatus] = useState('idle');
   const [licencePlanMsg, setLicencePlanMsg]       = useState('');
-  const [frontLicenceFile, setFrontLicenceFile]   = useState(null);
-  const [backLicenceFile,  setBackLicenceFile]    = useState(null);
-  const frontLicenceInputRef = useRef(null);
-  const backLicenceInputRef  = useRef(null);
+  // sadl_decode only needs the back (barcode side) of the licence card
+  const [licenceFile, setLicenceFile] = useState(null);
+  const licenceInputRef = useRef(null);
 
   // ── Plan tab — SA ID / Passport ──────────────────────────────────────────
   const [idDocType, setIdDocType] = useState('sa_id');   // 'sa_id' | 'passport'
@@ -492,8 +491,8 @@ export default function Settings() {
   // ── Plan tab — verify licence (image upload) ──────────────────────────────
 
   const handleVerifyLicencePlan = async () => {
-    if (!frontLicenceFile || !backLicenceFile) {
-      toast.error('Please upload both front and back images of your licence card');
+    if (!licenceFile) {
+      toast.error('Please upload a photo of the back (barcode side) of your licence card');
       return;
     }
     setLicencePlanStatus('verifying');
@@ -505,8 +504,7 @@ export default function Settings() {
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      const frontBase64 = await toBase64(frontLicenceFile);
-      const backBase64  = await toBase64(backLicenceFile);
+      const licenceBase64 = await toBase64(licenceFile);
 
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/.netlify/functions/verify-licence', {
@@ -515,10 +513,7 @@ export default function Settings() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({
-          frontImageBase64: frontBase64,
-          backImageBase64:  backBase64,
-        }),
+        body: JSON.stringify({ licenceImageBase64: licenceBase64 }),
       });
       const result = await res.json();
       if (result.verified || result.pending) {
@@ -1092,75 +1087,39 @@ export default function Settings() {
                 </p>
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50 text-xs text-muted-foreground">
                   <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>Upload clear photos of the front and back of your credit-card-sized licence. Images are sent securely to our verification provider and are not stored.</span>
+                  <span>Upload a clear photo of the <strong>back</strong> of your credit-card licence (the side with the barcode). The barcode is used to verify your licence instantly.</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Front of licence */}
-                  <div>
-                    <Label className="text-xs font-medium">Front of Licence *</Label>
-                    <div className="mt-1 flex flex-col items-start gap-1">
-                      {frontLicenceFile
-                        ? <p className="text-xs text-emerald-600 font-medium">✓ {frontLicenceFile.name}</p>
-                        : <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full gap-1"
-                            disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
-                            onClick={() => frontLicenceInputRef.current?.click()}
-                          >
-                            <Upload className="w-3 h-3" /> Choose File
-                          </Button>
-                      }
-                      <input
-                        ref={frontLicenceInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={e => { if (e.target.files?.[0]) { setFrontLicenceFile(e.target.files[0]); setLicencePlanStatus('idle'); } }}
-                      />
-                      {frontLicenceFile && licencePlanStatus !== 'verified' && (
-                        <button
-                          className="text-xs text-muted-foreground underline"
-                          onClick={() => { setFrontLicenceFile(null); if (frontLicenceInputRef.current) frontLicenceInputRef.current.value = ''; }}
+                <div>
+                  <Label className="text-xs font-medium">Back of Licence (barcode side) *</Label>
+                  <div className="mt-1 flex flex-col items-start gap-1">
+                    {licenceFile
+                      ? <p className="text-xs text-emerald-600 font-medium">✓ {licenceFile.name}</p>
+                      : <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full gap-1"
+                          disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
+                          onClick={() => licenceInputRef.current?.click()}
                         >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {/* Back of licence */}
-                  <div>
-                    <Label className="text-xs font-medium">Back of Licence *</Label>
-                    <div className="mt-1 flex flex-col items-start gap-1">
-                      {backLicenceFile
-                        ? <p className="text-xs text-emerald-600 font-medium">✓ {backLicenceFile.name}</p>
-                        : <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full gap-1"
-                            disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
-                            onClick={() => backLicenceInputRef.current?.click()}
-                          >
-                            <Upload className="w-3 h-3" /> Choose File
-                          </Button>
-                      }
-                      <input
-                        ref={backLicenceInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={e => { if (e.target.files?.[0]) { setBackLicenceFile(e.target.files[0]); setLicencePlanStatus('idle'); } }}
-                      />
-                      {backLicenceFile && licencePlanStatus !== 'verified' && (
-                        <button
-                          className="text-xs text-muted-foreground underline"
-                          onClick={() => { setBackLicenceFile(null); if (backLicenceInputRef.current) backLicenceInputRef.current.value = ''; }}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
+                          <Upload className="w-3 h-3" /> Choose File
+                        </Button>
+                    }
+                    <input
+                      ref={licenceInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => { if (e.target.files?.[0]) { setLicenceFile(e.target.files[0]); setLicencePlanStatus('idle'); } }}
+                    />
+                    {licenceFile && licencePlanStatus !== 'verified' && (
+                      <button
+                        className="text-xs text-muted-foreground underline"
+                        onClick={() => { setLicenceFile(null); if (licenceInputRef.current) licenceInputRef.current.value = ''; }}
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1181,7 +1140,7 @@ export default function Settings() {
                     variant="outline"
                     className="w-full gap-2"
                     onClick={handleVerifyLicencePlan}
-                    disabled={licencePlanStatus === 'verifying' || !frontLicenceFile || !backLicenceFile}
+                    disabled={licencePlanStatus === 'verifying' || !licenceFile}
                   >
                     {licencePlanStatus === 'verifying'
                       ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
@@ -1193,7 +1152,7 @@ export default function Settings() {
                     variant="ghost"
                     size="sm"
                     className="text-xs text-muted-foreground"
-                    onClick={() => { setLicencePlanStatus('idle'); setLicencePlanMsg(''); setFrontLicenceFile(null); setBackLicenceFile(null); }}
+                    onClick={() => { setLicencePlanStatus('idle'); setLicencePlanMsg(''); setLicenceFile(null); }}
                   >
                     Use a different licence
                   </Button>
