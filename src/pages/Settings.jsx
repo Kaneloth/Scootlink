@@ -436,7 +436,7 @@ export default function Settings() {
       if (data.verified) {
         setVerifyIdStatus('verified');
         setVerifyIdMsg(data.message || 'Identity verified successfully');
-        toast.success('Identity verified! You can now subscribe.');
+        toast.success('Identity verified! Your ✅ ID Verified badge will appear on your profile.');
         setUser(await loadUser());
       } else {
         setVerifyIdStatus('failed');
@@ -713,7 +713,6 @@ export default function Settings() {
           subscription_plan: selectedPlan,
           subscription_start: new Date().toISOString(),
           subscription_expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-          verified: true,
         };
         await auth.updateMe(profileUpdate);
         await supabase.auth.updateUser({ data: { subscription_plan: selectedPlan } });
@@ -748,15 +747,6 @@ export default function Settings() {
     }
     if (idDocError) {
       toast.error('Please fix the ID document error before subscribing.');
-      return;
-    }
-    if (needsLicencePlan && licencePlanStatus !== 'verified') {
-      toast.error('Please verify your driving licence before subscribing as a Driver');
-      return;
-    }
-    // Identity must be verified via VerifyNow before subscribing
-    if (verifyIdStatus !== 'verified' && !user?.verified) {
-      toast.error('Please verify your identity (SA ID or passport) before subscribing');
       return;
     }
     setProcessingPlan(true);
@@ -1057,14 +1047,14 @@ export default function Settings() {
               <Card className="p-4 border border-border/50 space-y-3">
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-primary shrink-0" />
-                  <p className="font-semibold text-sm">Driving Licence Required</p>
+                  <p className="font-semibold text-sm">Driving Licence <span className="font-normal text-muted-foreground">(Optional — earns 🛡️ badge)</span></p>
                   {licencePlanStatus === 'verified' && (
                     <ShieldCheck className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  A valid driving licence is required to drive vehicles on Skootlink.
-                  Your licence will be verified before activation.
+                  Verify your driving licence to earn the 🛡️ Fully Verified badge on your profile.
+                  This is optional — you can subscribe without verifying.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1130,10 +1120,10 @@ export default function Settings() {
             <Card className="p-4 border border-border/50 space-y-3">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
-                <p className="font-semibold text-sm">Identity Document</p>
+                <p className="font-semibold text-sm">Identity Document <span className="font-normal text-muted-foreground">(Optional — earns ✅ badge)</span></p>
               </div>
               <p className="text-xs text-muted-foreground">
-                Required to confirm you are 18 or older. Verified by the Skootlink admin team before account activation.
+                Verify your SA ID or passport to earn the ✅ ID Verified badge on your profile. This is optional — you can subscribe without verifying first.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1220,7 +1210,7 @@ export default function Settings() {
 
             <Button
               onClick={handleSubscribe}
-              disabled={processingPlan || (!isAdmin && ((needsLicencePlan && licencePlanStatus !== 'verified') || !!idDocError || !idDocNumber.trim() || (verifyIdStatus !== 'verified' && !user?.verified)))}
+              disabled={processingPlan || (!isAdmin && !!idDocError)}
               className="w-full gap-2"
             >
               {processingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}

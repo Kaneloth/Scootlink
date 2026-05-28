@@ -164,6 +164,20 @@ export default function SearchVehicles() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Verification status — keyed by owner id for fast lookup
+  const [verifiedOwnerIds,      setVerifiedOwnerIds]      = useState(new Set());
+  const [fullyVerifiedOwnerIds, setFullyVerifiedOwnerIds] = useState(new Set());
+  const [verifiedOwnerFilter,   setVerifiedOwnerFilter]   = useState('all'); // 'all' | 'id_verified' | 'fully_verified'
+
+  useEffect(() => {
+    supabase.from('profiles').select('id, id_verified, licence_verified').eq('id_verified', true)
+      .then(({ data }) => {
+        if (!data) return;
+        setVerifiedOwnerIds(new Set(data.map(p => p.id)));
+        setFullyVerifiedOwnerIds(new Set(data.filter(p => p.licence_verified).map(p => p.id)));
+      });
+  }, []);
+
   const {
     data,
     isLoading,
@@ -192,7 +206,13 @@ export default function SearchVehicles() {
   const allVehicles = (data?.pages ?? [])
     .flatMap(page => (Array.isArray(page) ? page : []))
     .filter(v => v != null);
-  const vehicles    = allVehicles.filter(v => (!user || v.owner_id !== user.id) && !blacklistedOwnerIds.includes(v.owner_id));
+  const vehicles    = allVehicles.filter(v => {
+    if (!(!user || v.owner_id !== user.id)) return false;
+    if (blacklistedOwnerIds.includes(v.owner_id)) return false;
+    if (verifiedOwnerFilter === 'id_verified'    && !verifiedOwnerIds.has(v.owner_id))      return false;
+    if (verifiedOwnerFilter === 'fully_verified' && !fullyVerifiedOwnerIds.has(v.owner_id)) return false;
+    return true;
+  });
   const totalLoaded = allVehicles.length;
 
   const commitRadius = (km) =>
@@ -207,6 +227,7 @@ export default function SearchVehicles() {
     setLocalMaxPrice(3000);
     setLocalRadiusKm(50);
     setGeocodeTarget('');
+    setVerifiedOwnerFilter('all');
     setFilters({
       type:           'all',
       maxPrice:       3000,
@@ -259,6 +280,18 @@ export default function SearchVehicles() {
                   <SelectItem value="scooter">Scooter</SelectItem>
                   <SelectItem value="motorcycle">Motorcycle</SelectItem>
                   <SelectItem value="car">Car</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs">Owner Verification</Label>
+              <Select value={verifiedOwnerFilter} onValueChange={setVerifiedOwnerFilter}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Owners</SelectItem>
+                  <SelectItem value="id_verified">✅ ID Verified</SelectItem>
+                  <SelectItem value="fully_verified">🛡️ Fully Verified</SelectItem>
                 </SelectContent>
               </Select>
             </div>

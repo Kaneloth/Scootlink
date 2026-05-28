@@ -240,7 +240,6 @@ export default function Subscription() {
           subscription_plan: selected,
           subscription_start: new Date().toISOString(),
           subscription_expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-          verified: true,
         };
         await auth.updateMe(profileUpdate);
         await supabase.auth.updateUser({ data: { subscription_plan: selected } });
@@ -250,14 +249,6 @@ export default function Subscription() {
         toast.error('Something went wrong. Please try again.');
         setProcessing(false);
       }
-      return;
-    }
-    if (idStatus !== 'verified') {
-      toast.error('Please verify your identity before subscribing');
-      return;
-    }
-    if (needsLicence && licenceStatus !== 'verified') {
-      toast.error('Please verify your driving licence before subscribing as a Driver');
       return;
     }
     setProcessing(true);
@@ -274,7 +265,6 @@ export default function Subscription() {
         subscription_plan:   selected,
         subscription_start:  new Date().toISOString(),
         subscription_expires: new Date(Date.now() + durationMs).toISOString(),
-        verified:    true,     // identity verified as part of subscription flow
         citizenship,
       };
       // Save whichever ID type was verified
@@ -422,13 +412,13 @@ export default function Subscription() {
         <Card className="p-5 border border-border/50 mb-4 space-y-4">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
-            <p className="font-semibold text-sm">Identity Verification</p>
+            <p className="font-semibold text-sm">Identity Verification <span className="font-normal text-muted-foreground">(Optional — earns ✅ badge)</span></p>
             {idStatus === 'verified' && (
               <CheckCircle2 className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Your ID is verified once at subscription and stored securely. Required for all plans.
+            Verify your identity to earn the ✅ ID Verified badge on your profile. This is optional — you can subscribe without verifying.
           </p>
 
           {/* Citizenship selector */}
@@ -542,14 +532,14 @@ export default function Subscription() {
           <Card className="p-5 border border-border/50 mb-4 space-y-4">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-primary shrink-0" />
-              <p className="font-semibold text-sm">Driving Licence Required</p>
+              <p className="font-semibold text-sm">Driving Licence <span className="font-normal text-muted-foreground">(Optional — earns 🛡️ badge)</span></p>
               {licenceStatus === 'verified' && (
                 <ShieldCheck className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              A valid driving licence is required to drive vehicles on Skootlink.
-              Your licence will be verified with the traffic department before activation.
+              Verify your driving licence to earn the 🛡️ Fully Verified badge on your profile.
+              This is optional — you can subscribe without verifying.
             </p>
 
             <div className="grid grid-cols-2 gap-3">
@@ -626,16 +616,16 @@ export default function Subscription() {
                   First month free · billing starts day 31
                 </p>
               )}
-              {idStatus !== 'verified' && (
-                <p className="text-xs text-amber-600 mt-0.5">Identity verification required to continue</p>
+              {idStatus === 'verified' && (
+                <p className="text-xs text-emerald-600 mt-0.5">✅ Identity verified — badge will appear on your profile</p>
               )}
-              {idStatus === 'verified' && needsLicence && licenceStatus !== 'verified' && (
-                <p className="text-xs text-amber-600 mt-0.5">Licence verification required to continue</p>
+              {idStatus === 'verified' && needsLicence && licenceStatus === 'verified' && (
+                <p className="text-xs text-emerald-600 mt-0.5">🛡️ Fully Verified — both badges earned!</p>
               )}
             </div>
             <Button
               onClick={handleSubscribe}
-              disabled={processing || (!ADMIN_EMAILS.includes(user?.email) && (idStatus !== 'verified' || (needsLicence && licenceStatus !== 'verified')))}
+              disabled={processing}
               className="gap-2 px-6 shrink-0"
             >
               {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
