@@ -89,9 +89,11 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
             <div>
               <p className="font-semibold text-lg leading-tight">{profile.full_name || role}</p>
               <p className="text-xs mt-1">
-                {profile.verified
-                  ? <span className="text-green-600 font-medium">✅ Verified</span>
-                  : <span className="text-amber-600 font-medium">⏳ Pending verification</span>}
+                {profile.id_verified && profile.licence_verified
+                  ? <span className="text-green-700 font-medium">🛡️ Fully Verified</span>
+                  : profile.id_verified
+                    ? <span className="text-green-600 font-medium">✅ ID Verified</span>
+                    : null}
               </p>
             </div>
           </div>
@@ -223,7 +225,7 @@ export default function Dashboard() {
     // Including unknown columns (avatar_url, etc.) silently kills the entire query.
     const { data } = await supabase
       .from('profiles')
-      .select('id, full_name, email, phone, location, license_year, license_number, verified, rating')
+      .select('id, full_name, email, phone, location, license_year, license_number, verified, id_verified, licence_verified, rating')
       .in('id', ids);
     return data || [];
   };
@@ -451,7 +453,7 @@ export default function Dashboard() {
   };
 
   // Columns confirmed to exist in the profiles table
-  const PROFILE_SELECT_SAFE = 'id, full_name, email, phone, location, license_year, license_number, verified, rating';
+  const PROFILE_SELECT_SAFE = 'id, full_name, email, phone, location, license_year, license_number, verified, id_verified, licence_verified, rating';
   // Columns that may not exist yet (not yet migrated) — fetched separately so any
   // missing column never breaks the safe fetch above
   const PROFILE_SELECT_EXTRA = 'id, residential_address, gender, citizenship, avatar_url, avatar_visible';
@@ -910,11 +912,11 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         <div className="space-y-3">
           {availableForMe.map(v => {
             const isAdminUser = ['kanelothelejane@gmail.com'].includes(user?.email);
-            const canRent = isAdminUser || (user?.subscription_active && user?.verified);
+            const canRent = isAdminUser || user?.subscription_active;
             return canRent ? (
               <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
             ) : (
-              <VehicleCard key={v.id} vehicle={v} onClick={() => toast.warning('Subscribe and complete verification to rent vehicles')} />
+              <VehicleCard key={v.id} vehicle={v} onClick={() => toast.warning('Subscribe to rent vehicles')} />
             );
           })}
         </div>
@@ -1188,8 +1190,8 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           currentYear={currentYear}
           onClose={() => setSelectedDriver(null)}
           onMessage={(id) => { setSelectedDriver(null); navigate(`/messages?userId=${id}`); }}
-          canMessage={['kanelothelejane@gmail.com'].includes(user?.email) || (user?.subscription_active && user?.verified)}
-          onMessageBlocked={() => toast.warning(!user?.subscription_active ? 'You need an active subscription to message drivers' : 'Your account is awaiting verification')}
+          canMessage={['kanelothelejane@gmail.com'].includes(user?.email) || Boolean(user?.subscription_active)}
+          onMessageBlocked={() => toast.warning('You need an active subscription to message drivers')}
         />,
         document.body
       )}
@@ -1200,8 +1202,8 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           currentYear={currentYear}
           onClose={() => setSelectedOwner(null)}
           onMessage={(id) => { setSelectedOwner(null); navigate(`/messages?userId=${id}`); }}
-          canMessage={['kanelothelejane@gmail.com'].includes(user?.email) || (user?.subscription_active && user?.verified)}
-          onMessageBlocked={() => toast.warning(!user?.subscription_active ? 'You need an active subscription to message owners' : 'Your account is awaiting verification')}
+          canMessage={['kanelothelejane@gmail.com'].includes(user?.email) || Boolean(user?.subscription_active)}
+          onMessageBlocked={() => toast.warning('You need an active subscription to message owners')}
         />,
         document.body
       )}

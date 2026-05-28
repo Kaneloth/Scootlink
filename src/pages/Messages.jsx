@@ -393,8 +393,8 @@ export default function Messages() {
 
   // ── Send — with optimistic update ────────────────────────────────────────
   const isAdmin      = ['kanelothelejane@gmail.com'].includes(user?.email);
-  const canMessage   = isAdmin || (Boolean(user?.subscription_active) && Boolean(user?.verified));
-  // showLocked: show locked conversation previews / chat lock for unverified/unsubscribed users
+  const canMessage   = isAdmin || Boolean(user?.subscription_active);
+  // showLocked: show locked conversation previews / chat lock for unsubscribed users
   const isSubscribed = canMessage;
 
   const handleSend = async () => {
