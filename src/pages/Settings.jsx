@@ -27,17 +27,26 @@ const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 const PLANS = [
   {
-    id: 'driver', name: 'Driver', price: 39, icon: Bike,
+    id: 'driver', name: 'Driver', icon: Bike,
+    prices: { monthly: 39, '6month': 199, annual: 349 },
     features: ['Search & rent vehicles', 'GPS Tracking access', 'Wallet & payments', 'Up to 2 active rentals', 'Driver profile & reviews'],
   },
   {
-    id: 'owner', name: 'Owner', price: 49, icon: Crown, popular: true,
+    id: 'owner', name: 'Owner', icon: Crown, popular: true,
+    prices: { monthly: 49, '6month': 249, annual: 449 },
     features: ['List unlimited vehicles', 'Find & hire drivers', 'Real-time GPS tracking', 'Wallet & payouts', 'Priority listing visibility', 'Owner analytics dashboard'],
   },
   {
-    id: 'both', name: 'Fleet Pro', price: 59, icon: Users,
+    id: 'both', name: 'Fleet Pro', icon: Users,
+    prices: { monthly: 59, '6month': 299, annual: 549 },
     features: ['Everything in Owner +', 'Unlimited active rentals', 'Drive other vehicles too', 'Multi-vehicle fleet management', 'Priority support', 'Advanced analytics'],
   },
+];
+
+const BILLING_OPTIONS = [
+  { id: 'monthly', label: 'Monthly',  saving: null,  days: 30  },
+  { id: '6month',  label: '6 Months', saving: '15%', days: 180 },
+  { id: 'annual',  label: 'Annual',   saving: '25%', days: 365 },
 ];
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
@@ -146,6 +155,7 @@ export default function Settings() {
   const [fontSize, setFontSize] = useState('16px');
   const [signInMethod, setSignInMethod] = useState('password');
   const [selectedPlan, setSelectedPlan] = useState('driver');
+  const [selectedBilling, setSelectedBilling] = useState('monthly');
   const [processingPlan, setProcessingPlan] = useState(false);
   const [user, setUser] = useState(null);
   const [notifications, setNotifications] = useState(true);
@@ -849,14 +859,14 @@ export default function Settings() {
     setProcessingPlan(true);
     try {
       const isFirstSubscription = !user?.subscription_active;
-      const durationMs = isFirstSubscription
-        ? 60 * 24 * 60 * 60 * 1000
-        : 30 * 24 * 60 * 60 * 1000;
+      const billingOption = BILLING_OPTIONS.find(b => b.id === selectedBilling);
+      const durationMs = billingOption.days * 24 * 60 * 60 * 1000;
 
       const profileUpdate = {
-        subscription_active: true,
-        subscription_plan: selectedPlan,
-        subscription_start: new Date().toISOString(),
+        subscription_active:  true,
+        subscription_plan:    selectedPlan,
+        subscription_billing: selectedBilling,
+        subscription_start:   new Date().toISOString(),
         subscription_expires: new Date(Date.now() + durationMs).toISOString(),
       };
       if (idDocNumber.trim()) {
@@ -883,7 +893,7 @@ export default function Settings() {
       await supabase.auth.updateUser({ data: { subscription_plan: selectedPlan } });
       toast.success(
         isFirstSubscription
-          ? 'Subscription activated! 35% discount applied for your first 2 months — enjoy Skootlink!'
+          ? 'Welcome to Skootlink! Enjoy your 30 days free.'
           : 'Plan updated!'
       );
       setUser(await loadUser());
@@ -1082,17 +1092,49 @@ export default function Settings() {
               </div>
             )}
 
-            {/* 35% discount banner — new subscribers only */}
+            {/* 30-day free trial banner — new subscribers only */}
             {!user?.subscription_active && (
               <div className="flex items-start gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">35% off your first 2 months!</p>
+                  <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">30 days free — no payment today!</p>
                   <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
-                    Subscribe today to lock in 35% off for your first two months. Full price applies from month three.
+                    Pick a plan and billing cycle below. Your 30-day free trial starts now — billing begins after the trial ends.
                   </p>
                 </div>
               </div>
+            )}
+
+            {/* Billing period toggle */}
+            <div className="flex items-center justify-center">
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-muted border border-border/50">
+                {BILLING_OPTIONS.map(opt => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setSelectedBilling(opt.id)}
+                    className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+                      selectedBilling === opt.id
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {opt.label}
+                    {opt.saving && (
+                      <span className={`text-[10px] font-bold px-1 py-0.5 rounded-full ${
+                        selectedBilling === opt.id ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'
+                      }`}>
+                        -{opt.saving}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {selectedBilling !== 'monthly' && (
+              <p className="text-center text-xs text-muted-foreground">
+                Paid once via card or EFT — no debit order, no recurring charge.
+              </p>
             )}
 
             {/* Plan cards */}
@@ -1117,7 +1159,17 @@ export default function Settings() {
                         <div className="p-2 rounded-xl border"><Icon className="w-4 h-4" /></div>
                         <div>
                           <h3 className="font-bold">{p.name}</h3>
-                          <p className="text-xs text-muted-foreground">R{p.price}/month</p>
+                          <p className="text-xs font-semibold">
+                            R{p.prices[selectedBilling]}
+                            <span className="font-normal text-muted-foreground">
+                              {selectedBilling === 'monthly' ? '/month' : selectedBilling === '6month' ? '/6 months' : '/year'}
+                            </span>
+                          </p>
+                          {selectedBilling !== 'monthly' && (
+                            <p className="text-[10px] text-muted-foreground">
+                              ≈ R{selectedBilling === '6month' ? Math.round(p.prices['6month'] / 6) : Math.round(p.prices.annual / 12)}/month
+                            </p>
+                          )}
                         </div>
                       </div>
                       {p.popular && <span className="text-[10px] bg-primary text-primary-foreground px-2 py-0.5 rounded-full">Popular</span>}
@@ -1403,13 +1455,20 @@ export default function Settings() {
               )}
             </Card>
 
+            {/* Summary line */}
+            <div className="text-center text-xs text-muted-foreground">
+              {PLANS.find(p => p.id === selectedPlan)?.name} · R{PLANS.find(p => p.id === selectedPlan)?.prices[selectedBilling]}
+              {selectedBilling === 'monthly' ? '/month' : selectedBilling === '6month' ? '/6 months' : '/year'}
+              {!user?.subscription_active && <span className="text-emerald-600 font-medium"> · 30 days free</span>}
+            </div>
+
             <Button
               onClick={handleSubscribe}
               disabled={processingPlan || (!isAdmin && !!idDocError)}
               className="w-full gap-2"
             >
               {processingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              {processingPlan ? 'Processing...' : user?.subscription_active ? 'Switch Plan' : 'Subscribe Now'}
+              {processingPlan ? 'Processing...' : user?.subscription_active ? 'Switch Plan' : 'Start Free Trial'}
             </Button>
 
             {/* Cancel subscription */}
