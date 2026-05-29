@@ -9,22 +9,22 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   CheckCircle2, Crown, Bike, Users, Shield, Loader2, ArrowRight, ArrowLeft,
-  AlertTriangle, FileText, XCircle, ShieldCheck,
+  AlertTriangle, FileText, XCircle, ShieldCheck, Zap,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
+// ── Pricing ───────────────────────────────────────────────────────────────────
 const PLANS = [
   {
     id: 'driver',
     name: 'Driver',
-    price: 39,
-    period: 'month',
     icon: Bike,
     color: 'bg-blue-50 border-blue-200',
     badgeColor: 'bg-blue-100 text-blue-700',
+    prices: { monthly: 39, '6month': 199, annual: 349 },
     features: [
       'Search & rent vehicles',
       'GPS Tracking access',
@@ -36,12 +36,11 @@ const PLANS = [
   {
     id: 'owner',
     name: 'Owner',
-    price: 49,
-    period: 'month',
     icon: Crown,
     color: 'bg-amber-50 border-amber-200',
     badgeColor: 'bg-amber-100 text-amber-700',
     popular: true,
+    prices: { monthly: 49, '6month': 249, annual: 449 },
     features: [
       'List unlimited vehicles',
       'Find & hire drivers',
@@ -54,11 +53,10 @@ const PLANS = [
   {
     id: 'both',
     name: 'Fleet Pro',
-    price: 59,
-    period: 'month',
     icon: Users,
     color: 'bg-primary/5 border-primary/30',
     badgeColor: 'bg-primary/10 text-primary',
+    prices: { monthly: 59, '6month': 299, annual: 549 },
     features: [
       'Everything in Owner +',
       'Unlimited active rentals',
@@ -70,31 +68,37 @@ const PLANS = [
   },
 ];
 
+const BILLING_OPTIONS = [
+  { id: 'monthly', label: 'Monthly',   saving: null,  days: 30  },
+  { id: '6month',  label: '6 Months',  saving: '15%', days: 180 },
+  { id: 'annual',  label: 'Annual',    saving: '25%', days: 365 },
+];
+
 export default function Subscription() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const [user, setUser]         = useState(null);
   const [selected, setSelected] = useState('owner');
-  const [processing, setProcessing] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const [billing, setBilling]   = useState('monthly');
+  const [processing, setProcessing]       = useState(false);
+  const [cancelling, setCancelling]       = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
-  // ── Identity verification state (required for ALL plans) ──────────────────
-  const [citizenship, setCitizenship] = useState('South African');
-  const [saId, setSaId]               = useState('');
-  const [passport, setPassport]       = useState('');
+  // ── Identity verification state ───────────────────────────────────────────
+  const [citizenship, setCitizenship]       = useState('South African');
+  const [saId, setSaId]                     = useState('');
+  const [passport, setPassport]             = useState('');
   const [passportCountry, setPassportCountry] = useState('');
-  const [idStatus, setIdStatus] = useState('idle'); // 'idle' | 'verifying' | 'verified' | 'failed'
+  const [idStatus, setIdStatus] = useState('idle'); // 'idle'|'verifying'|'verified'|'failed'
   const [idMsg, setIdMsg]       = useState('');
 
-  // ── Licence verification state (only required for driver / both plans) ──────
+  // ── Licence verification state (driver / both only) ───────────────────────
   const [licenceNumber, setLicenceNumber] = useState('');
   const [licenceYear, setLicenceYear]     = useState('');
-  const [licenceStatus, setLicenceStatus] = useState('idle'); // 'idle' | 'verifying' | 'verified' | 'failed'
+  const [licenceStatus, setLicenceStatus] = useState('idle');
   const [licenceMsg, setLicenceMsg]       = useState('');
 
   const needsLicence = selected === 'driver' || selected === 'both';
 
-  // Reset licence status whenever the plan changes
   useEffect(() => {
     setLicenceStatus('idle');
     setLicenceMsg('');
@@ -105,7 +109,6 @@ export default function Subscription() {
       setUser(u);
       const plan = u.subscription_plan || u.account_type || 'driver';
       setSelected(plan === 'both' ? 'both' : plan);
-      // Admin account — auto-verify everything, no checks required
       if (ADMIN_EMAILS.includes(u.email)) {
         setIdStatus('verified');
         setIdMsg('Admin account — verification exempt');
@@ -113,19 +116,15 @@ export default function Subscription() {
         setLicenceMsg('Admin account — verification exempt');
         return;
       }
-      // Pre-fill identity fields from profile
       if (u.citizenship) setCitizenship(u.citizenship);
       if (u.sa_id)       setSaId(u.sa_id);
       if (u.passport)    setPassport(u.passport);
-      // If already verified, skip re-verification
       if (u.verified && (u.sa_id || u.passport)) {
         setIdStatus('verified');
         setIdMsg('Identity already on record');
       }
-      // Pre-fill licence if they already have one on record
       if (u.license_number) setLicenceNumber(u.license_number);
       if (u.license_year)   setLicenceYear(String(u.license_year));
-      // If already verified with a licence, mark it verified
       if (u.verified && u.license_number) {
         setLicenceStatus('verified');
         setLicenceMsg('Licence already on record');
@@ -133,6 +132,7 @@ export default function Subscription() {
     }).catch(() => {});
   }, []);
 
+  // ── Identity verification ─────────────────────────────────────────────────
   const handleVerifyIdentity = async () => {
     if (citizenship === 'South African') {
       if (!/^\d{13}$/.test(saId)) {
@@ -140,7 +140,7 @@ export default function Subscription() {
         return;
       }
     } else {
-      if (!passport.trim()) { toast.error('Please enter your passport number'); return; }
+      if (!passport.trim())        { toast.error('Please enter your passport number'); return; }
       if (!passportCountry.trim()) { toast.error('Please enter your country of issue'); return; }
     }
     setIdStatus('verifying');
@@ -150,10 +150,7 @@ export default function Subscription() {
       const accessToken = sessionData?.session?.access_token;
       const res = await fetch('/.netlify/functions/verify-identity', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({
           idNumber: citizenship === 'South African' ? saId : passport.trim().toUpperCase(),
           documentType: citizenship === 'South African' ? 'sa_id' : 'passport',
@@ -176,41 +173,29 @@ export default function Subscription() {
     }
   };
 
+  // ── Licence verification ──────────────────────────────────────────────────
   const handleVerifyLicence = async () => {
-    if (!licenceNumber.trim()) {
-      toast.error('Please enter your licence number');
-      return;
-    }
-    if (!licenceYear.trim()) {
-      toast.error('Please enter the year your licence was issued');
-      return;
-    }
-
+    if (!licenceNumber.trim()) { toast.error('Please enter your licence number'); return; }
+    if (!licenceYear.trim())   { toast.error('Please enter the year your licence was issued'); return; }
     const year = parseInt(licenceYear);
     const currentYear = new Date().getFullYear();
     if (isNaN(year) || year < 1960 || year > currentYear) {
       toast.error(`Issue year must be between 1960 and ${currentYear}`);
       return;
     }
-
     const licenceClean = licenceNumber.trim().toUpperCase();
     if (!/^[A-Z0-9]{6,20}$/.test(licenceClean)) {
       toast.error('Please enter a valid driving licence number (6–20 alphanumeric characters)');
       return;
     }
-
     setLicenceStatus('verifying');
     setLicenceMsg('');
-
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       const res = await fetch('/.netlify/functions/verify-licence', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({ licenceNumber: licenceClean, yearIssued: year }),
       });
       const result = await res.json();
@@ -230,18 +215,20 @@ export default function Subscription() {
     }
   };
 
+  // ── Subscribe ─────────────────────────────────────────────────────────────
   const handleSubscribe = async () => {
-    // Admin bypass — skip all verification and age checks
+    // Admin bypass
     if (ADMIN_EMAILS.includes(user?.email)) {
       setProcessing(true);
       try {
-        const profileUpdate = {
-          subscription_active: true,
-          subscription_plan: selected,
-          subscription_start: new Date().toISOString(),
+        await auth.updateMe({
+          subscription_active:  true,
+          subscription_plan:    selected,
+          subscription_billing: billing,
+          subscription_start:   new Date().toISOString(),
           subscription_expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-        };
-        await auth.updateMe(profileUpdate);
+          verified: true,
+        });
         await supabase.auth.updateUser({ data: { subscription_plan: selected } });
         toast.success('Admin subscription activated!');
         window.location.href = '/';
@@ -251,23 +238,31 @@ export default function Subscription() {
       }
       return;
     }
+
+    if (idStatus !== 'verified') {
+      toast.error('Please verify your identity before subscribing');
+      return;
+    }
+    if (needsLicence && licenceStatus !== 'verified') {
+      toast.error('Please verify your driving licence before subscribing as a Driver');
+      return;
+    }
+
     setProcessing(true);
     try {
-      const isFirstSubscription = !user?.subscription_active;
-      // New subscribers get 35% off for 2 months — 60 days total access.
-      // Renewals / plan switches get the standard 30 days.
-      const durationMs = isFirstSubscription
-        ? 60 * 24 * 60 * 60 * 1000
-        : 30 * 24 * 60 * 60 * 1000;
+      const billingOption = BILLING_OPTIONS.find(b => b.id === billing);
+      const durationMs    = billingOption.days * 24 * 60 * 60 * 1000;
+      const isNew         = !user?.subscription_active;
 
       const profileUpdate = {
-        subscription_active: true,
-        subscription_plan:   selected,
-        subscription_start:  new Date().toISOString(),
+        subscription_active:  true,
+        subscription_plan:    selected,
+        subscription_billing: billing,
+        subscription_start:   new Date().toISOString(),
         subscription_expires: new Date(Date.now() + durationMs).toISOString(),
+        verified:    true,
         citizenship,
       };
-      // Save whichever ID type was verified
       if (citizenship === 'South African') {
         profileUpdate.sa_id = saId;
       } else {
@@ -277,19 +272,14 @@ export default function Subscription() {
         profileUpdate.license_number = licenceNumber.trim().toUpperCase();
         profileUpdate.license_year   = parseInt(licenceYear);
       }
+
       await auth.updateMe(profileUpdate);
-      const { error } = await supabase.auth.updateUser({
-        data: { subscription_plan: selected }
-      });
+      const { error } = await supabase.auth.updateUser({ data: { subscription_plan: selected } });
       if (error) {
         console.error('Failed to sync auth metadata', error);
         toast.warning('Plan updated, but you may need to re-login.');
       }
-      toast.success(
-        isFirstSubscription
-          ? 'Subscription activated! 35% discount applied for your first 2 months — enjoy Skootlink!'
-          : 'Plan updated! Welcome back to Skootlink.'
-      );
+      toast.success(isNew ? 'Welcome to Skootlink! Enjoy your 30 days free.' : 'Plan updated! Welcome back to Skootlink.');
       window.location.href = '/';
     } catch {
       toast.error('Something went wrong. Please try again.');
@@ -301,7 +291,7 @@ export default function Subscription() {
     setCancelling(true);
     try {
       await auth.updateMe({
-        subscription_active: false,
+        subscription_active:  false,
         subscription_expires: new Date().toISOString(),
       });
       await supabase.auth.updateUser({ data: { subscription_active: false } });
@@ -316,12 +306,15 @@ export default function Subscription() {
     }
   };
 
-  const plan = PLANS.find(p => p.id === selected);
+  const plan           = PLANS.find(p => p.id === selected);
+  const billingOption  = BILLING_OPTIONS.find(b => b.id === billing);
+  const planPrice      = plan?.prices[billing];
   const currentPlanName = PLANS.find(p => p.id === user?.subscription_plan)?.name;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
       <div className="w-full max-w-3xl">
+
         {/* Header bar */}
         <div className="flex items-center justify-between mb-8">
           <Link to="/" className="flex items-center gap-2">
@@ -340,15 +333,15 @@ export default function Subscription() {
           <p className="text-sm text-muted-foreground mt-1">Subscribe to unlock full platform access</p>
         </div>
 
-        {/* 35% discount banner — new subscribers only */}
+        {/* 30-day free trial banner — new subscribers only */}
         {!user?.subscription_active && (
           <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <Zap className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">35% off your first 2 months!</p>
+              <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">30 days free — no payment today!</p>
               <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
-                Verify your identity and subscribe today to lock in 35% off for your first two months.
-                Full price applies from month three — no surprises.
+                Verify your identity, pick a plan, and get 30 days of full access at no cost.
+                Your selected billing cycle starts after the trial ends.
               </p>
             </div>
           </div>
@@ -363,16 +356,61 @@ export default function Subscription() {
           </div>
         )}
 
+        {/* ── Billing period toggle ─────────────────────────────────────────── */}
+        <div className="flex items-center justify-center mb-6">
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-muted border border-border/50">
+            {BILLING_OPTIONS.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setBilling(opt.id)}
+                className={`relative flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  billing === opt.id
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {opt.label}
+                {opt.saving && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                    billing === opt.id
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-muted text-muted-foreground'
+                  }`}>
+                    -{opt.saving}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Upfront payment note for 6-month / annual */}
+        {billing !== 'monthly' && (
+          <p className="text-center text-xs text-muted-foreground mb-5">
+            Paid once via card or EFT — no debit order, no recurring charge.
+          </p>
+        )}
+
+        {/* ── Plan cards ───────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {PLANS.map(p => {
-            const Icon = p.icon;
+            const Icon      = p.icon;
             const isSelected = selected === p.id;
-            const isCurrent = user?.subscription_plan === p.id && user?.subscription_active;
+            const isCurrent  = user?.subscription_plan === p.id && user?.subscription_active;
+            const price      = p.prices[billing];
+            const monthlyCost = billing === 'monthly'
+              ? price
+              : billing === '6month'
+                ? Math.round(price / 6)
+                : Math.round(price / 12);
+
             return (
               <Card
                 key={p.id}
                 onClick={() => setSelected(p.id)}
-                className={`p-5 cursor-pointer border-2 transition-all duration-200 relative ${isSelected ? 'border-primary shadow-lg shadow-primary/10' : 'border-border hover:border-primary/40'}`}
+                className={`p-5 cursor-pointer border-2 transition-all duration-200 relative ${
+                  isSelected ? 'border-primary shadow-lg shadow-primary/10' : 'border-border hover:border-primary/40'
+                }`}
               >
                 {p.popular && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
@@ -391,11 +429,16 @@ export default function Subscription() {
                   {isSelected && <CheckCircle2 className="w-5 h-5 text-primary" />}
                 </div>
                 <h3 className="font-bold text-foreground">{p.name}</h3>
-                <div className="mt-1 mb-4">
-                  <span className="text-2xl font-extrabold">R {p.price}</span>
-                  <span className="text-xs text-muted-foreground">/{p.period}</span>
+                <div className="mt-1 mb-1">
+                  <span className="text-2xl font-extrabold">R{price}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {billing === 'monthly' ? '/month' : billing === '6month' ? '/6 months' : '/year'}
+                  </span>
                 </div>
-                <ul className="space-y-1.5">
+                {billing !== 'monthly' && (
+                  <p className="text-xs text-muted-foreground mb-3">≈ R{monthlyCost}/month</p>
+                )}
+                <ul className="space-y-1.5 mt-2">
                   {p.features.map((f, i) => (
                     <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
                       <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0 mt-0.5" />
@@ -408,20 +451,19 @@ export default function Subscription() {
           })}
         </div>
 
-        {/* ── Identity verification (required for ALL plans) ───────────────── */}
+        {/* ── Identity verification ─────────────────────────────────────────── */}
         <Card className="p-5 border border-border/50 mb-4 space-y-4">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
-            <p className="font-semibold text-sm">Identity Verification <span className="font-normal text-muted-foreground">(Optional — earns ✅ badge)</span></p>
+            <p className="font-semibold text-sm">Identity Verification</p>
             {idStatus === 'verified' && (
               <CheckCircle2 className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Verify your identity to earn the ✅ ID Verified badge on your profile. This is optional — you can subscribe without verifying.
+            Your ID is verified once at subscription and stored securely. Required for all plans.
           </p>
 
-          {/* Citizenship selector */}
           <div>
             <Label className="text-xs font-medium">Citizenship *</Label>
             <Select
@@ -447,7 +489,6 @@ export default function Subscription() {
             </Select>
           </div>
 
-          {/* SA ID or Passport */}
           {citizenship === 'South African' ? (
             <div>
               <Label className="text-xs font-medium">SA ID Number (13 digits) *</Label>
@@ -486,7 +527,6 @@ export default function Subscription() {
             </div>
           )}
 
-          {/* Status feedback */}
           {idStatus === 'verified' && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm">
               <ShieldCheck className="w-4 h-4 shrink-0" />
@@ -527,19 +567,19 @@ export default function Subscription() {
           )}
         </Card>
 
-        {/* ── Driving licence verification (driver / both plans only) ─────── */}
+        {/* ── Driving licence verification (driver / both only) ─────────────── */}
         {needsLicence && (
           <Card className="p-5 border border-border/50 mb-4 space-y-4">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-primary shrink-0" />
-              <p className="font-semibold text-sm">Driving Licence <span className="font-normal text-muted-foreground">(Optional — earns 🛡️ badge)</span></p>
+              <p className="font-semibold text-sm">Driving Licence Required</p>
               {licenceStatus === 'verified' && (
                 <ShieldCheck className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Verify your driving licence to earn the 🛡️ Fully Verified badge on your profile.
-              This is optional — you can subscribe without verifying.
+              A valid driving licence is required to drive vehicles on Skootlink.
+              Your licence will be verified with the traffic department before activation.
             </p>
 
             <div className="grid grid-cols-2 gap-3">
@@ -566,7 +606,6 @@ export default function Subscription() {
               </div>
             </div>
 
-            {/* Status feedback */}
             {licenceStatus === 'verified' && (
               <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm">
                 <ShieldCheck className="w-4 h-4 shrink-0" />
@@ -605,36 +644,41 @@ export default function Subscription() {
           </Card>
         )}
 
-        {/* Summary + subscribe */}
+        {/* ── Summary + subscribe ───────────────────────────────────────────── */}
         <Card className="p-5 border border-border/50 mb-4">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-sm text-muted-foreground">Selected Plan</p>
-              <p className="font-bold text-lg">{plan?.name} — R {plan?.price}/month</p>
+              <p className="font-bold text-lg">
+                {plan?.name} — R{planPrice}
+                <span className="text-sm font-normal text-muted-foreground ml-1">
+                  {billing === 'monthly' ? '/month' : billing === '6month' ? '/6 months' : '/year'}
+                </span>
+              </p>
               {!user?.subscription_active && (
                 <p className="text-xs text-emerald-600 mt-0.5 font-medium">
-                  First month free · billing starts day 31
+                  30 days free · billing starts day 31
                 </p>
               )}
-              {idStatus === 'verified' && (
-                <p className="text-xs text-emerald-600 mt-0.5">✅ Identity verified — badge will appear on your profile</p>
+              {idStatus !== 'verified' && (
+                <p className="text-xs text-amber-600 mt-0.5">Identity verification required to continue</p>
               )}
-              {idStatus === 'verified' && needsLicence && licenceStatus === 'verified' && (
-                <p className="text-xs text-emerald-600 mt-0.5">🛡️ Fully Verified — both badges earned!</p>
+              {idStatus === 'verified' && needsLicence && licenceStatus !== 'verified' && (
+                <p className="text-xs text-amber-600 mt-0.5">Licence verification required to continue</p>
               )}
             </div>
             <Button
               onClick={handleSubscribe}
-              disabled={processing}
+              disabled={processing || (!ADMIN_EMAILS.includes(user?.email) && (idStatus !== 'verified' || (needsLicence && licenceStatus !== 'verified')))}
               className="gap-2 px-6 shrink-0"
             >
               {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              {processing ? 'Processing...' : user?.subscription_active ? 'Switch Plan' : 'Subscribe Now'}
+              {processing ? 'Processing...' : user?.subscription_active ? 'Switch Plan' : 'Start Free Trial'}
             </Button>
           </div>
         </Card>
 
-        {/* Skip — only for new users who haven't subscribed yet */}
+        {/* Skip */}
         {!user?.subscription_active && (
           <div className="text-center mb-4">
             <button
@@ -668,23 +712,11 @@ export default function Subscription() {
               </div>
             </div>
             <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setShowCancelConfirm(false)}
-                disabled={cancelling}
-              >
+              <Button variant="outline" className="flex-1" onClick={() => setShowCancelConfirm(false)} disabled={cancelling}>
                 Keep My Plan
               </Button>
-              <Button
-                variant="destructive"
-                className="flex-1 gap-2"
-                onClick={handleCancelSubscription}
-                disabled={cancelling}
-              >
-                {cancelling
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Cancelling…</>
-                  : 'Yes, Cancel'}
+              <Button variant="destructive" className="flex-1 gap-2" onClick={handleCancelSubscription} disabled={cancelling}>
+                {cancelling ? <><Loader2 className="w-4 h-4 animate-spin" /> Cancelling…</> : 'Yes, Cancel'}
               </Button>
             </div>
           </Card>
