@@ -339,7 +339,7 @@ export default function Auth() {
         }
       }
       setUser({ id: session.user.id, email: session.user.email });
-      navigate('/');
+      navigate('/app');
     } catch (err) {
       if (err.code === 'no-session' || err.code === 'session-expired') {
         if (err.detail) toast.error(`Debug: ${err.detail}`, { duration: 15000 });
@@ -465,7 +465,7 @@ export default function Auth() {
       saveBiometricRefreshToken(data.session);
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       setUser({ id: data.user.id, email: data.user.email });
-      navigate('/');
+      navigate('/app');
     } catch (err) {
       toast.error(err.message || 'Login failed');
     } finally {
