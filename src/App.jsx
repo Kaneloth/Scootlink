@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
 
 import Auth from '@/pages/Auth';
+import LandingPage from '@/pages/LandingPage';
 import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/Dashboard';
 import SearchVehicles from '@/pages/SearchVehicles';
@@ -26,24 +27,21 @@ import Subscription from '@/pages/Subscription';
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 
-
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
   const [supabaseChecked, setSupabaseChecked] = React.useState(false);
 
   React.useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
+      const currentPath = window.location.pathname;
 
       if (isRecovery) {
-        // Always land on /auth so Auth.jsx can show the Set New Password form.
-        // Do NOT redirect to dashboard even if a session exists.
-        if (window.location.pathname !== '/auth') {
+        if (currentPath !== '/auth') {
           window.location.href = '/auth';
         } else {
           setSupabaseChecked(true);
         }
-      } else if (!session && window.location.pathname !== '/auth') {
+      } else if (!session) {
         window.location.href = '/auth';
       } else {
         setSupabaseChecked(true);
@@ -64,16 +62,10 @@ const AuthenticatedApp = () => {
 
   return (
     <Routes>
-      {/* Auth */}
-      <Route path="/auth" element={<Auth />} />
-
-      {/* Full-screen flows (no sidebar) */}
       <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/subscription" element={<Subscription />} />
-
-      {/* Main app with layout */}
       <Route element={<AppLayout />}>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/app" element={<Dashboard />} />
         <Route path="/search-vehicles" element={<SearchVehicles />} />
         <Route path="/find-drivers" element={<FindDrivers />} />
         <Route path="/add-vehicle" element={<AddVehicle />} />
@@ -87,30 +79,21 @@ const AuthenticatedApp = () => {
         <Route path="/messages" element={<Messages />} />
         <Route path="/contact" element={<ContactUs />} />
       </Route>
-
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
 };
 
 function App() {
-  // Register the PASSWORD_RECOVERY listener as early as possible — useMemo runs
-  // synchronously during render, before any child component mounts. This ensures
-  // we catch the event even if Supabase fires it before Auth.jsx is mounted.
-  // The flag is stored in sessionStorage so it survives React Router navigation.
   useMemo(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
       }
     });
-    // Not cleaning up here intentionally — this listener must live for the
-    // entire app session so it catches the event regardless of which component
-    // is mounted at the time.
     return subscription;
   }, []);
 
-  // Apply saved theme on initial load
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -125,13 +108,19 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router>
-          <AuthenticatedApp />
+          <Routes>
+            {/* Public routes — no auth required */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/auth" element={<Auth />} />
+            {/* All authenticated app routes */}
+            <Route path="/*" element={<AuthenticatedApp />} />
+          </Routes>
         </Router>
         <Toaster />
         <SonnerToaster position="top-center" richColors />
       </QueryClientProvider>
     </AuthProvider>
-  )
+  );
 }
 
 export default App;
