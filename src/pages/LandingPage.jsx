@@ -176,7 +176,7 @@ function HowItWorks() {
               ["List Your Vehicle", "Create a listing with photos, location, and your weekly price. Cars, scooters, motorbikes – any vehicle."],
               ["Find a Driver", "Search available drivers near you. Filter by location, experience, and rating."],
               ["We Verify Drivers", "Every driver is identity-checked and verified before they can rent. You approve who rents your vehicle."],
-              ["Get Paid Securely", "Receive payments directly through the app's wallet. Digital contracts protect every transaction."],
+
             ].map(([title, desc], i) => (
               <div key={i} style={styles.stepItem}>
                 <div style={styles.stepNumber}>{i + 1}</div>
@@ -232,7 +232,7 @@ function DemoSection() {
               <li>🔍 Finding a scooter near you</li>
               <li>📝 Submitting a rental request</li>
               <li>✍️ Signing a digital contract</li>
-              <li>💳 Making a secure payment</li>
+
               <li>📍 Live GPS tracking</li>
             </ul>
             <button
@@ -255,7 +255,7 @@ function TrustSafety() {
   const cards = [
     { icon: "🛡️", title: "Identity Verification", desc: "We offer all users the option to verify their identity through a government ID check. Verified users build more trust on the platform and help keep the community safe for everyone." },
     { icon: "📄", title: "Digital Contracts", desc: "Legally binding rental agreements are signed in the app before every rental." },
-    { icon: "💳", title: "In-App Wallet", desc: "Payments, deposits, and payouts are all handled securely within the platform." },
+  
     { icon: "📍", title: "GPS Tracking", desc: "Real-time location monitoring helps owners track their vehicles and recover them if needed." },
   ];
   return (
@@ -316,7 +316,7 @@ function About() {
         <h2 style={styles.sectionTitle}>About Skootlink</h2>
         {[
           "Skootlink was born from a simple observation: delivery drivers and other gig workers struggle to access affordable vehicles, and vehicle owners have no secure way to rent them out. The industry runs on informal, word-of-mouth arrangements with no contracts, no protection, and no trust.",
-          "We built Skootlink to change that. A formal, digital platform that connects verified owners with verified drivers, backed by legal contracts, secure payments, and GPS tracking. Whether it's a car, scooter, or motorbike, we're making vehicle rental safe, transparent, and profitable for everyone.",
+          "We built Skootlink to change that. A formal, digital platform that connects verified owners with verified drivers, backed by legal contracts, and GPS tracking. Whether it's a car, scooter, or motorbike, we're making vehicle rental safe, transparent, and profitable for everyone.",
           "Skootlink is a registered South African company, committed to building trust in the gig economy.",
         ].map((text, i) => (
           <p key={i} style={{ fontSize: 18, color: "#71717a", marginBottom: 24 }}>{text}</p>
