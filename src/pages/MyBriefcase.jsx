@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/api/supabaseClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Briefcase, FileText, Car, Truck, Download, AlertCircle, Loader2,
+  ArrowLeft, FileText, Car, Truck, Download, AlertCircle, Loader2,
 } from "lucide-react";
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
@@ -250,11 +251,9 @@ function ActiveRentalsTab({ userId }) {
                 </span>
                 <StatusBadge status={r.status} />
               </div>
-              {v.plate && <p className="text-xs text-muted-foreground">{v.plate}</p>}
-              {v.type  && <p className="text-xs text-muted-foreground capitalize">{v.type}</p>}
-              {v.location && (
-                <p className="text-xs text-muted-foreground">📍 {v.location}</p>
-              )}
+              {v.plate    && <p className="text-xs text-muted-foreground">{v.plate}</p>}
+              {v.type     && <p className="text-xs text-muted-foreground capitalize">{v.type}</p>}
+              {v.location && <p className="text-xs text-muted-foreground">📍 {v.location}</p>}
               <p className="text-xs text-muted-foreground mt-0.5">
                 {formatDate(r.start_date)} → {formatDate(r.end_date)}
               </p>
@@ -295,7 +294,6 @@ function ActiveAssignmentsTab({ userId }) {
 
         if (err) throw err;
 
-        // Fetch driver profiles separately (rentals.driver_id → auth.users → profiles)
         const driverIds = [...new Set((data ?? []).map(r => r.driver_id).filter(Boolean))];
         let profileMap  = {};
         if (driverIds.length) {
@@ -438,6 +436,7 @@ function VehicleListingsTab({ userId }) {
 /* ─── Main page ──────────────────────────────────────────────────────────── */
 
 export default function MyBriefcase() {
+  const navigate = useNavigate();
   const [userId, setUserId]           = useState(null);
   const [role, setRole]               = useState(null);
   const [pageLoading, setPageLoading] = useState(true);
@@ -491,44 +490,42 @@ export default function MyBriefcase() {
       ];
 
   return (
-    <div className="min-h-screen bg-background pb-24">
-      <div className="bg-background border-b border-border px-4 pt-6 pb-4 sticky top-0 z-10">
-        <div className="flex items-center gap-3 max-w-lg mx-auto">
-          <Briefcase className="w-6 h-6 text-primary" />
-          <div>
-            <h1 className="text-xl font-bold leading-tight">My Briefcase</h1>
-            <p className="text-xs text-muted-foreground">
-              {isOwner ? "Vehicles · Assignments · Contracts" : "Rentals · Contracts"}
-            </p>
-          </div>
-        </div>
+    <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
+      {/* Header — back arrow + title, matching SearchPage layout */}
+      <div className="flex items-center gap-3 mb-6">
+        <button
+          onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/app'); }}
+          className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg p-2 -ml-2"
+          style={{ touchAction: 'manipulation', minHeight: '44px' }}
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h1 className="text-2xl font-bold">My Briefcase</h1>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 pt-4">
-        <Tabs defaultValue={tabs[0].value}>
-          <TabsList className={`w-full mb-4 grid ${gridCols} bg-muted p-1 rounded-lg`}>
-            {tabs.map(({ value, label, icon: Icon }) => (
-              <TabsTrigger key={value} value={value} className="text-xs gap-1.5 py-2">
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-
-          {tabs.map(({ value, section, sub }) => (
-            <TabsContent key={value} value={value}>
-              <div className="mb-3">
-                <h2 className="text-sm font-semibold text-foreground">{section}</h2>
-                <p className="text-xs text-muted-foreground">{sub}</p>
-              </div>
-              {value === "contracts"   && <ContractsTab         userId={userId} role={role} />}
-              {value === "rentals"     && <ActiveRentalsTab     userId={userId} />}
-              {value === "assignments" && <ActiveAssignmentsTab userId={userId} />}
-              {value === "listings"    && <VehicleListingsTab   userId={userId} />}
-            </TabsContent>
+      <Tabs defaultValue={tabs[0].value}>
+        <TabsList className={`w-full mb-4 grid ${gridCols} bg-muted p-1 rounded-lg`}>
+          {tabs.map(({ value, label, icon: Icon }) => (
+            <TabsTrigger key={value} value={value} className="text-xs gap-1.5 py-2">
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+            </TabsTrigger>
           ))}
-        </Tabs>
-      </div>
+        </TabsList>
+
+        {tabs.map(({ value, section, sub }) => (
+          <TabsContent key={value} value={value}>
+            <div className="mb-3">
+              <h2 className="text-sm font-semibold text-foreground">{section}</h2>
+              <p className="text-xs text-muted-foreground">{sub}</p>
+            </div>
+            {value === "contracts"   && <ContractsTab         userId={userId} role={role} />}
+            {value === "rentals"     && <ActiveRentalsTab     userId={userId} />}
+            {value === "assignments" && <ActiveAssignmentsTab userId={userId} />}
+            {value === "listings"    && <VehicleListingsTab   userId={userId} />}
+          </TabsContent>
+        ))}
+      </Tabs>
     </div>
   );
 }

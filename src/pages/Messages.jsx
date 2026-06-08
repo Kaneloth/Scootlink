@@ -565,20 +565,19 @@ export default function Messages() {
     <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
       <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} onAction={handleMenuAction} />
 
-      {!selectedChat && (
-        <button
-          onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/'); }}
-          className="relative z-30 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 py-3 px-2 -ml-2 rounded-lg active:bg-accent"
-          style={{ touchAction: 'manipulation', minHeight: '44px' }}
-        >
-          <ArrowLeft className="w-5 h-5" /> Back
-        </button>
-      )}
-
       {!selectedChat ? (
         <>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold text-foreground">Messages</h2>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/app'); }}
+                className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg p-2 -ml-2"
+                style={{ touchAction: 'manipulation', minHeight: '44px' }}
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h2 className="text-2xl font-bold text-foreground">Messages</h2>
+            </div>
             <button
               onClick={() => {
                 if (!canMessage) { toast.warning('Subscribe to start new conversations'); return; }
