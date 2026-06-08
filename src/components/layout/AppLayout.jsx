@@ -4,9 +4,10 @@ import { Bike, User, Settings, LogOut } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
+import LandingPage from '@/pages/LandingPage';
 
 // ─── Page components for the five main tabs ────────────────────────────────
-import HomePage from '@/pages/Dashboard';          // ← Dashboard
+import HomePage from '@/pages/Dashboard';
 import SearchPage from '@/pages/SearchPage';
 import TrackingPage from '@/pages/Tracking';
 import BriefcasePage from '@/pages/MyBriefcase';
@@ -25,7 +26,6 @@ const TABS = [
   { path: '/messages',         component: MessagesPage,   icon: Bike, label: 'Messages' },
 ];
 
-// Expand the search entry to cover all possible search paths
 const TAB_PATHS = TABS.reduce((acc, tab) => {
   if (tab.path === CANONICAL_SEARCH_PATH) {
     acc.push(...SEARCH_PATHS);
@@ -34,13 +34,11 @@ const TAB_PATHS = TABS.reduce((acc, tab) => {
   }
   return acc;
 }, []);
-// Result: ['/', '/search-vehicles', '/find-drivers', '/mysearch', '/tracking', '/briefcase', '/messages']
 
-const THRESHOLD = 0.3; // 30% of screen width triggers snap
+const THRESHOLD = 0.3;
 
-// Helper: map any URL pathname to the logical tab index (0‑4)
 function getTabIndex(pathname) {
-  if (SEARCH_PATHS.includes(pathname)) return 1;   // Search tab
+  if (SEARCH_PATHS.includes(pathname)) return 1;
   const idx = CANONICAL_PATHS.indexOf(pathname);
   return idx === -1 ? 0 : idx;
 }
@@ -223,6 +221,24 @@ export default function AppLayout() {
   const [userLoading, setUserLoading] = useState(true);
   const [isBlacklisted, setIsBlacklisted] = useState(false);
 
+  // ── Auth check (replaces old RootRoute in App.jsx) ─────────────────────
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authUser, setAuthUser]       = useState(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthLoading(false);
+      setAuthUser(session?.user ?? null);
+    });
+
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthLoading(false);
+      setAuthUser(session?.user ?? null);
+    });
+
+    return () => authSub?.unsubscribe();
+  }, []);
+
   // ── Strip swipe state ──────────────────────────────────────────────────
   const isTabRoute = TAB_PATHS.includes(location.pathname);
   const tabIndex = isTabRoute ? getTabIndex(location.pathname) : 0;
@@ -237,7 +253,7 @@ export default function AppLayout() {
 
   // ── Touch handlers ─────────────────────────────────────────────────────
   const onTouchStart = useCallback((e) => {
-    if (e.target.closest('[data-no-swipe]')) return;   // respect no‑swipe elements
+    if (e.target.closest('[data-no-swipe]')) return;
     if (!isTabRoute) return;
     touchRef.current = {
       startX: e.touches[0].clientX,
@@ -332,6 +348,19 @@ export default function AppLayout() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // ── Auth gate: show spinner then landing page if not logged in ─────────
+  if (authLoading) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-background">
+        <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return <LandingPage />;
+  }
 
   // ── Blacklisted screen ─────────────────────────────────────────────────
   if (isBlacklisted) {
