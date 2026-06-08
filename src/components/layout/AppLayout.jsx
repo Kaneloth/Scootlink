@@ -18,11 +18,11 @@ const CANONICAL_SEARCH_PATH = '/search-vehicles';
 const CANONICAL_PATHS = ['/', CANONICAL_SEARCH_PATH, '/tracking', '/briefcase', '/messages'];
 
 const TABS = [
-  { path: '/',                 component: HomePage,      icon: Bike, label: 'Home' },
-  { path: CANONICAL_SEARCH_PATH, component: SearchPage,   icon: Bike, label: 'Search' },
-  { path: '/tracking',         component: TrackingPage,   icon: Bike, label: 'Track' },
-  { path: '/briefcase',        component: BriefcasePage,  icon: Bike, label: 'Briefcase' },
-  { path: '/messages',         component: MessagesPage,   icon: Bike, label: 'Messages' },
+  { path: '/',                   component: HomePage,      icon: Bike, label: 'Home' },
+  { path: CANONICAL_SEARCH_PATH, component: SearchPage,    icon: Bike, label: 'Search' },
+  { path: '/tracking',           component: TrackingPage,   icon: Bike, label: 'Track' },
+  { path: '/briefcase',          component: BriefcasePage,  icon: Bike, label: 'Briefcase' },
+  { path: '/messages',           component: MessagesPage,   icon: Bike, label: 'Messages' },
 ];
 
 // Expand the search entry to cover all possible search paths
@@ -34,7 +34,6 @@ const TAB_PATHS = TABS.reduce((acc, tab) => {
   }
   return acc;
 }, []);
-// Result: ['/', '/search-vehicles', '/find-drivers', '/mysearch', '/tracking', '/briefcase', '/messages']
 
 const THRESHOLD = 0.3; // 30% of screen width triggers snap
 
@@ -219,8 +218,8 @@ export default function AppLayout({ initialUser = null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
-  const [gateUser, setGateUser] = useState(initialUser);
-  const [userLoading, setUserLoading] = useState(!initialUser);
+  const [gateUser, setGateUser] = useState(null);
+  const [userLoading, setUserLoading] = useState(true);
   const [isBlacklisted, setIsBlacklisted] = useState(false);
 
   // ── Strip swipe state ──────────────────────────────────────────────────
@@ -295,33 +294,40 @@ export default function AppLayout({ initialUser = null }) {
   const dragX = (dragPercent / 100) * (100 / N);
   const stripX = baseX + dragX;
 
-  // ── User loading (skip if initialUser already provided) ────────────────
+  // ── User loading (enriched when initialUser is provided) ────────────────
   useEffect(() => {
     if (initialUser) {
-      // User already known; just check blacklist and set account type
+      // Enrich the raw auth user with user_metadata fields
+      const enrichedUser = {
+        ...initialUser,
+        onboarding_completed: initialUser.user_metadata?.onboarding_completed,
+        subscription_plan: initialUser.user_metadata?.subscription_plan,
+        subscription_active: initialUser.user_metadata?.subscription_active,
+      };
+
       const fetchBlacklist = async () => {
         const { data: profile } = await supabase
           .from('profiles')
           .select('blacklisted')
-          .eq('id', initialUser.id)
+          .eq('id', enrichedUser.id)
           .single();
         if (profile?.blacklisted) {
           try { await supabase.auth.signOut(); } catch { /* non-fatal */ }
           setIsBlacklisted(true);
         }
         setAccountType(
-          initialUser?.subscription_active
-            ? (initialUser?.subscription_plan || 'driver')
+          enrichedUser?.subscription_active
+            ? (enrichedUser?.subscription_plan || 'driver')
             : 'both'
         );
-        setGateUser(initialUser);
+        setGateUser(enrichedUser);
         setUserLoading(false);
       };
       fetchBlacklist();
       return;
     }
 
-    // No initialUser → fetch user as before (e.g., when AppLayout used via nested route)
+    // Fallback for nested routes without initialUser
     auth.me().then(async (user) => {
       setAccountType(user?.subscription_active ? (user?.subscription_plan || 'driver') : 'both');
       if (user?.id) {
