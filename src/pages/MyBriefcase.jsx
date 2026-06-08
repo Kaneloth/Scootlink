@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/api/supabaseClient";
-import { useAuth } from "@/lib/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +7,8 @@ import {
   Briefcase, FileText, Car, Truck, Download, AlertCircle, Loader2,
 } from "lucide-react";
 
-/* ─── Helper functions (unchanged) ─────────────────────────────────────── */
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
+
 function formatDate(iso) {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-ZA", {
@@ -20,10 +20,10 @@ function StatusBadge({ status }) {
   const map = {
     active:    "bg-green-100 text-green-700",
     pending:   "bg-yellow-100 text-yellow-700",
-    signed:    "bg-blue-100  text-blue-700",
-    completed: "bg-gray-100  text-gray-600",
-    cancelled: "bg-red-100   text-red-600",
-    available: "bg-blue-100  text-blue-700",
+    signed:    "bg-blue-100 text-blue-700",
+    completed: "bg-gray-100 text-gray-600",
+    cancelled: "bg-red-100 text-red-600",
+    available: "bg-blue-100 text-blue-700",
     rented:    "bg-purple-100 text-purple-700",
   };
   const cls = map[status?.toLowerCase()] ?? "bg-gray-100 text-gray-600";
@@ -43,13 +43,15 @@ function Empty({ message }) {
   );
 }
 
-function Loading() {
+function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
       <Loader2 className="w-8 h-8 animate-spin text-primary opacity-60" />
     </div>
   );
 }
+
+/* ─── PDF download ───────────────────────────────────────────────────────── */
 
 function downloadContractPDF(contract) {
   if (contract.pdf_url) {
@@ -94,26 +96,28 @@ function downloadContractPDF(contract) {
   URL.revokeObjectURL(url);
 }
 
-/* ─── Contracts tab ─────────────────────────────────────────────────────── */
+/* ─── Contracts tab ──────────────────────────────────────────────────────── */
+
 function ContractsTab({ userId }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState(null);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) { setLoading(false); return; }   // ← fix: always resolve loading
     (async () => {
       try {
         setLoading(true);
-        const { data } = await supabase
+        const { data, error: err } = await supabase
           .from("contracts")
           .select("*")
           .or(`driver_id.eq.${userId},owner_id.eq.${userId}`)
           .in("status", ["signed", "active", "completed"])
           .order("created_at", { ascending: false });
+        if (err) throw err;
         setContracts(data ?? []);
       } catch (err) {
-        console.error("ContractsTab error:", err);
+        console.error("ContractsTab:", err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -121,8 +125,8 @@ function ContractsTab({ userId }) {
     })();
   }, [userId]);
 
-  if (loading) return <Loading />;
-  if (error) return <Empty message={`Error loading contracts: ${error}`} />;
+  if (loading) return <Spinner />;
+  if (error)   return <Empty message={`Could not load contracts: ${error}`} />;
   if (!contracts.length) return <Empty message="No signed contracts yet." />;
 
   return (
@@ -169,17 +173,18 @@ function ContractsTab({ userId }) {
 }
 
 /* ─── Active Rentals (driver) ────────────────────────────────────────────── */
+
 function ActiveRentalsTab({ userId }) {
   const [rentals, setRentals] = useState([]);
   const [loading, setLoading]  = useState(true);
   const [error, setError]      = useState(null);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) { setLoading(false); return; }   // ← fix
     (async () => {
       try {
         setLoading(true);
-        const { data } = await supabase
+        const { data, error: err } = await supabase
           .from("rental_requests")
           .select(`
             *,
@@ -189,9 +194,10 @@ function ActiveRentalsTab({ userId }) {
           .eq("driver_id", userId)
           .eq("status", "active")
           .order("start_date", { ascending: true });
+        if (err) throw err;
         setRentals(data ?? []);
       } catch (err) {
-        console.error("ActiveRentalsTab error:", err);
+        console.error("ActiveRentalsTab:", err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -199,8 +205,8 @@ function ActiveRentalsTab({ userId }) {
     })();
   }, [userId]);
 
-  if (loading) return <Loading />;
-  if (error) return <Empty message={`Error loading rentals: ${error}`} />;
+  if (loading) return <Spinner />;
+  if (error)   return <Empty message={`Could not load rentals: ${error}`} />;
   if (!rentals.length) return <Empty message="No active rentals right now." />;
 
   return (
@@ -222,9 +228,7 @@ function ActiveRentalsTab({ userId }) {
                 </span>
                 <StatusBadge status={r.status} />
               </div>
-              {v.registration && (
-                <p className="text-xs text-muted-foreground">{v.registration}</p>
-              )}
+              {v.registration && <p className="text-xs text-muted-foreground">{v.registration}</p>}
               <p className="text-xs text-muted-foreground mt-0.5">
                 {formatDate(r.start_date)} → {formatDate(r.end_date)}
               </p>
@@ -245,17 +249,18 @@ function ActiveRentalsTab({ userId }) {
 }
 
 /* ─── Active Assignments (owner) ─────────────────────────────────────────── */
+
 function ActiveAssignmentsTab({ userId }) {
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState(null);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) { setLoading(false); return; }   // ← fix
     (async () => {
       try {
         setLoading(true);
-        const { data } = await supabase
+        const { data, error: err } = await supabase
           .from("rental_requests")
           .select(`
             *,
@@ -265,9 +270,10 @@ function ActiveAssignmentsTab({ userId }) {
           .eq("owner_id", userId)
           .eq("status", "active")
           .order("start_date", { ascending: true });
+        if (err) throw err;
         setAssignments(data ?? []);
       } catch (err) {
-        console.error("ActiveAssignmentsTab error:", err);
+        console.error("ActiveAssignmentsTab:", err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -275,8 +281,8 @@ function ActiveAssignmentsTab({ userId }) {
     })();
   }, [userId]);
 
-  if (loading) return <Loading />;
-  if (error) return <Empty message={`Error loading assignments: ${error}`} />;
+  if (loading) return <Spinner />;
+  if (error)   return <Empty message={`Could not load assignments: ${error}`} />;
   if (!assignments.length) return <Empty message="No vehicles currently out on assignment." />;
 
   return (
@@ -298,9 +304,7 @@ function ActiveAssignmentsTab({ userId }) {
                 </span>
                 <StatusBadge status={a.status} />
               </div>
-              {v.registration && (
-                <p className="text-xs text-muted-foreground">{v.registration}</p>
-              )}
+              {v.registration && <p className="text-xs text-muted-foreground">{v.registration}</p>}
               <p className="text-xs text-muted-foreground mt-0.5">
                 {formatDate(a.start_date)} → {formatDate(a.end_date)}
               </p>
@@ -320,25 +324,27 @@ function ActiveAssignmentsTab({ userId }) {
   );
 }
 
-/* ─── My Vehicle Listings (owner) ─────────────────────────────────────────── */
+/* ─── My Vehicle Listings (owner) ────────────────────────────────────────── */
+
 function VehicleListingsTab({ userId }) {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) { setLoading(false); return; }   // ← fix
     (async () => {
       try {
         setLoading(true);
-        const { data } = await supabase
+        const { data, error: err } = await supabase
           .from("vehicles")
           .select("*")
           .eq("owner_id", userId)
           .order("created_at", { ascending: false });
+        if (err) throw err;
         setVehicles(data ?? []);
       } catch (err) {
-        console.error("VehicleListingsTab error:", err);
+        console.error("VehicleListingsTab:", err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -346,8 +352,8 @@ function VehicleListingsTab({ userId }) {
     })();
   }, [userId]);
 
-  if (loading) return <Loading />;
-  if (error) return <Empty message={`Error loading vehicles: ${error}`} />;
+  if (loading) return <Spinner />;
+  if (error)   return <Empty message={`Could not load vehicles: ${error}`} />;
   if (!vehicles.length) return (
     <Empty message="You have no vehicle listings yet. Add a vehicle to start earning." />
   );
@@ -370,15 +376,9 @@ function VehicleListingsTab({ userId }) {
                     {v.year ? ` (${v.year})` : ""}
                   </span>
                 </div>
-                {v.registration && (
-                  <p className="text-xs text-muted-foreground">{v.registration}</p>
-                )}
-                {v.vehicle_type && (
-                  <p className="text-xs text-muted-foreground capitalize">{v.vehicle_type}</p>
-                )}
-                {v.location && (
-                  <p className="text-xs text-muted-foreground mt-0.5">📍 {v.location}</p>
-                )}
+                {v.registration && <p className="text-xs text-muted-foreground">{v.registration}</p>}
+                {v.vehicle_type && <p className="text-xs text-muted-foreground capitalize">{v.vehicle_type}</p>}
+                {v.location && <p className="text-xs text-muted-foreground mt-0.5">📍 {v.location}</p>}
                 {v.weekly_rate && (
                   <p className="text-xs font-semibold text-primary mt-1">R {v.weekly_rate}/week</p>
                 )}
@@ -392,43 +392,41 @@ function VehicleListingsTab({ userId }) {
   );
 }
 
-/* ─── Main page ─────────────────────────────────────────────────────────────── */
+/* ─── Main page ──────────────────────────────────────────────────────────── */
+
 export default function MyBriefcase() {
-  // ── 1. Wait for auth ───────────────────────────────────────────────────────
-  const { user, loading: authLoading } = useAuth();   // <-- ensure useAuth provides 'loading'
-  // If useAuth does NOT expose 'loading', replace the line above with:
-  // const { user } = useAuth();
-  // and use `if (!user) return <Loading />;` as a guard (see below).
+  // Get userId directly from Supabase — no dependency on useAuth loading state
+  const [userId, setUserId]         = useState(null);
+  const [role, setRole]             = useState(null);
+  const [pageLoading, setPageLoading] = useState(true);
 
-  const userId = user?.id;
-
-  const [role, setRole] = useState(null);
-  const [roleLoading, setRoleLoading] = useState(true);
-
-  // ── 2. Fetch the role from profiles ──────────────────────────────────────
   useEffect(() => {
-    if (!userId) return;
     (async () => {
       try {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("role, account_type")
-          .eq("id", userId)
-          .single();
-        setRole(profile?.role || profile?.account_type || "driver");
+        const { data: { session } } = await supabase.auth.getSession();
+        const uid = session?.user?.id ?? null;
+        setUserId(uid);
+
+        if (uid) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("role, account_type")
+            .eq("id", uid)
+            .single();
+          setRole(profile?.role || profile?.account_type || "driver");
+        } else {
+          setRole("driver");
+        }
       } catch (err) {
-        console.error("Failed to fetch role:", err);
+        console.error("MyBriefcase init error:", err);
         setRole("driver");
       } finally {
-        setRoleLoading(false);
+        setPageLoading(false);
       }
     })();
-  }, [userId]);
+  }, []);
 
-  // ── 3. Handle loading states ────────────────────────────────────────────
-  // If useAuth has a loading flag, use it. Otherwise, fall back to checking user.
-  if (authLoading || !user) {
-    // Auth not ready yet – show full‑page spinner
+  if (pageLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary opacity-60" />
@@ -436,32 +434,19 @@ export default function MyBriefcase() {
     );
   }
 
-  if (roleLoading || !role) {
-    // Still fetching the role – you can show a smaller inline spinner,
-    // but it's safe to reuse the same centered spinner.
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary opacity-60" />
-      </div>
-    );
-  }
-
-  // ── 4. Determine dashboard type ─────────────────────────────────────────
-  const isOwner = role === "owner" || role === "both";
+  const isOwner  = role === "owner" || role === "both";
   const gridCols = isOwner ? "grid-cols-3" : "grid-cols-2";
 
   const tabs = isOwner
     ? [
-        { value: "listings",    label: "My Vehicles", icon: Car,      section: "My Vehicles",        sub: "All your listed vehicles" },
-        { value: "assignments", label: "Assignments", icon: Truck,    section: "Active Assignments",  sub: "Vehicles currently out on rental" },
-        { value: "contracts",   label: "Contracts",   icon: FileText, section: "Signed Contracts",    sub: "Download any contract as PDF" },
+        { value: "listings",    label: "My Vehicles", icon: Car,      section: "My Vehicles",       sub: "All your listed vehicles" },
+        { value: "assignments", label: "Assignments", icon: Truck,    section: "Active Assignments", sub: "Vehicles currently out on rental" },
+        { value: "contracts",   label: "Contracts",   icon: FileText, section: "Signed Contracts",   sub: "Download any contract as PDF" },
       ]
     : [
-        { value: "rentals",     label: "Rentals",     icon: Car,      section: "Active Rentals",      sub: "Vehicles you are currently renting" },
-        { value: "contracts",   label: "Contracts",   icon: FileText, section: "Signed Contracts",    sub: "Download any contract as PDF" },
+        { value: "rentals",   label: "Rentals",   icon: Car,      section: "Active Rentals",  sub: "Vehicles you are currently renting" },
+        { value: "contracts", label: "Contracts", icon: FileText, section: "Signed Contracts", sub: "Download any contract as PDF" },
       ];
-
-  const defaultTab = tabs[0].value;
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -479,7 +464,7 @@ export default function MyBriefcase() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 pt-4">
-        <Tabs defaultValue={defaultTab}>
+        <Tabs defaultValue={tabs[0].value}>
           <TabsList className={`w-full mb-4 grid ${gridCols} bg-muted p-1 rounded-lg`}>
             {tabs.map(({ value, label, icon: Icon }) => (
               <TabsTrigger key={value} value={value} className="text-xs gap-1.5 py-2">
