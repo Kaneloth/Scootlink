@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { sendSMS } from '@/lib/sms';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
-import WalletCard from '@/components/dashboard/WalletCard';
+
 import VehicleCard from '@/components/vehicles/VehicleCard';
 import RentalCard from '@/components/dashboard/RentalCard';
 import EmptyState from '@/components/common/EmptyState';
@@ -140,7 +140,7 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
 export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
-  const [balanceLoading, setBalanceLoading] = useState(true);
+ 
   const [reviewModal, setReviewModal] = useState(null);
   const [selectedDriver,  setSelectedDriver]  = useState(null);
   const [loadingDriverId, setLoadingDriverId] = useState(null);
@@ -170,11 +170,10 @@ export default function Dashboard() {
   // Counterparty names cache: { [userId]: displayName }
   const [counterpartyNames, setCounterpartyNames] = useState({});
 
-  useEffect(() => {
+    useEffect(() => {
     auth.me().then(u => {
       setUser(u);
-      setBalanceLoading(false);
-    }).catch(() => setBalanceLoading(false));
+    }).catch(() => {});
   }, []);
 
   const queryClient = useQueryClient();
@@ -1102,9 +1101,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         </Card>
       )}
 
-      <Link to="/wallet">
-        <WalletCard balance={user?.wallet_balance ?? 0} loading={balanceLoading} />
-      </Link>
+     
 
       {renderStatCards()}
       {renderActionButtons()}
