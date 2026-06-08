@@ -44,7 +44,7 @@ function getTabIndex(pathname) {
   return idx === -1 ? 0 : idx;
 }
 
-// ─── Navigation progress bar ──────────────────────────────────────────────
+// ─── Navigation progress bar (unchanged) ──────────────────────────────────
 function useNavigationProgress(pathname) {
   const [barState, setBarState] = useState({ width: 0, visible: false, done: false });
   const prevPathRef = useRef(pathname);
@@ -87,7 +87,7 @@ function NavigationProgressBar({ pathname }) {
   );
 }
 
-// ─── Verification gate ────────────────────────────────────────────────────
+// ─── Verification gate (unchanged) ────────────────────────────────────────
 const GATE_EXEMPT = ['/onboarding', '/subscription', '/settings', '/profile'];
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
@@ -129,7 +129,7 @@ function VerificationGate({ user, userLoading, children }) {
   return children;
 }
 
-// ─── Shared biometric-aware logout ────────────────────────────────────────
+// ─── Shared biometric-aware logout (unchanged) ────────────────────────────
 async function layoutLogout(navigate) {
   if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
     try {
@@ -143,7 +143,7 @@ async function layoutLogout(navigate) {
   }
 }
 
-// ─── Mobile header with profile dropdown ──────────────────────────────────
+// ─── Mobile header with profile dropdown (unchanged) ──────────────────────
 function MobileHeader() {
   const navigate               = useNavigate();
   const [open, setOpen]        = useState(false);
@@ -217,9 +217,20 @@ function MobileHeader() {
 export default function AppLayout({ initialUser = null }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [accountType, setAccountType] = useState('driver');
-  const [gateUser, setGateUser] = useState(null);
-  const [userLoading, setUserLoading] = useState(true);
+
+  // ✅ Synchronously enrich the raw auth user so VerificationGate never sees a bare object
+  const enrichedInitial = initialUser
+    ? {
+        ...initialUser,
+        onboarding_completed: initialUser.user_metadata?.onboarding_completed,
+        subscription_plan: initialUser.user_metadata?.subscription_plan,
+        subscription_active: initialUser.user_metadata?.subscription_active,
+      }
+    : null;
+
+  const [accountType, setAccountType]    = useState('driver');
+  const [gateUser, setGateUser]          = useState(enrichedInitial);
+  const [userLoading, setUserLoading]    = useState(!initialUser);
   const [isBlacklisted, setIsBlacklisted] = useState(false);
 
   // ── Strip swipe state ──────────────────────────────────────────────────
@@ -234,7 +245,7 @@ export default function AppLayout({ initialUser = null }) {
   const accountTypeRef = useRef('driver');
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
-  // ── Touch handlers ─────────────────────────────────────────────────────
+  // ── Touch handlers (unchanged) ──────────────────────────────────────────
   const onTouchStart = useCallback((e) => {
     if (e.target.closest('[data-no-swipe]')) return;
     if (!isTabRoute) return;
@@ -288,46 +299,42 @@ export default function AppLayout({ initialUser = null }) {
     setDragPercent(0);
   }, [location.pathname]);
 
-  // ── Strip translation ──────────────────────────────────────────────────
+  // ── Strip translation (unchanged) ───────────────────────────────────────
   const N = CANONICAL_PATHS.length;
   const baseX = -(tabIndex / N) * 100;
   const dragX = (dragPercent / 100) * (100 / N);
   const stripX = baseX + dragX;
 
-  // ── User loading (enriched when initialUser is provided) ────────────────
+  // ── Blacklist & account‑type check (runs only when initialUser is provided) ──
   useEffect(() => {
-    if (initialUser) {
-      // Enrich the raw auth user with user_metadata fields
-      const enrichedUser = {
-        ...initialUser,
-        onboarding_completed: initialUser.user_metadata?.onboarding_completed,
-        subscription_plan: initialUser.user_metadata?.subscription_plan,
-        subscription_active: initialUser.user_metadata?.subscription_active,
-      };
+    if (!initialUser) return;
 
-      const fetchBlacklist = async () => {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('blacklisted')
-          .eq('id', enrichedUser.id)
-          .single();
-        if (profile?.blacklisted) {
-          try { await supabase.auth.signOut(); } catch { /* non-fatal */ }
-          setIsBlacklisted(true);
-        }
+    const checkBlacklist = async () => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('blacklisted')
+        .eq('id', initialUser.id)
+        .single();
+
+      if (profile?.blacklisted) {
+        try { await supabase.auth.signOut(); } catch { /* non-fatal */ }
+        setIsBlacklisted(true);
+      } else {
         setAccountType(
-          enrichedUser?.subscription_active
-            ? (enrichedUser?.subscription_plan || 'driver')
+          enrichedInitial?.subscription_active
+            ? (enrichedInitial?.subscription_plan || 'driver')
             : 'both'
         );
-        setGateUser(enrichedUser);
-        setUserLoading(false);
-      };
-      fetchBlacklist();
-      return;
-    }
+      }
+      setUserLoading(false);
+    };
 
-    // Fallback for nested routes without initialUser
+    checkBlacklist();
+  }, [initialUser, enrichedInitial]);
+
+  // Fallback for nested routes that didn't receive initialUser
+  useEffect(() => {
+    if (initialUser) return;
     auth.me().then(async (user) => {
       setAccountType(user?.subscription_active ? (user?.subscription_plan || 'driver') : 'both');
       if (user?.id) {
@@ -347,7 +354,7 @@ export default function AppLayout({ initialUser = null }) {
     }).catch(() => {}).finally(() => setUserLoading(false));
   }, [initialUser]);
 
-  // ── Biometric token refresh ────────────────────────────────────────────
+  // ── Biometric token refresh (unchanged) ─────────────────────────────────
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') &&
@@ -364,7 +371,7 @@ export default function AppLayout({ initialUser = null }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── Blacklisted screen ─────────────────────────────────────────────────
+  // ── Blacklisted screen (unchanged) ──────────────────────────────────────
   if (isBlacklisted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
