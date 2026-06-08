@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';   // ← import Navigate
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
@@ -42,24 +42,23 @@ const RootRoute = () => {
     return () => subscription?.unsubscribe();
   }, []);
 
+  // Show a spinner while auth is being checked
   if (authState.loading) {
     return (
-      <div className="fixed inset-0 flex flex-col items-center justify-center bg-background gap-4">
-        <img
-          src="/favicon.png"
-          alt="Skootlink"
-          className="w-16 h-16 rounded-2xl shadow-lg animate-pulse"
-        />
-        <p className="text-sm text-muted-foreground font-medium">Loading Skootlink…</p>
+      <div className="fixed inset-0 flex items-center justify-center bg-background">
+        <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
       </div>
     );
   }
 
+  // Not authenticated → show landing page
   if (!authState.user) {
     return <LandingPage />;
   }
 
-  return <AppLayout initialUser={authState.user} />;
+  // Authenticated → render the full app with the swipeable strip
+  // (Dashboard is automatically shown for path '/' because it is in TABS)
+  return <AppLayout />;
 };
 
 function App() {
@@ -87,8 +86,8 @@ function App() {
           <Routes>
             <Route path="/" element={<RootRoute />} />
             <Route path="/auth" element={<Auth />} />
-            <Route path="/app" element={<Navigate to="/" replace />} />   {/* ← redirect old /app */}
 
+            {/* All other authenticated pages – rendered inside AppLayout via Outlet */}
             <Route element={<AppLayout />}>
               <Route path="/search-vehicles" element={<SearchVehicles />} />
               <Route path="/find-drivers" element={<FindDrivers />} />

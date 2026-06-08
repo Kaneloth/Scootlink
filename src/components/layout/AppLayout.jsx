@@ -6,7 +6,7 @@ import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 
 // ─── Page components for the five main tabs ────────────────────────────────
-import HomePage from '@/pages/Dashboard';
+import HomePage from '@/pages/Dashboard';          // ← Dashboard
 import SearchPage from '@/pages/SearchPage';
 import TrackingPage from '@/pages/Tracking';
 import BriefcasePage from '@/pages/MyBriefcase';
@@ -18,11 +18,11 @@ const CANONICAL_SEARCH_PATH = '/search-vehicles';
 const CANONICAL_PATHS = ['/', CANONICAL_SEARCH_PATH, '/tracking', '/briefcase', '/messages'];
 
 const TABS = [
-  { path: '/',                   component: HomePage,      icon: Bike, label: 'Home' },
-  { path: CANONICAL_SEARCH_PATH, component: SearchPage,    icon: Bike, label: 'Search' },
-  { path: '/tracking',           component: TrackingPage,   icon: Bike, label: 'Track' },
-  { path: '/briefcase',          component: BriefcasePage,  icon: Bike, label: 'Briefcase' },
-  { path: '/messages',           component: MessagesPage,   icon: Bike, label: 'Messages' },
+  { path: '/',                 component: HomePage,      icon: Bike, label: 'Home' },
+  { path: CANONICAL_SEARCH_PATH, component: SearchPage,   icon: Bike, label: 'Search' },
+  { path: '/tracking',         component: TrackingPage,   icon: Bike, label: 'Track' },
+  { path: '/briefcase',        component: BriefcasePage,  icon: Bike, label: 'Briefcase' },
+  { path: '/messages',         component: MessagesPage,   icon: Bike, label: 'Messages' },
 ];
 
 // Expand the search entry to cover all possible search paths
@@ -34,6 +34,7 @@ const TAB_PATHS = TABS.reduce((acc, tab) => {
   }
   return acc;
 }, []);
+// Result: ['/', '/search-vehicles', '/find-drivers', '/mysearch', '/tracking', '/briefcase', '/messages']
 
 const THRESHOLD = 0.3; // 30% of screen width triggers snap
 
@@ -44,7 +45,7 @@ function getTabIndex(pathname) {
   return idx === -1 ? 0 : idx;
 }
 
-// ─── Navigation progress bar (unchanged) ──────────────────────────────────
+// ─── Navigation progress bar ──────────────────────────────────────────────
 function useNavigationProgress(pathname) {
   const [barState, setBarState] = useState({ width: 0, visible: false, done: false });
   const prevPathRef = useRef(pathname);
@@ -87,7 +88,7 @@ function NavigationProgressBar({ pathname }) {
   );
 }
 
-// ─── Verification gate (unchanged) ────────────────────────────────────────
+// ─── Verification gate ────────────────────────────────────────────────────
 const GATE_EXEMPT = ['/onboarding', '/subscription', '/settings', '/profile'];
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
@@ -129,7 +130,7 @@ function VerificationGate({ user, userLoading, children }) {
   return children;
 }
 
-// ─── Shared biometric-aware logout (unchanged) ────────────────────────────
+// ─── Shared biometric-aware logout ────────────────────────────────────────
 async function layoutLogout(navigate) {
   if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
     try {
@@ -143,7 +144,7 @@ async function layoutLogout(navigate) {
   }
 }
 
-// ─── Mobile header with profile dropdown (unchanged) ──────────────────────
+// ─── Mobile header with profile dropdown ──────────────────────────────────
 function MobileHeader() {
   const navigate               = useNavigate();
   const [open, setOpen]        = useState(false);
@@ -214,23 +215,12 @@ function MobileHeader() {
 }
 
 // ─── Main layout ──────────────────────────────────────────────────────────
-export default function AppLayout({ initialUser = null }) {
+export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-
-  // ✅ Synchronously enrich the raw auth user so VerificationGate never sees a bare object
-  const enrichedInitial = initialUser
-    ? {
-        ...initialUser,
-        onboarding_completed: initialUser.user_metadata?.onboarding_completed,
-        subscription_plan: initialUser.user_metadata?.subscription_plan,
-        subscription_active: initialUser.user_metadata?.subscription_active,
-      }
-    : null;
-
-  const [accountType, setAccountType]    = useState('driver');
-  const [gateUser, setGateUser]          = useState(enrichedInitial);
-  const [userLoading, setUserLoading]    = useState(!initialUser);
+  const [accountType, setAccountType] = useState('driver');
+  const [gateUser, setGateUser] = useState(null);
+  const [userLoading, setUserLoading] = useState(true);
   const [isBlacklisted, setIsBlacklisted] = useState(false);
 
   // ── Strip swipe state ──────────────────────────────────────────────────
@@ -245,9 +235,9 @@ export default function AppLayout({ initialUser = null }) {
   const accountTypeRef = useRef('driver');
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
-  // ── Touch handlers (unchanged) ──────────────────────────────────────────
+  // ── Touch handlers ─────────────────────────────────────────────────────
   const onTouchStart = useCallback((e) => {
-    if (e.target.closest('[data-no-swipe]')) return;
+    if (e.target.closest('[data-no-swipe]')) return;   // respect no‑swipe elements
     if (!isTabRoute) return;
     touchRef.current = {
       startX: e.touches[0].clientX,
@@ -299,42 +289,14 @@ export default function AppLayout({ initialUser = null }) {
     setDragPercent(0);
   }, [location.pathname]);
 
-  // ── Strip translation (unchanged) ───────────────────────────────────────
+  // ── Strip translation ──────────────────────────────────────────────────
   const N = CANONICAL_PATHS.length;
   const baseX = -(tabIndex / N) * 100;
   const dragX = (dragPercent / 100) * (100 / N);
   const stripX = baseX + dragX;
 
-  // ── Blacklist & account‑type check (runs only when initialUser is provided) ──
+  // ── Existing user loading & blacklist check ────────────────────────────
   useEffect(() => {
-    if (!initialUser) return;
-
-    const checkBlacklist = async () => {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('blacklisted')
-        .eq('id', initialUser.id)
-        .single();
-
-      if (profile?.blacklisted) {
-        try { await supabase.auth.signOut(); } catch { /* non-fatal */ }
-        setIsBlacklisted(true);
-      } else {
-        setAccountType(
-          enrichedInitial?.subscription_active
-            ? (enrichedInitial?.subscription_plan || 'driver')
-            : 'both'
-        );
-      }
-      setUserLoading(false);
-    };
-
-    checkBlacklist();
-  }, [initialUser, enrichedInitial]);
-
-  // Fallback for nested routes that didn't receive initialUser
-  useEffect(() => {
-    if (initialUser) return;
     auth.me().then(async (user) => {
       setAccountType(user?.subscription_active ? (user?.subscription_plan || 'driver') : 'both');
       if (user?.id) {
@@ -352,9 +314,9 @@ export default function AppLayout({ initialUser = null }) {
       }
       setGateUser(user ?? null);
     }).catch(() => {}).finally(() => setUserLoading(false));
-  }, [initialUser]);
+  }, []);
 
-  // ── Biometric token refresh (unchanged) ─────────────────────────────────
+  // ── Biometric token refresh ────────────────────────────────────────────
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') &&
@@ -371,7 +333,7 @@ export default function AppLayout({ initialUser = null }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── Blacklisted screen (unchanged) ──────────────────────────────────────
+  // ── Blacklisted screen ─────────────────────────────────────────────────
   if (isBlacklisted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
