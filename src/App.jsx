@@ -1,15 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';   // ← import Navigate
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
 
 import Auth from '@/pages/Auth';
-import LandingPage from '@/pages/LandingPage';
 import AppLayout from '@/components/layout/AppLayout';
 import SearchVehicles from '@/pages/SearchVehicles';
 import FindDrivers from '@/pages/FindDrivers';
@@ -25,41 +24,6 @@ import Onboarding from '@/pages/Onboarding';
 import Subscription from '@/pages/Subscription';
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
-
-/* ── Smart root route: show landing if not logged in, else the full app ── */
-const RootRoute = () => {
-  const [authState, setAuthState] = useState({ loading: true, user: null });
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setAuthState({ loading: false, user: session?.user ?? null });
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthState({ loading: false, user: session?.user ?? null });
-    });
-
-    return () => subscription?.unsubscribe();
-  }, []);
-
-  // Show a spinner while auth is being checked
-  if (authState.loading) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-background">
-        <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  // Not authenticated → show landing page
-  if (!authState.user) {
-    return <LandingPage />;
-  }
-
-  // Authenticated → render the full app with the swipeable strip
-  // (Dashboard is automatically shown for path '/' because it is in TABS)
-  return <AppLayout />;
-};
 
 function App() {
   useEffect(() => {
@@ -84,12 +48,12 @@ function App() {
       <QueryClientProvider client={queryClientInstance}>
         <Router>
           <Routes>
-            <Route path="/" element={<RootRoute />} />
             <Route path="/auth" element={<Auth />} />
-			<Route path="/app" element={<Navigate to="/" replace />} />
+            <Route path="/app" element={<Navigate to="/" replace />} />
 
-            {/* All other authenticated pages – rendered inside AppLayout via Outlet */}
+            {/* Single AppLayout instance covers ALL app routes — no more blank-screen flash */}
             <Route element={<AppLayout />}>
+              <Route index element={null} />
               <Route path="/search-vehicles" element={<SearchVehicles />} />
               <Route path="/find-drivers" element={<FindDrivers />} />
               <Route path="/add-vehicle" element={<AddVehicle />} />
