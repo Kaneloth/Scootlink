@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
@@ -26,6 +26,22 @@ import Onboarding from '@/pages/Onboarding';
 import Subscription from '@/pages/Subscription';
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
+
+/* ── Root route: redirect to /app if logged in, else show landing ── */
+const RootRoute = () => {
+  const [checking, setChecking] = useState(true);
+  const [authed, setAuthed]     = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthed(!!session);
+      setChecking(false);
+    });
+  }, []);
+
+  if (checking) return null;
+  return authed ? <Navigate to="/app" replace /> : <LandingPage />;
+};
 
 const AuthenticatedApp = () => {
   const [supabaseChecked, setSupabaseChecked] = React.useState(false);
@@ -102,7 +118,7 @@ function App() {
       <QueryClientProvider client={queryClientInstance}>
         <Router>
           <Routes>
-            <Route path="/" element={<LandingPage />} />
+            <Route path="/" element={<RootRoute />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/*" element={<AuthenticatedApp />} />
           </Routes>
