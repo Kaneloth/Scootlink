@@ -100,7 +100,7 @@ function Navbar() {
     <nav style={{ ...styles.navbar, boxShadow: scrolled ? "0 2px 20px rgba(37,99,235,.1)" : "none" }}>
       <div style={{ ...styles.container, ...styles.navInner }}>
         <a href="#home" style={styles.logo} onClick={e => { e.preventDefault(); scroll("home"); }}>
-          <img src="/favicon.png" alt="Skootlink" style={{ height: 52, width: "auto" }} />
+          <img src="/logo.png" alt="Skootlink" style={{ height: 52, width: "auto" }} />
         </a>
         <ul style={styles.navList} className="sl-nav-links">
           {[["How It Works", "how-it-works"], ["Trust & Safety", "trust"], ["About", "about"], ["Contact", "contact"]].map(([label, id]) => (
@@ -176,7 +176,6 @@ function HowItWorks() {
               ["List Your Vehicle", "Create a listing with photos, location, and your weekly price. Cars, scooters, motorbikes – any vehicle."],
               ["Find a Driver", "Search available drivers near you. Filter by location, experience, and rating."],
               ["We Verify Drivers", "Every driver is identity-checked and verified before they can rent. You approve who rents your vehicle."],
-
             ].map(([title, desc], i) => (
               <div key={i} style={styles.stepItem}>
                 <div style={styles.stepNumber}>{i + 1}</div>
@@ -232,7 +231,6 @@ function DemoSection() {
               <li>🔍 Finding a scooter near you</li>
               <li>📝 Submitting a rental request</li>
               <li>✍️ Signing a digital contract</li>
-
               <li>📍 Live GPS tracking</li>
             </ul>
             <button
@@ -255,7 +253,6 @@ function TrustSafety() {
   const cards = [
     { icon: "🛡️", title: "Identity Verification", desc: "We offer all users the option to verify their identity through a government ID check. Verified users build more trust on the platform and help keep the community safe for everyone." },
     { icon: "📄", title: "Digital Contracts", desc: "Legally binding rental agreements are signed in the app before every rental." },
-  
     { icon: "📍", title: "GPS Tracking", desc: "Real-time location monitoring helps owners track their vehicles and recover them if needed." },
   ];
   return (
@@ -389,7 +386,7 @@ function Footer() {
         <div style={styles.footerGrid}>
           <div>
             <div style={{ marginBottom: 12 }}>
-              <img src="/favicon.png" alt="Skootlink" style={{ height: 40, width: "auto" }} />
+              <img src="/logo.png" alt="Skootlink" style={{ height: 40, width: "auto" }} />
             </div>
             <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 14 }}>The formal way to rent vehicles for gig work in South Africa.</p>
           </div>

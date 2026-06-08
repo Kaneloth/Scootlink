@@ -5,7 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
-import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { AuthProvider } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
 
 import Auth from '@/pages/Auth';
@@ -34,13 +34,8 @@ const AuthenticatedApp = () => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
       const currentPath = window.location.pathname;
-
       if (isRecovery) {
-        if (currentPath !== '/auth') {
-          window.location.href = '/auth';
-        } else {
-          setSupabaseChecked(true);
-        }
+        if (currentPath !== '/auth') { window.location.href = '/auth'; } else { setSupabaseChecked(true); }
       } else if (!session) {
         window.location.href = '/auth';
       } else {
@@ -87,9 +82,7 @@ const AuthenticatedApp = () => {
 function App() {
   useMemo(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        sessionStorage.setItem('skootlink_recovery', '1');
-      }
+      if (event === 'PASSWORD_RECOVERY') { sessionStorage.setItem('skootlink_recovery', '1'); }
     });
     return subscription;
   }, []);
@@ -109,10 +102,8 @@ function App() {
       <QueryClientProvider client={queryClientInstance}>
         <Router>
           <Routes>
-            {/* Public routes — no auth required */}
             <Route path="/" element={<LandingPage />} />
             <Route path="/auth" element={<Auth />} />
-            {/* All authenticated app routes */}
             <Route path="/*" element={<AuthenticatedApp />} />
           </Routes>
         </Router>
