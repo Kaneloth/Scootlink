@@ -8,7 +8,7 @@ import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 // ─── Temporary dummy page components (replace with real imports later) ────
 import HomePage from '@/pages/Dashboard';
 import SearchPage from '@/pages/SearchPage';
-const TrackingPage = () => <div style={{ padding: 20 }}>Tracking Page</div>;
+import TrackingPage from '@/pages/Tracking';
 const BriefcasePage = () => <div style={{ padding: 20 }}>Briefcase Page</div>;
 const MessagesPage = () => <div style={{ padding: 20 }}>Messages Page</div>;
 
