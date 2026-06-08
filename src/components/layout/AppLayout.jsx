@@ -9,7 +9,7 @@ import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 import HomePage from '@/pages/Dashboard';
 import SearchPage from '@/pages/SearchPage';
 import TrackingPage from '@/pages/Tracking';
-import BriefcasePage from '@/pages/Briefcase';
+import BriefcasePage from '@/pages/MyBriefcase';
 import MessagesPage from '@/pages/Messages';
 
 // Must match bottom nav order exactly
