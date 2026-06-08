@@ -42,11 +42,17 @@ const RootRoute = () => {
     return () => subscription?.unsubscribe();
   }, []);
 
-  // Show a spinner while auth is being checked
+  // ── Branded loading screen while auth is being checked ─────────────────
   if (authState.loading) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-background">
-        <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-background gap-4">
+        {/* Use the same logo that appears in the mobile header */}
+        <img
+          src="/favicon.png"
+          alt="Skootlink"
+          className="w-16 h-16 rounded-2xl shadow-lg animate-pulse"
+        />
+        <p className="text-sm text-muted-foreground font-medium">Loading Skootlink…</p>
       </div>
     );
   }
@@ -57,7 +63,6 @@ const RootRoute = () => {
   }
 
   // Authenticated → render the full app with the swipeable strip
-  // (Dashboard is automatically shown for path '/' because it is in TABS)
   return <AppLayout />;
 };
 
