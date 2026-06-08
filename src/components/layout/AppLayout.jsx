@@ -6,7 +6,7 @@ import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 
 // ─── Page components for the five main tabs ────────────────────────────────
-import HomePage from '@/pages/Dashboard';          // ← Dashboard
+import HomePage from '@/pages/Dashboard';
 import SearchPage from '@/pages/SearchPage';
 import TrackingPage from '@/pages/Tracking';
 import BriefcasePage from '@/pages/MyBriefcase';
@@ -215,12 +215,12 @@ function MobileHeader() {
 }
 
 // ─── Main layout ──────────────────────────────────────────────────────────
-export default function AppLayout() {
+export default function AppLayout({ initialUser = null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
-  const [gateUser, setGateUser] = useState(null);
-  const [userLoading, setUserLoading] = useState(true);
+  const [gateUser, setGateUser] = useState(initialUser);
+  const [userLoading, setUserLoading] = useState(!initialUser);
   const [isBlacklisted, setIsBlacklisted] = useState(false);
 
   // ── Strip swipe state ──────────────────────────────────────────────────
@@ -237,7 +237,7 @@ export default function AppLayout() {
 
   // ── Touch handlers ─────────────────────────────────────────────────────
   const onTouchStart = useCallback((e) => {
-    if (e.target.closest('[data-no-swipe]')) return;   // respect no‑swipe elements
+    if (e.target.closest('[data-no-swipe]')) return;
     if (!isTabRoute) return;
     touchRef.current = {
       startX: e.touches[0].clientX,
@@ -295,8 +295,33 @@ export default function AppLayout() {
   const dragX = (dragPercent / 100) * (100 / N);
   const stripX = baseX + dragX;
 
-  // ── Existing user loading & blacklist check ────────────────────────────
+  // ── User loading (skip if initialUser already provided) ────────────────
   useEffect(() => {
+    if (initialUser) {
+      // User already known; just check blacklist and set account type
+      const fetchBlacklist = async () => {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('blacklisted')
+          .eq('id', initialUser.id)
+          .single();
+        if (profile?.blacklisted) {
+          try { await supabase.auth.signOut(); } catch { /* non-fatal */ }
+          setIsBlacklisted(true);
+        }
+        setAccountType(
+          initialUser?.subscription_active
+            ? (initialUser?.subscription_plan || 'driver')
+            : 'both'
+        );
+        setGateUser(initialUser);
+        setUserLoading(false);
+      };
+      fetchBlacklist();
+      return;
+    }
+
+    // No initialUser → fetch user as before (e.g., when AppLayout used via nested route)
     auth.me().then(async (user) => {
       setAccountType(user?.subscription_active ? (user?.subscription_plan || 'driver') : 'both');
       if (user?.id) {
@@ -314,7 +339,7 @@ export default function AppLayout() {
       }
       setGateUser(user ?? null);
     }).catch(() => {}).finally(() => setUserLoading(false));
-  }, []);
+  }, [initialUser]);
 
   // ── Biometric token refresh ────────────────────────────────────────────
   useEffect(() => {
