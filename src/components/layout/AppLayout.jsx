@@ -6,9 +6,9 @@ import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 
 // ─── Import page components for the five main tabs ────────────────────────
-import DashboardPage from '@/pages/Dashboard';
+import HomePage from '@/pages/Dashboard';
 import SearchPage from '@/pages/SearchPage';
-import TrackingPage from '@/pages/TrackingPage';
+import TrackingPage from '@/pages/Tracking';
 import BriefcasePage from '@/pages/Briefcase';
 import MessagesPage from '@/pages/Messages';
 
@@ -16,7 +16,7 @@ import MessagesPage from '@/pages/Messages';
 const TAB_ORDER = ['/', '/search-vehicles', '/tracking', '/briefcase', '/messages'];
 
 const TABS = [
-  { path: '/',              component: DashboardPage,      icon: Bike, label: 'Dashboard' },
+  { path: '/',              component: HomePage,      icon: Bike, label: 'Home' },
   { path: '/search-vehicles', component: SearchPage,   icon: Bike, label: 'Search' },
   { path: '/tracking',      component: TrackingPage,   icon: Bike, label: 'Track' },
   { path: '/briefcase',        component: BriefcasePage,     icon: Bike, label: 'Briefcase' },
