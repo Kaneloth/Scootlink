@@ -9,17 +9,17 @@ import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 import HomePage from '@/pages/Home';
 import SearchPage from '@/pages/SearchPage';
 import TrackingPage from '@/pages/TrackingPage';
-import WalletPage from '@/pages/Wallet';
+import BriefcasePage from '@/pages/Briefcase';
 import MessagesPage from '@/pages/Messages';
 
 // Must match bottom nav order exactly
-const TAB_ORDER = ['/', '/search-vehicles', '/tracking', '/wallet', '/messages'];
+const TAB_ORDER = ['/', '/search-vehicles', '/tracking', '/briefcase', '/messages'];
 
 const TABS = [
   { path: '/',              component: HomePage,      icon: Bike, label: 'Home' },
   { path: '/search-vehicles', component: SearchPage,   icon: Bike, label: 'Search' },
   { path: '/tracking',      component: TrackingPage,   icon: Bike, label: 'Track' },
-  { path: '/wallet',        component: WalletPage,     icon: Bike, label: 'Wallet' },
+  { path: '/briefcase',        component: BriefcasePage,     icon: Bike, label: 'Briefcase' },
   { path: '/messages',      component: MessagesPage,   icon: Bike, label: 'Messages' },
 ];
 
