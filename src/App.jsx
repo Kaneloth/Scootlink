@@ -90,6 +90,7 @@ function App() {
           <Routes>
             <Route path="/" element={<RootRoute />} />
             <Route path="/auth" element={<Auth />} />
+			<Route path="/app" element={<Navigate to="/" replace />} />
 
             {/* All other authenticated pages – rendered inside AppLayout via Outlet */}
             <Route element={<AppLayout />}>
