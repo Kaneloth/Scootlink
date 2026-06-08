@@ -42,11 +42,10 @@ const RootRoute = () => {
     return () => subscription?.unsubscribe();
   }, []);
 
-  // ── Branded loading screen while auth is being checked ─────────────────
+  // Branded loading screen while auth is being checked
   if (authState.loading) {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center bg-background gap-4">
-        {/* Use the same logo that appears in the mobile header */}
         <img
           src="/favicon.png"
           alt="Skootlink"
@@ -62,8 +61,8 @@ const RootRoute = () => {
     return <LandingPage />;
   }
 
-  // Authenticated → render the full app with the swipeable strip
-  return <AppLayout />;
+  // ✅ Pass the authenticated user to AppLayout so it doesn't need to fetch again
+  return <AppLayout initialUser={authState.user} />;
 };
 
 function App() {
