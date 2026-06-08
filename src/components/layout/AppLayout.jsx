@@ -5,27 +5,47 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 
-// ─── Temporary dummy page components (replace with real imports later) ────
+// ─── Page components ──────────────────────────────────────────────────────
 import HomePage from '@/pages/Dashboard';
 import SearchPage from '@/pages/SearchPage';
 import TrackingPage from '@/pages/Tracking';
 import BriefcasePage from '@/pages/MyBriefcase';
 import MessagesPage from '@/pages/Messages';
 
-const TAB_ORDER = ['/', '/search-vehicles', '/tracking', '/briefcase', '/messages'];
+// ─── Navigation configuration ─────────────────────────────────────────────
+const SEARCH_PATHS = ['/search-vehicles', '/find-drivers', '/mysearch'];
+const CANONICAL_SEARCH_PATH = '/search-vehicles';
+const CANONICAL_PATHS = ['/', CANONICAL_SEARCH_PATH, '/tracking', '/briefcase', '/messages'];
 
 const TABS = [
-  { path: '/',               component: HomePage,      icon: Bike, label: 'Home' },
-  { path: '/search-vehicles', component: SearchPage,    icon: Bike, label: 'Search' },
-  { path: '/tracking',       component: TrackingPage,   icon: Bike, label: 'Track' },
-  { path: '/briefcase',      component: BriefcasePage,  icon: Bike, label: 'Briefcase' },
-  { path: '/messages',       component: MessagesPage,   icon: Bike, label: 'Messages' },
+  { path: '/',                 component: HomePage,      icon: Bike, label: 'Home' },
+  { path: CANONICAL_SEARCH_PATH, component: SearchPage,   icon: Bike, label: 'Search' },
+  { path: '/tracking',         component: TrackingPage,   icon: Bike, label: 'Track' },
+  { path: '/briefcase',        component: BriefcasePage,  icon: Bike, label: 'Briefcase' },
+  { path: '/messages',         component: MessagesPage,   icon: Bike, label: 'Messages' },
 ];
 
-const TAB_PATHS = TABS.map(t => t.path);
-const THRESHOLD = 0.3;
+// Expand the search entry to cover all possible search paths
+const TAB_PATHS = TABS.reduce((acc, tab) => {
+  if (tab.path === CANONICAL_SEARCH_PATH) {
+    acc.push(...SEARCH_PATHS);
+  } else {
+    acc.push(tab.path);
+  }
+  return acc;
+}, []);
+// Result: ['/', '/search-vehicles', '/find-drivers', '/mysearch', '/tracking', '/briefcase', '/messages']
 
-// ─── Navigation progress bar (from original) ────────────────────────────
+const THRESHOLD = 0.3; // 30% of screen width triggers snap
+
+// ─── Helper: map any URL pathname to the logical tab index (0‑4) ──────────
+function getTabIndex(pathname) {
+  if (SEARCH_PATHS.includes(pathname)) return 1;   // Search tab
+  const idx = CANONICAL_PATHS.indexOf(pathname);
+  return idx === -1 ? 0 : idx;
+}
+
+// ─── Navigation progress bar ──────────────────────────────────────────────
 function useNavigationProgress(pathname) {
   const [barState, setBarState] = useState({ width: 0, visible: false, done: false });
   const prevPathRef = useRef(pathname);
@@ -68,7 +88,7 @@ function NavigationProgressBar({ pathname }) {
   );
 }
 
-// ─── Verification gate (from original) ──────────────────────────────────
+// ─── Verification gate ────────────────────────────────────────────────────
 const GATE_EXEMPT = ['/onboarding', '/subscription', '/settings', '/profile'];
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
@@ -110,7 +130,7 @@ function VerificationGate({ user, userLoading, children }) {
   return children;
 }
 
-// ─── Shared biometric-aware logout (from original) ──────────────────────
+// ─── Shared biometric-aware logout ────────────────────────────────────────
 async function layoutLogout(navigate) {
   if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
     try {
@@ -124,7 +144,7 @@ async function layoutLogout(navigate) {
   }
 }
 
-// ─── Mobile header with profile dropdown (from original) ────────────────
+// ─── Mobile header with profile dropdown ──────────────────────────────────
 function MobileHeader() {
   const navigate               = useNavigate();
   const [open, setOpen]        = useState(false);
@@ -194,7 +214,7 @@ function MobileHeader() {
   );
 }
 
-// ─── Main layout (updated with draggable strip) ──────────────────────────
+// ─── Main layout ──────────────────────────────────────────────────────────
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -203,8 +223,9 @@ export default function AppLayout() {
   const [userLoading, setUserLoading] = useState(true);
   const [isBlacklisted, setIsBlacklisted] = useState(false);
 
+  // ── Strip swipe state ──────────────────────────────────────────────────
   const isTabRoute = TAB_PATHS.includes(location.pathname);
-  const tabIndex = isTabRoute ? TAB_PATHS.indexOf(location.pathname) : 0;
+  const tabIndex = isTabRoute ? getTabIndex(location.pathname) : 0;
   const [dragPercent, setDragPercent] = useState(0);
   const isDragging = dragPercent !== 0;
   const touchRef = useRef({ startX: 0, startY: 0, active: false, axisLocked: false, horizontal: false });
@@ -214,7 +235,7 @@ export default function AppLayout() {
   const accountTypeRef = useRef('driver');
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
-  // ── Touch handlers ──────────────────────────────────────────────────────
+  // ── Touch handlers ─────────────────────────────────────────────────────
   const onTouchStart = useCallback((e) => {
     if (!isTabRoute) return;
     touchRef.current = {
@@ -244,7 +265,7 @@ export default function AppLayout() {
 
     let pct = (dx / window.innerWidth) * 100;
     if (pct > 0 && tabIndex === 0) pct *= 0.15;
-    if (pct < 0 && tabIndex === TAB_PATHS.length - 1) pct *= 0.15;
+    if (pct < 0 && tabIndex === CANONICAL_PATHS.length - 1) pct *= 0.15;
 
     setDragPercent(pct);
   }, [tabIndex]);
@@ -254,10 +275,10 @@ export default function AppLayout() {
     t.active = false;
     if (!t.horizontal) return;
 
-    if (dragPercent < -(THRESHOLD * 100) && tabIndex < TAB_PATHS.length - 1) {
-      navigate(TAB_PATHS[tabIndex + 1]);
+    if (dragPercent < -(THRESHOLD * 100) && tabIndex < CANONICAL_PATHS.length - 1) {
+      navigate(CANONICAL_PATHS[tabIndex + 1]);
     } else if (dragPercent > (THRESHOLD * 100) && tabIndex > 0) {
-      navigate(TAB_PATHS[tabIndex - 1]);
+      navigate(CANONICAL_PATHS[tabIndex - 1]);
     }
 
     setDragPercent(0);
@@ -267,13 +288,13 @@ export default function AppLayout() {
     setDragPercent(0);
   }, [location.pathname]);
 
-  // ── Strip translation ───────────────────────────────────────────────────
-  const N = TAB_PATHS.length;
+  // ── Strip translation ──────────────────────────────────────────────────
+  const N = CANONICAL_PATHS.length;
   const baseX = -(tabIndex / N) * 100;
   const dragX = (dragPercent / 100) * (100 / N);
   const stripX = baseX + dragX;
 
-  // ── Existing user loading & blacklist check ─────────────────────────────
+  // ── Existing user loading & blacklist check ────────────────────────────
   useEffect(() => {
     auth.me().then(async (user) => {
       setAccountType(user?.subscription_active ? (user?.subscription_plan || 'driver') : 'both');
@@ -294,7 +315,7 @@ export default function AppLayout() {
     }).catch(() => {}).finally(() => setUserLoading(false));
   }, []);
 
-  // ── Biometric token refresh ─────────────────────────────────────────────
+  // ── Biometric token refresh ────────────────────────────────────────────
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') &&
@@ -311,11 +332,46 @@ export default function AppLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── Blacklisted screen ──────────────────────────────────────────────────
+  // ── Blacklisted screen ─────────────────────────────────────────────────
   if (isBlacklisted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
-        {/* … same as before … */}
+        {/* (Content unchanged – copy from your original file) */}
+        <div className="w-full max-w-sm text-center space-y-6">
+          <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mx-auto">
+            <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-2xl font-bold text-red-700">Account Suspended</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Your Skootlink account has been suspended and you cannot access the platform at this time.
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              If you believe this is a mistake, please contact our support team and we will review your account.
+            </p>
+          </div>
+          <div className="space-y-3 pt-2">
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Any remaining funds in your Skootlink wallet will be returned to you.
+              Email <span className="font-semibold text-foreground">help@skootlink.co.za</span> from
+              your registered email address to request a withdrawal of your balance.
+            </p>
+            <a
+              href="mailto:help@skootlink.co.za"
+              className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+              </svg>
+              Contact Support — help@skootlink.co.za
+            </a>
+            <p className="text-xs text-muted-foreground">
+              Wallet withdrawal requests are processed within 5–7 business days.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
