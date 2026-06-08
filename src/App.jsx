@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
@@ -11,7 +11,6 @@ import { supabase } from '@/api/supabaseClient';
 import Auth from '@/pages/Auth';
 import LandingPage from '@/pages/LandingPage';
 import AppLayout from '@/components/layout/AppLayout';
-import Dashboard from '@/pages/Dashboard';
 import SearchVehicles from '@/pages/SearchVehicles';
 import FindDrivers from '@/pages/FindDrivers';
 import SearchPage from '@/pages/SearchPage';
@@ -27,82 +26,42 @@ import Subscription from '@/pages/Subscription';
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 
-/* ── Root route: redirect to /app if logged in, else show landing ── */
+/* ── Smart root route: show landing if not logged in, else the full app ── */
 const RootRoute = () => {
-  const [checking, setChecking] = useState(true);
-  const [authed, setAuthed]     = useState(false);
+  const [authState, setAuthState] = useState({ loading: true, user: null });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setAuthed(!!session);
-      setChecking(false);
+      setAuthState({ loading: false, user: session?.user ?? null });
     });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthState({ loading: false, user: session?.user ?? null });
+    });
+
+    return () => subscription?.unsubscribe();
   }, []);
 
-  if (checking) return null;
-  return authed ? <Navigate to="/app" replace /> : <LandingPage />;
-};
-
-const AuthenticatedApp = () => {
-  const [supabaseChecked, setSupabaseChecked] = React.useState(false);
-
-  React.useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
-      const currentPath = window.location.pathname;
-      if (isRecovery) {
-        if (currentPath !== '/auth') { window.location.href = '/auth'; } else { setSupabaseChecked(true); }
-      } else if (!session) {
-        window.location.href = '/auth';
-      } else {
-        setSupabaseChecked(true);
-      }
-    });
-  }, []);
-
-  if (!supabaseChecked) {
+  // Show a spinner while auth is being checked
+  if (authState.loading) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
-          <p className="text-sm text-muted-foreground font-medium">Loading Scootlink...</p>
-        </div>
+        <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
       </div>
     );
   }
 
-  return (
-    <Routes>
-      <Route path="/onboarding" element={<Onboarding />} />
-      <Route path="/subscription" element={<Subscription />} />
-      <Route element={<AppLayout />}>
-        <Route path="/app" element={<Dashboard />} />
-        <Route path="/search-vehicles" element={<SearchVehicles />} />
-        <Route path="/find-drivers" element={<FindDrivers />} />
-        <Route path="/add-vehicle" element={<AddVehicle />} />
-        <Route path="/edit-vehicle" element={<EditVehicle />} />
-        <Route path="/rental-request" element={<RentalRequest />} />
-        <Route path="/tracking" element={<Tracking />} />
-        <Route path="/briefcase" element={<MyBriefcase />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/profile" element={<Profile />} />
-        <Route path="/mysearch" element={<SearchPage />} />
-        <Route path="/messages" element={<Messages />} />
-        <Route path="/contact" element={<ContactUs />} />
-      </Route>
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
-  );
+  // Not authenticated → show landing page
+  if (!authState.user) {
+    return <LandingPage />;
+  }
+
+  // Authenticated → render the full app with the swipeable strip
+  // (Dashboard is automatically shown for path '/' because it is in TABS)
+  return <AppLayout />;
 };
 
 function App() {
-  useMemo(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') { sessionStorage.setItem('skootlink_recovery', '1'); }
-    });
-    return subscription;
-  }, []);
-
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -111,6 +70,13 @@ function App() {
     } else {
       document.documentElement.classList.remove('dark');
     }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        sessionStorage.setItem('skootlink_recovery', '1');
+      }
+    });
+    return () => subscription?.unsubscribe();
   }, []);
 
   return (
@@ -120,7 +86,25 @@ function App() {
           <Routes>
             <Route path="/" element={<RootRoute />} />
             <Route path="/auth" element={<Auth />} />
-            <Route path="/*" element={<AuthenticatedApp />} />
+
+            {/* All other authenticated pages – rendered inside AppLayout via Outlet */}
+            <Route element={<AppLayout />}>
+              <Route path="/search-vehicles" element={<SearchVehicles />} />
+              <Route path="/find-drivers" element={<FindDrivers />} />
+              <Route path="/add-vehicle" element={<AddVehicle />} />
+              <Route path="/edit-vehicle" element={<EditVehicle />} />
+              <Route path="/rental-request" element={<RentalRequest />} />
+              <Route path="/tracking" element={<Tracking />} />
+              <Route path="/briefcase" element={<MyBriefcase />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/mysearch" element={<SearchPage />} />
+              <Route path="/messages" element={<Messages />} />
+              <Route path="/contact" element={<ContactUs />} />
+              <Route path="/onboarding" element={<Onboarding />} />
+              <Route path="/subscription" element={<Subscription />} />
+              <Route path="*" element={<PageNotFound />} />
+            </Route>
           </Routes>
         </Router>
         <Toaster />

@@ -5,14 +5,14 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 
-// ─── Page components ──────────────────────────────────────────────────────
-import HomePage from '@/pages/Dashboard';
+// ─── Page components for the five main tabs ────────────────────────────────
+import HomePage from '@/pages/Dashboard';          // ← Dashboard
 import SearchPage from '@/pages/SearchPage';
 import TrackingPage from '@/pages/Tracking';
 import BriefcasePage from '@/pages/MyBriefcase';
 import MessagesPage from '@/pages/Messages';
 
-// ─── Navigation configuration ─────────────────────────────────────────────
+// ─── Search paths (dynamic based on account type) ───────────────────────────
 const SEARCH_PATHS = ['/search-vehicles', '/find-drivers', '/mysearch'];
 const CANONICAL_SEARCH_PATH = '/search-vehicles';
 const CANONICAL_PATHS = ['/', CANONICAL_SEARCH_PATH, '/tracking', '/briefcase', '/messages'];
@@ -38,7 +38,7 @@ const TAB_PATHS = TABS.reduce((acc, tab) => {
 
 const THRESHOLD = 0.3; // 30% of screen width triggers snap
 
-// ─── Helper: map any URL pathname to the logical tab index (0‑4) ──────────
+// Helper: map any URL pathname to the logical tab index (0‑4)
 function getTabIndex(pathname) {
   if (SEARCH_PATHS.includes(pathname)) return 1;   // Search tab
   const idx = CANONICAL_PATHS.indexOf(pathname);
@@ -237,6 +237,7 @@ export default function AppLayout() {
 
   // ── Touch handlers ─────────────────────────────────────────────────────
   const onTouchStart = useCallback((e) => {
+    if (e.target.closest('[data-no-swipe]')) return;   // respect no‑swipe elements
     if (!isTabRoute) return;
     touchRef.current = {
       startX: e.touches[0].clientX,
@@ -336,7 +337,6 @@ export default function AppLayout() {
   if (isBlacklisted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
-        {/* (Content unchanged – copy from your original file) */}
         <div className="w-full max-w-sm text-center space-y-6">
           <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mx-auto">
             <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
@@ -409,7 +409,7 @@ export default function AppLayout() {
                     <div
                       key={path}
                       className="h-full overflow-y-auto pb-20 lg:pb-0"
-                      style={{ width: `${100 / N}%`, flexShrink: 0 }}
+                      style={{ width: `${100 / N}%`, flexShrink: 0, minHeight: '100vh' }}
                     >
                       {isVisible ? <Page /> : null}
                     </div>
