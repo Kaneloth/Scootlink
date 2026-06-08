@@ -5,19 +5,12 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 
-// ─── TEMPORARY: Replace page imports with dummy components ────────────────
-// import HomePage from '@/pages/Dashboard';
-// import SearchPage from '@/pages/SearchPage';
-// import TrackingPage from '@/pages/Tracking';
-// import BriefcasePage from '@/pages/MyBriefcase';
-// import MessagesPage from '@/pages/Messages';
-
-const HomePage = () => <div style={{ padding: 20 }}>Dashboard Page</div>;
+// ─── Temporary dummy page components (replace with real imports later) ────
+import HomePage from '@/pages/Dashboard';
 const SearchPage = () => <div style={{ padding: 20 }}>Search Page</div>;
 const TrackingPage = () => <div style={{ padding: 20 }}>Tracking Page</div>;
 const BriefcasePage = () => <div style={{ padding: 20 }}>Briefcase Page</div>;
 const MessagesPage = () => <div style={{ padding: 20 }}>Messages Page</div>;
-// ────────────────────────────────────────────────────────────────────────────
 
 const TAB_ORDER = ['/', '/search-vehicles', '/tracking', '/briefcase', '/messages'];
 
@@ -32,22 +25,176 @@ const TABS = [
 const TAB_PATHS = TABS.map(t => t.path);
 const THRESHOLD = 0.3;
 
-// ─── Navigation progress bar (unchanged) ──────────────────────────────────
-function useNavigationProgress(pathname) { /* … same as before … */ }
-function NavigationProgressBar({ pathname }) { /* … same as before … */ }
+// ─── Navigation progress bar (from original) ────────────────────────────
+function useNavigationProgress(pathname) {
+  const [barState, setBarState] = useState({ width: 0, visible: false, done: false });
+  const prevPathRef = useRef(pathname);
+  const timersRef = useRef([]);
+  const clear = () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
 
-// ─── Verification gate (unchanged) ────────────────────────────────────────
+  useEffect(() => {
+    if (prevPathRef.current === pathname) return;
+    prevPathRef.current = pathname;
+    clear();
+    setBarState({ width: 0, visible: true, done: false });
+    const t1 = setTimeout(() => setBarState(s => ({ ...s, width: 60 })), 30);
+    const t2 = setTimeout(() => setBarState(s => ({ ...s, width: 80 })), 250);
+    const t3 = setTimeout(() => setBarState(s => ({ ...s, width: 95 })), 500);
+    const t4 = setTimeout(() => setBarState(s => ({ ...s, width: 100, done: true })), 700);
+    const t5 = setTimeout(() => setBarState({ width: 0, visible: false, done: false }), 1050);
+    timersRef.current = [t1, t2, t3, t4, t5];
+    return clear;
+  }, [pathname]);
+
+  return barState;
+}
+
+function NavigationProgressBar({ pathname }) {
+  const { width, visible, done } = useNavigationProgress(pathname);
+  if (!visible) return null;
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[100] h-[3px] pointer-events-none">
+      <div style={{
+        height: '100%', width: `${width}%`,
+        transition: width === 0 ? 'none' : done
+          ? 'width 0.2s ease-in, opacity 0.3s ease-out 0.05s'
+          : 'width 0.4s ease-out',
+        opacity: done ? 0 : 1,
+        background: 'hsl(var(--primary))',
+        boxShadow: '0 0 8px hsl(var(--primary) / 0.6)',
+        borderRadius: '0 2px 2px 0',
+      }} />
+    </div>
+  );
+}
+
+// ─── Verification gate (from original) ──────────────────────────────────
 const GATE_EXEMPT = ['/onboarding', '/subscription', '/settings', '/profile'];
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
-function VerificationGate({ user, userLoading, children }) { /* … same as before … */ }
 
-// ─── Shared biometric-aware logout (unchanged) ────────────────────────────
-async function layoutLogout(navigate) { /* … same as before … */ }
+function VerificationGate({ user, userLoading, children }) {
+  const location = useLocation();
+  const navigate  = useNavigate();
 
-// ─── Mobile header with profile dropdown (unchanged) ──────────────────────
-function MobileHeader() { /* … same as before … */ }
+  if (userLoading) return null;
+  if (!user) return children;
 
-// ─── Main layout ──────────────────────────────────────────────────────────
+  const isAdmin   = ADMIN_EMAILS.includes(user.email);
+  const isExempt  = GATE_EXEMPT.some((p) => location.pathname.startsWith(p));
+  if (isAdmin || isExempt) return children;
+
+  if (!user.onboarding_completed) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
+        <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center">
+          <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 3h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+        </div>
+        <div>
+          <h2 className="text-xl font-bold mb-2">Complete your profile first</h2>
+          <p className="text-muted-foreground text-sm max-w-xs">
+            Identity verification is required before you can access Skootlink features.
+          </p>
+        </div>
+        <button
+          className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-sm transition-colors"
+          onClick={() => navigate('/onboarding')}
+        >
+          Set up my profile
+        </button>
+      </div>
+    );
+  }
+
+  return children;
+}
+
+// ─── Shared biometric-aware logout (from original) ──────────────────────
+async function layoutLogout(navigate) {
+  if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) saveBiometricRefreshToken(data.session);
+    } catch { /* non-fatal */ }
+    navigate('/auth');
+  } else {
+    await supabase.auth.signOut();
+    navigate('/auth');
+  }
+}
+
+// ─── Mobile header with profile dropdown (from original) ────────────────
+function MobileHeader() {
+  const navigate               = useNavigate();
+  const [open, setOpen]        = useState(false);
+  const dropdownRef            = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleLogout = async () => {
+    setOpen(false);
+    await layoutLogout(navigate);
+  };
+
+  return (
+    <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card z-30 shrink-0">
+      <Link to="/" className="flex items-center gap-2">
+        <img src="/favicon.png" alt="Skootlink" className="w-8 h-8" />
+        <span className="text-base font-bold text-foreground">Skootlink</span>
+      </Link>
+
+      <div className="relative" ref={dropdownRef}>
+        <button
+          onClick={() => setOpen(v => !v)}
+          className={`w-11 h-11 rounded-full flex items-center justify-center border-2 transition-colors ${open ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-foreground'}`}
+          style={{ touchAction: 'manipulation' }}
+          aria-label="Account menu"
+        >
+          <User className="w-5 h-5" />
+        </button>
+
+        {open && (
+          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden z-50">
+            <button
+              onClick={() => { setOpen(false); navigate('/profile'); }}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
+            >
+              <User className="w-4 h-4 text-muted-foreground" />
+              Profile
+            </button>
+            <div className="border-t border-border" />
+            <button
+              onClick={() => { setOpen(false); navigate('/settings'); }}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
+            >
+              <Settings className="w-4 h-4 text-muted-foreground" />
+              Settings
+            </button>
+            <div className="border-t border-border" />
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-destructive/10 text-destructive transition-colors text-left"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main layout (updated with draggable strip) ──────────────────────────
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -56,7 +203,6 @@ export default function AppLayout() {
   const [userLoading, setUserLoading] = useState(true);
   const [isBlacklisted, setIsBlacklisted] = useState(false);
 
-  // ── Strip swipe state ──────────────────────────────────────────────────
   const isTabRoute = TAB_PATHS.includes(location.pathname);
   const tabIndex = isTabRoute ? TAB_PATHS.indexOf(location.pathname) : 0;
   const [dragPercent, setDragPercent] = useState(0);
@@ -68,7 +214,7 @@ export default function AppLayout() {
   const accountTypeRef = useRef('driver');
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
-  // ── Touch handlers (identical to Base44) ────────────────────────────────
+  // ── Touch handlers ──────────────────────────────────────────────────────
   const onTouchStart = useCallback((e) => {
     if (!isTabRoute) return;
     touchRef.current = {
@@ -97,7 +243,6 @@ export default function AppLayout() {
     e.preventDefault();
 
     let pct = (dx / window.innerWidth) * 100;
-    // Rubber-band at edges
     if (pct > 0 && tabIndex === 0) pct *= 0.15;
     if (pct < 0 && tabIndex === TAB_PATHS.length - 1) pct *= 0.15;
 
@@ -118,18 +263,17 @@ export default function AppLayout() {
     setDragPercent(0);
   }, [dragPercent, tabIndex, navigate]);
 
-  // Reset drag when path changes
   useEffect(() => {
     setDragPercent(0);
   }, [location.pathname]);
 
-  // ── Strip translation (identical to Base44) ─────────────────────────────
+  // ── Strip translation ───────────────────────────────────────────────────
   const N = TAB_PATHS.length;
   const baseX = -(tabIndex / N) * 100;
   const dragX = (dragPercent / 100) * (100 / N);
   const stripX = baseX + dragX;
 
-  // ── Existing user loading & blacklist check (unchanged) ─────────────────
+  // ── Existing user loading & blacklist check ─────────────────────────────
   useEffect(() => {
     auth.me().then(async (user) => {
       setAccountType(user?.subscription_active ? (user?.subscription_plan || 'driver') : 'both');
@@ -150,7 +294,7 @@ export default function AppLayout() {
     }).catch(() => {}).finally(() => setUserLoading(false));
   }, []);
 
-  // ── Biometric token refresh (unchanged) ─────────────────────────────────
+  // ── Biometric token refresh ─────────────────────────────────────────────
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') &&
@@ -167,7 +311,7 @@ export default function AppLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── Blacklisted screen (unchanged) ──────────────────────────────────────
+  // ── Blacklisted screen ──────────────────────────────────────────────────
   if (isBlacklisted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
@@ -185,7 +329,6 @@ export default function AppLayout() {
         <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-screen">
           <MobileHeader />
 
-          {/* ── Swipeable strip or normal outlet ──────────────────────── */}
           <div
             ref={stripRef}
             className="flex-1 min-h-0 overflow-hidden relative"
