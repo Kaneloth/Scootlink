@@ -10,7 +10,7 @@ import HomePage from '@/pages/Dashboard';
 import SearchPage from '@/pages/SearchPage';
 import TrackingPage from '@/pages/Tracking';
 import BriefcasePage from '@/pages/MyBriefcase';
-const MessagesPage = () => <div style={{ padding: 20 }}>Messages Page</div>;
+import MessagesPage from '@/pages/Messages';
 
 const TAB_ORDER = ['/', '/search-vehicles', '/tracking', '/briefcase', '/messages'];
 
