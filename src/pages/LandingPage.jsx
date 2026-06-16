@@ -347,35 +347,106 @@ function DownloadCTA() {
 
 function Contact() {
   const [form, setForm] = useState({ name: "", email: "", message: "" });
-  const [sent, setSent] = useState(false);
-  const handleSubmit = (e) => { e.preventDefault(); setSent(true); setForm({ name: "", email: "", message: "" }); };
+  const [status, setStatus] = useState("idle"); // idle | loading | success | error
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setStatus("loading");
+
+    try {
+      const res = await fetch("/.netlify/functions/contact-form", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setStatus("success");
+        setForm({ name: "", email: "", message: "" });
+      } else {
+        setStatus("error");
+        console.error("Contact form error:", data.error);
+      }
+    } catch (err) {
+      console.error("Contact form fetch error:", err);
+      setStatus("error");
+    }
+  };
+
   return (
     <section style={styles.section} id="contact">
       <div style={{ ...styles.container, maxWidth: 600, margin: "0 auto" }}>
         <h2 style={styles.sectionTitle}>Contact Us</h2>
         <p style={styles.sectionSub}>Have questions? We'd love to hear from you.</p>
-        {sent ? (
+        {status === "success" ? (
           <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12, padding: "24px", textAlign: "center", color: "#16a34a", fontWeight: 600, fontSize: 16 }}>
             ✅ Message sent! We'll get back to you shortly.
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <input type="text" placeholder="Your Name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={styles.formInput} />
-            <input type="email" placeholder="Your Email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={styles.formInput} />
-            <textarea rows={5} placeholder="Your Message" required value={form.message} onChange={e => setForm({ ...form, message: e.target.value })} style={styles.formTextarea} />
-            <button type="submit" style={{ ...styles.btnBase, ...styles.btnPrimary, width: "100%", textAlign: "center" }}
-              onMouseEnter={e => (e.currentTarget.style.background = PRIMARY_DARK)}
-              onMouseLeave={e => (e.currentTarget.style.background = PRIMARY)}
-            >Send Message</button>
+            <input
+              type="text"
+              placeholder="Your Name"
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              style={styles.formInput}
+              disabled={status === "loading"}
+            />
+            <input
+              type="email"
+              placeholder="Your Email"
+              required
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              style={styles.formInput}
+              disabled={status === "loading"}
+            />
+            <textarea
+              rows={5}
+              placeholder="Your Message"
+              required
+              value={form.message}
+              onChange={(e) => setForm({ ...form, message: e.target.value })}
+              style={styles.formTextarea}
+              disabled={status === "loading"}
+            />
+            <button
+              type="submit"
+              style={{
+                ...styles.btnBase,
+                ...styles.btnPrimary,
+                width: "100%",
+                textAlign: "center",
+                opacity: status === "loading" ? 0.7 : 1,
+                cursor: status === "loading" ? "not-allowed" : "pointer",
+              }}
+              disabled={status === "loading"}
+              onMouseEnter={(e) => {
+                if (status !== "loading") e.currentTarget.style.background = PRIMARY_DARK;
+              }}
+              onMouseLeave={(e) => {
+                if (status !== "loading") e.currentTarget.style.background = PRIMARY;
+              }}
+            >
+              {status === "loading" ? "Sending…" : "Send Message"}
+            </button>
+            {status === "error" && (
+              <p style={{ color: "#dc2626", textAlign: "center", marginTop: 12 }}>
+                Failed to send. Please try again or email us directly at help@skootlink.co.za.
+              </p>
+            )}
           </form>
         )}
         <p style={{ textAlign: "center", marginTop: 24, color: "#71717a" }}>
           📧 help@skootlink.co.za<br />
-          
+          📱 Available on Google Play and App Store
         </p>
       </div>
     </section>
   );
+}
 }
 
 function Footer() {
