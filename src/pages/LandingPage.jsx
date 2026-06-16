@@ -413,9 +413,30 @@ function Footer() {
           </div>
           <div>
             <h4 style={styles.footerH4}>Legal</h4>
-            {["Privacy Policy", "Terms of Service", "POPIA Compliance"].map(label => (
-              <a key={label} href="#" style={styles.footerLink} onMouseEnter={e => (e.currentTarget.style.color = "#fff")} onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}>{label}</a>
-            ))}
+            <a
+              href="/Privacy%20Policy.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.footerLink}
+              onMouseEnter={e => (e.currentTarget.style.color = "#fff")}
+              onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
+            >Privacy Policy</a>
+            <a
+              href="/Terms%20and%20Conditions.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.footerLink}
+              onMouseEnter={e => (e.currentTarget.style.color = "#fff")}
+              onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
+            >Terms of Service</a>
+            <a
+              href="/PAIA%20Manual.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.footerLink}
+              onMouseEnter={e => (e.currentTarget.style.color = "#fff")}
+              onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
+            >PAIA Manual</a>
           </div>
         </div>
         <div style={styles.footerBottom}>© 2026 Skootlink (Pty) Ltd. All rights reserved. Built in South Africa 🇿🇦</div>
