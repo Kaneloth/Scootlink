@@ -1043,21 +1043,37 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
-            <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer" onClick={() => alert('Privacy Policy')}>
+            {/* Privacy Policy – open static HTML in new tab */}
+            <a
+              href="/Privacy%20Policy.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors"
+            >
               <div className="flex items-center gap-3">
                 <Shield className="w-5 h-5 text-muted-foreground" />
-                <div className="text-left"><p className="text-sm font-medium text-foreground">Privacy Policy</p></div>
+                <div className="text-left">
+                  <p className="text-sm font-medium text-foreground">Privacy Policy</p>
+                </div>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </div>
+            </a>
 
-            <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer" onClick={() => alert('Terms of Service')}>
+            {/* Terms of Service – open static HTML in new tab */}
+            <a
+              href="/Terms%20and%20Conditions.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors"
+            >
               <div className="flex items-center gap-3">
                 <FileText className="w-5 h-5 text-muted-foreground" />
-                <div className="text-left"><p className="text-sm font-medium text-foreground">Terms of Service</p></div>
+                <div className="text-left">
+                  <p className="text-sm font-medium text-foreground">Terms of Service</p>
+                </div>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </div>
+            </a>
 
             <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors" onClick={() => navigate('/contact', { state: { customerCode: user?.customer_code, userName: user?.full_name, userEmail: user?.email } })}>
               <div className="flex items-center gap-3">
