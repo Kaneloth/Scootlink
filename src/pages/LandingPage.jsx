@@ -371,7 +371,7 @@ function Contact() {
         )}
         <p style={{ textAlign: "center", marginTop: 24, color: "#71717a" }}>
           📧 help@skootlink.co.za<br />
-          📱 Available on Google Play and App Store
+          
         </p>
       </div>
     </section>
