@@ -61,35 +61,45 @@ function base64ToBuffer(b64) {
 
 async function registerBiometric(user) {
   if (!window.PublicKeyCredential) {
-    throw new Error('Your device or browser does not support biometric login.');
+    throw new Error('Biometric authentication is not supported on this device or browser.');
   }
+  const challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+  const userIdBytes = new TextEncoder().encode(user?.id || 'skootlink-user');
+
   const credential = await navigator.credentials.create({
     publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      challenge,
       rp: { name: 'Skootlink', id: window.location.hostname },
       user: {
-        id: new TextEncoder().encode(user?.id || 'skootlink-user'),
+        id: userIdBytes,
         name: user?.email || 'user@skootlink.co.za',
-        displayName: user?.full_name || 'Skootlink User',
+        displayName: user?.full_name || user?.email || 'Skootlink User',
       },
       pubKeyCredParams: [
-        { alg: -7,   type: 'public-key' },
-        { alg: -257, type: 'public-key' },
+        { alg: -7,   type: 'public-key' },  // ES256
+        { alg: -257, type: 'public-key' },  // RS256
       ],
       authenticatorSelection: {
-        authenticatorAttachment: 'platform',
+        authenticatorAttachment: 'platform', // device sensor only (no passkey/iCloud prompt)
         userVerification: 'required',
-        residentKey: 'preferred',
+        // NOTE: residentKey intentionally omitted — Crosssa pattern.
+        // Setting residentKey:'preferred' triggers the OS passkey/iCloud Keychain
+        // flow which is NOT what we want here.
       },
       timeout: 60000,
     },
   });
-  // Store the credential ID
-  localStorage.setItem('scootlink_biometric_credential_id', bufferToBase64(credential.rawId));
 
-  // ── Crosssa pattern: snapshot both tokens right now so biometric restore
-  //    works on the very first attempt after enrollment, before the session
-  //    has had a chance to be refreshed by TOKEN_REFRESHED.
+  if (!credential) throw new Error('Biometric enrollment was cancelled.');
+
+  // Store the credential ID
+  const raw = credential.rawId;
+  localStorage.setItem('scootlink_biometric_credential_id', btoa(String.fromCharCode(...new Uint8Array(raw))));
+
+  // Snapshot tokens immediately — Crosssa pattern.
+  // Without this, the very first biometric login after enrollment fails
+  // because no tokens have been snapshotted yet.
   try {
     const { data: { session: snap } } = await supabase.auth.getSession();
     if (snap?.access_token && snap?.refresh_token) {
@@ -98,36 +108,35 @@ async function registerBiometric(user) {
   } catch { /* non-fatal */ }
 }
 
-// Returns true if the fingerprint scan passed.
-// Throws with err.code = 'no-passkey-on-domain' when the stored credential
-// doesn't exist on this domain (e.g. registered on localhost, used on Netlify).
+// Returns true if credential passes. Throws on failure.
+// NotAllowedError (user cancelled) is re-thrown as code:'cancelled' so the
+// caller can go quietly back to idle — exactly how Crosssa handles it.
 async function verifyBiometric() {
-  const storedId = localStorage.getItem('scootlink_biometric_credential_id');
-  if (!storedId) {
-    const err = new Error('No biometric credential found on this device.');
-    err.code = 'no-credential';
-    throw err;
+  if (!window.PublicKeyCredential) {
+    throw biometricError('unsupported', 'Biometric not supported on this device.');
+  }
+  const credId = localStorage.getItem('scootlink_biometric_credential_id');
+  if (!credId) {
+    throw biometricError('no-credential', 'No fingerprint registered. Please set up biometric in Settings → Security.');
   }
   try {
-    const assertion = await navigator.credentials.get({
+    await navigator.credentials.get({
       publicKey: {
         challenge: crypto.getRandomValues(new Uint8Array(32)),
-        allowCredentials: [{ type: 'public-key', id: base64ToBuffer(storedId) }],
+        rpId: window.location.hostname,   // Crosssa pattern — must match enrollment
+        allowCredentials: [{ id: Uint8Array.from(atob(credId), c => c.charCodeAt(0)), type: 'public-key' }],
         userVerification: 'required',
         timeout: 60000,
       },
     });
-    if (!assertion) throw new Error('Biometric verification failed.');
   } catch (err) {
-    // NotAllowedError = user cancelled OR no matching passkey on this domain.
-    // Either way the stored credential is unusable here — signal the caller.
-    if (err.name === 'NotAllowedError' || err.name === 'InvalidStateError') {
-      const e = new Error('no-passkey-on-domain');
-      e.code = 'no-passkey-on-domain';
-      throw e;
+    if (err.name === 'NotAllowedError') {
+      // User cancelled — stay on screen quietly (Crosssa behaviour)
+      throw biometricError('cancelled', 'cancelled');
     }
-    throw err;
+    throw biometricError('fingerprint-failed', err.message || 'Biometric verification failed. Try again.');
   }
+  return true;
 }
 
 // ── Cookie helpers ────────────────────────────────────────────────────────────
@@ -297,14 +306,16 @@ export default function Settings() {
 
   const handleLogout = async () => {
     if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-      // Save the current session tokens WITHOUT calling signOut — signOut (even
-      // scope:'local') sends a server-side revocation that invalidates the refresh
-      // token, breaking biometric restoration. We just navigate away; the Supabase
-      // session stays live in localStorage so Path 1 can refreshSession() on login.
+      // Snapshot the current tokens before clearing the local session.
+      // We use scope:'local' so the server-side refresh token stays valid —
+      // this is what lets biometric restore the session on next login.
+      // (Crosssa pattern: keep session alive server-side, clear client only.)
       try {
-        const { data } = await supabase.auth.getSession(); // no network call if token fresh
+        const { data } = await supabase.auth.getSession();
         if (data?.session) saveBiometricRefreshToken(data.session);
       } catch { /* non-fatal */ }
+      // Clear local session only — does NOT revoke the refresh token on the server
+      await supabase.auth.signOut({ scope: 'local' });
       navigate('/auth');
     } else {
       await clearTokenCookie();
@@ -1538,42 +1549,47 @@ export default function Settings() {
         <TabsContent value="security">
           <div className="space-y-4">
 
-            {/* Sign-in method — matches Crosssa SettingsPage SecurityTab */}
+            {/* Sign-in method */}
             <div className="p-4 rounded-xl bg-card border">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
                   {signInMethod === 'biometric'
-                    ? <Fingerprint className="w-4 h-4 text-primary" />
-                    : <Lock className="w-4 h-4 text-primary" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">Sign-in method</p>
-                  <p className="text-xs text-muted-foreground">
-                    Currently: {signInMethod === 'biometric' ? 'Biometric (Fingerprint / Face ID)' : 'Password'}
-                  </p>
+                    ? <Fingerprint className="w-5 h-5 text-primary" />
+                    : <Lock className="w-5 h-5 text-muted-foreground" />}
+                  <div>
+                    <p className="text-sm font-medium">Sign-in method</p>
+                    <p className="text-xs text-muted-foreground">
+                      Currently: {signInMethod === 'biometric' ? 'Fingerprint / Biometric' : 'Password'}
+                    </p>
+                  </div>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={toggleSignInMethod}
                   disabled={biometricLoading}
-                  className="rounded-xl shrink-0 text-xs gap-1.5"
+                  className="gap-1.5"
                 >
-                  {biometricLoading
-                    ? <><Loader2 className="w-3 h-3 animate-spin" />Enrolling…</>
-                    : signInMethod === 'biometric' ? 'Switch to Password' : 'Switch to Biometric'}
+                  {biometricLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Switch to {signInMethod === 'password' ? 'Biometric' : 'Password'}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground mt-2.5 pl-11">
-                {signInMethod === 'biometric'
-                  ? "Using your device's fingerprint or Face ID to sign in. The login screen shows a tap-to-scan button."
-                  : 'Switch to Biometric to use your fingerprint or Face ID at login. You\'ll scan once now to register.'}
-              </p>
               {signInMethod === 'biometric' && (
-                <div className="mt-2.5 ml-11 flex items-start gap-1.5">
+                <p className="text-xs text-muted-foreground mt-3 pl-8">
+                  Your fingerprint is registered on this device. The Sign In button on the login screen will prompt your fingerprint directly.
+                </p>
+              )}
+              {signInMethod === 'password' && (
+                <p className="text-xs text-muted-foreground mt-3 pl-8">
+                  Switch to Biometric to use your device fingerprint sensor at login. You'll be prompted to scan your finger once to register.
+                </p>
+              )}
+              {/* Domain re-registration hint */}
+              {signInMethod === 'biometric' && (
+                <div className="mt-3 ml-8 flex items-start gap-1.5">
                   <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
                   <p className="text-[11px] text-muted-foreground">
-                    New browser or device? Switch to Password then back to Biometric to re-register your fingerprint here.
+                    Using a new browser or device? Switch to Password and then back to Biometric to re-register your fingerprint here.
                   </p>
                 </div>
               )}
