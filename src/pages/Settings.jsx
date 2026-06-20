@@ -73,7 +73,7 @@ async function registerBiometric(user) {
         displayName: user?.full_name || 'Skootlink User',
       },
       pubKeyCredParams: [
-        { alg: -7, type: 'public-key' },
+        { alg: -7,   type: 'public-key' },
         { alg: -257, type: 'public-key' },
       ],
       authenticatorSelection: {
@@ -84,7 +84,18 @@ async function registerBiometric(user) {
       timeout: 60000,
     },
   });
+  // Store the credential ID
   localStorage.setItem('scootlink_biometric_credential_id', bufferToBase64(credential.rawId));
+
+  // ── Crosssa pattern: snapshot both tokens right now so biometric restore
+  //    works on the very first attempt after enrollment, before the session
+  //    has had a chance to be refreshed by TOKEN_REFRESHED.
+  try {
+    const { data: { session: snap } } = await supabase.auth.getSession();
+    if (snap?.access_token && snap?.refresh_token) {
+      saveBiometricRefreshToken(snap);
+    }
+  } catch { /* non-fatal */ }
 }
 
 // Returns true if the fingerprint scan passed.
@@ -1527,47 +1538,42 @@ export default function Settings() {
         <TabsContent value="security">
           <div className="space-y-4">
 
-            {/* Sign-in method */}
+            {/* Sign-in method — matches Crosssa SettingsPage SecurityTab */}
             <div className="p-4 rounded-xl bg-card border">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                   {signInMethod === 'biometric'
-                    ? <Fingerprint className="w-5 h-5 text-primary" />
-                    : <Lock className="w-5 h-5 text-muted-foreground" />}
-                  <div>
-                    <p className="text-sm font-medium">Sign-in method</p>
-                    <p className="text-xs text-muted-foreground">
-                      Currently: {signInMethod === 'biometric' ? 'Fingerprint / Biometric' : 'Password'}
-                    </p>
-                  </div>
+                    ? <Fingerprint className="w-4 h-4 text-primary" />
+                    : <Lock className="w-4 h-4 text-primary" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Sign-in method</p>
+                  <p className="text-xs text-muted-foreground">
+                    Currently: {signInMethod === 'biometric' ? 'Biometric (Fingerprint / Face ID)' : 'Password'}
+                  </p>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={toggleSignInMethod}
                   disabled={biometricLoading}
-                  className="gap-1.5"
+                  className="rounded-xl shrink-0 text-xs gap-1.5"
                 >
-                  {biometricLoading && <Loader2 className="w-3 h-3 animate-spin" />}
-                  Switch to {signInMethod === 'password' ? 'Biometric' : 'Password'}
+                  {biometricLoading
+                    ? <><Loader2 className="w-3 h-3 animate-spin" />Enrolling…</>
+                    : signInMethod === 'biometric' ? 'Switch to Password' : 'Switch to Biometric'}
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground mt-2.5 pl-11">
+                {signInMethod === 'biometric'
+                  ? "Using your device's fingerprint or Face ID to sign in. The login screen shows a tap-to-scan button."
+                  : 'Switch to Biometric to use your fingerprint or Face ID at login. You\'ll scan once now to register.'}
+              </p>
               {signInMethod === 'biometric' && (
-                <p className="text-xs text-muted-foreground mt-3 pl-8">
-                  Your fingerprint is registered on this device. The Sign In button on the login screen will prompt your fingerprint directly.
-                </p>
-              )}
-              {signInMethod === 'password' && (
-                <p className="text-xs text-muted-foreground mt-3 pl-8">
-                  Switch to Biometric to use your device fingerprint sensor at login. You'll be prompted to scan your finger once to register.
-                </p>
-              )}
-              {/* Domain re-registration hint */}
-              {signInMethod === 'biometric' && (
-                <div className="mt-3 ml-8 flex items-start gap-1.5">
+                <div className="mt-2.5 ml-11 flex items-start gap-1.5">
                   <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
                   <p className="text-[11px] text-muted-foreground">
-                    Using a new browser or device? Switch to Password and then back to Biometric to re-register your fingerprint here.
+                    New browser or device? Switch to Password then back to Biometric to re-register your fingerprint here.
                   </p>
                 </div>
               )}
