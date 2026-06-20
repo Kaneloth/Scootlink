@@ -9,6 +9,7 @@ import { AuthProvider } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
 
 import Auth from '@/pages/Auth';
+import LandingPage from '@/pages/LandingPage';
 import AppLayout from '@/components/layout/AppLayout';
 import SearchVehicles from '@/pages/SearchVehicles';
 import FindDrivers from '@/pages/FindDrivers';
@@ -116,6 +117,9 @@ function AppRoutes() {
     <Routes>
       <Route path="/auth" element={<Auth />} />
       <Route path="/app" element={<Navigate to="/" replace />} />
+
+      {/* LandingPage lives outside AppLayout — shown to unauthenticated visitors at /landing */}
+      <Route path="/landing" element={<LandingPage />} />
 
       {/* Single AppLayout instance covers ALL app routes */}
       <Route element={<AppLayout />}>
