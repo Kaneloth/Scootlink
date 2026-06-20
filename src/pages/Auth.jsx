@@ -192,6 +192,10 @@ export default function Auth() {
   const [showConfirmNewPw, setShowConfirmNewPw] = useState(false);
 
   // ── Detect PASSWORD_RECOVERY from reset link ─────────────────────────────
+  // Three-pronged approach to catch the recovery token regardless of timing:
+  //   1. Check URL hash (implicit flow: #type=recovery)
+  //   2. Check sessionStorage flag (survives React Router navigation)
+  //   3. onAuthStateChange event (PKCE flow: code exchanged async)
   useEffect(() => {
     const hash = window.location.hash;
     const params = new URLSearchParams(window.location.search);
@@ -207,6 +211,7 @@ export default function Auth() {
       setRecoveryMode(true);
     }
 
+    // Note: OAuth SIGNED_IN is handled in the separate useEffect below
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
@@ -232,12 +237,15 @@ export default function Auth() {
     }
     setLoading(true);
     try {
+      // Get user ID BEFORE updating the password — the recovery session token
+      // is consumed by updateUser(), so getUser() returns null if called after.
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       const userId = currentUser?.id ?? null;
 
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
 
+      // Send SMS notification to the user's registered phone
       if (!userId) {
         console.warn('[Auth] SMS skipped — could not get user ID before updateUser');
         toast.error('Password updated, but SMS skipped: could not identify user.');
@@ -270,6 +278,7 @@ export default function Auth() {
 
   // ── Forgot password — inline form ─────────────────────────────────────────
   const handleShowForgotPassword = () => {
+    // Pre-fill with whatever the user already typed in the login email field
     setResetEmail(loginEmail);
     setResetSent(false);
     setLoginStage('forgot-password');
@@ -300,6 +309,7 @@ export default function Auth() {
     setLoading(true);
     try {
       const session = await triggerBiometricLogin();
+      // Blacklist check layer 1 — profiles.blacklisted flag
       const { data: bioProfile } = await supabase
         .from('profiles')
         .select('blacklisted')
@@ -310,6 +320,7 @@ export default function Auth() {
         setIsBlacklisted(true);
         return;
       }
+      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers
       const { data: bioSensitive } = await supabase
         .from('user_sensitive_info')
         .select('sa_id, passport')
@@ -329,7 +340,7 @@ export default function Auth() {
         }
       }
       setUser({ id: session.user.id, email: session.user.email });
-      navigate('/');
+      navigate('/app');
     } catch (err) {
       if (err.code === 'no-session' || err.code === 'session-expired') {
         if (err.detail) toast.error(`Debug: ${err.detail}`, { duration: 15000 });
@@ -353,23 +364,6 @@ export default function Auth() {
     }
   };
 
-  // ── Google Sign-In ─────────────────────────────────────────────────────────
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin + '/auth',
-        },
-      });
-      if (error) throw error;
-    } catch (err) {
-      toast.error(err.message || 'Google sign-in failed');
-      setLoading(false);
-    }
-  };
-
   // ── Verify email OTP ──────────────────────────────────────────────────────
   const handleVerifyOtp = async () => {
     if (signupOtp.length !== 6) { toast.error('Please enter the full 6-digit code'); return; }
@@ -381,6 +375,8 @@ export default function Auth() {
         type: 'signup',
       });
       if (error) throw error;
+      // Verification succeeded — sign out any auto-created session so the user
+      // goes through the normal sign-in flow (biometrics, remember-me, etc.)
       await supabase.auth.signOut();
       toast.success('Email confirmed! You can now sign in.');
       setSignupDone(false);
@@ -421,17 +417,21 @@ export default function Auth() {
         password: loginPassword,
       });
       if (error) {
+        // Supabase returns this message when email confirmation is still pending
         if (error.message?.toLowerCase().includes('email not confirmed')) {
           setUnconfirmedEmail(loginEmail);
           return;
         }
         throw error;
       }
+      // Double-check client-side: block sign-in if email hasn't been confirmed yet.
+      // This guards against the Supabase dashboard "Email confirmations" setting being toggled off.
       if (data.user && !data.user.email_confirmed_at) {
         await supabase.auth.signOut();
         setUnconfirmedEmail(loginEmail);
         return;
       }
+      // Blacklist check layer 1 — profiles.blacklisted flag
       const { data: profile } = await supabase
         .from('profiles')
         .select('blacklisted')
@@ -442,6 +442,9 @@ export default function Auth() {
         setIsBlacklisted(true);
         return;
       }
+      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers.
+      // Catches cases where the profile flag wasn't set, or the user created
+      // a brand-new account using an already-banned identity document.
       const { data: sensitive } = await supabase
         .from('user_sensitive_info')
         .select('sa_id, passport')
@@ -463,7 +466,7 @@ export default function Auth() {
       saveBiometricRefreshToken(data.session);
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       setUser({ id: data.user.id, email: data.user.email });
-      navigate('/');
+      navigate('/app');
     } catch (err) {
       toast.error(err.message || 'Login failed');
     } finally {
@@ -484,9 +487,12 @@ export default function Auth() {
         options: { data: { full_name: regName, account_type: 'driver' } },
       });
       if (error) throw error;
+      // Supabase may return an active session before the email is confirmed.
+      // Sign it out immediately so the user cannot enter the app without clicking the link.
       if (signupData?.session) {
         await supabase.auth.signOut();
       }
+      // Show the dedicated confirmation screen instead of a disappearing toast
       setSignupEmail(regEmail);
       setSignupDone(true);
     } catch (err) {
@@ -496,8 +502,76 @@ export default function Auth() {
     }
   };
 
+  // ── Google Sign-In ────────────────────────────────────────────────────────
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin + '/auth',
+        },
+      });
+      if (error) throw error;
+      // Browser will redirect to Google — no further code runs here
+    } catch (err) {
+      toast.error(err.message || 'Google sign-in failed');
+      setLoading(false);
+    }
+  };
+
+  // ── Handle OAuth redirect (Google callback) ───────────────────────────────
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        // Only handle OAuth sign-ins (Google), not password sign-ins
+        const provider = session.user.app_metadata?.provider;
+        if (provider !== 'google') return;
+
+        // Blacklist check layer 1
+        const { data: oauthProfile } = await supabase
+          .from('profiles')
+          .select('blacklisted')
+          .eq('id', session.user.id)
+          .single();
+        if (oauthProfile?.blacklisted) {
+          await supabase.auth.signOut();
+          setIsBlacklisted(true);
+          return;
+        }
+
+        // Blacklist check layer 2
+        const { data: oauthSensitive } = await supabase
+          .from('user_sensitive_info')
+          .select('sa_id, passport')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+        const oauthIdNum = (oauthSensitive?.sa_id || oauthSensitive?.passport || '').trim().toUpperCase();
+        if (oauthIdNum) {
+          const { data: oauthBannedRow } = await supabase
+            .from('blacklisted_id_numbers')
+            .select('id_number')
+            .eq('id_number', oauthIdNum)
+            .maybeSingle();
+          if (oauthBannedRow) {
+            await supabase.auth.signOut();
+            setIsBlacklisted(true);
+            return;
+          }
+        }
+
+        saveBiometricRefreshToken(session);
+        if (session.refresh_token) setTokenCookie(session.refresh_token).catch(() => {});
+        setUser({ id: session.user.id, email: session.user.email });
+        navigate('/app');
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
+  // Suspended account — sign in was blocked; show full-page message
   if (isBlacklisted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
@@ -517,6 +591,11 @@ export default function Auth() {
             </p>
           </div>
           <div className="space-y-3 pt-2">
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Any remaining funds in your Skootlink wallet will be returned to you.
+              Email <span className="font-semibold text-foreground">help@skootlink.co.za</span> from
+              your registered email address to request a withdrawal of your balance.
+            </p>
             <a
               href="mailto:help@skootlink.co.za"
               className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors"
@@ -524,6 +603,9 @@ export default function Auth() {
               <Mail className="w-4 h-4" />
               Contact Support — help@skootlink.co.za
             </a>
+            <p className="text-xs text-muted-foreground">
+              Wallet withdrawal requests are processed within 5–7 business days.
+            </p>
           </div>
           <button
             type="button"
@@ -541,7 +623,7 @@ export default function Auth() {
 
   const bannerContent = {
     'session-expired': 'Your biometric session expired. Sign in with your password once — biometric will work automatically from then on.',
-    'no-passkey': "Your fingerprint isn't registered on this browser or device. Sign in with your password, then go to Settings → Security → Switch to Biometric to re-register.",
+    'no-passkey': 'Your fingerprint isn\'t registered on this browser or device. Sign in with your password, then go to Settings → Security → Switch to Biometric to re-register.',
   };
 
   return (
@@ -615,7 +697,8 @@ export default function Auth() {
               </div>
             </div>
 
-          ) : recoveryMode ? (
+          ) : /* ── Password Recovery Form (from reset link) ───────────────────── */
+          recoveryMode ? (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <KeyRound className="w-5 h-5 text-primary" />
@@ -670,44 +753,21 @@ export default function Auth() {
                 {loginStage === 'idle' ? 'Welcome back' : loginStage === 'forgot-password' ? 'Reset Password' : 'Sign in'}
               </h2>
 
-              {/* Idle: Google Sign-In and email/password options */}
+              {/* Idle: single Sign In button */}
               {loginStage === 'idle' && (
-                <>
-                  <Button
-                    variant="outline"
-                    className="w-full gap-2 h-12 text-base"
-                    onClick={handleGoogleSignIn}
-                    disabled={loading}
-                  >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                    </svg>
-                    Continue with Google
-                  </Button>
-
-                  <div className="flex items-center gap-3 my-2">
-                    <div className="flex-1 h-px bg-border" />
-                    <span className="text-xs text-muted-foreground">or</span>
-                    <div className="flex-1 h-px bg-border" />
-                  </div>
-
-                  <Button
-                    onClick={handleSignInTap}
-                    className="w-full gap-2 h-12 text-base"
-                    disabled={loading}
-                  >
-                    {savedMethod === 'biometric'
-                      ? <Fingerprint className="w-5 h-5" />
-                      : <LogIn className="w-5 h-5" />}
-                    Sign In with Email
-                    {savedMethod === 'biometric' && (
-                      <span className="ml-1 text-xs opacity-70">(Fingerprint)</span>
-                    )}
-                  </Button>
-                </>
+                <Button
+                  onClick={handleSignInTap}
+                  className="w-full gap-2 h-12 text-base"
+                  disabled={loading}
+                >
+                  {savedMethod === 'biometric'
+                    ? <Fingerprint className="w-5 h-5" />
+                    : <LogIn className="w-5 h-5" />}
+                  Sign In
+                  {savedMethod === 'biometric' && (
+                    <span className="ml-1 text-xs opacity-70">(Fingerprint)</span>
+                  )}
+                </Button>
               )}
 
               {/* Biometric: scanning */}
@@ -763,6 +823,7 @@ export default function Auth() {
                     </div>
                   )}
 
+                  {/* Email not confirmed banner */}
                   {unconfirmedEmail && (
                     <div className="flex flex-col gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
                       <div className="flex items-start gap-2">
@@ -811,4 +872,167 @@ export default function Auth() {
                     <Label>Password</Label>
                     <div className="relative">
                       <Input
-                        type={showLoginPw ? 'text' :
+                        type={showLoginPw ? 'text' : 'password'}
+                        placeholder="Enter your password"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                        className="pr-10"
+                      />
+                      <button type="button" tabIndex={-1} onClick={() => setShowLoginPw(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        {showLoginPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-left">
+                    <button
+                      type="button"
+                      onClick={handleShowForgotPassword}
+                      className="text-sm text-primary hover:underline"
+                    >
+                      Forgot your password?
+                    </button>
+                  </div>
+                  <Button onClick={handleLogin} className="w-full gap-2" disabled={loading}>
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                    Sign In
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => { setBannerReason(null); setLoginStage('idle'); }}
+                    className="w-full text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    ← Back
+                  </button>
+                </>
+              )}
+
+              {/* Forgot-password inline form */}
+              {loginStage === 'forgot-password' && (
+                <>
+                  {resetSent ? (
+                    <div className="flex flex-col items-center gap-4 py-4 text-center">
+                      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Mail className="w-8 h-8 text-primary" />
+                      </div>
+                      <p className="text-sm text-foreground font-medium">Reset link sent!</p>
+                      <p className="text-sm text-muted-foreground">
+                        Check your inbox at <span className="font-medium">{resetEmail}</span> and click the link to set a new password.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { setResetSent(false); setLoginStage('password'); }}
+                        className="text-sm text-primary hover:underline"
+                      >
+                        Back to sign in
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm text-muted-foreground">
+                        Enter your registered email address and we'll send you a link to reset your password.
+                      </p>
+                      <div>
+                        <Label>Email Address</Label>
+                        <Input
+                          type="email"
+                          placeholder="your@email.com"
+                          value={resetEmail}
+                          onChange={(e) => setResetEmail(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleSendResetEmail()}
+                          autoFocus
+                        />
+                      </div>
+                      <Button onClick={handleSendResetEmail} className="w-full gap-2" disabled={loading}>
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                        Send Reset Link
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => setLoginStage('password')}
+                        className="w-full text-sm text-muted-foreground hover:text-foreground"
+                      >
+                        ← Back
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+
+              <p className="text-center text-sm text-muted-foreground pt-1">
+                Don't have an account?{' '}
+                <button
+                  onClick={() => { setIsLogin(false); setLoginStage('idle'); setBannerReason(null); }}
+                  className="text-primary hover:underline"
+                >
+                  Create one
+                </button>
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-foreground">Create Account</h2>
+              <div>
+                <Label>Full Name</Label>
+                <Input placeholder="Your full name" value={regName} onChange={(e) => setRegName(e.target.value)} autoComplete="name" />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input type="email" placeholder="your@email.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} autoComplete="email" />
+              </div>
+              <div>
+                <Label>Password</Label>
+                <div className="relative">
+                  <Input type={showRegPw ? 'text' : 'password'} placeholder="Create a password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} className="pr-10" autoComplete="new-password" />
+                  <button type="button" tabIndex={-1} onClick={() => setShowRegPw(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showRegPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <Label>Confirm Password</Label>
+                <div className="relative">
+                  <Input type={showRegConfirmPw ? 'text' : 'password'} placeholder="Confirm your password" value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} className="pr-10" autoComplete="new-password" />
+                  <button type="button" tabIndex={-1} onClick={() => setShowRegConfirmPw(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showRegConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="terms"
+                  checked={agreedToTerms}
+                  onCheckedChange={(checked) => setAgreedToTerms(checked === true)}
+                  className="mt-0.5"
+                />
+                <label htmlFor="terms" className="text-sm text-muted-foreground">
+                  I agree to the{' '}
+                  <a
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); alert('Terms and Conditions will be available soon.'); }}
+                    className="text-primary hover:underline"
+                  >
+                    Terms and Conditions
+                  </a>
+                </label>
+              </div>
+              <Button onClick={handleRegister} className="w-full gap-2" disabled={loading}>
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                Sign Up
+              </Button>
+              <p className="text-center text-sm text-muted-foreground">
+                Already have an account?{' '}
+                <button onClick={() => setIsLogin(true)} className="text-primary hover:underline">
+                  Sign in
+                </button>
+              </p>
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
