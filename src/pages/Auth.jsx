@@ -300,7 +300,6 @@ export default function Auth() {
     setLoading(true);
     try {
       const session = await triggerBiometricLogin();
-      // Blacklist check layer 1 — profiles.blacklisted flag
       const { data: bioProfile } = await supabase
         .from('profiles')
         .select('blacklisted')
@@ -311,7 +310,6 @@ export default function Auth() {
         setIsBlacklisted(true);
         return;
       }
-      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers
       const { data: bioSensitive } = await supabase
         .from('user_sensitive_info')
         .select('sa_id, passport')
@@ -362,12 +360,10 @@ export default function Auth() {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin + '/auth', // Supabase redirects back here
+          redirectTo: window.location.origin + '/auth',
         },
       });
       if (error) throw error;
-      // The browser will redirect to Google, then back to this page.
-      // The session will be picked up by onAuthStateChange.
     } catch (err) {
       toast.error(err.message || 'Google sign-in failed');
       setLoading(false);
@@ -436,7 +432,6 @@ export default function Auth() {
         setUnconfirmedEmail(loginEmail);
         return;
       }
-      // Blacklist check layer 1 — profiles.blacklisted flag
       const { data: profile } = await supabase
         .from('profiles')
         .select('blacklisted')
@@ -447,7 +442,6 @@ export default function Auth() {
         setIsBlacklisted(true);
         return;
       }
-      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers
       const { data: sensitive } = await supabase
         .from('user_sensitive_info')
         .select('sa_id, passport')
@@ -547,7 +541,7 @@ export default function Auth() {
 
   const bannerContent = {
     'session-expired': 'Your biometric session expired. Sign in with your password once — biometric will work automatically from then on.',
-    'no-passkey': 'Your fingerprint isn\'t registered on this browser or device. Sign in with your password, then go to Settings → Security → Switch to Biometric to re-register.',
+    'no-passkey': "Your fingerprint isn't registered on this browser or device. Sign in with your password, then go to Settings → Security → Switch to Biometric to re-register.",
   };
 
   return (
@@ -621,8 +615,7 @@ export default function Auth() {
               </div>
             </div>
 
-          ) : /* ── Password Recovery Form (from reset link) ───────────────────── */
-          recoveryMode ? (
+          ) : recoveryMode ? (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <KeyRound className="w-5 h-5 text-primary" />
@@ -680,7 +673,6 @@ export default function Auth() {
               {/* Idle: Google Sign-In and email/password options */}
               {loginStage === 'idle' && (
                 <>
-                  {/* Google Sign-In */}
                   <Button
                     variant="outline"
                     className="w-full gap-2 h-12 text-base"
@@ -696,14 +688,12 @@ export default function Auth() {
                     Continue with Google
                   </Button>
 
-                  {/* Divider */}
                   <div className="flex items-center gap-3 my-2">
                     <div className="flex-1 h-px bg-border" />
                     <span className="text-xs text-muted-foreground">or</span>
                     <div className="flex-1 h-px bg-border" />
                   </div>
 
-                  {/* Email Sign In */}
                   <Button
                     onClick={handleSignInTap}
                     className="w-full gap-2 h-12 text-base"
@@ -773,7 +763,6 @@ export default function Auth() {
                     </div>
                   )}
 
-                  {/* Email not confirmed banner */}
                   {unconfirmedEmail && (
                     <div className="flex flex-col gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
                       <div className="flex items-start gap-2">
@@ -804,4 +793,18 @@ export default function Auth() {
                         disabled={resendLoading}
                         className="text-xs text-blue-700 dark:text-blue-400 underline hover:no-underline self-start disabled:opacity-50"
                       >
-                        {resendLoading ? 'Sending…' : 'Send a
+                        {resendLoading ? 'Sending…' : 'Send a new code instead'}
+                      </button>
+                    </div>
+                  )}
+                  <div>
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      placeholder="your@email.com"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                 
