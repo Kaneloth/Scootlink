@@ -64,43 +64,27 @@ function AppRoutes() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const hasOAuthCode = params.has('code'); // Google PKCE callback — session not ready yet
-
+    // Check if we were redirected back from an OAuth provider
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session && location.pathname === '/auth') {
+      if (session) {
+        // Biometric mode = screen lock, not a real logout.
+        // The session stays alive intentionally so fingerprint can restore it.
+        // Do NOT redirect to home — the user needs to unlock with their finger.
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
-        if (!isBiometricLock) {
+        if (location.pathname === '/auth' && !isBiometricLock) {
           navigate('/', { replace: true });
         }
       }
-      // If there's an OAuth code in the URL, don't mark ready yet —
-      // wait for SIGNED_IN which fires once Supabase exchanges the code.
-      // Marking ready early causes the login page to flash before redirect.
-      if (!hasOAuthCode) {
-        setAuthReady(true);
-      }
+      setAuthReady(true);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user && location.pathname === '/auth') {
-        setAuthReady(true); // always unblock once we have a confirmed session
-
+    // Listen for future auth state changes (e.g., OAuth completes)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
-        if (isBiometricLock) return; // screen lock — stay on /auth
-
-        const provider = session.user.app_metadata?.provider;
-        if (provider === 'google') {
-          const { data: profile } = await supabase
-            .from('profiles').select('blacklisted').eq('id', session.user.id).single();
-          if (profile?.blacklisted) {
-            await supabase.auth.signOut();
-            navigate('/auth?banned=1', { replace: true });
-            return;
-          }
+        if (location.pathname === '/auth' && !isBiometricLock) {
+          navigate('/', { replace: true });
         }
-
-        navigate('/', { replace: true });
       }
     });
 
