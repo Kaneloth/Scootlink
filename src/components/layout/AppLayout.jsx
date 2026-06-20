@@ -131,6 +131,8 @@ function VerificationGate({ user, userLoading, children }) {
 // ─── Shared biometric-aware logout ────────────────────────────────────────
 async function layoutLogout(navigate) {
   if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
+    // Screen lock — save session then navigate away WITHOUT signing out.
+    // The session stays alive so fingerprint can restore it on next login.
     try {
       const { data } = await supabase.auth.getSession();
       if (data?.session) saveBiometricRefreshToken(data.session);
@@ -226,9 +228,17 @@ export default function AppLayout() {
   const [authUser, setAuthUser]       = useState(null);
 
   useEffect(() => {
+    // If there's an OAuth code in the URL, Supabase is mid-exchange.
+    // Don't resolve authLoading from getSession() — wait for onAuthStateChange
+    // to fire SIGNED_IN with the real session, otherwise LandingPage flashes.
+    const params = new URLSearchParams(window.location.search);
+    const hasOAuthCode = params.has('code');
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setAuthLoading(false);
-      setAuthUser(session?.user ?? null);
+      if (!hasOAuthCode) {
+        setAuthLoading(false);
+        setAuthUser(session?.user ?? null);
+      }
     });
 
     const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
