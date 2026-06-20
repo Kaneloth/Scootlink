@@ -64,8 +64,9 @@ function AppRoutes() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    // On mount: if session already exists (e.g. page refresh while logged in),
-    // redirect away from /auth unless it's a biometric screen lock.
+    const params = new URLSearchParams(window.location.search);
+    const hasOAuthCode = params.has('code'); // Google PKCE callback — session not ready yet
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session && location.pathname === '/auth') {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
@@ -73,23 +74,27 @@ function AppRoutes() {
           navigate('/', { replace: true });
         }
       }
-      setAuthReady(true);
+      // If there's an OAuth code in the URL, don't mark ready yet —
+      // wait for SIGNED_IN which fires once Supabase exchanges the code.
+      // Marking ready early causes the login page to flash before redirect.
+      if (!hasOAuthCode) {
+        setAuthReady(true);
+      }
     });
 
-    // Single listener for all sign-in events (password, Google OAuth, token refresh).
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user && location.pathname === '/auth') {
+        setAuthReady(true); // always unblock once we have a confirmed session
+
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
         if (isBiometricLock) return; // screen lock — stay on /auth
 
-        // For Google OAuth sign-ins, run blacklist check before navigating in
         const provider = session.user.app_metadata?.provider;
         if (provider === 'google') {
           const { data: profile } = await supabase
             .from('profiles').select('blacklisted').eq('id', session.user.id).single();
           if (profile?.blacklisted) {
             await supabase.auth.signOut();
-            // Navigate to /auth with a banned flag so Auth.jsx can show the suspended screen
             navigate('/auth?banned=1', { replace: true });
             return;
           }
