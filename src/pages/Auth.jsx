@@ -214,6 +214,11 @@ export default function Auth() {
       setRecoveryMode(true);
     }
 
+    // App.jsx sets ?banned=1 when a Google OAuth user is blacklisted
+    if (params.get('banned') === '1') {
+      setIsBlacklisted(true);
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
@@ -548,38 +553,6 @@ export default function Auth() {
       setLoading(false);
     }
   };
-
-  // ── Handle Google OAuth callback ──────────────────────────────────────────
-  // App.jsx's onAuthStateChange handles the navigation to '/'.
-  // This useEffect only runs the blacklist check — if the user is banned,
-  // we sign them out here before App.jsx can redirect them in.
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        const provider = session.user.app_metadata?.provider;
-        if (provider !== 'google') return;
-
-        // Blacklist check — sign out banned users before App.jsx redirects them
-        const { data: oauthProfile } = await supabase
-          .from('profiles').select('blacklisted').eq('id', session.user.id).single();
-        if (oauthProfile?.blacklisted) { await supabase.auth.signOut(); setIsBlacklisted(true); return; }
-
-        const { data: oauthSensitive } = await supabase
-          .from('user_sensitive_info').select('sa_id, passport').eq('user_id', session.user.id).maybeSingle();
-        const oauthIdNum = (oauthSensitive?.sa_id || oauthSensitive?.passport || '').trim().toUpperCase();
-        if (oauthIdNum) {
-          const { data: oauthBannedRow } = await supabase
-            .from('blacklisted_id_numbers').select('id_number').eq('id_number', oauthIdNum).maybeSingle();
-          if (oauthBannedRow) { await supabase.auth.signOut(); setIsBlacklisted(true); return; }
-        }
-
-        // Token housekeeping — no navigate() here, App.jsx handles that
-        saveBiometricRefreshToken(session);
-        if (session.refresh_token) setTokenCookie(session.refresh_token).catch(() => {});
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
