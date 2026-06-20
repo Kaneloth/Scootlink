@@ -67,9 +67,11 @@ function AppRoutes() {
     // Check if we were redirected back from an OAuth provider
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        // User just signed in via OAuth (or already had a session)
-        // If they're on the /auth page, redirect them to the dashboard
-        if (location.pathname === '/auth') {
+        // Biometric mode = screen lock, not a real logout.
+        // The session stays alive intentionally so fingerprint can restore it.
+        // Do NOT redirect to home — the user needs to unlock with their finger.
+        const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
+        if (location.pathname === '/auth' && !isBiometricLock) {
           navigate('/', { replace: true });
         }
       }
@@ -79,8 +81,8 @@ function AppRoutes() {
     // Listen for future auth state changes (e.g., OAuth completes)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        // Only redirect if the user is on the auth page
-        if (location.pathname === '/auth') {
+        const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
+        if (location.pathname === '/auth' && !isBiometricLock) {
           navigate('/', { replace: true });
         }
       }

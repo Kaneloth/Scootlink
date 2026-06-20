@@ -36,19 +36,13 @@ async function setTokenCookie(refresh_token) {
   });
 }
 
-// ── Persist bio session tokens after every successful login ───────────────────
-async function persistBioSession() {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token && session?.refresh_token) {
-      saveBiometricRefreshToken(session);
-    }
-  } catch { /* non-fatal */ }
-}
+// ── Biometric login — Crosssa screen-lock pattern ────────────────────────────
+// Step 1: Verify WebAuthn credential (fingerprint / Face ID).
+// Step 2: Call unlockSession() — reads the still-live Supabase session that was
+//         kept in localStorage during the screen-lock "logout". No token exchange.
+// Step 3: If session genuinely expired (60+ days), return null so the caller
+//         can show the biometric-confirmed screen (enter password once).
 
-// ── Verify WebAuthn credential (fingerprint / Face ID) ────────────────────────
-// Crosssa pattern: rpId must match enrollment. NotAllowedError = user cancelled,
-// thrown as code:'cancelled' so the caller stays quiet.
 async function verifyBiometricCredential() {
   if (!window.PublicKeyCredential) {
     throw biometricError('unsupported', 'Biometric not supported on this device.');
@@ -57,55 +51,50 @@ async function verifyBiometricCredential() {
   if (!credId) {
     throw biometricError('no-credential', 'No fingerprint registered. Set up biometric in Settings → Security.');
   }
-  try {
-    await navigator.credentials.get({
-      publicKey: {
-        challenge: crypto.getRandomValues(new Uint8Array(32)),
-        rpId: window.location.hostname,
-        allowCredentials: [{ id: Uint8Array.from(atob(credId), c => c.charCodeAt(0)), type: 'public-key' }],
-        userVerification: 'required',
-        timeout: 60000,
-      },
-    });
-  } catch (err) {
-    if (err.name === 'NotAllowedError') {
-      throw biometricError('cancelled', 'cancelled'); // stay quiet
-    }
-    throw biometricError('fingerprint-failed', err.message || 'Biometric verification failed. Try again.');
-  }
-  return true;
+  await navigator.credentials.get({
+    publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      rpId: window.location.hostname,   // must match enrollment rpId
+      allowCredentials: [{ id: Uint8Array.from(atob(credId), c => c.charCodeAt(0)), type: 'public-key' }],
+      userVerification: 'required',
+      timeout: 60000,
+    },
+  });
+  // throws NotAllowedError if cancelled — caller handles it
 }
 
-// ── Restore Supabase session after fingerprint passes ─────────────────────────
-// Returns a session object, or null if truly expired (60+ days).
-// Mirrors Crosssa's unlockApp(): tries the kept-alive local session first,
-// then falls back to the snapshotted refresh token.
-async function restoreSessionAfterBiometric() {
-  // Path 1: Supabase client still has a live session
+// Reads the kept-alive session (primary path, like Crosssa's unlockApp()).
+// Falls back to saved refresh token if the tab was fully closed and Supabase's
+// in-memory session is gone. Returns null if truly expired (60+ days).
+async function unlockSession() {
+  // Primary: Supabase still has a live session in localStorage
   try {
-    const { data: r1 } = await supabase.auth.refreshSession();
-    if (r1?.session) {
-      saveBiometricRefreshToken(r1.session);
-      setTokenCookie(r1.session.refresh_token).catch(() => {});
-      return r1.session;
+    const { data } = await supabase.auth.refreshSession();
+    if (data?.session) {
+      saveBiometricRefreshToken(data.session);
+      setTokenCookie(data.session.refresh_token).catch(() => {});
+      return data.session;
     }
   } catch { /* fall through */ }
 
-  // Path 2: Exchange snapshotted refresh token
+  // Fallback: exchange the snapshotted refresh token
   const backup = loadBiometricRefreshToken();
   const storedRt = backup?.refresh_token ?? null;
   if (storedRt) {
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const anonKey    = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const tokenRes = await fetch(
-        `${supabaseUrl}/auth/v1/token?grant_type=refresh_token`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: anonKey }, body: JSON.stringify({ refresh_token: storedRt }) }
-      );
-      if (tokenRes.ok) {
-        const tokens = await tokenRes.json();
+      const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: anonKey },
+        body: JSON.stringify({ refresh_token: storedRt }),
+      });
+      if (res.ok) {
+        const tokens = await res.json();
         if (tokens.access_token && tokens.refresh_token) {
-          const { data: s2, error: e2 } = await supabase.auth.setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token });
+          const { data: s2, error: e2 } = await supabase.auth.setSession({
+            access_token: tokens.access_token, refresh_token: tokens.refresh_token,
+          });
           if (!e2 && s2?.session) {
             saveBiometricRefreshToken(s2.session);
             setTokenCookie(s2.session.refresh_token).catch(() => {});
@@ -113,13 +102,13 @@ async function restoreSessionAfterBiometric() {
           }
         }
       } else {
-        const errTxt = await tokenRes.text().catch(() => '');
-        if (errTxt.includes('refresh_token_not_found')) clearBiometricRefreshToken();
+        const txt = await res.text().catch(() => '');
+        if (txt.includes('refresh_token_not_found')) clearBiometricRefreshToken();
       }
     } catch { /* fall through */ }
   }
 
-  // Path 3: httpOnly cookie via Netlify function
+  // Last resort: httpOnly cookie
   try {
     const res = await fetch('/.netlify/functions/auth-refresh', { method: 'POST', credentials: 'include' });
     if (res.ok) {
@@ -132,7 +121,7 @@ async function restoreSessionAfterBiometric() {
     }
   } catch { /* all paths exhausted */ }
 
-  return null; // session genuinely expired — caller shows biometric-confirmed
+  return null; // session genuinely expired → show biometric-confirmed screen
 }
 
 // ── Fetch phone number via service-role Netlify function ─────────────────────
@@ -200,7 +189,7 @@ export default function Auth() {
   const [showNewPw, setShowNewPw] = useState(false);
   const [showConfirmNewPw, setShowConfirmNewPw] = useState(false);
 
-  // Biometric-confirmed: one-time password entry after 60+ day session expiry
+  // Biometric-confirmed: one-time password re-entry after 60+ day session expiry
   const [bioConfirmEmail, setBioConfirmEmail] = useState('');
   const [bioConfirmPassword, setBioConfirmPassword] = useState('');
   const [bioConfirmLoading, setBioConfirmLoading] = useState(false);
@@ -314,10 +303,10 @@ export default function Auth() {
   };
 
   // ── Sign In button ────────────────────────────────────────────────────────
-  // Crosssa 3-path flow:
+  // Crosssa screen-lock flow:
   //   1. Verify fingerprint via WebAuthn
-  //   2. Restore kept-alive session (no signOut was called on logout)
-  //   3. If session null (60+ days expired) → biometric-confirmed screen
+  //   2. Restore the kept-alive session via unlockSession()
+  //   3. If null (60+ days expired) → biometric-confirmed (password once)
 
   const handleSignInTap = async () => {
     const method = localStorage.getItem('scootlink_signin_method') || 'password';
@@ -327,9 +316,27 @@ export default function Auth() {
     setLoading(true);
     try {
       await verifyBiometricCredential();
+    } catch (err) {
+      if (err.name === 'NotAllowedError') {
+        // User cancelled — go back to idle quietly (Crosssa behaviour)
+        setLoginStage('idle');
+        setLoading(false);
+        return;
+      }
+      if (err.code === 'no-credential') {
+        setBannerReason('session-expired');
+        setLoginStage('password');
+        setLoading(false);
+        return;
+      }
+      setLoginStage('biometric-error');
+      setLoading(false);
+      return;
+    }
 
-      // Fingerprint passed — restore the kept-alive session
-      const session = await restoreSessionAfterBiometric();
+    // Fingerprint passed — restore the kept-alive session
+    try {
+      const session = await unlockSession();
 
       if (session) {
         // Blacklist check layer 1
@@ -346,47 +353,39 @@ export default function Auth() {
             .from('blacklisted_id_numbers').select('id_number').eq('id_number', bioIdNum).maybeSingle();
           if (bioBannedRow) { await supabase.auth.signOut(); setIsBlacklisted(true); return; }
         }
+
         setUser({ id: session.user.id, email: session.user.email });
         navigate('/app');
       } else {
-        // Session truly expired (60+ days) — need password once, like Crosssa
-        const { data: { user: lastUser } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
-        setBioConfirmEmail(lastUser?.email || '');
+        // Session genuinely expired (60+ days) — Crosssa biometric-confirmed flow
+        setBioConfirmEmail('');
         setBioConfirmPassword('');
         setLoginStage('biometric-confirmed');
       }
     } catch (err) {
-      if (err.code === 'cancelled') {
-        setLoginStage('idle'); // user tapped Cancel — go back quietly
-      } else if (err.code === 'no-credential') {
-        setBannerReason('session-expired');
-        setLoginStage('password');
-      } else if (err.code === 'fingerprint-failed') {
-        setLoginStage('biometric-error');
-      } else {
-        toast.error(err.message || 'Biometric login failed.');
-        setLoginStage('biometric-error');
-      }
+      toast.error(err.message || 'Biometric login failed.');
+      setLoginStage('biometric-error');
     } finally {
       setLoading(false);
     }
   };
 
-  // ── One-time password after 60+ day session expiry (Crosssa pattern) ─────
+  // ── Biometric-confirmed: one-time password after 60+ day expiry ───────────
   const handleBiometricConfirmedLogin = async () => {
     if (!bioConfirmEmail || !bioConfirmPassword) { toast.error('Please fill in all fields'); return; }
     setBioConfirmLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email: bioConfirmEmail, password: bioConfirmPassword });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: bioConfirmEmail, password: bioConfirmPassword,
+      });
       if (error) throw error;
 
-      // Blacklist check
       const { data: profile } = await supabase
         .from('profiles').select('blacklisted').eq('id', data.user.id).single();
       if (profile?.blacklisted) { await supabase.auth.signOut(); setIsBlacklisted(true); return; }
 
-      // Persist fresh tokens so biometric works again immediately
-      await persistBioSession();
+      // Snapshot fresh tokens so biometric works again from now on
+      saveBiometricRefreshToken(data.session);
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       setUser({ id: data.user.id, email: data.user.email });
       navigate('/app');
@@ -498,7 +497,6 @@ export default function Auth() {
       }
       saveBiometricRefreshToken(data.session);
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
-      await persistBioSession(); // Crosssa pattern: always snapshot after login
       setUser({ id: data.user.id, email: data.user.email });
       navigate('/app');
     } catch (err) {
@@ -790,34 +788,21 @@ export default function Auth() {
                   </p>
                   <div>
                     <Label>Email</Label>
-                    <Input
-                      type="email"
-                      autoComplete="email"
-                      value={bioConfirmEmail}
-                      onChange={(e) => setBioConfirmEmail(e.target.value)}
-                    />
+                    <Input type="email" autoComplete="email" value={bioConfirmEmail}
+                      onChange={(e) => setBioConfirmEmail(e.target.value)} />
                   </div>
                   <div>
                     <Label>Password</Label>
-                    <Input
-                      type="password"
-                      autoComplete="current-password"
-                      placeholder="••••••••"
-                      value={bioConfirmPassword}
-                      onChange={(e) => setBioConfirmPassword(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleBiometricConfirmedLogin()}
-                      autoFocus
-                    />
+                    <Input type="password" autoComplete="current-password" placeholder="••••••••"
+                      value={bioConfirmPassword} onChange={(e) => setBioConfirmPassword(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleBiometricConfirmedLogin()} autoFocus />
                   </div>
                   <Button onClick={handleBiometricConfirmedLogin} className="w-full gap-2" disabled={bioConfirmLoading}>
                     {bioConfirmLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Fingerprint className="w-4 h-4" />}
                     Complete Sign-in
                   </Button>
-                  <button
-                    type="button"
-                    onClick={() => setLoginStage('idle')}
-                    className="w-full text-sm text-primary hover:underline"
-                  >
+                  <button type="button" onClick={() => setLoginStage('idle')}
+                    className="w-full text-sm text-primary hover:underline">
                     ← Back to biometric
                   </button>
                 </div>

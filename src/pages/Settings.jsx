@@ -63,80 +63,61 @@ async function registerBiometric(user) {
   if (!window.PublicKeyCredential) {
     throw new Error('Biometric authentication is not supported on this device or browser.');
   }
-  const challenge = new Uint8Array(32);
-  crypto.getRandomValues(challenge);
-  const userIdBytes = new TextEncoder().encode(user?.id || 'skootlink-user');
-
   const credential = await navigator.credentials.create({
     publicKey: {
-      challenge,
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
       rp: { name: 'Skootlink', id: window.location.hostname },
       user: {
-        id: userIdBytes,
+        id: new TextEncoder().encode(user?.id || 'skootlink-user'),
         name: user?.email || 'user@skootlink.co.za',
         displayName: user?.full_name || user?.email || 'Skootlink User',
       },
       pubKeyCredParams: [
-        { alg: -7,   type: 'public-key' },  // ES256
-        { alg: -257, type: 'public-key' },  // RS256
+        { alg: -7,   type: 'public-key' },
+        { alg: -257, type: 'public-key' },
       ],
       authenticatorSelection: {
-        authenticatorAttachment: 'platform', // device sensor only (no passkey/iCloud prompt)
+        authenticatorAttachment: 'platform',
         userVerification: 'required',
-        // NOTE: residentKey intentionally omitted — Crosssa pattern.
-        // Setting residentKey:'preferred' triggers the OS passkey/iCloud Keychain
-        // flow which is NOT what we want here.
+        // residentKey intentionally omitted — Crosssa pattern.
+        // residentKey:'preferred' triggers the OS passkey/iCloud Keychain prompt.
       },
       timeout: 60000,
     },
   });
-
-  if (!credential) throw new Error('Biometric enrollment was cancelled.');
-
-  // Store the credential ID
-  const raw = credential.rawId;
-  localStorage.setItem('scootlink_biometric_credential_id', btoa(String.fromCharCode(...new Uint8Array(raw))));
-
-  // Snapshot tokens immediately — Crosssa pattern.
-  // Without this, the very first biometric login after enrollment fails
-  // because no tokens have been snapshotted yet.
-  try {
-    const { data: { session: snap } } = await supabase.auth.getSession();
-    if (snap?.access_token && snap?.refresh_token) {
-      saveBiometricRefreshToken(snap);
-    }
-  } catch { /* non-fatal */ }
+  localStorage.setItem('scootlink_biometric_credential_id', bufferToBase64(credential.rawId));
 }
 
-// Returns true if credential passes. Throws on failure.
-// NotAllowedError (user cancelled) is re-thrown as code:'cancelled' so the
-// caller can go quietly back to idle — exactly how Crosssa handles it.
+// Returns true if the fingerprint scan passed.
+// Throws with err.code = 'no-passkey-on-domain' when the stored credential
+// doesn't exist on this domain (e.g. registered on localhost, used on Netlify).
 async function verifyBiometric() {
-  if (!window.PublicKeyCredential) {
-    throw biometricError('unsupported', 'Biometric not supported on this device.');
-  }
-  const credId = localStorage.getItem('scootlink_biometric_credential_id');
-  if (!credId) {
-    throw biometricError('no-credential', 'No fingerprint registered. Please set up biometric in Settings → Security.');
+  const storedId = localStorage.getItem('scootlink_biometric_credential_id');
+  if (!storedId) {
+    const err = new Error('No biometric credential found on this device.');
+    err.code = 'no-credential';
+    throw err;
   }
   try {
-    await navigator.credentials.get({
+    const assertion = await navigator.credentials.get({
       publicKey: {
         challenge: crypto.getRandomValues(new Uint8Array(32)),
-        rpId: window.location.hostname,   // Crosssa pattern — must match enrollment
-        allowCredentials: [{ id: Uint8Array.from(atob(credId), c => c.charCodeAt(0)), type: 'public-key' }],
+        allowCredentials: [{ type: 'public-key', id: base64ToBuffer(storedId) }],
         userVerification: 'required',
         timeout: 60000,
       },
     });
+    if (!assertion) throw new Error('Biometric verification failed.');
   } catch (err) {
-    if (err.name === 'NotAllowedError') {
-      // User cancelled — stay on screen quietly (Crosssa behaviour)
-      throw biometricError('cancelled', 'cancelled');
+    // NotAllowedError = user cancelled OR no matching passkey on this domain.
+    // Either way the stored credential is unusable here — signal the caller.
+    if (err.name === 'NotAllowedError' || err.name === 'InvalidStateError') {
+      const e = new Error('no-passkey-on-domain');
+      e.code = 'no-passkey-on-domain';
+      throw e;
     }
-    throw biometricError('fingerprint-failed', err.message || 'Biometric verification failed. Try again.');
+    throw err;
   }
-  return true;
 }
 
 // ── Cookie helpers ────────────────────────────────────────────────────────────
@@ -306,16 +287,13 @@ export default function Settings() {
 
   const handleLogout = async () => {
     if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-      // Snapshot the current tokens before clearing the local session.
-      // We use scope:'local' so the server-side refresh token stays valid —
-      // this is what lets biometric restore the session on next login.
-      // (Crosssa pattern: keep session alive server-side, clear client only.)
+      // Screen lock — do NOT call signOut(). The Supabase session stays alive
+      // in localStorage so fingerprint can restore it instantly on next login.
+      // (Crosssa pattern: unlockApp() reads this kept-alive session directly.)
       try {
         const { data } = await supabase.auth.getSession();
         if (data?.session) saveBiometricRefreshToken(data.session);
       } catch { /* non-fatal */ }
-      // Clear local session only — does NOT revoke the refresh token on the server
-      await supabase.auth.signOut({ scope: 'local' });
       navigate('/auth');
     } else {
       await clearTokenCookie();
