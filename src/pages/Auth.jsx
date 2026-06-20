@@ -807,4 +807,8 @@ export default function Auth() {
                       autoFocus
                     />
                   </div>
-                 
+                  <div>
+                    <Label>Password</Label>
+                    <div className="relative">
+                      <Input
+                        type={showLoginPw ? 'text' :
