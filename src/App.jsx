@@ -64,7 +64,8 @@ function AppRoutes() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    // On mount: check for an existing session (e.g. OAuth redirect just landed)
+    // On mount: if session already exists (e.g. page refresh while logged in),
+    // redirect away from /auth unless it's a biometric screen lock.
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session && location.pathname === '/auth') {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
@@ -75,13 +76,26 @@ function AppRoutes() {
       setAuthReady(true);
     });
 
-    // Listen for auth state changes (OAuth callback, token refresh, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session && location.pathname === '/auth') {
+    // Single listener for all sign-in events (password, Google OAuth, token refresh).
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user && location.pathname === '/auth') {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
-        if (!isBiometricLock) {
-          navigate('/', { replace: true });
+        if (isBiometricLock) return; // screen lock — stay on /auth
+
+        // For Google OAuth sign-ins, run blacklist check before navigating in
+        const provider = session.user.app_metadata?.provider;
+        if (provider === 'google') {
+          const { data: profile } = await supabase
+            .from('profiles').select('blacklisted').eq('id', session.user.id).single();
+          if (profile?.blacklisted) {
+            await supabase.auth.signOut();
+            // Navigate to /auth with a banned flag so Auth.jsx can show the suspended screen
+            navigate('/auth?banned=1', { replace: true });
+            return;
+          }
         }
+
+        navigate('/', { replace: true });
       }
     });
 
