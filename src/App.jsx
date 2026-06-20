@@ -64,27 +64,50 @@ function AppRoutes() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    // Check if we were redirected back from an OAuth provider
+    const params = new URLSearchParams(window.location.search);
+    const hasOAuthCode = params.has('code');
+
+    console.log('[AppRoutes] mount — pathname:', location.pathname, '| hasOAuthCode:', hasOAuthCode);
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        // Biometric mode = screen lock, not a real logout.
-        // The session stays alive intentionally so fingerprint can restore it.
-        // Do NOT redirect to home — the user needs to unlock with their finger.
+      console.log('[AppRoutes] getSession result — session:', !!session, '| user:', session?.user?.email);
+      if (session && location.pathname === '/auth') {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
-        if (location.pathname === '/auth' && !isBiometricLock) {
+        console.log('[AppRoutes] session on /auth — isBiometricLock:', isBiometricLock);
+        if (!isBiometricLock) {
+          console.log('[AppRoutes] navigating to /');
           navigate('/', { replace: true });
         }
       }
-      setAuthReady(true);
+      if (!hasOAuthCode) {
+        console.log('[AppRoutes] setting authReady=true (no OAuth code)');
+        setAuthReady(true);
+      }
     });
 
-    // Listen for future auth state changes (e.g., OAuth completes)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[AppRoutes] onAuthStateChange — event:', event, '| pathname:', location.pathname, '| user:', session?.user?.email);
+      if (event === 'SIGNED_IN' && session?.user && location.pathname === '/auth') {
+        setAuthReady(true);
+
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
-        if (location.pathname === '/auth' && !isBiometricLock) {
-          navigate('/', { replace: true });
+        if (isBiometricLock) { console.log('[AppRoutes] biometric lock — staying on /auth'); return; }
+
+        const provider = session.user.app_metadata?.provider;
+        console.log('[AppRoutes] provider:', provider);
+        if (provider === 'google') {
+          const { data: profile } = await supabase
+            .from('profiles').select('blacklisted').eq('id', session.user.id).single();
+          console.log('[AppRoutes] blacklisted:', profile?.blacklisted);
+          if (profile?.blacklisted) {
+            await supabase.auth.signOut();
+            navigate('/auth?banned=1', { replace: true });
+            return;
+          }
         }
+
+        console.log('[AppRoutes] navigating to /');
+        navigate('/', { replace: true });
       }
     });
 
