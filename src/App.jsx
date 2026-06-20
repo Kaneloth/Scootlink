@@ -1,9 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
@@ -35,6 +35,7 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
 
+    // Listen for PASSWORD_RECOVERY event
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
@@ -47,35 +48,86 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/app" element={<Navigate to="/" replace />} />
-
-            {/* Single AppLayout instance covers ALL app routes — no more blank-screen flash */}
-            <Route element={<AppLayout />}>
-              <Route index element={null} />
-              <Route path="/search-vehicles" element={<SearchVehicles />} />
-              <Route path="/find-drivers" element={<FindDrivers />} />
-              <Route path="/add-vehicle" element={<AddVehicle />} />
-              <Route path="/edit-vehicle" element={<EditVehicle />} />
-              <Route path="/rental-request" element={<RentalRequest />} />
-              <Route path="/tracking" element={<Tracking />} />
-              <Route path="/briefcase" element={<MyBriefcase />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/mysearch" element={<SearchPage />} />
-              <Route path="/messages" element={<Messages />} />
-              <Route path="/contact" element={<ContactUs />} />
-              <Route path="/onboarding" element={<Onboarding />} />
-              <Route path="/subscription" element={<Subscription />} />
-              <Route path="*" element={<PageNotFound />} />
-            </Route>
-          </Routes>
+          <AppRoutes />
+          <Toaster />
+          <SonnerToaster position="top-center" richColors />
         </Router>
-        <Toaster />
-        <SonnerToaster position="top-center" richColors />
       </QueryClientProvider>
     </AuthProvider>
+  );
+}
+
+// Separate component so it can use router hooks
+function AppRoutes() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    // Check if we were redirected back from an OAuth provider
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        // User just signed in via OAuth (or already had a session)
+        // If they're on the /auth page, redirect them to the dashboard
+        if (location.pathname === '/auth') {
+          navigate('/', { replace: true });
+        }
+      }
+      setAuthReady(true);
+    });
+
+    // Listen for future auth state changes (e.g., OAuth completes)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        // Only redirect if the user is on the auth page
+        if (location.pathname === '/auth') {
+          navigate('/', { replace: true });
+        }
+      }
+    });
+
+    return () => subscription?.unsubscribe();
+  }, [navigate, location.pathname]);
+
+  // Show a brief loading screen while checking the session
+  if (!authReady) {
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-background gap-4">
+        <img
+          src="/favicon.png"
+          alt="Skootlink"
+          className="w-16 h-16 rounded-2xl shadow-lg animate-pulse"
+        />
+        <p className="text-sm text-muted-foreground font-medium">Loading Skootlink…</p>
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route path="/auth" element={<Auth />} />
+      <Route path="/app" element={<Navigate to="/" replace />} />
+
+      {/* Single AppLayout instance covers ALL app routes */}
+      <Route element={<AppLayout />}>
+        <Route index element={null} />
+        <Route path="/search-vehicles" element={<SearchVehicles />} />
+        <Route path="/find-drivers" element={<FindDrivers />} />
+        <Route path="/add-vehicle" element={<AddVehicle />} />
+        <Route path="/edit-vehicle" element={<EditVehicle />} />
+        <Route path="/rental-request" element={<RentalRequest />} />
+        <Route path="/tracking" element={<Tracking />} />
+        <Route path="/briefcase" element={<MyBriefcase />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/mysearch" element={<SearchPage />} />
+        <Route path="/messages" element={<Messages />} />
+        <Route path="/contact" element={<ContactUs />} />
+        <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="/subscription" element={<Subscription />} />
+        <Route path="*" element={<PageNotFound />} />
+      </Route>
+    </Routes>
   );
 }
 
