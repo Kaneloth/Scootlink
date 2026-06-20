@@ -64,6 +64,9 @@ function AppRoutes() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hasOAuthCode = params.has('code');
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session && location.pathname === '/auth') {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
@@ -71,7 +74,11 @@ function AppRoutes() {
           navigate('/', { replace: true });
         }
       }
-      setAuthReady(true);
+      // Don't mark ready yet if we're mid-OAuth exchange — wait for
+      // onAuthStateChange to fire with the real session instead.
+      if (!hasOAuthCode) {
+        setAuthReady(true);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -83,6 +90,9 @@ function AppRoutes() {
           }
         }
       }
+      // Always mark auth as ready once we have a definitive state —
+      // covers both normal flow and post-OAuth-exchange SIGNED_IN.
+      setAuthReady(true);
     });
 
     return () => subscription?.unsubscribe();

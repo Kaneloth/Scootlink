@@ -241,7 +241,12 @@ export default function AppLayout() {
       }
     });
 
-    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((event, session) => {
+      // When an OAuth code is being exchanged, Supabase fires INITIAL_SESSION
+      // with no session before the code exchange completes. Ignore that event
+      // so we keep showing the spinner until SIGNED_IN fires with a real user.
+      if (hasOAuthCode && event === 'INITIAL_SESSION' && !session) return;
+
       setAuthLoading(false);
       setAuthUser(session?.user ?? null);
     });
