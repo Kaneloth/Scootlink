@@ -542,13 +542,11 @@ export default function Auth() {
   // ── Google Sign-In ────────────────────────────────────────────────────────
   const handleGoogleSignIn = async () => {
     setLoading(true);
-    // Clear any stale password-recovery flag — if it's set, Auth.jsx would
-    // render the recovery form instead of letting the Google flow complete.
     sessionStorage.removeItem('skootlink_recovery');
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: window.location.origin + '/auth' },
+        options: { redirectTo: window.location.origin + '/' },
       });
       if (error) throw error;
     } catch (err) {

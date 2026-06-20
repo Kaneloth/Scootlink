@@ -87,14 +87,22 @@ function AppRoutes() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('[AppRoutes] onAuthStateChange — event:', event, '| pathname:', location.pathname, '| user:', session?.user?.email);
-      if (event === 'SIGNED_IN' && session?.user && location.pathname === '/auth') {
-        setAuthReady(true);
 
+      // Always unblock the loading screen once we have a definitive auth state
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        setAuthReady(true);
+      }
+
+      if (event === 'SIGNED_IN' && session?.user) {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
-        if (isBiometricLock) { console.log('[AppRoutes] biometric lock — staying on /auth'); return; }
+        if (isBiometricLock && location.pathname === '/auth') {
+          console.log('[AppRoutes] biometric lock — staying on /auth');
+          return;
+        }
 
         const provider = session.user.app_metadata?.provider;
         console.log('[AppRoutes] provider:', provider);
+
         if (provider === 'google') {
           const { data: profile } = await supabase
             .from('profiles').select('blacklisted').eq('id', session.user.id).single();
@@ -104,10 +112,17 @@ function AppRoutes() {
             navigate('/auth?banned=1', { replace: true });
             return;
           }
+          // Google sign-in succeeded — go to app
+          console.log('[AppRoutes] Google sign-in OK — navigating to /');
+          navigate('/', { replace: true });
+          return;
         }
 
-        console.log('[AppRoutes] navigating to /');
-        navigate('/', { replace: true });
+        // Password sign-in on /auth — also redirect
+        if (location.pathname === '/auth') {
+          console.log('[AppRoutes] password sign-in — navigating to /');
+          navigate('/', { replace: true });
+        }
       }
     });
 
