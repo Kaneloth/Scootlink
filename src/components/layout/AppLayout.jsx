@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import { Bike, User, Settings, LogOut } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
-import LandingPage from '@/pages/LandingPage';
 
 // ─── Page components for the five main tabs ────────────────────────────────
 import HomePage from '@/pages/Dashboard';
@@ -374,7 +373,7 @@ export default function AppLayout() {
   }
 
   if (!authUser) {
-    return <LandingPage />;
+    return <Navigate to="/auth" replace />;
   }
 
   // ── Blacklisted screen ─────────────────────────────────────────────────
