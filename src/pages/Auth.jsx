@@ -36,64 +36,63 @@ async function setTokenCookie(refresh_token) {
   });
 }
 
-// ── Biometric login — Crosssa screen-lock pattern ────────────────────────────
-// Step 1: Verify WebAuthn credential (fingerprint / Face ID).
-// Step 2: Call unlockSession() — reads the still-live Supabase session that was
-//         kept in localStorage during the screen-lock "logout". No token exchange.
-// Step 3: If session genuinely expired (60+ days), return null so the caller
-//         can show the biometric-confirmed screen (enter password once).
-
-async function verifyBiometricCredential() {
+async function triggerBiometricLogin() {
   if (!window.PublicKeyCredential) {
-    throw biometricError('unsupported', 'Biometric not supported on this device.');
+    throw biometricError('unsupported', 'Your browser does not support biometric login.');
   }
-  const credId = localStorage.getItem('scootlink_biometric_credential_id');
-  if (!credId) {
-    throw biometricError('no-credential', 'No fingerprint registered. Set up biometric in Settings → Security.');
-  }
-  await navigator.credentials.get({
-    publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rpId: window.location.hostname,   // must match enrollment rpId
-      allowCredentials: [{ id: Uint8Array.from(atob(credId), c => c.charCodeAt(0)), type: 'public-key' }],
-      userVerification: 'required',
-      timeout: 60000,
-    },
-  });
-  // throws NotAllowedError if cancelled — caller handles it
-}
 
-// Reads the kept-alive session (primary path, like Crosssa's unlockApp()).
-// Falls back to saved refresh token if the tab was fully closed and Supabase's
-// in-memory session is gone. Returns null if truly expired (60+ days).
-async function unlockSession() {
-  // Primary: Supabase still has a live session in localStorage
+  const credentialId = localStorage.getItem('scootlink_biometric_credential_id');
+  if (!credentialId) {
+    throw biometricError('no-credential', 'No fingerprint registered on this device.');
+  }
+
   try {
-    const { data } = await supabase.auth.refreshSession();
-    if (data?.session) {
-      saveBiometricRefreshToken(data.session);
-      setTokenCookie(data.session.refresh_token).catch(() => {});
-      return data.session;
+    await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ id: base64ToBuffer(credentialId), type: 'public-key' }],
+        userVerification: 'required',
+        timeout: 60000,
+      },
+    });
+  } catch (err) {
+    if (err.name === 'NotAllowedError' || err.name === 'InvalidStateError') {
+      throw biometricError('no-credential', 'no-passkey-on-domain');
     }
-  } catch { /* fall through */ }
+    throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
+  }
 
-  // Fallback: exchange the snapshotted refresh token
-  const backup = loadBiometricRefreshToken();
+  // Path 1: Supabase JS has a live session in memory/localStorage
+  try {
+    const { data: r1 } = await supabase.auth.refreshSession();
+    if (r1?.session) {
+      saveBiometricRefreshToken(r1.session);
+      setTokenCookie(r1.session.refresh_token).catch(() => {});
+      return r1.session;
+    }
+  } catch { /* fall through to Path 2 */ }
+
+  // Path 2: Exchange the stored refresh_token via Supabase REST API
+  const backup  = loadBiometricRefreshToken();
   const storedRt = backup?.refresh_token ?? null;
   if (storedRt) {
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const anonKey    = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: anonKey },
-        body: JSON.stringify({ refresh_token: storedRt }),
-      });
-      if (res.ok) {
-        const tokens = await res.json();
+      const tokenRes = await fetch(
+        `${supabaseUrl}/auth/v1/token?grant_type=refresh_token`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: anonKey },
+          body: JSON.stringify({ refresh_token: storedRt }),
+        }
+      );
+      if (tokenRes.ok) {
+        const tokens = await tokenRes.json();
         if (tokens.access_token && tokens.refresh_token) {
           const { data: s2, error: e2 } = await supabase.auth.setSession({
-            access_token: tokens.access_token, refresh_token: tokens.refresh_token,
+            access_token:  tokens.access_token,
+            refresh_token: tokens.refresh_token,
           });
           if (!e2 && s2?.session) {
             saveBiometricRefreshToken(s2.session);
@@ -102,15 +101,18 @@ async function unlockSession() {
           }
         }
       } else {
-        const txt = await res.text().catch(() => '');
-        if (txt.includes('refresh_token_not_found')) clearBiometricRefreshToken();
+        const errTxt = await tokenRes.text().catch(() => '');
+        if (errTxt.includes('refresh_token_not_found')) clearBiometricRefreshToken();
       }
-    } catch { /* fall through */ }
+    } catch { /* fall through to Path 3 */ }
   }
 
-  // Last resort: httpOnly cookie
+  // Path 3: httpOnly cookie via Netlify function
   try {
-    const res = await fetch('/.netlify/functions/auth-refresh', { method: 'POST', credentials: 'include' });
+    const res = await fetch('/.netlify/functions/auth-refresh', {
+      method: 'POST',
+      credentials: 'include',
+    });
     if (res.ok) {
       const { access_token, refresh_token } = await res.json();
       const { data: s3, error: e3 } = await supabase.auth.setSession({ access_token, refresh_token });
@@ -121,7 +123,7 @@ async function unlockSession() {
     }
   } catch { /* all paths exhausted */ }
 
-  return null; // session genuinely expired → show biometric-confirmed screen
+  throw biometricError('session-expired', 'session-expired');
 }
 
 // ── Fetch phone number via service-role Netlify function ─────────────────────
@@ -189,11 +191,6 @@ export default function Auth() {
   const [showNewPw, setShowNewPw] = useState(false);
   const [showConfirmNewPw, setShowConfirmNewPw] = useState(false);
 
-  // Biometric-confirmed: one-time password re-entry after 60+ day session expiry
-  const [bioConfirmEmail, setBioConfirmEmail] = useState('');
-  const [bioConfirmPassword, setBioConfirmPassword] = useState('');
-  const [bioConfirmLoading, setBioConfirmLoading] = useState(false);
-
   // ── Detect PASSWORD_RECOVERY from reset link ─────────────────────────────
   // Three-pronged approach to catch the recovery token regardless of timing:
   //   1. Check URL hash (implicit flow: #type=recovery)
@@ -212,11 +209,6 @@ export default function Auth() {
     if (isRecoveryUrl || isRecoveryStored) {
       sessionStorage.setItem('skootlink_recovery', '1');
       setRecoveryMode(true);
-    }
-
-    // App.jsx sets ?banned=1 when a Google OAuth user is blacklisted
-    if (params.get('banned') === '1') {
-      setIsBlacklisted(true);
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
@@ -308,11 +300,6 @@ export default function Auth() {
   };
 
   // ── Sign In button ────────────────────────────────────────────────────────
-  // Crosssa screen-lock flow:
-  //   1. Verify fingerprint via WebAuthn
-  //   2. Restore the kept-alive session via unlockSession()
-  //   3. If null (60+ days expired) → biometric-confirmed (password once)
-
   const handleSignInTap = async () => {
     const method = localStorage.getItem('scootlink_signin_method') || 'password';
     if (method !== 'biometric') { setLoginStage('password'); return; }
@@ -320,84 +307,59 @@ export default function Auth() {
     setLoginStage('biometric-loading');
     setLoading(true);
     try {
-      await verifyBiometricCredential();
-    } catch (err) {
-      if (err.name === 'NotAllowedError') {
-        // User cancelled — go back to idle quietly (Crosssa behaviour)
-        setLoginStage('idle');
-        setLoading(false);
+      const session = await triggerBiometricLogin();
+      // Blacklist check layer 1 — profiles.blacklisted flag
+      const { data: bioProfile } = await supabase
+        .from('profiles')
+        .select('blacklisted')
+        .eq('id', session.user.id)
+        .single();
+      if (bioProfile?.blacklisted) {
+        await supabase.auth.signOut();
+        setIsBlacklisted(true);
         return;
       }
-      if (err.code === 'no-credential') {
-        setBannerReason('session-expired');
-        setLoginStage('password');
-        setLoading(false);
-        return;
-      }
-      setLoginStage('biometric-error');
-      setLoading(false);
-      return;
-    }
-
-    // Fingerprint passed — restore the kept-alive session
-    try {
-      const session = await unlockSession();
-
-      if (session) {
-        // Blacklist check layer 1
-        const { data: bioProfile } = await supabase
-          .from('profiles').select('blacklisted').eq('id', session.user.id).single();
-        if (bioProfile?.blacklisted) { await supabase.auth.signOut(); setIsBlacklisted(true); return; }
-
-        // Blacklist check layer 2
-        const { data: bioSensitive } = await supabase
-          .from('user_sensitive_info').select('sa_id, passport').eq('user_id', session.user.id).maybeSingle();
-        const bioIdNum = (bioSensitive?.sa_id || bioSensitive?.passport || '').trim().toUpperCase();
-        if (bioIdNum) {
-          const { data: bioBannedRow } = await supabase
-            .from('blacklisted_id_numbers').select('id_number').eq('id_number', bioIdNum).maybeSingle();
-          if (bioBannedRow) { await supabase.auth.signOut(); setIsBlacklisted(true); return; }
+      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers
+      const { data: bioSensitive } = await supabase
+        .from('user_sensitive_info')
+        .select('sa_id, passport')
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+      const bioIdNum = (bioSensitive?.sa_id || bioSensitive?.passport || '').trim().toUpperCase();
+      if (bioIdNum) {
+        const { data: bioBannedRow } = await supabase
+          .from('blacklisted_id_numbers')
+          .select('id_number')
+          .eq('id_number', bioIdNum)
+          .maybeSingle();
+        if (bioBannedRow) {
+          await supabase.auth.signOut();
+          setIsBlacklisted(true);
+          return;
         }
-
-        setUser({ id: session.user.id, email: session.user.email });
-        navigate('/app');
-      } else {
-        // Session genuinely expired (60+ days) — Crosssa biometric-confirmed flow
-        setBioConfirmEmail('');
-        setBioConfirmPassword('');
-        setLoginStage('biometric-confirmed');
       }
-    } catch (err) {
-      toast.error(err.message || 'Biometric login failed.');
-      setLoginStage('biometric-error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ── Biometric-confirmed: one-time password after 60+ day expiry ───────────
-  const handleBiometricConfirmedLogin = async () => {
-    if (!bioConfirmEmail || !bioConfirmPassword) { toast.error('Please fill in all fields'); return; }
-    setBioConfirmLoading(true);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: bioConfirmEmail, password: bioConfirmPassword,
-      });
-      if (error) throw error;
-
-      const { data: profile } = await supabase
-        .from('profiles').select('blacklisted').eq('id', data.user.id).single();
-      if (profile?.blacklisted) { await supabase.auth.signOut(); setIsBlacklisted(true); return; }
-
-      // Snapshot fresh tokens so biometric works again from now on
-      saveBiometricRefreshToken(data.session);
-      if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
-      setUser({ id: data.user.id, email: data.user.email });
+      setUser({ id: session.user.id, email: session.user.email });
       navigate('/app');
     } catch (err) {
-      toast.error(err.message || 'Sign-in failed. Check your email and password.');
+      if (err.code === 'no-session' || err.code === 'session-expired') {
+        if (err.detail) toast.error(`Debug: ${err.detail}`, { duration: 15000 });
+        setBannerReason('session-expired');
+        setLoginStage('password');
+      } else if (err.code === 'no-credential') {
+        if (err.message === 'no-passkey-on-domain') {
+          localStorage.removeItem('scootlink_biometric_credential_id');
+          localStorage.setItem('scootlink_signin_method', 'password');
+          setBannerReason('no-passkey');
+        } else {
+          setBannerReason('session-expired');
+        }
+        setLoginStage('password');
+      } else {
+        toast.error(err.message || 'Biometric login failed.');
+        setLoginStage('biometric-error');
+      }
     } finally {
-      setBioConfirmLoading(false);
+      setLoading(false);
     }
   };
 
@@ -546,7 +508,10 @@ export default function Auth() {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: window.location.origin + '/' },
+        options: {
+          redirectTo: window.location.origin + '/',
+          queryParams: { access_type: 'offline', prompt: 'consent' },
+        },
       });
       if (error) throw error;
     } catch (err) {
@@ -739,15 +704,11 @@ export default function Auth() {
                 {loginStage === 'idle' ? 'Welcome back' : loginStage === 'forgot-password' ? 'Reset Password' : 'Sign in'}
               </h2>
 
-              {/* Idle: Google + email/password options */}
+              {/* Idle: Google + email options */}
               {loginStage === 'idle' && (
                 <>
-                  <Button
-                    variant="outline"
-                    className="w-full gap-2 h-12 text-base"
-                    onClick={handleGoogleSignIn}
-                    disabled={loading}
-                  >
+                  <Button variant="outline" className="w-full gap-2 h-12 text-base"
+                    onClick={handleGoogleSignIn} disabled={loading}>
                     <svg className="w-5 h-5" viewBox="0 0 24 24">
                       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
                       <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
@@ -756,25 +717,15 @@ export default function Auth() {
                     </svg>
                     Continue with Google
                   </Button>
-
                   <div className="flex items-center gap-3">
                     <div className="flex-1 h-px bg-border" />
                     <span className="text-xs text-muted-foreground">or</span>
                     <div className="flex-1 h-px bg-border" />
                   </div>
-
-                  <Button
-                    onClick={handleSignInTap}
-                    className="w-full gap-2 h-12 text-base"
-                    disabled={loading}
-                  >
-                    {savedMethod === 'biometric'
-                      ? <Fingerprint className="w-5 h-5" />
-                      : <LogIn className="w-5 h-5" />}
+                  <Button onClick={handleSignInTap} className="w-full gap-2 h-12 text-base" disabled={loading}>
+                    {savedMethod === 'biometric' ? <Fingerprint className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
                     Sign In with Email
-                    {savedMethod === 'biometric' && (
-                      <span className="ml-1 text-xs opacity-70">(Fingerprint)</span>
-                    )}
+                    {savedMethod === 'biometric' && <span className="ml-1 text-xs opacity-70">(Fingerprint)</span>}
                   </Button>
                 </>
               )}
@@ -816,38 +767,6 @@ export default function Auth() {
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
                     Use password instead
-                  </button>
-                </div>
-              )}
-
-              {/* Biometric-confirmed: one-time sign-in after 60+ day session expiry */}
-              {loginStage === 'biometric-confirmed' && (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/10 text-primary text-sm">
-                    <Fingerprint className="w-4 h-4 shrink-0" />
-                    Fingerprint verified — enter your password once to restore biometric access.
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Your saved session has fully expired (60+ days inactive). Sign in once and you won't need to do this again.
-                  </p>
-                  <div>
-                    <Label>Email</Label>
-                    <Input type="email" autoComplete="email" value={bioConfirmEmail}
-                      onChange={(e) => setBioConfirmEmail(e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>Password</Label>
-                    <Input type="password" autoComplete="current-password" placeholder="••••••••"
-                      value={bioConfirmPassword} onChange={(e) => setBioConfirmPassword(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleBiometricConfirmedLogin()} autoFocus />
-                  </div>
-                  <Button onClick={handleBiometricConfirmedLogin} className="w-full gap-2" disabled={bioConfirmLoading}>
-                    {bioConfirmLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Fingerprint className="w-4 h-4" />}
-                    Complete Sign-in
-                  </Button>
-                  <button type="button" onClick={() => setLoginStage('idle')}
-                    className="w-full text-sm text-primary hover:underline">
-                    ← Back to biometric
                   </button>
                 </div>
               )}
@@ -1060,12 +979,8 @@ export default function Auth() {
                   </a>
                 </label>
               </div>
-              <Button
-                variant="outline"
-                className="w-full gap-2 h-12 text-base"
-                onClick={handleGoogleSignIn}
-                disabled={loading}
-              >
+              <Button variant="outline" className="w-full gap-2 h-12 text-base"
+                onClick={handleGoogleSignIn} disabled={loading}>
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
                   <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
@@ -1074,13 +989,11 @@ export default function Auth() {
                 </svg>
                 Sign up with Google
               </Button>
-
               <div className="flex items-center gap-3">
                 <div className="flex-1 h-px bg-border" />
                 <span className="text-xs text-muted-foreground">or sign up with email</span>
                 <div className="flex-1 h-px bg-border" />
               </div>
-
               <Button onClick={handleRegister} className="w-full gap-2" disabled={loading}>
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                 Sign Up
