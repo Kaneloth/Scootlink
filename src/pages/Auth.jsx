@@ -550,12 +550,16 @@ export default function Auth() {
   };
 
   // ── Handle Google OAuth callback ──────────────────────────────────────────
+  // App.jsx's onAuthStateChange handles the navigation to '/'.
+  // This useEffect only runs the blacklist check — if the user is banned,
+  // we sign them out here before App.jsx can redirect them in.
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         const provider = session.user.app_metadata?.provider;
         if (provider !== 'google') return;
 
+        // Blacklist check — sign out banned users before App.jsx redirects them
         const { data: oauthProfile } = await supabase
           .from('profiles').select('blacklisted').eq('id', session.user.id).single();
         if (oauthProfile?.blacklisted) { await supabase.auth.signOut(); setIsBlacklisted(true); return; }
@@ -568,14 +572,14 @@ export default function Auth() {
             .from('blacklisted_id_numbers').select('id_number').eq('id_number', oauthIdNum).maybeSingle();
           if (oauthBannedRow) { await supabase.auth.signOut(); setIsBlacklisted(true); return; }
         }
+
+        // Token housekeeping — no navigate() here, App.jsx handles that
         saveBiometricRefreshToken(session);
         if (session.refresh_token) setTokenCookie(session.refresh_token).catch(() => {});
-        setUser({ id: session.user.id, email: session.user.email });
-        navigate('/app');
       }
     });
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
