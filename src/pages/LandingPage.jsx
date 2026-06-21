@@ -202,7 +202,6 @@ function HowItWorks() {
 }
 
 function DemoSection() {
-  const navigate = useNavigate();
   return (
     <section style={styles.section} id="demo">
       <div style={styles.container}>
@@ -233,7 +232,7 @@ function DemoSection() {
               <li>📍 Live GPS tracking</li>
             </ul>
             <button
-              onClick={() => navigate("/auth")}
+              onClick={openAuth}
               style={{ ...styles.btnBase, ...styles.btnPrimary, width: "100%", marginBottom: 12 }}
               onMouseEnter={e => (e.currentTarget.style.background = PRIMARY_DARK)}
               onMouseLeave={e => (e.currentTarget.style.background = PRIMARY)}
