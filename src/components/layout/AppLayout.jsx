@@ -4,8 +4,6 @@ import { Bike, User, Settings, LogOut } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
-import LandingPage from '@/pages/LandingPage';
-import { useNavigate as _useNavigate } from 'react-router-dom';
 
 // ─── Page components for the five main tabs ────────────────────────────────
 import HomePage from '@/pages/Dashboard';
@@ -227,10 +225,9 @@ export default function AppLayout() {
   const [authUser, setAuthUser]       = useState(null);
 
   // ── Auth gate ──────────────────────────────────────────────────────────────
-  const params = new URLSearchParams(window.location.search);
-  const hasOAuthCode = params.has('code');
-
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hasOAuthCode = params.has('code');
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!hasOAuthCode) {
         setAuthLoading(false);
