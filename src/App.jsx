@@ -102,6 +102,7 @@ function AppRoutes() {
       {/* Public routes — always accessible, no auth needed */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/auth" element={<Auth />} />
+      <Route path="/app" element={<Navigate to="/home" replace />} />
 
       {/* App routes — protected by AppLayout's auth gate */}
       <Route element={<AppLayout />}>
