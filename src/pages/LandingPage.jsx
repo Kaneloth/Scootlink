@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+
+const openAuth = () => window.open("/auth", "_blank", "noopener,noreferrer");
 
 const PRIMARY = "#2563eb";
 const PRIMARY_DARK = "#1d4ed8";
@@ -86,7 +87,6 @@ const demoCSS = `
 
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
-  const navigate = useNavigate();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -115,7 +115,7 @@ function Navbar() {
         </ul>
         <button
           style={{ ...styles.btnBase, ...styles.btnPrimary }}
-          onClick={() => navigate("/auth")}
+          onClick={openAuth}
           onMouseEnter={e => (e.currentTarget.style.background = PRIMARY_DARK)}
           onMouseLeave={e => (e.currentTarget.style.background = PRIMARY)}
         >
@@ -127,7 +127,6 @@ function Navbar() {
 }
 
 function Hero() {
-  const navigate = useNavigate();
   const scroll = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
 
   return (
@@ -144,7 +143,7 @@ function Hero() {
         <div style={styles.heroBtns}>
           <button
             style={{ ...styles.btnBase, ...styles.btnPrimary, ...styles.btnLarge }}
-            onClick={() => navigate("/auth")}
+            onClick={openAuth}
             onMouseEnter={e => (e.currentTarget.style.background = PRIMARY_DARK)}
             onMouseLeave={e => (e.currentTarget.style.background = PRIMARY)}
           >
@@ -324,18 +323,17 @@ function About() {
 }
 
 function DownloadCTA() {
-  const navigate = useNavigate();
   return (
     <section style={styles.ctaSection} id="download">
       <div style={styles.container}>
         <h2 style={styles.ctaH2}>Ready to Get Started?</h2>
         <p style={styles.ctaP}>Join Skootlink and be part of the formal vehicle rental revolution in South Africa.</p>
         <div style={styles.heroBtns}>
-          <button style={styles.ctaBtnWhite} onClick={() => navigate("/auth")}
+          <button style={styles.ctaBtnWhite} onClick={openAuth}
             onMouseEnter={e => (e.currentTarget.style.opacity = "0.9")}
             onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
           >🚀 Create an Account</button>
-          <button style={styles.ctaBtnGhost} onClick={() => navigate("/auth")}
+          <button style={styles.ctaBtnGhost} onClick={openAuth}
             onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
           >🔑 Sign In</button>
@@ -347,96 +345,26 @@ function DownloadCTA() {
 
 function Contact() {
   const [form, setForm] = useState({ name: "", email: "", message: "" });
-  const [status, setStatus] = useState("idle"); // idle | loading | success | error
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setStatus("loading");
-
-    try {
-      const res = await fetch("/.netlify/functions/contact-form", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setStatus("success");
-        setForm({ name: "", email: "", message: "" });
-      } else {
-        setStatus("error");
-        console.error("Contact form error:", data.error);
-      }
-    } catch (err) {
-      console.error("Contact form fetch error:", err);
-      setStatus("error");
-    }
-  };
-
+  const [sent, setSent] = useState(false);
+  const handleSubmit = (e) => { e.preventDefault(); setSent(true); setForm({ name: "", email: "", message: "" }); };
   return (
     <section style={styles.section} id="contact">
       <div style={{ ...styles.container, maxWidth: 600, margin: "0 auto" }}>
         <h2 style={styles.sectionTitle}>Contact Us</h2>
         <p style={styles.sectionSub}>Have questions? We'd love to hear from you.</p>
-        {status === "success" ? (
+        {sent ? (
           <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12, padding: "24px", textAlign: "center", color: "#16a34a", fontWeight: 600, fontSize: 16 }}>
             ✅ Message sent! We'll get back to you shortly.
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <input
-              type="text"
-              placeholder="Your Name"
-              required
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              style={styles.formInput}
-              disabled={status === "loading"}
-            />
-            <input
-              type="email"
-              placeholder="Your Email"
-              required
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              style={styles.formInput}
-              disabled={status === "loading"}
-            />
-            <textarea
-              rows={5}
-              placeholder="Your Message"
-              required
-              value={form.message}
-              onChange={(e) => setForm({ ...form, message: e.target.value })}
-              style={styles.formTextarea}
-              disabled={status === "loading"}
-            />
-            <button
-              type="submit"
-              style={{
-                ...styles.btnBase,
-                ...styles.btnPrimary,
-                width: "100%",
-                textAlign: "center",
-                opacity: status === "loading" ? 0.7 : 1,
-                cursor: status === "loading" ? "not-allowed" : "pointer",
-              }}
-              disabled={status === "loading"}
-              onMouseEnter={(e) => {
-                if (status !== "loading") e.currentTarget.style.background = PRIMARY_DARK;
-              }}
-              onMouseLeave={(e) => {
-                if (status !== "loading") e.currentTarget.style.background = PRIMARY;
-              }}
-            >
-              {status === "loading" ? "Sending…" : "Send Message"}
-            </button>
-            {status === "error" && (
-              <p style={{ color: "#dc2626", textAlign: "center", marginTop: 12 }}>
-                Failed to send. Please try again or email us directly at help@skootlink.co.za.
-              </p>
-            )}
+            <input type="text" placeholder="Your Name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={styles.formInput} />
+            <input type="email" placeholder="Your Email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={styles.formInput} />
+            <textarea rows={5} placeholder="Your Message" required value={form.message} onChange={e => setForm({ ...form, message: e.target.value })} style={styles.formTextarea} />
+            <button type="submit" style={{ ...styles.btnBase, ...styles.btnPrimary, width: "100%", textAlign: "center" }}
+              onMouseEnter={e => (e.currentTarget.style.background = PRIMARY_DARK)}
+              onMouseLeave={e => (e.currentTarget.style.background = PRIMARY)}
+            >Send Message</button>
           </form>
         )}
         <p style={{ textAlign: "center", marginTop: 24, color: "#71717a" }}>
@@ -483,30 +411,9 @@ function Footer() {
           </div>
           <div>
             <h4 style={styles.footerH4}>Legal</h4>
-            <a
-              href="/Privacy%20Policy.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={styles.footerLink}
-              onMouseEnter={e => (e.currentTarget.style.color = "#fff")}
-              onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
-            >Privacy Policy</a>
-            <a
-              href="/Terms%20and%20Conditions.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={styles.footerLink}
-              onMouseEnter={e => (e.currentTarget.style.color = "#fff")}
-              onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
-            >Terms of Service</a>
-            <a
-              href="/PAIA%20Manual.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={styles.footerLink}
-              onMouseEnter={e => (e.currentTarget.style.color = "#fff")}
-              onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
-            >PAIA Manual</a>
+            {["Privacy Policy", "Terms of Service", "POPIA Compliance"].map(label => (
+              <a key={label} href="#" style={styles.footerLink} onMouseEnter={e => (e.currentTarget.style.color = "#fff")} onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}>{label}</a>
+            ))}
           </div>
         </div>
         <div style={styles.footerBottom}>© 2026 Skootlink (Pty) Ltd. All rights reserved. Built in South Africa 🇿🇦</div>

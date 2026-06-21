@@ -65,35 +65,19 @@ function AppRoutes() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const hasOAuthCode = params.has('code');
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session && location.pathname === '/auth') {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
-        if (!isBiometricLock) {
-          navigate('/', { replace: true });
-        }
+        if (!isBiometricLock) navigate('/home', { replace: true });
       }
-      // Don't mark ready yet if we're mid-OAuth exchange — wait for
-      // onAuthStateChange to fire with the real session instead.
-      if (!hasOAuthCode) {
-        setAuthReady(true);
-      }
+      setAuthReady(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        if (location.pathname === '/auth') {
-          const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
-          if (!isBiometricLock) {
-            navigate('/', { replace: true });
-          }
-        }
+      if (event === 'SIGNED_IN' && session && location.pathname === '/auth') {
+        const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
+        if (!isBiometricLock) navigate('/home', { replace: true });
       }
-      // Always mark auth as ready once we have a definitive state —
-      // covers both normal flow and post-OAuth-exchange SIGNED_IN.
-      setAuthReady(true);
     });
 
     return () => subscription?.unsubscribe();
@@ -115,15 +99,13 @@ function AppRoutes() {
 
   return (
     <Routes>
+      {/* Public routes — always accessible, no auth needed */}
+      <Route path="/" element={<LandingPage />} />
       <Route path="/auth" element={<Auth />} />
-      <Route path="/app" element={<Navigate to="/" replace />} />
 
-      {/* LandingPage lives outside AppLayout — shown to unauthenticated visitors at /landing */}
-      <Route path="/landing" element={<LandingPage />} />
-
-      {/* Single AppLayout instance covers ALL app routes */}
+      {/* App routes — protected by AppLayout's auth gate */}
       <Route element={<AppLayout />}>
-        <Route index element={null} />
+        <Route path="/home" element={null} />
         <Route path="/search-vehicles" element={<SearchVehicles />} />
         <Route path="/find-drivers" element={<FindDrivers />} />
         <Route path="/add-vehicle" element={<AddVehicle />} />
