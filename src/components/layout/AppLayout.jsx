@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Outlet, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Bike, User, Settings, LogOut } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
+import LandingPage from '@/pages/LandingPage';
+import { useNavigate as _useNavigate } from 'react-router-dom';
 
 // ─── Page components for the five main tabs ────────────────────────────────
 import HomePage from '@/pages/Dashboard';
@@ -15,10 +17,10 @@ import MessagesPage from '@/pages/Messages';
 // ─── Search paths (dynamic based on account type) ───────────────────────────
 const SEARCH_PATHS = ['/search-vehicles', '/find-drivers', '/mysearch'];
 const CANONICAL_SEARCH_PATH = '/search-vehicles';
-const CANONICAL_PATHS = ['/', CANONICAL_SEARCH_PATH, '/tracking', '/briefcase', '/messages'];
+const CANONICAL_PATHS = ['/home', CANONICAL_SEARCH_PATH, '/tracking', '/briefcase', '/messages'];
 
 const TABS = [
-  { path: '/',                 component: HomePage,      icon: Bike, label: 'Home' },
+  { path: '/home',              component: HomePage,      icon: Bike, label: 'Home' },
   { path: CANONICAL_SEARCH_PATH, component: SearchPage,   icon: Bike, label: 'Search' },
   { path: '/tracking',         component: TrackingPage,   icon: Bike, label: 'Track' },
   { path: '/briefcase',        component: BriefcasePage,  icon: Bike, label: 'Briefcase' },
@@ -130,8 +132,6 @@ function VerificationGate({ user, userLoading, children }) {
 // ─── Shared biometric-aware logout ────────────────────────────────────────
 async function layoutLogout(navigate) {
   if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-    // Screen lock — save session then navigate away WITHOUT signing out.
-    // The session stays alive so fingerprint can restore it on next login.
     try {
       const { data } = await supabase.auth.getSession();
       if (data?.session) saveBiometricRefreshToken(data.session);
@@ -166,7 +166,7 @@ function MobileHeader() {
 
   return (
     <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card z-30 shrink-0">
-      <Link to="/" className="flex items-center gap-2">
+      <Link to="/home" className="flex items-center gap-2">
         <img src="/favicon.png" alt="Skootlink" className="w-8 h-8" />
         <span className="text-base font-bold text-foreground">Skootlink</span>
       </Link>
@@ -226,13 +226,11 @@ export default function AppLayout() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authUser, setAuthUser]       = useState(null);
 
-  useEffect(() => {
-    // If there's an OAuth code in the URL, Supabase is mid-exchange.
-    // Don't resolve authLoading from getSession() — wait for onAuthStateChange
-    // to fire SIGNED_IN with the real session, otherwise LandingPage flashes.
-    const params = new URLSearchParams(window.location.search);
-    const hasOAuthCode = params.has('code');
+  // ── Auth gate ──────────────────────────────────────────────────────────────
+  const params = new URLSearchParams(window.location.search);
+  const hasOAuthCode = params.has('code');
 
+  useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!hasOAuthCode) {
         setAuthLoading(false);
@@ -240,12 +238,7 @@ export default function AppLayout() {
       }
     });
 
-    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((event, session) => {
-      // When an OAuth code is being exchanged, Supabase fires INITIAL_SESSION
-      // with no session before the code exchange completes. Ignore that event
-      // so we keep showing the spinner until SIGNED_IN fires with a real user.
-      if (hasOAuthCode && event === 'INITIAL_SESSION' && !session) return;
-
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthLoading(false);
       setAuthUser(session?.user ?? null);
     });
@@ -373,7 +366,9 @@ export default function AppLayout() {
   }
 
   if (!authUser) {
-    return <Navigate to="/auth" replace />;
+    // Not logged in — send to /auth. The landing page lives at / independently.
+    window.location.replace('/auth');
+    return null;
   }
 
   // ── Blacklisted screen ─────────────────────────────────────────────────
