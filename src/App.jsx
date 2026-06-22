@@ -74,7 +74,7 @@ function AppRoutes() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session && location.pathname === '/auth') {
+      if (event === 'SIGNED_IN' && session) {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
         if (!isBiometricLock) navigate('/home', { replace: true });
       }
