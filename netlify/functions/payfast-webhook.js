@@ -37,18 +37,9 @@ export const handler = async (event) => {
     m_payment_id: fields.m_payment_id,
   });
 
-  // ── 0. IP validation ────────────────────────────────────────────────────
-  const isSandbox = (process.env.PAYFAST_MODE || 'sandbox').toLowerCase() !== 'live';
-  if (!isSandbox) {
-    const clientIp = (
-      event.headers['x-nf-client-connection-ip'] ||
-      (event.headers['x-forwarded-for'] || '').split(',')[0]
-    ).trim();
-    if (!PAYFAST_VALID_IPS.includes(clientIp)) {
-      console.error(`[payfast-webhook] IP not in PayFast whitelist: ${clientIp}`);
-      return { statusCode: 403, body: 'Forbidden' };
-    }
-  }
+  // ── 0. IP validation skipped — requests proxied via Hookdeck ───────────
+  // Hookdeck's IP is not in PayFast's range. Signature + server validation
+  // below provide sufficient security.
 
   // ── 1. Signature verification ───────────────────────────────────────────
   const receivedSig = fields.signature;
