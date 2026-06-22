@@ -489,15 +489,7 @@ export default function Settings() {
     }
   }, [user]);
 
-  // ── Plan tab computed ─────────────────────────────────────────────────────
-
-  const needsLicencePlan = selectedPlan === 'driver' || selectedPlan === 'both';
-
-  // Reset licence status whenever the selected plan changes
-  useEffect(() => {
-    setLicencePlanStatus('idle');
-    setLicencePlanMsg('');
-  }, [selectedPlan]);
+  const needsLicencePlan = true; // all users can verify licence
 
   // ── Identity document verification via VerifyNow ─────────────────────────
 
