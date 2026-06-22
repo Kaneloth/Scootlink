@@ -37,12 +37,9 @@ const AuthenticatedApp = () => {
     const path = window.location.pathname;
     const publicPaths = ['/', '/auth'];
     const isPublic = publicPaths.includes(path);
-    let checked = false;
 
-    const resolve = (session) => {
-      if (checked) return;
-      checked = true;
-
+    // Step 1: Determine initial render state from current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
       const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
 
       if (isRecovery) {
@@ -52,49 +49,50 @@ const AuthenticatedApp = () => {
           setSupabaseChecked(true);
         }
       } else if (session && (path === '/auth' || path === '/')) {
-        // Signed in on a public page — go to dashboard
+        // Already signed in on a public page — go to app
         window.location.href = '/home';
       } else if (!session && !isPublic) {
-        // Protected route, no session — send to auth
+        // Protected route with no session — send to auth
         window.location.href = '/auth';
       } else {
-        // Public route (no session) OR protected route with session — render
+        // Public page with no session, OR app page with session — render
         setSupabaseChecked(true);
       }
-    };
+    });
 
-    // Primary: use onAuthStateChange which fires INITIAL_SESSION reliably
-    // on both desktop and mobile (including after logout + refresh)
+    // Step 2: Watch for sign-in AFTER initial load (email/password + Google)
+    // This is separate from the initial session check — it only acts on
+    // transitions, never on the initial state (which getSession handles above)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'INITIAL_SESSION') {
-        resolve(session);
-        return;
-      }
       if (event === 'SIGNED_IN' && session) {
         const currentPath = window.location.pathname;
         if (currentPath === '/auth' || currentPath === '/') {
           window.location.href = '/home';
         }
       }
-    });
-
-    // Fallback: getSession() in case INITIAL_SESSION doesn't fire within 2s
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setTimeout(() => resolve(session), 0);
-    });
-
-    // Safety net: never stay stuck loading beyond 3 seconds
-    const safetyTimer = setTimeout(() => {
-      if (!checked) {
-        checked = true;
+      // Handle logout — if on a protected page, send to auth
+      if (event === 'SIGNED_OUT') {
         const currentPath = window.location.pathname;
         if (!publicPaths.includes(currentPath)) {
           window.location.href = '/auth';
-        } else {
-          setSupabaseChecked(true);
         }
       }
-    }, 3000);
+    });
+
+    // Safety net: if getSession never resolves (slow mobile connection),
+    // unblock the loading screen after 4 seconds
+    const safetyTimer = setTimeout(() => {
+      setSupabaseChecked(prev => {
+        if (!prev) {
+          // Still stuck — if on a public page show it, otherwise go to auth
+          if (!publicPaths.includes(window.location.pathname)) {
+            window.location.href = '/auth';
+          }
+          return true;
+        }
+        return prev;
+      });
+    }, 4000);
 
     return () => {
       subscription?.unsubscribe();
