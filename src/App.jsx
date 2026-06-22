@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
 
 import Auth from '@/pages/Auth';
+import LandingPage from '@/pages/LandingPage';
 import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/Dashboard';
 import SearchVehicles from '@/pages/SearchVehicles';
@@ -37,8 +38,8 @@ const AuthenticatedApp = () => {
       const path = window.location.pathname;
 
       // Public routes — never redirect these, always show as-is
-      const publicPaths = ['/', '/auth'];
-      const isPublic = publicPaths.includes(path);
+      const publicPaths = ['/landing', '/auth'];
+      const isPublic = publicPaths.includes(path) || path === '/';
 
       if (isRecovery) {
         // Always land on /auth so Auth.jsx can show the Set New Password form.
@@ -49,7 +50,7 @@ const AuthenticatedApp = () => {
         }
       } else if (session && path === '/auth') {
         // Returning from Google OAuth or already signed in — go to dashboard
-        window.location.href = '/';
+        window.location.href = '/home';
       } else if (!session && !isPublic) {
         // Protected route with no session — send to auth
         window.location.href = '/auth';
@@ -73,6 +74,9 @@ const AuthenticatedApp = () => {
 
   return (
     <Routes>
+      {/* Public landing page — always accessible */}
+      <Route path="/" element={<LandingPage />} />
+
       {/* Auth */}
       <Route path="/auth" element={<Auth />} />
 
@@ -82,7 +86,7 @@ const AuthenticatedApp = () => {
 
       {/* Main app with layout */}
       <Route element={<AppLayout />}>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/home" element={<Dashboard />} />
         <Route path="/search-vehicles" element={<SearchVehicles />} />
         <Route path="/find-drivers" element={<FindDrivers />} />
         <Route path="/add-vehicle" element={<AddVehicle />} />
