@@ -34,16 +34,19 @@ const AuthenticatedApp = () => {
   React.useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
+      const path = window.location.pathname;
 
       if (isRecovery) {
         // Always land on /auth so Auth.jsx can show the Set New Password form.
-        // Do NOT redirect to dashboard even if a session exists.
-        if (window.location.pathname !== '/auth') {
+        if (path !== '/auth') {
           window.location.href = '/auth';
         } else {
           setSupabaseChecked(true);
         }
-      } else if (!session && window.location.pathname !== '/auth') {
+      } else if (session && path === '/auth') {
+        // Returning from Google OAuth or already signed in — go to dashboard
+        window.location.href = '/';
+      } else if (!session && path !== '/auth') {
         window.location.href = '/auth';
       } else {
         setSupabaseChecked(true);
