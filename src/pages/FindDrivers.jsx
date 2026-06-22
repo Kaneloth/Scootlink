@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { User, auth, Vehicle, fetchProfilesByIds } from '@/api/supabaseData';
 import { useQuery } from '@tanstack/react-query';
@@ -279,6 +280,7 @@ export default function FindDrivers() {
               ? `${drivers.length} driver${drivers.length !== 1 ? 's' : ''} within ${filters.radius} km`
               : `${drivers.length} driver${drivers.length !== 1 ? 's' : ''} found`
         }
+        backTo="/"
         action={
           <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="gap-2">
             <SlidersHorizontal className="w-4 h-4" /> Filters
@@ -445,7 +447,7 @@ export default function FindDrivers() {
       )}
 
       {/* ── Driver Detail Modal ──────────────────────────────────────────────── */}
-      {selectedDriver && (
+      {selectedDriver && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => { setSelectedDriver(null); setShowContractForm(false); }}>
           <div
             className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[90vh]"
@@ -644,7 +646,8 @@ export default function FindDrivers() {
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
