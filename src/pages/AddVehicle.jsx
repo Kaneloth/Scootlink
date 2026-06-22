@@ -73,7 +73,7 @@ export default function AddVehicle() {
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
       toast.success('Vehicle listed successfully!');
-      navigate('/');
+      navigate('/home');
     },
     onError: (err) => {
       console.error('Vehicle create error:', err);
@@ -128,7 +128,7 @@ export default function AddVehicle() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <PageHeader title="Add Vehicle" subtitle="List your vehicle for drivers to rent" backTo="/" />
+      <PageHeader title="Add Vehicle" subtitle="List your vehicle for drivers to rent" backTo="/home" />
       <Card className="p-6 border border-border/50">
         <div className="space-y-4">
           <div>

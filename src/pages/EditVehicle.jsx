@@ -63,7 +63,7 @@ export default function EditVehicle() {
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
       toast.success('Vehicle updated!');
-      navigate('/');
+      navigate('/home');
     },
     onError: (err) => toast.error('Failed to update: ' + err.message),
   });
@@ -73,7 +73,7 @@ export default function EditVehicle() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       toast.success('Vehicle deleted');
-      navigate('/');
+      navigate('/home');
     },
     onError: (err) => toast.error('Failed to delete: ' + err.message),
   });
@@ -122,7 +122,7 @@ export default function EditVehicle() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <PageHeader title="Edit Vehicle" subtitle="Update your vehicle listing" backTo="/" />
+      <PageHeader title="Edit Vehicle" subtitle="Update your vehicle listing" backTo="/home" />
       <Card className="p-6 border border-border/50">
         <div className="space-y-4">
           <div>

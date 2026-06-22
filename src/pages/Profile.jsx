@@ -351,7 +351,7 @@ export default function Profile() {
       // confirmation is pending — the confirmation toast above is enough.
       if (!emailChangePending) {
         toast.success('Profile updated!');
-        navigate('/');
+        navigate('/home');
       }
     } catch (err) {
       toast.error('Update failed: ' + (err.message || 'Unknown error'));
@@ -365,7 +365,7 @@ export default function Profile() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <PageHeader title="My Profile" subtitle="Edit details & view your reviews" backTo="/" />
+      <PageHeader title="My Profile" subtitle="Edit details & view your reviews" backTo="/home" />
 
       {/* Hidden file input for avatar upload */}
       <input

@@ -279,7 +279,7 @@ export default function Onboarding() {
 
         {/* Logo */}
         <div className="flex justify-center mb-6">
-          <a href="/" className="flex items-center gap-2">
+          <a href="/home" className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow">
               <Bike className="w-5 h-5 text-white" />
             </div>
@@ -494,7 +494,7 @@ export default function Onboarding() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => step === 0 ? navigate('/') : setStep(s => s - 1)}
+                onClick={() => step === 0 ? navigate('/home') : setStep(s => s - 1)}
                 className="gap-2"
               >
                 <ArrowLeft className="w-4 h-4" /> Back

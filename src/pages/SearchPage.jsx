@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import SearchVehicles from '@/pages/SearchVehicles';
 import FindDrivers from '@/pages/FindDrivers';
+import PageHeader from '@/components/layout/PageHeader';
 
 // Skeleton card that mimics a vehicle/driver result row
 function ResultCardSkeleton() {
@@ -50,7 +51,7 @@ export default function SearchPage() {
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Search</h1>
+      <PageHeader title="Search" backTo="/home" />
       <Tabs defaultValue="vehicles">
         <TabsList className="mb-4">
           <TabsTrigger value="vehicles">🔍 Find Vehicles</TabsTrigger>

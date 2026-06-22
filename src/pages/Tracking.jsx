@@ -28,7 +28,7 @@ export default function Tracking() {
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      <PageHeader title="GPS Tracking" subtitle="Monitor your rented vehicles" backTo="/" />
+      <PageHeader title="GPS Tracking" subtitle="Monitor your rented vehicles" backTo="/home" />
 
       {rentedVehicles.length > 0 ? (
         <>
