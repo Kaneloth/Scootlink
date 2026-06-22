@@ -35,17 +35,10 @@ const AuthenticatedApp = () => {
   const [supabaseChecked, setSupabaseChecked] = React.useState(false);
 
   React.useEffect(() => {
-    const path = window.location.pathname;
-    const publicPaths = ['/', '/auth'];
-
-    // Safety net — never stay stuck beyond 5 seconds on mobile
-    const timer = setTimeout(() => {
-      setSupabaseChecked(true);
-    }, 5000);
-
     supabase.auth.getSession().then(({ data: { session } }) => {
-      clearTimeout(timer);
       const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
+      const path = window.location.pathname;
+      const publicPaths = ['/', '/auth'];
 
       if (isRecovery) {
         if (path !== '/auth') {
@@ -53,20 +46,14 @@ const AuthenticatedApp = () => {
         } else {
           setSupabaseChecked(true);
         }
-      } else if (session && path === '/auth') {
-        setTimeout(() => { window.location.href = '/home'; }, 300);
       } else if (!session && !publicPaths.includes(path)) {
+        // Protected route with no session — send to auth
         window.location.href = '/auth';
       } else {
+        // Public page, or has a valid session — render normally
         setSupabaseChecked(true);
       }
-    }).catch(() => {
-      clearTimeout(timer);
-      // On error, show the page — better than stuck loading forever
-      setSupabaseChecked(true);
-    });
-
-    return () => clearTimeout(timer);
+    }).catch(() => setSupabaseChecked(true));
   }, []);
 
   if (!supabaseChecked) {
