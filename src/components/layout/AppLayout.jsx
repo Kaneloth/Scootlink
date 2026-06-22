@@ -240,7 +240,6 @@ export default function AppLayout() {
   const [userLoading, setUserLoading] = useState(true);
   const [isBlacklisted, setIsBlacklisted] = useState(false);
 
-  const prevLocationRef = useRef(location.pathname);
 
   // ── Strip swipe state ──────────────────────────────────────────────────
   const isTabRoute = TAB_PATHS.includes(location.pathname);
@@ -315,25 +314,7 @@ export default function AppLayout() {
 
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
-  useEffect(() => {
-    const prevPath = prevLocationRef.current;
-    const newPath = location.pathname;
-    prevLocationRef.current = newPath;
 
-    const normalize = (p) =>
-      (p === '/find-drivers' || p === '/mysearch') ? '/search-vehicles' : p;
-
-    const prevIndex = CANONICAL_PATHS.indexOf(normalize(prevPath));
-    const newIndex  = CANONICAL_PATHS.indexOf(normalize(newPath));
-
-    if (Math.abs(newIndex - prevIndex) >= 1 && prevIndex !== -1 && newIndex !== -1) {
-      setSlideClass(newIndex > prevIndex ? 'slide-from-right' : 'slide-from-left');
-      const t = setTimeout(() => setSlideClass(''), 350);
-      return () => clearTimeout(t);
-    } else {
-      setSlideClass('');
-    }
-  }, [location.pathname]);
 
   useEffect(() => {
     auth.me().then(async (user) => {
