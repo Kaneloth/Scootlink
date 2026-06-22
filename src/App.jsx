@@ -36,6 +36,10 @@ const AuthenticatedApp = () => {
       const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
       const path = window.location.pathname;
 
+      // Public routes — never redirect these, always show as-is
+      const publicPaths = ['/', '/auth'];
+      const isPublic = publicPaths.includes(path);
+
       if (isRecovery) {
         // Always land on /auth so Auth.jsx can show the Set New Password form.
         if (path !== '/auth') {
@@ -46,9 +50,11 @@ const AuthenticatedApp = () => {
       } else if (session && path === '/auth') {
         // Returning from Google OAuth or already signed in — go to dashboard
         window.location.href = '/';
-      } else if (!session && path !== '/auth') {
+      } else if (!session && !isPublic) {
+        // Protected route with no session — send to auth
         window.location.href = '/auth';
       } else {
+        // Public route or has session — render normally
         setSupabaseChecked(true);
       }
     });
