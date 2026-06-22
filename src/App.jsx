@@ -37,8 +37,12 @@ const AuthenticatedApp = () => {
     const path = window.location.pathname;
     const publicPaths = ['/', '/auth'];
     const isPublic = publicPaths.includes(path);
+    let checked = false;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const resolve = (session) => {
+      if (checked) return;
+      checked = true;
+
       const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
 
       if (isRecovery) {
@@ -48,18 +52,24 @@ const AuthenticatedApp = () => {
           setSupabaseChecked(true);
         }
       } else if (session && (path === '/auth' || path === '/')) {
-        // Signed in but on a public page — go to dashboard
+        // Signed in on a public page — go to dashboard
         window.location.href = '/home';
       } else if (!session && !isPublic) {
-        // Protected route with no session — send to auth
+        // Protected route, no session — send to auth
         window.location.href = '/auth';
       } else {
+        // Public route (no session) OR protected route with session — render
         setSupabaseChecked(true);
       }
-    });
+    };
 
-    // Listen for sign-in events (email/password + Google OAuth return)
+    // Primary: use onAuthStateChange which fires INITIAL_SESSION reliably
+    // on both desktop and mobile (including after logout + refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'INITIAL_SESSION') {
+        resolve(session);
+        return;
+      }
       if (event === 'SIGNED_IN' && session) {
         const currentPath = window.location.pathname;
         if (currentPath === '/auth' || currentPath === '/') {
@@ -68,7 +78,28 @@ const AuthenticatedApp = () => {
       }
     });
 
-    return () => subscription?.unsubscribe();
+    // Fallback: getSession() in case INITIAL_SESSION doesn't fire within 2s
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setTimeout(() => resolve(session), 0);
+    });
+
+    // Safety net: never stay stuck loading beyond 3 seconds
+    const safetyTimer = setTimeout(() => {
+      if (!checked) {
+        checked = true;
+        const currentPath = window.location.pathname;
+        if (!publicPaths.includes(currentPath)) {
+          window.location.href = '/auth';
+        } else {
+          setSupabaseChecked(true);
+        }
+      }
+    }, 3000);
+
+    return () => {
+      subscription?.unsubscribe();
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
   if (!supabaseChecked) {
