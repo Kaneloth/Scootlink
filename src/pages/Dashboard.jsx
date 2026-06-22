@@ -280,11 +280,7 @@ export default function Dashboard() {
   const driverPendingConfRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'awaiting_driver_confirmation');
   const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
 
-  // Unsubscribed users see 'both' as a full preview so they can explore
-  // owner AND driver features before choosing a plan.
-  const accountType = user?.subscription_active
-    ? (user?.subscription_plan || 'driver')
-    : 'both';
+  const accountType = user?.account_type || 'both';
 
   const scrollToSection = (ref) => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -841,7 +837,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         </div>
       )}
 
-      {user?.subscription_active ? (
+      {user ? (
         ownerActiveRentals.length > 0 ? (
           <div className="space-y-3">
             {ownerActiveRentals.map(r => {
@@ -897,8 +893,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       ) : (
         <Card className="p-4 border border-primary/20 bg-primary/5 flex items-center gap-3">
           <Crown className="w-5 h-5 text-primary shrink-0" />
-          <div className="flex-1"><p className="text-sm font-medium">Subscribe to manage rental assignments</p><p className="text-xs text-muted-foreground">Plans from R 39/month</p></div>
-          <Link to="/settings?tab=plan"><Button size="sm">Subscribe</Button></Link>
+          <div className="flex-1"><p className="text-sm font-medium">Manage rental assignments</p><p className="text-xs text-muted-foreground">View and manage your active rentals</p></div>
         </Card>
       )}
     </>
@@ -911,11 +906,11 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         <div className="space-y-3">
           {availableForMe.map(v => {
             const isAdminUser = ['kanelothelejane@gmail.com'].includes(user?.email);
-            const canRent = isAdminUser || user?.subscription_active;
+            const canRent = true; // credits checked at rental request stage
             return canRent ? (
               <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
             ) : (
-              <VehicleCard key={v.id} vehicle={v} onClick={() => toast.warning('Subscribe to rent vehicles')} />
+              <VehicleCard key={v.id} vehicle={v} />
             );
           })}
         </div>
@@ -1091,15 +1086,6 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         </Card>
       )}
 
-      {user && user.onboarding_completed && !user.subscription_active && (
-        <Card className="p-4 border-2 border-primary/30 bg-primary/5 mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Crown className="w-5 h-5 text-primary shrink-0" />
-            <div><p className="text-sm font-semibold text-foreground">Subscribe to unlock full access</p><p className="text-xs text-muted-foreground">Plans from R 39/month</p></div>
-          </div>
-          <Link to="/settings?tab=plan"><Button size="sm" className="shrink-0">Subscribe</Button></Link>
-        </Card>
-      )}
 
      
 
@@ -1187,8 +1173,8 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           currentYear={currentYear}
           onClose={() => setSelectedDriver(null)}
           onMessage={(id) => { setSelectedDriver(null); navigate(`/messages?userId=${id}`); }}
-          canMessage={['kanelothelejane@gmail.com'].includes(user?.email) || Boolean(user?.subscription_active)}
-          onMessageBlocked={() => toast.warning('You need an active subscription to message drivers')}
+          canMessage={true}
+          onMessageBlocked={() => toast.warning('You need credits to send messages')}
         />,
         document.body
       )}
@@ -1199,8 +1185,8 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           currentYear={currentYear}
           onClose={() => setSelectedOwner(null)}
           onMessage={(id) => { setSelectedOwner(null); navigate(`/messages?userId=${id}`); }}
-          canMessage={['kanelothelejane@gmail.com'].includes(user?.email) || Boolean(user?.subscription_active)}
-          onMessageBlocked={() => toast.warning('You need an active subscription to message owners')}
+          canMessage={true}
+          onMessageBlocked={() => toast.warning('You need credits to send messages')}
         />,
         document.body
       )}

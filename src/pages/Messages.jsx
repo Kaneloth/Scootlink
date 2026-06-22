@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { sendSMS } from '@/lib/sms';
+import { supabase as supabaseClient } from '@/api/supabaseClient';
 
 // ── localStorage helpers for client-side "delete for me" ─────────────────────
 const HIDDEN_KEY       = (uid) => `scootlink_hidden_msgs_${uid}`;
@@ -393,13 +394,24 @@ export default function Messages() {
 
   // ── Send — with optimistic update ────────────────────────────────────────
   const isAdmin      = ['kanelothelejane@gmail.com'].includes(user?.email);
-  const canMessage   = isAdmin || Boolean(user?.subscription_active);
-  // showLocked: show locked conversation previews / chat lock for unsubscribed users
+  const [creditBalance, setCreditBalance] = React.useState(null);
+
+  // Fetch credit balance once user is loaded
+  React.useEffect(() => {
+    if (!user?.id) return;
+    supabase.rpc('get_credit_balance', { p_user_id: user.id })
+      .then(({ data }) => setCreditBalance(data ?? 0));
+  }, [user?.id]);
+
+  const canMessage   = isAdmin || (creditBalance !== null && creditBalance >= 3);
   const isSubscribed = canMessage;
 
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedChat) return;
-    if (!canMessage) { toast.warning('You need an active subscription to send messages'); return; }
+    if (!canMessage) {
+      toast.warning('You need at least 3 credits to send messages. Tap your credit balance to buy more.');
+      return;
+    }
 
     const tempId      = `temp-${Date.now()}`;
     const msgBody     = newMessage.trim();
@@ -419,6 +431,31 @@ export default function Messages() {
     setNewMessage('');
 
     setLoading(true);
+
+    // Deduct 3 credits for starting/replying to a chat (first message check)
+    if (!isAdmin) {
+      const isNewConversation = !conversations.some(c => c.otherUserId === selectedChat.otherUserId);
+      const sentBefore = messages.some(m => m.sender_id === user.id && !m._temp);
+      if (isNewConversation || !sentBefore) {
+        const { error: creditErr } = await supabase.rpc('deduct_credits', {
+          p_user_id:     user.id,
+          p_amount:      3,
+          p_type:        'spend',
+          p_description: `Message to ${selectedChat.otherUserName}`,
+          p_ref_id:      selectedChat.otherUserId,
+        });
+        if (creditErr?.message?.includes('insufficient_credits')) {
+          setMessages((prev) => prev.filter((m) => m.id !== tempId));
+          setNewMessage(msgBody);
+          toast.error('Not enough credits. Tap your balance to buy more.');
+          setLoading(false);
+          return;
+        }
+        // Refresh balance in header
+        setCreditBalance(prev => Math.max(0, (prev ?? 0) - 3));
+      }
+    }
+
     const { data: inserted, error } = await supabase
       .from('messages')
       .insert([{ sender_id: user.id, receiver_id: selectedChat.otherUserId, body: msgBody }])
@@ -452,7 +489,7 @@ export default function Messages() {
   // ── New chat ──────────────────────────────────────────────────────────────
   const handleNewChat = async () => {
     if (!newChatEmail.trim()) return;
-    if (!canMessage) { toast.warning('Subscribe to start new conversations'); return; }
+    if (!canMessage) { toast.warning('You need at least 3 credits to start a conversation. Tap your credit balance to buy more.'); return; }
     const { data, error } = await supabase
       .from('profiles').select('id, full_name, email').eq('email', newChatEmail.trim()).single();
     if (error || !data) { toast.error('User not found'); return; }
@@ -580,7 +617,7 @@ export default function Messages() {
             </div>
             <button
               onClick={() => {
-                if (!canMessage) { toast.warning('Subscribe to start new conversations'); return; }
+                if (!canMessage) { toast.warning('You need at least 3 credits to start a conversation. Tap your credit balance to buy more.'); return; }
                 setStartNewChat(!startNewChat);
               }}
               className="flex items-center gap-1 text-sm text-primary hover:underline"
@@ -635,7 +672,7 @@ export default function Messages() {
                           </p>
                         ) : (
                           <p className="text-xs text-primary/70 flex items-center gap-1 font-medium">
-                            <Lock className="w-3 h-3 shrink-0" /> Subscribe to read
+                            <Lock className="w-3 h-3 shrink-0" /> Buy credits to message
                           </p>
                         )}
                       </div>
@@ -692,12 +729,9 @@ export default function Messages() {
                 <div>
                   <p className="font-semibold text-foreground">Messages are locked</p>
                   <p className="text-sm text-muted-foreground mt-1 max-w-[240px] leading-snug">
-                    Subscribe and verify your identity to read and reply to messages.
+                    You need at least 3 credits to send messages. Tap your credit balance in the header to buy more.
                   </p>
                 </div>
-                <Button size="sm" className="mt-1" onClick={() => navigate('/subscription')}>
-                  View Plans
-                </Button>
               </div>
             ) : (
               visibleMessages.map((msg) => {
