@@ -34,32 +34,41 @@ const AuthenticatedApp = () => {
   const [supabaseChecked, setSupabaseChecked] = React.useState(false);
 
   React.useEffect(() => {
+    const path = window.location.pathname;
+    const publicPaths = ['/', '/auth'];
+    const isPublic = publicPaths.includes(path);
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
-      const path = window.location.pathname;
-
-      // Public routes — never redirect these, always show as-is
-      const publicPaths = ['/landing', '/auth'];
-      const isPublic = publicPaths.includes(path) || path === '/';
 
       if (isRecovery) {
-        // Always land on /auth so Auth.jsx can show the Set New Password form.
         if (path !== '/auth') {
           window.location.href = '/auth';
         } else {
           setSupabaseChecked(true);
         }
-      } else if (session && path === '/auth') {
-        // Returning from Google OAuth or already signed in — go to dashboard
+      } else if (session && (path === '/auth' || path === '/')) {
+        // Signed in but on a public page — go to dashboard
         window.location.href = '/home';
       } else if (!session && !isPublic) {
         // Protected route with no session — send to auth
         window.location.href = '/auth';
       } else {
-        // Public route or has session — render normally
         setSupabaseChecked(true);
       }
     });
+
+    // Listen for sign-in events (email/password + Google OAuth return)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        const currentPath = window.location.pathname;
+        if (currentPath === '/auth' || currentPath === '/') {
+          window.location.href = '/home';
+        }
+      }
+    });
+
+    return () => subscription?.unsubscribe();
   }, []);
 
   if (!supabaseChecked) {
