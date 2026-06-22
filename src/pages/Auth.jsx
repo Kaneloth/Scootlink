@@ -340,6 +340,7 @@ export default function Auth() {
         }
       }
       setUser({ id: session.user.id, email: session.user.email });
+      setLoading(false);
       window.location.href = '/home';
     } catch (err) {
       if (err.code === 'no-session' || err.code === 'session-expired') {
@@ -408,6 +409,7 @@ export default function Auth() {
 
   // ── Password login ────────────────────────────────────────────────────────
   const handleLogin = async () => {
+    if (loading) return;
     if (!loginEmail || !loginPassword) { toast.error('Please fill in all fields'); return; }
     setUnconfirmedEmail('');
     setLoading(true);
@@ -466,6 +468,7 @@ export default function Auth() {
       saveBiometricRefreshToken(data.session);
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       setUser({ id: data.user.id, email: data.user.email });
+      setLoading(false);
       window.location.href = '/home';
     } catch (err) {
       toast.error(err.message || 'Login failed');
