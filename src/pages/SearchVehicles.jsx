@@ -253,7 +253,6 @@ export default function SearchVehicles() {
                   ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} loaded`
                   : 'No vehicles found'
         }
-        backTo="/"
         action={
           <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="gap-2">
             <SlidersHorizontal className="w-4 h-4" /> Filters

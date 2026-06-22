@@ -279,7 +279,6 @@ export default function FindDrivers() {
               ? `${drivers.length} driver${drivers.length !== 1 ? 's' : ''} within ${filters.radius} km`
               : `${drivers.length} driver${drivers.length !== 1 ? 's' : ''} found`
         }
-        backTo="/"
         action={
           <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="gap-2">
             <SlidersHorizontal className="w-4 h-4" /> Filters
