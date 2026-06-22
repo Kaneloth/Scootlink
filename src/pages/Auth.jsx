@@ -506,11 +506,19 @@ export default function Auth() {
     setLoading(true);
     sessionStorage.removeItem('skootlink_recovery');
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: window.location.origin + '/auth' },
+        options: {
+          redirectTo: window.location.origin + '/auth',
+          skipBrowserRedirect: true,
+        },
       });
       if (error) throw error;
+      if (data?.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error('No redirect URL returned from Google sign-in');
+      }
     } catch (err) {
       toast.error(err.message || 'Google sign-in failed');
       setLoading(false);

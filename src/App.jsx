@@ -66,7 +66,7 @@ function AppRoutes() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session && location.pathname === '/auth') {
+      if (session && window.location.pathname === '/auth') {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
         if (!isBiometricLock) navigate('/home', { replace: true });
       }
@@ -76,12 +76,14 @@ function AppRoutes() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
         const isBiometricLock = localStorage.getItem('scootlink_signin_method') === 'biometric';
-        if (!isBiometricLock) navigate('/home', { replace: true });
+        if (!isBiometricLock && window.location.pathname === '/auth') {
+          navigate('/home', { replace: true });
+        }
       }
     });
 
     return () => subscription?.unsubscribe();
-  }, [navigate, location.pathname]);
+  }, [navigate]);
 
   // Show a brief loading screen while checking the session
   if (!authReady) {
