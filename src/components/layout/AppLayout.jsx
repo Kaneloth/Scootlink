@@ -241,7 +241,6 @@ export default function AppLayout() {
   const [isBlacklisted, setIsBlacklisted] = useState(false);
 
   const prevLocationRef = useRef(location.pathname);
-  const accountTypeRef = useRef('driver');
 
   // ── Strip swipe state ──────────────────────────────────────────────────
   const isTabRoute = TAB_PATHS.includes(location.pathname);
@@ -253,7 +252,6 @@ export default function AppLayout() {
 
   const mainRef = useRef(null);
   const accountTypeRef = useRef('driver');
-  useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
   // ── Touch handlers ─────────────────────────────────────────────────────
   const onTouchStart = useCallback((e) => {
