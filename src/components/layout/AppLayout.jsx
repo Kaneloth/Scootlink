@@ -63,7 +63,11 @@ function VerificationGate({ user, userLoading, children }) {
   const navigate  = useNavigate();
 
   if (userLoading) return null; // wait — avoids flash of gate before user loads
-  if (!user) return children;  // not logged in, router handles the auth redirect
+  if (!user) {
+    // Not logged in — redirect to auth
+    window.location.replace('/auth');
+    return null;
+  }
 
   const isAdmin   = ADMIN_EMAILS.includes(user.email);
   const isExempt  = GATE_EXEMPT.some((p) => location.pathname.startsWith(p));
