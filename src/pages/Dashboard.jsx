@@ -905,7 +905,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       {availableForMe.length > 0 ? (
         <div className="space-y-3">
           {availableForMe.map(v => {
-            const isAdminUser = ['kanelothelejane@gmail.com'].includes(user?.email);
+            const isAdminUser = user?.user_metadata?.is_admin === true || ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
             const canRent = true; // credits checked at rental request stage
             return canRent ? (
               <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />

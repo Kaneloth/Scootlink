@@ -103,7 +103,7 @@ function VerificationGate({ user, userLoading, children }) {
     return null;
   }
 
-  const isAdmin   = ADMIN_EMAILS.includes(user.email);
+  const isAdmin   = user?.user_metadata?.is_admin === true || ADMIN_EMAILS.includes(user.email);
   const isExempt  = GATE_EXEMPT.some((p) => location.pathname.startsWith(p));
   if (isAdmin || isExempt) return children;
 

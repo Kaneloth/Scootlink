@@ -393,7 +393,7 @@ export default function Messages() {
   const closeChat = () => setSelectedChat(null);
 
   // ── Send — with optimistic update ────────────────────────────────────────
-  const isAdmin      = ['kanelothelejane@gmail.com'].includes(user?.email);
+  const isAdmin      = user?.user_metadata?.is_admin === true || ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
   const [creditBalance, setCreditBalance] = React.useState(null);
 
   // Fetch credit balance once user is loaded

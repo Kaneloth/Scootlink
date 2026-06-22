@@ -679,7 +679,7 @@ export default function Settings() {
 
   // ── Admin helpers ─────────────────────────────────────────────────────────
 
-  const isAdmin = user && ADMIN_EMAILS.includes(user.email);
+  const isAdmin = user && (user?.user_metadata?.is_admin === true || ADMIN_EMAILS.includes(user.email));
 
   const fetchAdminUsers = async () => {
     setLoadingAdminUsers(true);
