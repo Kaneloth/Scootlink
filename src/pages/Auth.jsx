@@ -466,7 +466,13 @@ export default function Auth() {
         }
       }
       saveBiometricRefreshToken(data.session);
-      if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
+      // FIX: was `await setTokenCookie(...)` — awaiting this with no timeout meant
+      // that if the Netlify function was slow or unreachable on mobile (network hiccup,
+      // cold start, SameSite=Strict cookie policy on certain Android browsers), the
+      // fetch would hang indefinitely, the finally block would never run, and `loading`
+      // would stay true forever — causing the permanent spinner on mobile.
+      // The cookie is only for biometric convenience, not required to complete sign-in.
+      if (data.session?.refresh_token) setTokenCookie(data.session.refresh_token).catch(() => {});
       setUser({ id: data.user.id, email: data.user.email });
       setLoading(false);
       navigate('/home');
