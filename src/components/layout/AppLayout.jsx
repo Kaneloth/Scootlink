@@ -173,42 +173,43 @@ function MobileHeader() {
       <div className="flex items-center gap-3">
         <CreditBalance />
         <div className="relative" ref={dropdownRef}>
-        <button
-          onClick={() => setOpen(v => !v)}
-          className={`w-11 h-11 rounded-full flex items-center justify-center border-2 transition-colors ${open ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-foreground'}`}
-          style={{ touchAction: 'manipulation' }}
-          aria-label="Account menu"
-        >
-          <User className="w-5 h-5" />
-        </button>
+          <button
+            onClick={() => setOpen(v => !v)}
+            className={`w-11 h-11 rounded-full flex items-center justify-center border-2 transition-colors ${open ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-foreground'}`}
+            style={{ touchAction: 'manipulation' }}
+            aria-label="Account menu"
+          >
+            <User className="w-5 h-5" />
+          </button>
 
-        {open && (
-          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden z-50">
-            <button
-              onClick={() => { setOpen(false); navigate('/profile'); }}
-              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
-            >
-              <User className="w-4 h-4 text-muted-foreground" />
-              Profile
-            </button>
-            <div className="border-t border-border" />
-            <button
-              onClick={() => { setOpen(false); navigate('/settings'); }}
-              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
-            >
-              <Settings className="w-4 h-4 text-muted-foreground" />
-              Settings
-            </button>
-            <div className="border-t border-border" />
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-destructive/10 text-destructive transition-colors text-left"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </button>
-          </div>
-        )}
+          {open && (
+            <div className="absolute right-0 mt-2 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden z-50">
+              <button
+                onClick={() => { setOpen(false); navigate('/profile'); }}
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
+              >
+                <User className="w-4 h-4 text-muted-foreground" />
+                Profile
+              </button>
+              <div className="border-t border-border" />
+              <button
+                onClick={() => { setOpen(false); navigate('/settings'); }}
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
+              >
+                <Settings className="w-4 h-4 text-muted-foreground" />
+                Settings
+              </button>
+              <div className="border-t border-border" />
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-destructive/10 text-destructive transition-colors text-left"
+              >
+                <LogOut className="w-4 h-4" />
+                Logout
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
