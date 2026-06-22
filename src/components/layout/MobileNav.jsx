@@ -4,7 +4,7 @@ import { LayoutDashboard, Search, MapPin, Briefcase, MessageCircle } from 'lucid
 import { supabase } from '@/api/supabaseClient';
 
 const baseItems = [
-  { label: 'Home',     icon: LayoutDashboard, path: '/'                },
+  { label: 'Home',     icon: LayoutDashboard, path: '/home'            },
   { label: 'Search',   icon: Search,          path: '/search-vehicles' },
   { label: 'Track',    icon: MapPin,          path: '/tracking'        },
   { icon: Briefcase, label: 'Briefcase', path: '/briefcase' },
@@ -18,10 +18,9 @@ export default function MobileNav() {
   const userIdRef                          = useRef(null);
 
   // ── Resolve user ID and account type from Supabase auth directly ──────────
-  // Resolve effective account type: unsubscribed users get 'both' as a preview
+  // Resolve effective account type from profile
   const resolveAccountType = (userMeta) => {
-    if (!userMeta?.subscription_active) return 'both';
-    return userMeta?.subscription_plan || 'driver';
+    return userMeta?.account_type || 'both';
   };
 
   useEffect(() => {
