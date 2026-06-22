@@ -37,12 +37,16 @@ const AuthenticatedApp = () => {
   React.useEffect(() => {
     const path = window.location.pathname;
     const publicPaths = ['/', '/auth'];
-    let resolved = false;
 
-    const resolve = (session) => {
-      if (resolved) return;
-      resolved = true;
+    // Safety net — never stay stuck beyond 5 seconds on mobile
+    const timer = setTimeout(() => {
+      setSupabaseChecked(true);
+    }, 5000);
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(timer);
       const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
+
       if (isRecovery) {
         if (path !== '/auth') {
           window.location.href = '/auth';
@@ -51,45 +55,18 @@ const AuthenticatedApp = () => {
         }
       } else if (session && path === '/auth') {
         setTimeout(() => { window.location.href = '/home'; }, 300);
-      } else if (session && path === '/home') {
-        // Already have session and going to /home — just render
-        setSupabaseChecked(true);
       } else if (!session && !publicPaths.includes(path)) {
         window.location.href = '/auth';
       } else {
         setSupabaseChecked(true);
       }
-    };
-
-    // Primary: getSession (fast, uses cached token)
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => resolve(session))
-      .catch(() => resolve(null));
-
-    // Fallback: onAuthStateChange catches cases where getSession()
-    // returns null on mobile but the session is available moments later
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        resolve(session);
-      }
+    }).catch(() => {
+      clearTimeout(timer);
+      // On error, show the page — better than stuck loading forever
+      setSupabaseChecked(true);
     });
 
-    // Hard safety net — 6 seconds max, then unblock
-    const timer = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        if (publicPaths.includes(path)) {
-          setSupabaseChecked(true);
-        } else {
-          window.location.href = '/auth';
-        }
-      }
-    }, 6000);
-
-    return () => {
-      subscription?.unsubscribe();
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, []);
 
   if (!supabaseChecked) {
