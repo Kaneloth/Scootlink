@@ -29,14 +29,18 @@ import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 
 function App() {
-  // Catch PASSWORD_RECOVERY before any component mounts
-  useMemo(() => {
+  // FIX: was useMemo — useMemo is for computed values, not side effects.
+  // useMemo has no cleanup phase, so every re-render (especially on mobile
+  // after orientation changes or background/foreground switches) was creating
+  // a new subscription that was never removed, causing multiple listeners to
+  // pile up and interfere with each other.
+  useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
       }
     });
-    return subscription;
+    return () => subscription.unsubscribe();
   }, []);
 
   // Apply saved theme
