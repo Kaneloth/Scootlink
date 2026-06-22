@@ -49,7 +49,7 @@ export const handler = async (event) => {
     merchant_key:     MERCHANT_KEY,
     return_url:       `${SITE_URL}/credits?payment=success`,
     cancel_url:       `${SITE_URL}/credits?payment=cancelled`,
-    notify_url:       `${SITE_URL}/.netlify/functions/payfast-webhook`,
+    notify_url:       `https://hkdk.events/ej5pgh02nhm47r`,
     name_first:       firstName,
     email_address:    user.email,
     m_payment_id,
