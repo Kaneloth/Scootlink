@@ -35,27 +35,38 @@ const AuthenticatedApp = () => {
   const [supabaseChecked, setSupabaseChecked] = React.useState(false);
 
   React.useEffect(() => {
+    const path = window.location.pathname;
+    const publicPaths = ['/', '/auth'];
+
+    // Safety net — never stay stuck beyond 5 seconds on mobile
+    const timer = setTimeout(() => {
+      setSupabaseChecked(true);
+    }, 5000);
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(timer);
       const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
 
       if (isRecovery) {
-        // Always land on /auth so Auth.jsx can show the Set New Password form.
-        // Do NOT redirect to dashboard even if a session exists.
-        if (window.location.pathname !== '/auth') {
+        if (path !== '/auth') {
           window.location.href = '/auth';
         } else {
           setSupabaseChecked(true);
         }
-      } else if (session && window.location.pathname === '/auth') {
-        // Signed in — go to dashboard
+      } else if (session && path === '/auth') {
         window.location.href = '/home';
-      } else if (!session && window.location.pathname !== '/auth' && window.location.pathname !== '/') {
-        // Not signed in and not on a public page — redirect to auth
+      } else if (!session && !publicPaths.includes(path)) {
         window.location.href = '/auth';
       } else {
         setSupabaseChecked(true);
       }
+    }).catch(() => {
+      clearTimeout(timer);
+      // On error, show the page — better than stuck loading forever
+      setSupabaseChecked(true);
     });
+
+    return () => clearTimeout(timer);
   }, []);
 
   if (!supabaseChecked) {
