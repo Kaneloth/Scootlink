@@ -20,6 +20,7 @@ import EditVehicle from '@/pages/EditVehicle';
 import RentalRequest from '@/pages/RentalRequest';
 import Tracking from '@/pages/Tracking';
 import Wallet from '@/pages/Wallet';
+import MyBriefcase from '@/pages/MyBriefcase';
 import Settings from '@/pages/Settings';
 import Profile from '@/pages/Profile';
 import Onboarding from '@/pages/Onboarding';
@@ -93,6 +94,7 @@ const AuthenticatedApp = () => {
         <Route path="/edit-vehicle" element={<EditVehicle />} />
         <Route path="/rental-request" element={<RentalRequest />} />
         <Route path="/tracking" element={<Tracking />} />
+        <Route path="/briefcase" element={<MyBriefcase />} />
         <Route path="/wallet" element={<Wallet />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
