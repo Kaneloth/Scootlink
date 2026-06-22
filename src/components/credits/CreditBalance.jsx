@@ -115,6 +115,7 @@ function PurchaseModal({ balance, onClose }) {
     <div
       className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ touchAction: 'none' }}
     >
       <div className="bg-background rounded-2xl w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
@@ -125,8 +126,8 @@ function PurchaseModal({ balance, onClose }) {
               Balance: <span className="font-semibold text-primary">{balance} credits</span>
             </p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
-            <X className="w-4 h-4 text-muted-foreground" />
+          <button onClick={onClose} className="p-3 rounded-lg hover:bg-muted transition-colors -mr-1" style={{ minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation' }}>
+            <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
 
