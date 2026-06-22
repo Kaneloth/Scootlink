@@ -35,25 +35,30 @@ const AuthenticatedApp = () => {
   const [supabaseChecked, setSupabaseChecked] = React.useState(false);
 
   React.useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
-      const path = window.location.pathname;
-      const publicPaths = ['/', '/auth'];
+    const path = window.location.pathname;
+    const publicPaths = ['/', '/auth'];
 
+    // For public pages, render immediately — no need to wait for session
+    if (publicPaths.includes(path)) {
+      setSupabaseChecked(true);
+      return;
+    }
+
+    // For protected pages, check session first
+    const timer = setTimeout(() => setSupabaseChecked(true), 5000);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(timer);
+      const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
       if (isRecovery) {
-        if (path !== '/auth') {
-          window.location.href = '/auth';
-        } else {
-          setSupabaseChecked(true);
-        }
-      } else if (!session && !publicPaths.includes(path)) {
-        // Protected route with no session — send to auth
+        window.location.href = '/auth';
+      } else if (!session) {
         window.location.href = '/auth';
       } else {
-        // Public page, or has a valid session — render normally
         setSupabaseChecked(true);
       }
-    }).catch(() => setSupabaseChecked(true));
+    }).catch(() => { clearTimeout(timer); setSupabaseChecked(true); });
+
+    return () => clearTimeout(timer);
   }, []);
 
   if (!supabaseChecked) {
