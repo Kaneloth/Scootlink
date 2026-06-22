@@ -239,16 +239,9 @@ export default function AppLayout() {
       }
     });
 
-    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthLoading(false);
       setAuthUser(session?.user ?? null);
-      // After sign-in redirect to /home if still on a public page
-      if (event === 'SIGNED_IN' && session) {
-        const p = window.location.pathname;
-        if (p === '/auth' || p === '/') {
-          window.location.href = '/home';
-        }
-      }
     });
 
     return () => authSub?.unsubscribe();
