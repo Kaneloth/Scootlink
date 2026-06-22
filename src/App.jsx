@@ -23,7 +23,7 @@ import Wallet from '@/pages/Wallet';
 import Settings from '@/pages/Settings';
 import Profile from '@/pages/Profile';
 import Onboarding from '@/pages/Onboarding';
-import Subscription from '@/pages/Subscription';
+import Credits from '@/pages/Credits';
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 
@@ -82,7 +82,7 @@ const AuthenticatedApp = () => {
 
       {/* Full-screen flows (no sidebar) */}
       <Route path="/onboarding" element={<Onboarding />} />
-      <Route path="/subscription" element={<Subscription />} />
+      <Route path="/credits" element={<Credits />} />
 
       {/* Main app with layout */}
       <Route element={<AppLayout />}>

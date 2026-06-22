@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Bike, User, Settings, LogOut } from 'lucide-react';
+import CreditBalance from '@/components/credits/CreditBalance';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
@@ -86,7 +87,7 @@ function NavigationProgressBar({ pathname }) {
 }
 
 // ─── Verification gate ────────────────────────────────────────────────────
-const GATE_EXEMPT = ['/onboarding', '/subscription', '/settings', '/profile'];
+const GATE_EXEMPT = ['/onboarding', '/settings', '/profile', '/credits'];
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 function VerificationGate({ user, userLoading, children }) {
@@ -169,7 +170,9 @@ function MobileHeader() {
         <span className="text-base font-bold text-foreground">Skootlink</span>
       </Link>
 
-      <div className="relative" ref={dropdownRef}>
+      <div className="flex items-center gap-3">
+        <CreditBalance />
+        <div className="relative" ref={dropdownRef}>
         <button
           onClick={() => setOpen(v => !v)}
           className={`w-11 h-11 rounded-full flex items-center justify-center border-2 transition-colors ${open ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-foreground'}`}

@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/card';
 import { Send, AlertTriangle } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import VehicleCard from '@/components/vehicles/VehicleCard';
-import SubscriptionGate from '@/components/subscription/SubscriptionGate';
+import CreditGate from '@/components/credits/CreditGate';
 import { toast } from 'sonner';
 
 export default function RentalRequest() {
@@ -102,7 +102,7 @@ export default function RentalRequest() {
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <PageHeader title="Propose Rental" subtitle="Send a rental request to the owner" backTo="/search-vehicles" />
-      <SubscriptionGate user={user} loading={user === null}>
+      <CreditGate required={3} message="You need at least 3 credits to send a rental proposal">
 
         <VehicleCard vehicle={vehicle} showPrice={true} />
 
@@ -156,7 +156,7 @@ export default function RentalRequest() {
             </Button>
           </div>
         </Card>
-      </SubscriptionGate>
+      </CreditGate>
     </div>
   );
 }

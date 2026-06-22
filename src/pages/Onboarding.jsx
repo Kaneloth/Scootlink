@@ -222,7 +222,6 @@ export default function Onboarding() {
     location:             buildLocation(),
     residential_address:  form.residential_address,
     onboarding_completed: true,
-    subscription_active:  false,
     customer_code:        generateCustomerCode(),
   });
 
@@ -253,13 +252,8 @@ export default function Onboarding() {
         }).eq('id', authUser.id);
       }
       await saveGeoLocation(buildLocation(), authUser?.id);
-      if (destination === 'subscription') {
-        toast.success('Profile set up! Choose a plan to unlock full access.');
-        navigate('/subscription');
-      } else {
-        toast.success('Profile saved! You can subscribe any time from Settings.');
-        navigate('/');
-      }
+      toast.success('Profile saved! Welcome to Skootlink.');
+      navigate('/home');
     } catch (err) {
       toast.error('Failed to save: ' + err.message);
     } finally {
@@ -270,7 +264,7 @@ export default function Onboarding() {
   const nextStep = () => {
     if (step === 1 && !validatePersonal()) return;
     if (step < STEPS.length - 1) { setStep(s => s + 1); return; }
-    saveAndNavigate('subscription');
+    saveAndNavigate('home');
   };
 
   const currentStep = STEPS[step];
@@ -356,7 +350,7 @@ export default function Onboarding() {
               <div className="flex items-start gap-2.5 bg-muted/50 rounded-xl p-3.5">
                 <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Driver's licence verification is done when you subscribe — not at registration.
+                  Driver's licence verification costs 30 credits and can be done from Settings.
                   You can browse and list vehicles right after completing setup.
                 </p>
               </div>
@@ -511,14 +505,14 @@ export default function Onboarding() {
                   Continue <ArrowRight className="w-4 h-4" />
                 </Button>
               ) : (
-                <Button onClick={() => saveAndNavigate('subscription')} className="gap-2" disabled={saving}>
+                <Button onClick={() => saveAndNavigate('home')} className="gap-2" disabled={saving}>
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                  {saving ? 'Saving...' : 'Subscribe & Get Started'}
+                  {saving ? 'Saving...' : 'Get Started'}
                 </Button>
               )}
             </div>
 
-            {/* Skip subscription — only shown on the final step */}
+            {/* Skip — only shown on the final step */}
             {step === STEPS.length - 1 && (
               <Button
                 variant="ghost"
@@ -527,7 +521,7 @@ export default function Onboarding() {
                 onClick={() => saveAndNavigate('home')}
                 disabled={saving}
               >
-                Skip subscription for now
+                Skip for now
               </Button>
             )}
           </div>

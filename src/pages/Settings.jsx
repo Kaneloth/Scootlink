@@ -9,11 +9,12 @@ import { Card } from '@/components/ui/card';
 import {
   Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
-  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload,
+  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins,
 } from 'lucide-react';
 import { sendSMS } from '@/lib/sms';
 
 import { toast } from 'sonner';
+import { useCredits } from '@/hooks/useCredits';
 
 // Text size options stored as root font-size in px
 const TEXT_SIZES = [
@@ -25,28 +26,11 @@ const TEXT_SIZES = [
 // ── Put your admin email(s) here ────────────────────────────────────────────
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
-const PLANS = [
-  {
-    id: 'driver', name: 'Driver', icon: Bike,
-    prices: { monthly: 39, '6month': 199, annual: 349 },
-    features: ['Search & rent vehicles', 'GPS Tracking access', 'Wallet & payments', 'Up to 2 active rentals', 'Driver profile & reviews'],
-  },
-  {
-    id: 'owner', name: 'Owner', icon: Crown, popular: true,
-    prices: { monthly: 49, '6month': 249, annual: 449 },
-    features: ['List unlimited vehicles', 'Find & hire drivers', 'Real-time GPS tracking', 'Wallet & payouts', 'Priority listing visibility', 'Owner analytics dashboard'],
-  },
-  {
-    id: 'both', name: 'Fleet Pro', icon: Users,
-    prices: { monthly: 59, '6month': 299, annual: 549 },
-    features: ['Everything in Owner +', 'Unlimited active rentals', 'Drive other vehicles too', 'Multi-vehicle fleet management', 'Priority support', 'Advanced analytics'],
-  },
-];
-
-const BILLING_OPTIONS = [
-  { id: 'monthly', label: 'Monthly',  saving: null,  days: 30  },
-  { id: '6month',  label: '6 Months', saving: '15%', days: 180 },
-  { id: 'annual',  label: 'Annual',   saving: '25%', days: 365 },
+const CREDIT_PACKAGES = [
+  { id: 'starter',  label: 'Starter Pack',  price: 29,  credits: 10  },
+  { id: 'standard', label: 'Standard Pack', price: 49,  credits: 30, popular: true },
+  { id: 'pro',      label: 'Pro Pack',      price: 79,  credits: 60  },
+  { id: 'business', label: 'Business Pack', price: 199, credits: 200 },
 ];
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
@@ -148,6 +132,105 @@ async function deleteAccount(accessToken) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+// ── Inline credits widget for Settings tab ────────────────────────────────
+function CreditBalanceWidget() {
+  const { balance, loading, refetch } = useCredits();
+  const [purchasing, setPurchasing] = React.useState(null);
+
+  const handlePurchase = async (pkg) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) { toast.error('Please sign in first.'); return; }
+    setPurchasing(pkg.id);
+    try {
+      const res = await fetch('/.netlify/functions/payfast-initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ package_id: pkg.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not start payment');
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = data.action_url;
+      Object.entries(data.fields).forEach(([key, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = key; input.value = value;
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err) {
+      toast.error(err.message || 'Could not start payment.');
+      setPurchasing(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Balance */}
+      <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20">
+        <div>
+          <p className="text-xs text-muted-foreground">Your credit balance</p>
+          {loading
+            ? <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin mt-1" />
+            : <p className="text-3xl font-bold text-primary">{balance}</p>
+          }
+          <p className="text-xs text-muted-foreground mt-0.5">credits · never expire</p>
+        </div>
+        <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+          <Coins className="w-6 h-6 text-primary" />
+        </div>
+      </div>
+
+      {/* What credits cost */}
+      <div className="p-3 rounded-xl bg-muted/50 border border-border/50 space-y-1.5">
+        <p className="text-xs font-semibold text-foreground">Credit costs:</p>
+        {[
+          ['Start or reply to a new chat', 3],
+          ['List a vehicle', 10],
+          ['Access rental agreement', 30],
+          ['ID / licence verification', 30],
+        ].map(([action, cost]) => (
+          <div key={action} className="flex justify-between text-xs">
+            <span className="text-muted-foreground">{action}</span>
+            <span className="font-semibold">{cost} cr</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Packages */}
+      <p className="text-sm font-semibold text-foreground">Buy credits</p>
+      <div className="space-y-2">
+        {CREDIT_PACKAGES.map(pkg => (
+          <button
+            key={pkg.id}
+            onClick={() => handlePurchase(pkg)}
+            disabled={purchasing !== null}
+            className={`w-full text-left rounded-2xl border p-4 transition-all hover:border-primary disabled:opacity-60 ${pkg.popular ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-sm">{pkg.label}</p>
+                  {pkg.popular && <span className="text-[10px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">POPULAR</span>}
+                </div>
+                <p className="text-xs text-muted-foreground">{pkg.credits} credits</p>
+              </div>
+              <div className="text-right">
+                <p className="font-bold">R{pkg.price}</p>
+                {purchasing === pkg.id
+                  ? <Loader2 className="w-4 h-4 animate-spin text-primary ml-auto" />
+                  : <p className="text-[10px] text-muted-foreground">R{(pkg.price / pkg.credits).toFixed(2)}/cr</p>
+                }
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -155,9 +238,6 @@ export default function Settings() {
   const [darkMode, setDarkMode] = useState(false);
   const [fontSize, setFontSize] = useState('16px');
   const [signInMethod, setSignInMethod] = useState('password');
-  const [selectedPlan, setSelectedPlan] = useState('driver');
-  const [selectedBilling, setSelectedBilling] = useState('monthly');
-  const [processingPlan, setProcessingPlan] = useState(false);
   const [user, setUser] = useState(null);
   const [notifications, setNotifications] = useState(true);
   const [biometricLoading, setBiometricLoading] = useState(false);
@@ -210,8 +290,6 @@ export default function Settings() {
   const backInputRef  = useRef(null);
 
   // ── Plan tab — cancel subscription ──────────────────────────────────────
-  const [showPlanCancelConfirm, setShowPlanCancelConfirm] = useState(false);
-  const [cancellingPlan, setCancellingPlan] = useState(false);
 
   // ── Identity verification (VerifyNow) ────────────────────────────────────
   const [verifyIdStatus, setVerifyIdStatus] = useState('idle'); // idle | verifying | verified | failed
@@ -226,11 +304,7 @@ export default function Settings() {
     document.documentElement.style.fontSize = savedSize;
     setSignInMethod(localStorage.getItem('scootlink_signin_method') || 'password');
     setNotifications(localStorage.getItem('scootlink_notifications') !== 'false');
-    loadUser().then((u) => {
-      setUser(u);
-      const plan = u?.subscription_plan || u?.account_type || 'driver';
-      setSelectedPlan(plan === 'both' ? 'both' : plan);
-    }).catch(() => {});
+    loadUser().then(setUser).catch(() => {});
   }, []);
 
   const toggleDarkMode = () => {
@@ -441,6 +515,18 @@ export default function Settings() {
       }
     }
 
+    // Deduct 30 credits before verifying
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser) {
+      const { error: creditErr } = await supabase.rpc('deduct_credits', {
+        p_user_id: currentUser.id, p_amount: 30, p_type: 'spend',
+        p_description: 'ID/passport verification', p_ref_id: 'verify-identity',
+      });
+      if (creditErr?.message?.includes('insufficient_credits')) {
+        toast.error('You need 30 credits to verify your identity. Buy more credits in the Credits tab.');
+        return;
+      }
+    }
     setVerifyIdStatus('verifying');
     setVerifyIdMsg('');
     try {
@@ -505,6 +591,18 @@ export default function Settings() {
     if (!licenceFrontFile || !licenceBackFile) {
       toast.error('Please upload both the front and back of your driving licence');
       return;
+    }
+    // Deduct 30 credits before verifying
+    const { data: { user: licUser } } = await supabase.auth.getUser();
+    if (licUser) {
+      const { error: licCreditErr } = await supabase.rpc('deduct_credits', {
+        p_user_id: licUser.id, p_amount: 30, p_type: 'spend',
+        p_description: 'Driving licence verification', p_ref_id: 'verify-licence',
+      });
+      if (licCreditErr?.message?.includes('insufficient_credits')) {
+        toast.error('You need 30 credits to verify your licence. Buy more credits in the Credits tab.');
+        return;
+      }
     }
     setLicencePlanStatus('verifying');
     setLicencePlanMsg('');
@@ -571,25 +669,6 @@ export default function Settings() {
     }
   };
 
-  // ── Plan tab — cancel subscription ───────────────────────────────────────
-
-  const handleCancelPlan = async () => {
-    setCancellingPlan(true);
-    try {
-      await auth.updateMe({
-        subscription_active: false,
-        subscription_expires: new Date().toISOString(),
-      });
-      await supabase.auth.updateUser({ data: { subscription_active: false } });
-      toast.success('Subscription cancelled. You can resubscribe any time.');
-      setUser(await loadUser());
-      setShowPlanCancelConfirm(false);
-    } catch {
-      toast.error('Failed to cancel subscription. Please try again.');
-    } finally {
-      setCancellingPlan(false);
-    }
-  };
 
   // ── User loader (merges customer_code which auth.me() may omit) ──────────
 
@@ -614,10 +693,22 @@ export default function Settings() {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, subscription_active, subscription_plan, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, id_document_number, id_document_type, created_at')
+      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, id_document_number, id_document_type, created_at')
       .order('created_at', { ascending: false });
     if (!error) {
-      setAdminUsers(data || []);
+      // Fetch credit balances for each user
+      const userIds = (data || []).map(u => u.id);
+      let creditMap = {};
+      if (userIds.length > 0) {
+        const { data: credits } = await supabase
+          .from('credit_ledger')
+          .select('user_id, amount')
+          .in('user_id', userIds);
+        (credits || []).forEach(c => {
+          creditMap[c.user_id] = (creditMap[c.user_id] || 0) + c.amount;
+        });
+      }
+      setAdminUsers((data || []).map(u => ({ ...u, credit_balance: creditMap[u.id] ?? 0 })));
     } else {
       toast.error('Could not load users: ' + (error.message || 'unknown error'));
     }
@@ -679,23 +770,19 @@ export default function Settings() {
     setTogglingId(null);
   };
 
-  const toggleSubscription = async (userId, currentActive, currentPlan) => {
+  const addAdminCredits = async (userId, amount) => {
     setTogglingId(userId + '_sub');
-    const nowActive = !currentActive;
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        subscription_active: nowActive,
-        subscription_plan: nowActive ? (currentPlan || 'driver') : currentPlan,
-      })
-      .eq('id', userId);
+    const { error } = await supabase.rpc('add_credits', {
+      p_user_id:     userId,
+      p_amount:      amount,
+      p_type:        'adjustment',
+      p_description: `Admin credit adjustment`,
+      p_ref_id:      `admin:${userId}`,
+    });
     if (!error) {
-      setAdminUsers(prev =>
-        prev.map(u => u.id === userId ? { ...u, subscription_active: nowActive } : u)
-      );
-      toast.success(nowActive ? 'Subscription activated' : 'Subscription deactivated');
+      toast.success(`Added ${amount} credits to user`);
     } else {
-      toast.error('Failed to update subscription');
+      toast.error('Failed to add credits: ' + error.message);
     }
     setTogglingId(null);
   };
@@ -810,99 +897,6 @@ export default function Settings() {
 
   // ── Plan ─────────────────────────────────────────────────────────────────
 
-  const handleSubscribe = async () => {
-    // Admin bypass — no age/ID/licence checks
-    if (isAdmin) {
-      setProcessingPlan(true);
-      try {
-        const profileUpdate = {
-          subscription_active: true,
-          subscription_plan: selectedPlan,
-          subscription_start: new Date().toISOString(),
-          subscription_expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-        };
-        await auth.updateMe(profileUpdate);
-        await supabase.auth.updateUser({ data: { subscription_plan: selectedPlan } });
-        toast.success('Admin subscription activated!');
-        setUser(await loadUser());
-      } catch {
-        toast.error('Failed to update subscription');
-      } finally {
-        setProcessingPlan(false);
-      }
-      return;
-    }
-    // 18+ hard gate — check stored DOB before allowing subscription
-    if (user?.date_of_birth) {
-      const dob = new Date(user.date_of_birth);
-      const today = new Date();
-      let age = today.getFullYear() - dob.getFullYear();
-      const mo = today.getMonth() - dob.getMonth();
-      if (mo < 0 || (mo === 0 && today.getDate() < dob.getDate())) age--;
-      if (age < 18) {
-        toast.error('You must be 18 or older to subscribe to Skootlink');
-        return;
-      }
-    }
-    // SA ID — block subscription if ID number shows under 18
-    if (idDocType === 'sa_id' && idDocNumber.trim().length === 13) {
-      const age = ageFromSAId(idDocNumber.trim());
-      if (age !== null && age < 18) {
-        toast.error('Your SA ID indicates you are under 18. Skootlink is for adults only.');
-        return;
-      }
-    }
-    if (idDocError) {
-      toast.error('Please fix the ID document error before subscribing.');
-      return;
-    }
-    setProcessingPlan(true);
-    try {
-      const isFirstSubscription = !user?.subscription_active;
-      const billingOption = BILLING_OPTIONS.find(b => b.id === selectedBilling);
-      const durationMs = billingOption.days * 24 * 60 * 60 * 1000;
-
-      const profileUpdate = {
-        subscription_active:  true,
-        subscription_plan:    selectedPlan,
-        subscription_billing: selectedBilling,
-        subscription_start:   new Date().toISOString(),
-        subscription_expires: new Date(Date.now() + durationMs).toISOString(),
-      };
-      if (idDocNumber.trim()) {
-        const cleanId = idDocNumber.trim().toUpperCase();
-        // Check if this ID/passport number has been permanently blacklisted.
-        // This catches users who create a new account to evade a ban.
-        const { data: bannedId } = await supabase
-          .from('blacklisted_id_numbers')
-          .select('id_number')
-          .eq('id_number', cleanId)
-          .maybeSingle();
-        if (bannedId) {
-          toast.error(
-            'Your ID/passport number has been flagged. Please contact support at help@skootlink.co.za to resolve this.',
-            { duration: 8000 }
-          );
-          setProcessingPlan(false);
-          return;
-        }
-        profileUpdate.id_document_number = cleanId;
-        profileUpdate.id_document_type = idDocType;
-      }
-      await auth.updateMe(profileUpdate);
-      await supabase.auth.updateUser({ data: { subscription_plan: selectedPlan } });
-      toast.success(
-        isFirstSubscription
-          ? 'Welcome to Skootlink! Enjoy your 30 days free.'
-          : 'Plan updated!'
-      );
-      setUser(await loadUser());
-    } catch {
-      toast.error('Failed to update subscription');
-    } finally {
-      setProcessingPlan(false);
-    }
-  };
 
   // ── Password change ───────────────────────────────────────────────────────
 
@@ -943,7 +937,7 @@ export default function Settings() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-4' : 'grid-cols-3'} mb-6`}>
           <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="plan">Plan</TabsTrigger>
+          <TabsTrigger value="credits">Credits</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           {isAdmin && <TabsTrigger value="admin" onClick={fetchAdminUsers}>Admin</TabsTrigger>}
         </TabsList>
@@ -1096,430 +1090,9 @@ export default function Settings() {
         </TabsContent>
 
         {/* ── Plan tab ── */}
-        <TabsContent value="plan">
+        <TabsContent value="credits">
           <div className="space-y-4">
-
-            {/* Active subscription badge */}
-            {user?.subscription_active && (
-              <div className="flex justify-center">
-                <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 text-xs font-medium">
-                  ● Active: {PLANS.find(p => p.id === user.subscription_plan)?.name || user.subscription_plan} Plan
-                </span>
-              </div>
-            )}
-
-            {/* 30-day free trial banner — new subscribers only */}
-            {!user?.subscription_active && (
-              <div className="flex items-start gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">30 days free — no payment today!</p>
-                  <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
-                    Pick a plan and billing cycle below. Your 30-day free trial starts now — billing begins after the trial ends.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Billing period toggle */}
-            <div className="flex items-center justify-center">
-              <div className="flex items-center gap-1 p-1 rounded-xl bg-muted border border-border/50">
-                {BILLING_OPTIONS.map(opt => (
-                  <button
-                    key={opt.id}
-                    onClick={() => setSelectedBilling(opt.id)}
-                    className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-                      selectedBilling === opt.id
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {opt.label}
-                    {opt.saving && (
-                      <span className={`text-[10px] font-bold px-1 py-0.5 rounded-full ${
-                        selectedBilling === opt.id ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'
-                      }`}>
-                        -{opt.saving}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {selectedBilling !== 'monthly' && (
-              <p className="text-center text-xs text-muted-foreground">
-                Paid once via card or EFT — no debit order, no recurring charge.
-              </p>
-            )}
-
-            {/* Plan cards */}
-            <div className="grid grid-cols-1 gap-4">
-              {PLANS.map((p) => {
-                const Icon = p.icon;
-                const isSel = selectedPlan === p.id;
-                const isCurrent = user?.subscription_plan === p.id && user?.subscription_active;
-                return (
-                  <Card
-                    key={p.id}
-                    onClick={() => setSelectedPlan(p.id)}
-                    className={`p-4 cursor-pointer border-2 transition-colors relative ${isSel ? 'border-primary' : 'border-border'}`}
-                  >
-                    {isCurrent && (
-                      <div className="absolute -top-3 right-4">
-                        <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full">Current</span>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl border"><Icon className="w-4 h-4" /></div>
-                        <div>
-                          <h3 className="font-bold">{p.name}</h3>
-                          <p className="text-xs font-semibold">
-                            R{p.prices[selectedBilling]}
-                            <span className="font-normal text-muted-foreground">
-                              {selectedBilling === 'monthly' ? '/month' : selectedBilling === '6month' ? '/6 months' : '/year'}
-                            </span>
-                          </p>
-                          {selectedBilling !== 'monthly' && (
-                            <p className="text-[10px] text-muted-foreground">
-                              ≈ R{selectedBilling === '6month' ? Math.round(p.prices['6month'] / 6) : Math.round(p.prices.annual / 12)}/month
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      {p.popular && <span className="text-[10px] bg-primary text-primary-foreground px-2 py-0.5 rounded-full">Popular</span>}
-                      {isSel && <CheckCircle2 className="w-5 h-5 text-primary" />}
-                    </div>
-                    <ul className="space-y-1">
-                      {p.features.map((f) => (
-                        <li key={f} className="text-xs text-muted-foreground flex items-center gap-1.5">
-                          <span className="text-primary">✓</span> {f}
-                        </li>
-                      ))}
-                    </ul>
-                  </Card>
-                );
-              })}
-            </div>
-
-            {/* Driving licence verification (driver / both plans only) */}
-            {needsLicencePlan && (
-              <Card className="p-4 border border-border/50 space-y-3">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-primary shrink-0" />
-                  <p className="font-semibold text-sm">Driving Licence <span className="font-normal text-muted-foreground">(Optional — earns 🛡️ badge)</span></p>
-                  {licencePlanStatus === 'verified' && (
-                    <ShieldCheck className="w-4 h-4 text-emerald-500 ml-auto shrink-0" />
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Verify your driving licence to earn the 🛡️ Fully Verified badge on your profile.
-                  This is optional — you can subscribe without verifying.
-                </p>
-                <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50 text-xs text-muted-foreground">
-                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>Upload clear photos of <strong>both sides</strong> of your credit-card driving licence. The front shows your photo and details; the back has the barcode used for instant verification.</span>
-                </div>
-
-                {/* Front of licence */}
-                <div>
-                  <Label className="text-xs font-medium">Front of Licence (photo side) *</Label>
-                  <div className="mt-1 flex flex-col items-start gap-1">
-                    {licenceFrontFile
-                      ? <p className="text-xs text-emerald-600 font-medium">✓ {licenceFrontFile.name}</p>
-                      : <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full gap-1"
-                          disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
-                          onClick={() => licenceFrontInputRef.current?.click()}
-                        >
-                          <Upload className="w-3 h-3" /> Choose File
-                        </Button>
-                    }
-                    <input
-                      ref={licenceFrontInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => { if (e.target.files?.[0]) { setLicenceFrontFile(e.target.files[0]); setLicencePlanStatus('idle'); } }}
-                    />
-                    {licenceFrontFile && licencePlanStatus !== 'verified' && (
-                      <button
-                        className="text-xs text-muted-foreground underline"
-                        onClick={() => { setLicenceFrontFile(null); if (licenceFrontInputRef.current) licenceFrontInputRef.current.value = ''; }}
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Back of licence */}
-                <div>
-                  <Label className="text-xs font-medium">Back of Licence (barcode side) *</Label>
-                  <div className="mt-1 flex flex-col items-start gap-1">
-                    {licenceBackFile
-                      ? <p className="text-xs text-emerald-600 font-medium">✓ {licenceBackFile.name}</p>
-                      : <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full gap-1"
-                          disabled={licencePlanStatus === 'verifying' || licencePlanStatus === 'verified'}
-                          onClick={() => licenceBackInputRef.current?.click()}
-                        >
-                          <Upload className="w-3 h-3" /> Choose File
-                        </Button>
-                    }
-                    <input
-                      ref={licenceBackInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => { if (e.target.files?.[0]) { setLicenceBackFile(e.target.files[0]); setLicencePlanStatus('idle'); } }}
-                    />
-                    {licenceBackFile && licencePlanStatus !== 'verified' && (
-                      <button
-                        className="text-xs text-muted-foreground underline"
-                        onClick={() => { setLicenceBackFile(null); if (licenceBackInputRef.current) licenceBackInputRef.current.value = ''; }}
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {licencePlanStatus === 'verified' && (
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm dark:bg-emerald-900/20 dark:text-emerald-400">
-                    <ShieldCheck className="w-4 h-4 shrink-0" />
-                    <span>{licencePlanMsg}</span>
-                  </div>
-                )}
-                {licencePlanStatus === 'failed' && (
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-700 text-sm dark:bg-red-900/20 dark:text-red-400">
-                    <XCircle className="w-4 h-4 shrink-0" />
-                    <span>{licencePlanMsg}</span>
-                  </div>
-                )}
-                {licencePlanStatus !== 'verified' && (
-                  <Button
-                    variant="outline"
-                    className="w-full gap-2"
-                    onClick={handleVerifyLicencePlan}
-                    disabled={licencePlanStatus === 'verifying' || !licenceFrontFile || !licenceBackFile}
-                  >
-                    {licencePlanStatus === 'verifying'
-                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
-                      : <><ShieldCheck className="w-4 h-4" /> Verify Licence</>}
-                  </Button>
-                )}
-                {licencePlanStatus === 'verified' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-muted-foreground"
-                    onClick={() => { setLicencePlanStatus('idle'); setLicencePlanMsg(''); setLicenceFrontFile(null); setLicenceBackFile(null); }}
-                  >
-                    Use a different licence
-                  </Button>
-                )}
-              </Card>
-            )}
-
-            {/* ── Identity document — SA ID or Passport ────────────────── */}
-            <Card className="p-4 border border-border/50 space-y-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
-                <p className="font-semibold text-sm">Identity Document <span className="font-normal text-muted-foreground">(Optional — earns ✅ badge)</span></p>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Verify your SA ID or passport to earn the ✅ ID Verified badge on your profile. This is optional — you can subscribe without verifying first.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs font-medium">Document Type</Label>
-                  <select
-                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
-                    value={idDocType}
-                    onChange={e => { setIdDocType(e.target.value); setIdDocNumber(''); setIdDocError(''); setFrontPassportFile(null); setBackPassportFile(null); }}
-                  >
-                    <option value="sa_id">SA ID Number</option>
-                    <option value="passport">Passport</option>
-                  </select>
-                </div>
-                {/* SA ID: show number input; Passport: show image uploads */}
-                {idDocType === 'sa_id' ? (
-                  <div>
-                    <Label className="text-xs font-medium">SA ID Number *</Label>
-                    <Input
-                      className={`mt-1 ${idDocError ? 'border-red-500 focus-visible:ring-red-400' : ''}`}
-                      placeholder="13-digit ID number"
-                      value={idDocNumber}
-                      maxLength={13}
-                      onChange={e => handleIdDocChange(e.target.value.replace(/\s/g, ''))}
-                    />
-                  </div>
-                ) : (
-                  <div className="col-span-2 grid grid-cols-2 gap-3 mt-1">
-                    {/* Front of passport */}
-                    <div>
-                      <Label className="text-xs font-medium">Front of Passport *</Label>
-                      <div className="mt-1 flex flex-col items-start gap-1">
-                        {frontPassportFile
-                          ? <p className="text-xs text-emerald-600 font-medium">✓ {frontPassportFile.name}</p>
-                          : <Button variant="outline" size="sm" className="w-full gap-1" onClick={() => frontInputRef.current?.click()}>
-                              <Upload className="w-3 h-3" /> Choose File
-                            </Button>
-                        }
-                        <input
-                          ref={frontInputRef}
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={e => { if (e.target.files?.[0]) setFrontPassportFile(e.target.files[0]); }}
-                        />
-                        {frontPassportFile && (
-                          <button className="text-xs text-muted-foreground underline" onClick={() => { setFrontPassportFile(null); if (frontInputRef.current) frontInputRef.current.value = ''; }}>
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    {/* Back of passport */}
-                    <div>
-                      <Label className="text-xs font-medium">Back of Passport *</Label>
-                      <div className="mt-1 flex flex-col items-start gap-1">
-                        {backPassportFile
-                          ? <p className="text-xs text-emerald-600 font-medium">✓ {backPassportFile.name}</p>
-                          : <Button variant="outline" size="sm" className="w-full gap-1" onClick={() => backInputRef.current?.click()}>
-                              <Upload className="w-3 h-3" /> Choose File
-                            </Button>
-                        }
-                        <input
-                          ref={backInputRef}
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={e => { if (e.target.files?.[0]) setBackPassportFile(e.target.files[0]); }}
-                        />
-                        {backPassportFile && (
-                          <button className="text-xs text-muted-foreground underline" onClick={() => { setBackPassportFile(null); if (backInputRef.current) backInputRef.current.value = ''; }}>
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              {idDocError && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-700 text-xs dark:bg-red-900/20 dark:text-red-400">
-                  <XCircle className="w-4 h-4 shrink-0" />
-                  <span>{idDocError}</span>
-                </div>
-              )}
-              {idDocType === 'sa_id' && !idDocError && idDocNumber.replace(/\s/g,'').length === 13 && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-xs dark:bg-emerald-900/20 dark:text-emerald-400">
-                  <ShieldCheck className="w-4 h-4 shrink-0" />
-                  <span>SA ID format looks good — age confirmed via your ID number.</span>
-                </div>
-              )}
-              {idDocType === 'passport' && (
-                <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50 text-xs text-muted-foreground">
-                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>Upload clear photos of the front and back of your passport. Images are sent securely to our verification provider and are not stored.</span>
-                </div>
-              )}
-
-              {/* VerifyNow status messages */}
-              {verifyIdStatus === 'verified' && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm dark:bg-emerald-900/20 dark:text-emerald-400">
-                  <ShieldCheck className="w-4 h-4 shrink-0" />
-                  <span>{verifyIdMsg}</span>
-                </div>
-              )}
-              {verifyIdStatus === 'failed' && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-700 text-sm dark:bg-red-900/20 dark:text-red-400">
-                  <XCircle className="w-4 h-4 shrink-0" />
-                  <span>{verifyIdMsg}</span>
-                </div>
-              )}
-
-              {/* Verify button — hidden once verified */}
-              {verifyIdStatus !== 'verified' && (
-                <Button
-                  variant="outline"
-                  className="w-full gap-2"
-                  onClick={handleVerifyId}
-                  disabled={verifyIdStatus === 'verifying' || (idDocType === 'sa_id' ? (!idDocNumber.trim() || !!idDocError) : (!frontPassportFile || !backPassportFile))}
-                >
-                  {verifyIdStatus === 'verifying'
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying identity…</>
-                    : <><ShieldCheck className="w-4 h-4" /> Verify Identity</>}
-                </Button>
-              )}
-              {verifyIdStatus === 'verified' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-muted-foreground"
-                  onClick={() => { setVerifyIdStatus('idle'); setVerifyIdMsg(''); }}
-                >
-                  Use a different document
-                </Button>
-              )}
-            </Card>
-
-            {/* Summary line */}
-            <div className="text-center text-xs text-muted-foreground">
-              {PLANS.find(p => p.id === selectedPlan)?.name} · R{PLANS.find(p => p.id === selectedPlan)?.prices[selectedBilling]}
-              {selectedBilling === 'monthly' ? '/month' : selectedBilling === '6month' ? '/6 months' : '/year'}
-              {!user?.subscription_active && <span className="text-emerald-600 font-medium"> · 30 days free</span>}
-            </div>
-
-            <Button
-              onClick={handleSubscribe}
-              disabled={processingPlan || (!isAdmin && !!idDocError)}
-              className="w-full gap-2"
-            >
-              {processingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              {processingPlan ? 'Processing...' : user?.subscription_active ? 'Switch Plan' : 'Start Free Trial'}
-            </Button>
-
-            {/* Cancel subscription */}
-            {user?.subscription_active && !showPlanCancelConfirm && (
-              <div className="text-center">
-                <button
-                  onClick={() => setShowPlanCancelConfirm(true)}
-                  className="text-sm text-destructive/70 hover:text-destructive underline underline-offset-2 transition-colors"
-                >
-                  Cancel my subscription
-                </button>
-              </div>
-            )}
-
-            {user?.subscription_active && showPlanCancelConfirm && (
-              <Card className="p-4 border border-destructive/30 bg-destructive/5 space-y-4">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
-                  <div className="text-sm text-destructive/80 space-y-1">
-                    <p className="font-semibold">Cancel your subscription?</p>
-                    <p className="text-xs">You'll lose access to all paid features at the end of your current billing period. Your profile and data will be kept.</p>
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <Button variant="outline" className="flex-1" onClick={() => setShowPlanCancelConfirm(false)} disabled={cancellingPlan}>
-                    Keep My Plan
-                  </Button>
-                  <Button variant="destructive" className="flex-1 gap-2" onClick={handleCancelPlan} disabled={cancellingPlan}>
-                    {cancellingPlan ? <><Loader2 className="w-4 h-4 animate-spin" /> Cancelling…</> : 'Yes, Cancel'}
-                  </Button>
-                </div>
-              </Card>
-            )}
-
-            <p className="text-xs text-center text-muted-foreground">Current plan: {user?.subscription_plan || 'None'}</p>
+            <CreditBalanceWidget />
           </div>
         </TabsContent>
 
@@ -1820,8 +1393,8 @@ export default function Settings() {
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.licence_verified ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : u.license_pending ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
                               {u.licence_verified ? '🛡️ Licence' : u.license_pending ? '⏳ Lic Pending' : '— Licence'}
                             </span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.subscription_active ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
-                              {u.subscription_active ? `● ${u.subscription_plan || 'sub'}` : '○ No sub'}
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-primary/10 text-primary">
+                              <Coins className="w-2.5 h-2.5 inline mr-0.5" />{u.credit_balance ?? 0} cr
                             </span>
                             <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 capitalize">
                               {u.account_type || 'n/a'}
@@ -1865,15 +1438,15 @@ export default function Settings() {
                           </Button>
                           <Button
                             size="sm"
-                            variant={u.subscription_active ? 'outline' : 'secondary'}
+                            variant="outline"
                             className="h-7 text-[10px] gap-0.5 px-1"
                             disabled={togglingId === u.id + '_sub'}
-                            onClick={() => toggleSubscription(u.id, u.subscription_active, u.subscription_plan)}
+                            onClick={() => addAdminCredits(u.id, 10)}
                           >
                             {togglingId === u.id + '_sub'
                               ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <Crown className="w-3 h-3" />}
-                            {u.subscription_active ? 'Deactivate' : 'Activate'}
+                              : <Coins className="w-3 h-3" />}
+                            +10 Cr
                           </Button>
                         </div>
                         <Button
