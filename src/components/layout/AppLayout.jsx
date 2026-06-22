@@ -239,9 +239,16 @@ export default function AppLayout() {
       }
     });
 
-    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((event, session) => {
       setAuthLoading(false);
       setAuthUser(session?.user ?? null);
+      // After sign-in redirect to /home if still on a public page
+      if (event === 'SIGNED_IN' && session) {
+        const p = window.location.pathname;
+        if (p === '/auth' || p === '/') {
+          window.location.href = '/home';
+        }
+      }
     });
 
     return () => authSub?.unsubscribe();
@@ -322,7 +329,7 @@ export default function AppLayout() {
   // ── Existing user loading & blacklist check ────────────────────────────
   useEffect(() => {
     auth.me().then(async (user) => {
-      setAccountType(user?.subscription_active ? (user?.subscription_plan || 'driver') : 'both');
+      setAccountType(user?.account_type || 'both');
       if (user?.id) {
         const { data: profile } = await supabase
           .from('profiles')
