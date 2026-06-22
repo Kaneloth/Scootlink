@@ -1044,8 +1044,9 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
 
     const rowButtonClass = "w-full gap-1.5 py-3 text-xs lg:text-sm";
     const iconClass = "w-4 h-4";
-    if (accountType === 'owner' || accountType === 'both') {
-      const gridCols = accountType === 'both' ? 'grid-cols-3' : 'grid-cols-2';
+    const isAdminUser = user?.user_metadata?.is_admin === true || ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
+    if (isAdminUser || accountType === 'owner' || accountType === 'both') {
+      const gridCols = (isAdminUser || accountType === 'both') ? 'grid-cols-3' : 'grid-cols-2';
       return (
         <div className="mt-6">
           <Link to="/add-vehicle" className="block w-full mb-2">
@@ -1053,7 +1054,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           </Link>
           <div className={`grid gap-2 ${gridCols}`}>
             <Link to="/find-drivers"><Button variant="outline" className={rowButtonClass}><Users className={iconClass} /> Find Drivers</Button></Link>
-            {accountType === 'both' && <Link to="/search-vehicles"><Button variant="outline" className={rowButtonClass}><Search className={iconClass} /> Find Vehicles</Button></Link>}
+            {(isAdminUser || accountType === 'both') && <Link to="/search-vehicles"><Button variant="outline" className={rowButtonClass}><Search className={iconClass} /> Find Vehicles</Button></Link>}
             <Link to="/tracking"><Button variant="outline" className={rowButtonClass}><MapPin className={iconClass} /> GPS Track</Button></Link>
           </div>
         </div>
