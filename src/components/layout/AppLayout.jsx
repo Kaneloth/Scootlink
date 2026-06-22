@@ -8,7 +8,7 @@ import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 
 // Must match bottom nav order exactly: Home → Search → Track → Wallet → Messages
 // Settings is in the header dropdown, not swipeable.
-const TAB_ORDER = ['/', '/search-vehicles', '/tracking', '/wallet', '/messages'];
+const TAB_ORDER = ['/home', '/search-vehicles', '/tracking', '/briefcase', '/messages'];
 
 // ─── Navigation progress bar ──────────────────────────────────────────────────
 function useNavigationProgress(pathname) {
@@ -146,13 +146,15 @@ function MobileHeader() {
   return (
     <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card z-30 shrink-0">
       {/* Logo */}
-      <Link to="/" className="flex items-center gap-2">
+      <Link to="/home" className="flex items-center gap-2">
         <img src="/favicon.png" alt="Skootlink" className="w-8 h-8" />
         <span className="text-base font-bold text-foreground">Skootlink</span>
       </Link>
 
-      {/* Profile button + dropdown */}
-      <div className="relative" ref={dropdownRef}>
+      {/* Credit balance + profile button + dropdown */}
+      <div className="flex items-center gap-2">
+        <CreditBalance />
+        <div className="relative" ref={dropdownRef}>
         <button
           onClick={() => setOpen(v => !v)}
           className={`w-11 h-11 rounded-full flex items-center justify-center border-2 transition-colors ${open ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-foreground'}`}
