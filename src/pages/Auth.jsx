@@ -505,12 +505,27 @@ export default function Auth() {
   // ── Google Sign-In ────────────────────────────────────────────────────────
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin + '/auth' },
-    });
-    if (error) toast.error(error.message);
-    setGoogleLoading(false);
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin + '/auth',
+          skipBrowserRedirect: true,
+          queryParams: {
+            prompt: 'select_account',
+            access_type: 'offline',
+          },
+        },
+      });
+      if (error) throw error;
+      if (data?.url) {
+        // Use replace() so the Base44 vite plugin cannot intercept it
+        window.location.replace(data.url);
+      }
+    } catch (err) {
+      toast.error(err.message || 'Google sign-in failed');
+      setGoogleLoading(false);
+    }
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
