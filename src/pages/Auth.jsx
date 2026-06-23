@@ -212,10 +212,14 @@ export default function Auth() {
       setRecoveryMode(true);
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
         setRecoveryMode(true);
+      }
+      // Handle Google OAuth return — Supabase exchanges the code and fires SIGNED_IN
+      if (event === 'SIGNED_IN' && session && !sessionStorage.getItem('skootlink_recovery')) {
+        navigate('/home');
       }
     });
     return () => subscription.unsubscribe();
@@ -466,13 +470,7 @@ export default function Auth() {
         }
       }
       saveBiometricRefreshToken(data.session);
-      // FIX: was `await setTokenCookie(...)` — awaiting this with no timeout meant
-      // that if the Netlify function was slow or unreachable on mobile (network hiccup,
-      // cold start, SameSite=Strict cookie policy on certain Android browsers), the
-      // fetch would hang indefinitely, the finally block would never run, and `loading`
-      // would stay true forever — causing the permanent spinner on mobile.
-      // The cookie is only for biometric convenience, not required to complete sign-in.
-      if (data.session?.refresh_token) setTokenCookie(data.session.refresh_token).catch(() => {});
+      if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       setUser({ id: data.user.id, email: data.user.email });
       setLoading(false);
       navigate('/home');
