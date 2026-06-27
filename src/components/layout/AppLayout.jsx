@@ -220,9 +220,6 @@ export default function AppLayout() {
     };
   }, []);
 
-  // Swipe tracking — only start/end positions, no live drag state
-  const swipeRef = useRef({ x: 0, y: 0, active: false });
-
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
   useEffect(() => {
