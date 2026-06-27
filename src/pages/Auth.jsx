@@ -219,7 +219,7 @@ export default function Auth() {
       }
       // Handle Google OAuth return — Supabase exchanges the code and fires SIGNED_IN
       if (event === 'SIGNED_IN' && session && !sessionStorage.getItem('skootlink_recovery')) {
-        navigate('/home');
+        window.location.replace('/home');
       }
     });
     return () => subscription.unsubscribe();
@@ -345,7 +345,7 @@ export default function Auth() {
       }
       setUser({ id: session.user.id, email: session.user.email });
       setLoading(false);
-      navigate('/home');
+      window.location.replace('/home');
     } catch (err) {
       if (err.code === 'no-session' || err.code === 'session-expired') {
         if (err.detail) toast.error(`Debug: ${err.detail}`, { duration: 15000 });
@@ -473,7 +473,7 @@ export default function Auth() {
       if (data.session?.refresh_token) await setTokenCookie(data.session.refresh_token);
       setUser({ id: data.user.id, email: data.user.email });
       setLoading(false);
-      navigate('/home');
+      window.location.replace('/home');
     } catch (err) {
       toast.error(err.message || 'Login failed');
     } finally {
