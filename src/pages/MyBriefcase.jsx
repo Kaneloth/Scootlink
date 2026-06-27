@@ -451,10 +451,11 @@ export default function MyBriefcase() {
         if (uid) {
           const { data: profile } = await supabase
             .from("profiles")
-            .select("role, account_type")
+            .select("account_type")
             .eq("id", uid)
             .single();
-          setRole(profile?.role || profile?.account_type || "driver");
+          setRole(profile?.account_type || "driver");
+          console.log('[MyBriefcase] resolved role:', profile?.account_type);
         } else {
           setRole("driver");
         }
