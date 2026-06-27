@@ -262,13 +262,13 @@ export default function Onboarding() {
         const freeCredits = form.role === 'driver' ? 18 : 36;
         try {
           await supabase.rpc('add_credits', {
-            p_user_id:    authUser.id,
-            p_amount:     freeCredits,
-            p_type:       'bonus',
+            p_user_id:     authUser.id,
+            p_amount:      freeCredits,
+            p_type:        'bonus',
             p_description: 'Welcome bonus credits',
           });
         } catch (creditErr) {
-          // Non-fatal — profile was saved successfully; credits can be added manually
+          // Non-fatal — profile saved successfully; credits can be added manually
           console.warn('[Onboarding] free credits grant failed:', creditErr);
         }
       }
