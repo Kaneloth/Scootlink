@@ -475,10 +475,18 @@ export default function MyBriefcase() {
     );
   }
 
-  const isOwner  = role === "owner" || role === "both";
-  const gridCols = isOwner ? "grid-cols-3" : "grid-cols-2";
+  const isDriver = role === "driver";
+  const isOwner  = role === "owner";
+  const isBoth   = role === "both";
 
-  const tabs = isOwner
+  const tabs = isBoth
+    ? [
+        { value: "rentals",     label: "My Rentals",  icon: Car,      section: "Active Rentals",    sub: "Vehicles you are currently renting" },
+        { value: "listings",    label: "My Vehicles", icon: Truck,    section: "My Vehicles",       sub: "All your listed vehicles" },
+        { value: "assignments", label: "Assignments", icon: Truck,    section: "Active Assignments", sub: "Vehicles currently out on rental" },
+        { value: "contracts",   label: "Contracts",   icon: FileText, section: "Contracts",          sub: "Rentals with a signed contract" },
+      ]
+    : isOwner
     ? [
         { value: "listings",    label: "My Vehicles", icon: Car,      section: "My Vehicles",       sub: "All your listed vehicles" },
         { value: "assignments", label: "Assignments", icon: Truck,    section: "Active Assignments", sub: "Vehicles currently out on rental" },
@@ -488,6 +496,8 @@ export default function MyBriefcase() {
         { value: "rentals",   label: "Rentals",   icon: Car,      section: "Active Rentals", sub: "Vehicles you are currently renting" },
         { value: "contracts", label: "Contracts", icon: FileText, section: "Contracts",       sub: "Rentals with a signed contract" },
       ];
+
+  const gridCols = tabs.length === 4 ? "grid-cols-4" : tabs.length === 3 ? "grid-cols-3" : "grid-cols-2";
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
