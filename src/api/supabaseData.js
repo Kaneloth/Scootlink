@@ -6,6 +6,10 @@
 import { supabase } from './supabaseClient';
 export { supabase };
 
+// Key for the biometric session backup in localStorage — declared here so
+// auth.logout() can reference it without a forward-reference issue.
+const BIOMETRIC_SESSION_KEY = 'scootlink_biometric_session';
+
 // Fields that must be kept in sync between auth metadata and the profiles table.
 // profiles is the source of truth — auth metadata is secondary.
 const PROFILE_FIELDS = [
@@ -59,6 +63,9 @@ export const auth = {
       onboarding_completed: profile?.onboarding_completed ?? user.user_metadata?.onboarding_completed ?? false,
       avatar_url:           profile?.avatar_url           ?? user.user_metadata?.avatar_url           ?? null,
       avatar_visible:       profile?.avatar_visible       ?? user.user_metadata?.avatar_visible       ?? true,
+      // account_type must always come from profiles — auth metadata JWT can be
+      // stale on mobile if the token hasn't refreshed since onboarding wrote it
+      account_type:         profile?.account_type         ?? user.user_metadata?.account_type        ?? 'driver',
     };
   },
 
@@ -89,8 +96,17 @@ export const auth = {
   },
 
   logout: async () => {
-    await supabase.auth.signOut();
-    window.location.href = '/auth';
+    try {
+      await supabase.auth.signOut({ scope: 'local' }); // 'local' clears this device only, faster than global
+    } catch { /* non-fatal — clear storage regardless */ }
+
+    // Wipe every piece of local state so a new sign-in starts completely clean
+    try { localStorage.removeItem(BIOMETRIC_SESSION_KEY); } catch { /* ignore */ }
+    try { sessionStorage.removeItem('skootlink_recovery'); } catch { /* ignore */ }
+
+    // Small delay to let Supabase finish writing the cleared state to localStorage
+    // before the page reloads and App.jsx calls getSession()
+    setTimeout(() => { window.location.replace('/auth'); }, 200);
   },
 
   isAuthenticated: async () => {
@@ -183,7 +199,6 @@ export const User        = {
 // Stores both tokens so setSession() can restore the session directly.
 // Supabase JS v2 automatically refreshes an expired access_token using the
 // refresh_token inside setSession(), so stale access_tokens are handled safely.
-const BIOMETRIC_SESSION_KEY = 'scootlink_biometric_session';
 
 export function saveBiometricRefreshToken(session) {
   if (!session?.refresh_token) return;
