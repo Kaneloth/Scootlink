@@ -5,7 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
-import { AuthProvider } from '@/lib/AuthContext';
+import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
 
 import Auth from '@/pages/Auth';
@@ -25,25 +25,156 @@ import Wallet from '@/pages/Wallet';
 import Settings from '@/pages/Settings';
 import Profile from '@/pages/Profile';
 import Onboarding from '@/pages/Onboarding';
+
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 
+
+const AuthenticatedApp = () => {
+  const [supabaseChecked, setSupabaseChecked] = React.useState(false);
+
+  React.useEffect(() => {
+    const path = window.location.pathname;
+    const publicPaths = ['/', '/auth'];
+
+    // Safety net — never stay stuck beyond 8 seconds on mobile
+    const safetyTimer = setTimeout(() => {
+      setSupabaseChecked(true);
+    }, 8000);
+
+    const handleSession = (session) => {
+      clearTimeout(safetyTimer);
+      const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
+
+      if (isRecovery) {
+        if (path !== '/auth') {
+          window.location.replace('/auth');
+        } else {
+          setSupabaseChecked(true);
+        }
+        return;
+      }
+
+      if (session && path === '/auth') {
+        // Session exists but we're on /auth — go home
+        window.location.replace('/home');
+        return;
+      }
+
+      if (!session && !publicPaths.includes(path)) {
+        // No session on a protected route — but wait for onAuthStateChange
+        // before redirecting, in case Supabase is still restoring the session
+        // from localStorage (common on mobile after a fresh sign-in).
+        // We set checked=true here so the app renders — individual protected
+        // pages can handle their own auth guard if needed.
+        // The onAuthStateChange listener below will catch a late SIGNED_IN
+        // event and redirect to /home if it fires.
+        setSupabaseChecked(true);
+        return;
+      }
+
+      setSupabaseChecked(true);
+    };
+
+    // Listen for auth state changes — catches late SIGNED_IN on mobile
+    // where getSession() returns null but the session arrives shortly after
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        clearTimeout(safetyTimer);
+        const path = window.location.pathname;
+        if (path === '/auth') {
+          window.location.replace('/home');
+        } else {
+          setSupabaseChecked(true);
+        }
+      }
+      if (event === 'SIGNED_OUT') {
+        const path = window.location.pathname;
+        const publicPaths = ['/', '/auth'];
+        if (!publicPaths.includes(path)) {
+          window.location.replace('/auth');
+        }
+      }
+    });
+
+    // Primary session check
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => handleSession(session))
+      .catch(() => {
+        clearTimeout(safetyTimer);
+        setSupabaseChecked(true);
+      });
+
+    return () => {
+      clearTimeout(safetyTimer);
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  if (!supabaseChecked) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+          <p className="text-sm text-muted-foreground font-medium">Loading Skootlink...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      {/* Public — no auth */}
+      <Route path="/" element={<LandingPage />} />
+
+      {/* Auth */}
+      <Route path="/auth" element={<Auth />} />
+
+      {/* Full-screen flows (no sidebar) */}
+      <Route path="/onboarding" element={<Onboarding />} />
+      <Route path="/credits" element={<Credits />} />
+
+      {/* Main app with layout */}
+      <Route element={<AppLayout />}>
+        <Route path="/home" element={<Dashboard />} />
+        <Route path="/search-vehicles" element={<SearchVehicles />} />
+        <Route path="/find-drivers" element={<FindDrivers />} />
+        <Route path="/add-vehicle" element={<AddVehicle />} />
+        <Route path="/edit-vehicle" element={<EditVehicle />} />
+        <Route path="/rental-request" element={<RentalRequest />} />
+        <Route path="/tracking" element={<Tracking />} />
+        <Route path="/briefcase" element={<MyBriefcase />} />
+        <Route path="/wallet" element={<Wallet />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/mysearch" element={<SearchPage />} />
+        <Route path="/messages" element={<Messages />} />
+        <Route path="/contact" element={<ContactUs />} />
+      </Route>
+
+      <Route path="*" element={<PageNotFound />} />
+    </Routes>
+  );
+};
+
 function App() {
-  // FIX: was useMemo — useMemo is for computed values, not side effects.
-  // useMemo has no cleanup phase, so every re-render (especially on mobile
-  // after orientation changes or background/foreground switches) was creating
-  // a new subscription that was never removed, causing multiple listeners to
-  // pile up and interfere with each other.
-  useEffect(() => {
+  // Register the PASSWORD_RECOVERY listener as early as possible — useMemo runs
+  // synchronously during render, before any child component mounts. This ensures
+  // we catch the event even if Supabase fires it before Auth.jsx is mounted.
+  // The flag is stored in sessionStorage so it survives React Router navigation.
+  useMemo(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
       }
     });
-    return () => subscription.unsubscribe();
+    // Not cleaning up here intentionally — this listener must live for the
+    // entire app session so it catches the event regardless of which component
+    // is mounted at the time.
+    return subscription;
   }, []);
 
-  // Apply saved theme
+  // Apply saved theme on initial load
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -58,41 +189,13 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router>
-          <Routes>
-            {/* Public — no auth required, renders instantly */}
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/auth" element={<Auth />} />
-
-            {/* Full-screen flows — AppLayout handles auth internally */}
-            <Route path="/onboarding" element={<Onboarding />} />
-            <Route path="/credits" element={<Credits />} />
-
-            {/* Main app — AppLayout handles its own auth gate */}
-            <Route element={<AppLayout />}>
-              <Route path="/home" element={<Dashboard />} />
-              <Route path="/search-vehicles" element={<SearchVehicles />} />
-              <Route path="/find-drivers" element={<FindDrivers />} />
-              <Route path="/add-vehicle" element={<AddVehicle />} />
-              <Route path="/edit-vehicle" element={<EditVehicle />} />
-              <Route path="/rental-request" element={<RentalRequest />} />
-              <Route path="/tracking" element={<Tracking />} />
-              <Route path="/briefcase" element={<MyBriefcase />} />
-              <Route path="/wallet" element={<Wallet />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/mysearch" element={<SearchPage />} />
-              <Route path="/messages" element={<Messages />} />
-              <Route path="/contact" element={<ContactUs />} />
-            </Route>
-
-            <Route path="*" element={<PageNotFound />} />
-          </Routes>
+          <AuthenticatedApp />
         </Router>
         <Toaster />
         <SonnerToaster position="top-center" richColors />
       </QueryClientProvider>
     </AuthProvider>
-  );
+  )
 }
 
 export default App;
