@@ -9,9 +9,9 @@ import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
 
 const PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 29,  credits: 10  },
-  { id: 'standard', label: 'Standard Pack', price: 49,  credits: 30, popular: true },
-  { id: 'pro',      label: 'Pro Pack',       price: 79,  credits: 60  },
+  { id: 'starter',  label: 'Starter Pack',  price: 39,  credits: 15  },
+  { id: 'standard', label: 'Standard Pack', price: 59,  credits: 30, popular: true },
+  { id: 'pro',      label: 'Pro Pack',       price: 99,  credits: 60  },
   { id: 'business', label: 'Business Pack', price: 199, credits: 200 },
 ];
 
