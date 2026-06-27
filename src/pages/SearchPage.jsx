@@ -46,10 +46,23 @@ export default function SearchPage() {
         if (uid) {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('account_type')
+            .select('account_type, role')
             .eq('id', uid)
             .single();
-          setRole(profile?.account_type || 'driver');
+
+          // Fallback to auth user_metadata — covers users whose profiles row
+          // predates the account_type column write
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          const metaType = authUser?.user_metadata?.account_type;
+
+          const resolved = profile?.account_type || profile?.role || metaType || 'driver';
+
+          // Backfill profiles row silently if it's missing account_type
+          if (!profile?.account_type && metaType) {
+            supabase.from('profiles').update({ account_type: metaType }).eq('id', uid);
+          }
+
+          setRole(resolved);
         } else {
           setRole('driver');
         }
