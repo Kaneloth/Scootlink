@@ -256,20 +256,29 @@ export default function Onboarding() {
       }
       await saveGeoLocation(buildLocation(), authUser?.id);
 
-      // ── Award sign-up free credits based on role ──────────────────────────
-      // Driver → 18 credits, Owner or Both → 36 credits
+      // ── Award sign-up free credits via Netlify function ──────────────────
+      // Uses grant-signup-credits.js which guards against duplicate grants
+      // (same email, phone, device, or IP) across account re-registrations.
       if (authUser?.id) {
-        const freeCredits = form.role === 'driver' ? 18 : 36;
         try {
-          await supabase.rpc('add_credits', {
-            p_user_id:     authUser.id,
-            p_amount:      freeCredits,
-            p_type:        'bonus',
-            p_description: 'Welcome bonus credits',
+          const { data: { session } } = await supabase.auth.getSession();
+          await fetch('/.netlify/functions/grant-signup-credits', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+            },
+            body: JSON.stringify({
+              user_id:            authUser.id,
+              email:              authUser.email ?? '',
+              phone:              form.phone ?? '',
+              device_fingerprint: localStorage.getItem('skootlink_device_fp') ?? '',
+              profile_type:       form.role,
+            }),
           });
         } catch (creditErr) {
           // Non-fatal — profile saved successfully; credits can be added manually
-          console.warn('[Onboarding] free credits grant failed:', creditErr);
+          console.warn('[Onboarding] grant-signup-credits call failed:', creditErr);
         }
       }
 
