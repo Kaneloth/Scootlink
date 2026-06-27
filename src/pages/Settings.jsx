@@ -27,9 +27,9 @@ const TEXT_SIZES = [
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 const CREDIT_PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 29,  credits: 10  },
-  { id: 'standard', label: 'Standard Pack', price: 49,  credits: 30, popular: true },
-  { id: 'pro',      label: 'Pro Pack',      price: 79,  credits: 60  },
+  { id: 'starter',  label: 'Starter Pack',  price: 39,  credits: 15  },
+  { id: 'standard', label: 'Standard Pack', price: 59,  credits: 30, popular: true },
+  { id: 'pro',      label: 'Pro Pack',      price: 99,  credits: 60  },
   { id: 'business', label: 'Business Pack', price: 199, credits: 200 },
 ];
 
@@ -248,6 +248,8 @@ export default function Settings() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState('');
+  // true when the account was created via Google OAuth (no existing password)
+  const [isGoogleUser, setIsGoogleUser] = useState(false);
 
   // Delete account state
   const [showDeleteSection, setShowDeleteSection] = useState(false);
@@ -305,6 +307,13 @@ export default function Settings() {
     setSignInMethod(localStorage.getItem('scootlink_signin_method') || 'password');
     setNotifications(localStorage.getItem('scootlink_notifications') !== 'false');
     loadUser().then(setUser).catch(() => {});
+    // Detect Google OAuth users — they have no password so we show "Create" instead of "Change"
+    supabase.auth.getUser().then(({ data: { user: authUser } }) => {
+      const identities = authUser?.identities ?? [];
+      const isGoogle = identities.some(i => i.provider === 'google') &&
+                       !identities.some(i => i.provider === 'email');
+      setIsGoogleUser(isGoogle);
+    }).catch(() => {});
   }, []);
 
   const toggleDarkMode = () => {
@@ -894,19 +903,24 @@ export default function Settings() {
 
   const handlePasswordChange = async () => {
     setPasswordError('');
-    if (!currentPassword || !newPassword || !confirmPassword) { setPasswordError('Fill all fields'); return; }
+    if (isGoogleUser) {
+      // Google users have no existing password — only need new + confirm
+      if (!newPassword || !confirmPassword) { setPasswordError('Fill all fields'); return; }
+    } else {
+      if (!currentPassword || !newPassword || !confirmPassword) { setPasswordError('Fill all fields'); return; }
+    }
     if (newPassword !== confirmPassword) { setPasswordError('Passwords do not match'); return; }
     if (newPassword.length < 6) { setPasswordError('Min 6 characters'); return; }
     setChangingPassword(true);
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
-      toast.success('Password updated!');
+      toast.success(isGoogleUser ? 'Password created! You can now sign in with email & password.' : 'Password updated!');
       setShowPasswordForm(false);
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
       try {
         if (user?.phone) {
-          await sendSMS(user.phone, `Your Skootlink password was just changed. If this wasn't you, contact support immediately at help@skootlink.co.za.`);
+          await sendSMS(user.phone, `Your Skootlink password was just ${isGoogleUser ? 'created' : 'changed'}. If this wasn't you, contact support immediately at help@skootlink.co.za.`);
         }
       } catch { /* SMS failure must never block the main flow */ }
     } catch (err) {
@@ -1147,18 +1161,32 @@ export default function Settings() {
                 <div className="flex items-center gap-3">
                   <Lock className="w-5 h-5 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium">Change Password</p>
-                    <p className="text-xs text-muted-foreground">{showPasswordForm ? 'Hide form' : 'Update your password'}</p>
+                    <p className="text-sm font-medium">{isGoogleUser ? 'Create Password' : 'Change Password'}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {isGoogleUser
+                        ? showPasswordForm ? 'Hide form' : 'Add a password to your Google account'
+                        : showPasswordForm ? 'Hide form' : 'Update your password'}
+                    </p>
                   </div>
                 </div>
                 <ChevronRight className={`w-4 h-4 transition-transform ${showPasswordForm ? 'rotate-90' : ''}`} />
               </div>
               {showPasswordForm && (
                 <div className="mt-4 space-y-3 pt-4 border-t">
-                  <div>
-                    <Label className="text-xs">Current Password</Label>
-                    <Input type="password" placeholder="..." value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
-                  </div>
+                  {isGoogleUser && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                      <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                      <p className="text-xs text-muted-foreground">
+                        Your account uses Google sign-in. You can create a password here to also be able to sign in with your email and password.
+                      </p>
+                    </div>
+                  )}
+                  {!isGoogleUser && (
+                    <div>
+                      <Label className="text-xs">Current Password</Label>
+                      <Input type="password" placeholder="..." value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+                    </div>
+                  )}
                   <div>
                     <Label className="text-xs">New Password</Label>
                     <Input type="password" placeholder="6+ chars" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
@@ -1170,7 +1198,7 @@ export default function Settings() {
                   {passwordError && <p className="text-xs text-destructive">{passwordError}</p>}
                   <Button onClick={handlePasswordChange} disabled={changingPassword} className="w-full">
                     {changingPassword ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                    Update Password
+                    {isGoogleUser ? 'Create Password' : 'Update Password'}
                   </Button>
                 </div>
               )}
