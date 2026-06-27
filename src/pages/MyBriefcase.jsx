@@ -443,13 +443,29 @@ export default function MyBriefcase() {
     const loadProfile = async (uid) => {
       if (!uid) { setRole('driver'); setPageLoading(false); return; }
       try {
+        // Check profiles table first
         const { data: profile } = await supabase
           .from('profiles')
-          .select('account_type')
+          .select('account_type, role')
           .eq('id', uid)
           .single();
-        console.log('[MyBriefcase] account_type:', profile?.account_type);
-        setRole(profile?.account_type || 'driver');
+
+        // Also check auth user_metadata as final fallback —
+        // covers users whose profiles row predates the account_type column write
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        const metaType = authUser?.user_metadata?.account_type;
+
+        const resolved = profile?.account_type || profile?.role || metaType || 'driver';
+        console.log('[MyBriefcase] profile.account_type:', profile?.account_type, '| profile.role:', profile?.role, '| meta:', metaType, '| resolved:', resolved);
+
+        // If profiles row is missing account_type but metadata has it, backfill it now
+        if (!profile?.account_type && metaType) {
+          supabase.from('profiles').update({ account_type: metaType }).eq('id', uid).then(() => {
+            console.log('[MyBriefcase] backfilled account_type:', metaType);
+          });
+        }
+
+        setRole(resolved);
       } catch {
         setRole('driver');
       } finally {
