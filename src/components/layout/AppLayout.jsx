@@ -6,43 +6,9 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 
-// ─── Page components for the five main tabs ────────────────────────────────
-import HomePage    from '@/pages/Dashboard';
-import SearchPage  from '@/pages/SearchPage';
-import TrackingPage   from '@/pages/Tracking';
-import BriefcasePage  from '@/pages/MyBriefcase';
-import MessagesPage   from '@/pages/Messages';
-
 // Must match bottom nav order exactly: Home → Search → Track → Wallet → Messages
-// ─── Search paths (dynamic based on account type) ───────────────────────────
-const SEARCH_PATHS = ['/search-vehicles', '/find-drivers', '/mysearch'];
-const CANONICAL_SEARCH_PATH = '/search-vehicles';
-const CANONICAL_PATHS = ['/home', CANONICAL_SEARCH_PATH, '/tracking', '/briefcase', '/messages'];
-
-const TABS = [
-  { path: '/home',               component: HomePage,      icon: Bike, label: 'Home'      },
-  { path: CANONICAL_SEARCH_PATH, component: SearchPage,    icon: Bike, label: 'Search'    },
-  { path: '/tracking',           component: TrackingPage,  icon: Bike, label: 'Track'     },
-  { path: '/briefcase',          component: BriefcasePage, icon: Bike, label: 'Briefcase' },
-  { path: '/messages',           component: MessagesPage,  icon: Bike, label: 'Messages'  },
-];
-
-const TAB_PATHS = TABS.reduce((acc, tab) => {
-  if (tab.path === CANONICAL_SEARCH_PATH) {
-    acc.push(...SEARCH_PATHS);
-  } else {
-    acc.push(tab.path);
-  }
-  return acc;
-}, []);
-
-const THRESHOLD = 0.3;
-
-function getTabIndex(pathname) {
-  if (SEARCH_PATHS.includes(pathname)) return 1;
-  const idx = CANONICAL_PATHS.indexOf(pathname);
-  return idx === -1 ? 0 : idx;
-}
+// Settings is in the header dropdown, not swipeable.
+const TAB_ORDER = ['/', '/search-vehicles', '/tracking', '/wallet', '/messages'];
 
 // ─── Navigation progress bar ──────────────────────────────────────────────────
 function useNavigationProgress(pathname) {
@@ -97,13 +63,9 @@ function VerificationGate({ user, userLoading, children }) {
   const navigate  = useNavigate();
 
   if (userLoading) return null; // wait — avoids flash of gate before user loads
-  if (!user) {
-    // Not logged in — redirect to auth
-    window.location.replace('/auth');
-    return null;
-  }
+  if (!user) return children;  // not logged in, router handles the auth redirect
 
-  const isAdmin   = user?.user_metadata?.is_admin === true || ADMIN_EMAILS.includes(user.email);
+  const isAdmin   = ADMIN_EMAILS.includes(user.email);
   const isExempt  = GATE_EXEMPT.some((p) => location.pathname.startsWith(p));
   if (isAdmin || isExempt) return children;
 
@@ -180,52 +142,49 @@ function MobileHeader() {
   return (
     <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card z-30 shrink-0">
       {/* Logo */}
-      <Link to="/home" className="flex items-center gap-2">
+      <Link to="/" className="flex items-center gap-2">
         <img src="/favicon.png" alt="Skootlink" className="w-8 h-8" />
         <span className="text-base font-bold text-foreground">Skootlink</span>
       </Link>
 
-      {/* Credit balance + profile button + dropdown */}
-      <div className="flex items-center gap-2">
-        <CreditBalance />
-        <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setOpen(v => !v)}
-            className={`w-11 h-11 rounded-full flex items-center justify-center border-2 transition-colors ${open ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-foreground'}`}
-            style={{ touchAction: 'manipulation' }}
-            aria-label="Account menu"
-          >
-            <User className="w-5 h-5" />
-          </button>
+      {/* Profile button + dropdown */}
+      <div className="relative" ref={dropdownRef}>
+        <button
+          onClick={() => setOpen(v => !v)}
+          className={`w-11 h-11 rounded-full flex items-center justify-center border-2 transition-colors ${open ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-foreground'}`}
+          style={{ touchAction: 'manipulation' }}
+          aria-label="Account menu"
+        >
+          <User className="w-5 h-5" />
+        </button>
 
-          {open && (
-            <div className="absolute right-0 mt-2 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden z-50">
-              <button
-                onClick={() => { setOpen(false); navigate('/profile'); }}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
-              >
-                <User className="w-4 h-4 text-muted-foreground" />
-                Profile
-              </button>
-              <div className="border-t border-border" />
-              <button
-                onClick={() => { setOpen(false); navigate('/settings'); }}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
-              >
-                <Settings className="w-4 h-4 text-muted-foreground" />
-                Settings
-              </button>
-              <div className="border-t border-border" />
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-destructive/10 text-destructive transition-colors text-left"
-              >
-                <LogOut className="w-4 h-4" />
-                Logout
-              </button>
-            </div>
-          )}
-        </div>
+        {open && (
+          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden z-50">
+            <button
+              onClick={() => { setOpen(false); navigate('/profile'); }}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
+            >
+              <User className="w-4 h-4 text-muted-foreground" />
+              Profile
+            </button>
+            <div className="border-t border-border" />
+            <button
+              onClick={() => { setOpen(false); navigate('/settings'); }}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
+            >
+              <Settings className="w-4 h-4 text-muted-foreground" />
+              Settings
+            </button>
+            <div className="border-t border-border" />
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-destructive/10 text-destructive transition-colors text-left"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -236,85 +195,55 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
+  const [slideClass, setSlideClass] = useState('');
   const [gateUser, setGateUser]       = useState(null);
   const [userLoading, setUserLoading] = useState(true);
   const [isBlacklisted, setIsBlacklisted] = useState(false);
-
-
-  // ── Strip swipe state ──────────────────────────────────────────────────
-  const isTabRoute = TAB_PATHS.includes(location.pathname);
-  const tabIndex = isTabRoute ? getTabIndex(location.pathname) : 0;
-  const [dragPercent, setDragPercent] = useState(0);
-  const isDragging = dragPercent !== 0;
-  const touchRef = useRef({ startX: 0, startY: 0, active: false, axisLocked: false, horizontal: false });
-  const stripRef = useRef(null);
+  const [creditModalOpen, setCreditModalOpen] = useState(false);
 
   const mainRef = useRef(null);
+  const prevLocationRef = useRef(location.pathname);
   const accountTypeRef = useRef('driver');
 
-  // ── Touch handlers ─────────────────────────────────────────────────────
-  const onTouchStart = useCallback((e) => {
-    if (e.target.closest('[data-no-swipe]')) return;
-    if (!isTabRoute) return;
-    touchRef.current = {
-      startX: e.touches[0].clientX,
-      startY: e.touches[0].clientY,
-      active: true,
-      axisLocked: false,
-      horizontal: false,
-    };
-  }, [isTabRoute]);
+  // Swipe tracking — only start/end positions, no live drag state
+  const swipeRef = useRef({ x: 0, y: 0, active: false });
 
-  const onTouchMove = useCallback((e) => {
-    const t = touchRef.current;
-    if (!t.active) return;
-
-    const dx = e.touches[0].clientX - t.startX;
-    const dy = e.touches[0].clientY - t.startY;
-
-    if (!t.axisLocked) {
-      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
-      t.axisLocked = true;
-      t.horizontal = Math.abs(dx) > Math.abs(dy);
-    }
-
-    if (!t.horizontal) return;
-    e.preventDefault();
-
-    let pct = (dx / window.innerWidth) * 100;
-    if (pct > 0 && tabIndex === 0) pct *= 0.15;
-    if (pct < 0 && tabIndex === CANONICAL_PATHS.length - 1) pct *= 0.15;
-
-    setDragPercent(pct);
-  }, [tabIndex]);
-
-  const onTouchEnd = useCallback(() => {
-    const t = touchRef.current;
-    t.active = false;
-    if (!t.horizontal) return;
-
-    if (dragPercent < -(THRESHOLD * 100) && tabIndex < CANONICAL_PATHS.length - 1) {
-      navigate(CANONICAL_PATHS[tabIndex + 1]);
-    } else if (dragPercent > (THRESHOLD * 100) && tabIndex > 0) {
-      navigate(CANONICAL_PATHS[tabIndex - 1]);
-    }
-
-    setDragPercent(0);
-  }, [dragPercent, tabIndex, navigate]);
-
+  // Listen for credit modal open/close events fired by CreditBalance
   useEffect(() => {
-    setDragPercent(0);
-  }, [location.pathname]);
+    const onOpen  = () => setCreditModalOpen(true);
+    const onClose = () => setCreditModalOpen(false);
+    window.addEventListener('skootlink:credit-modal-open',  onOpen);
+    window.addEventListener('skootlink:credit-modal-close', onClose);
+    return () => {
+      window.removeEventListener('skootlink:credit-modal-open',  onOpen);
+      window.removeEventListener('skootlink:credit-modal-close', onClose);
+    };
+  }, []);
 
-  // ── Strip translation ──────────────────────────────────────────────────
-  const N = CANONICAL_PATHS.length;
-  const baseX = -(tabIndex / N) * 100;
-  const dragX = (dragPercent / 100) * (100 / N);
-  const stripX = baseX + dragX;
+  // Swipe tracking — only start/end positions, no live drag state
+  const swipeRef = useRef({ x: 0, y: 0, active: false });
 
   useEffect(() => { accountTypeRef.current = accountType; }, [accountType]);
 
+  useEffect(() => {
+    const prevPath = prevLocationRef.current;
+    const newPath = location.pathname;
+    prevLocationRef.current = newPath;
 
+    const normalize = (p) =>
+      (p === '/find-drivers' || p === '/mysearch') ? '/search-vehicles' : p;
+
+    const prevIndex = TAB_ORDER.indexOf(normalize(prevPath));
+    const newIndex  = TAB_ORDER.indexOf(normalize(newPath));
+
+    if (Math.abs(newIndex - prevIndex) >= 1 && prevIndex !== -1 && newIndex !== -1) {
+      setSlideClass(newIndex > prevIndex ? 'slide-from-right' : 'slide-from-left');
+      const t = setTimeout(() => setSlideClass(''), 350);
+      return () => clearTimeout(t);
+    } else {
+      setSlideClass('');
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     auth.me().then(async (user) => {
@@ -356,7 +285,71 @@ export default function AppLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const getSearchPath = useCallback(() => {
+    const type = accountTypeRef.current;
+    if (type === 'owner') return '/find-drivers';
+    if (type === 'both') return '/mysearch';
+    return '/search-vehicles';
+  }, []);
 
+  const getCurrentTabIndex = useCallback((pathname) => {
+    const path = pathname || location.pathname;
+    if (path === '/search-vehicles' || path === '/find-drivers' || path === '/mysearch') return 1;
+    return TAB_ORDER.indexOf(path);
+  }, [location.pathname]);
+
+  // ── Swipe detection ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const onTouchStart = (e) => {
+      if (!mainRef.current?.contains(e.target)) return;
+      // Don't register swipe on slider or other no-swipe elements
+      if (e.target.closest('[data-no-swipe]')) return;
+      swipeRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        active: true,
+      };
+    };
+
+    const onTouchEnd = (e) => {
+      const s = swipeRef.current;
+      if (!s.active) return;
+      s.active = false;
+
+      const dx = e.changedTouches[0].clientX - s.x;
+      const dy = e.changedTouches[0].clientY - s.y;
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
+
+      if (adx > 10 && adx > ady) {
+        e.preventDefault();
+      }
+
+      if (adx < 40 || adx < ady * 2) return;
+
+      const currentIndex = getCurrentTabIndex();
+      if (currentIndex === -1) return;
+
+      if (dx < 0 && currentIndex < TAB_ORDER.length - 1) {
+        const next = currentIndex === 0 ? getSearchPath() : TAB_ORDER[currentIndex + 1];
+        navigate(next);
+      } else if (dx > 0 && currentIndex > 0) {
+        navigate(TAB_ORDER[currentIndex - 1]);
+      }
+    };
+
+    const onTouchCancel = () => { swipeRef.current.active = false; };
+
+    window.addEventListener('touchstart',  onTouchStart,  { passive: true  });
+    window.addEventListener('touchend',    onTouchEnd,    { passive: false });
+    window.addEventListener('touchcancel', onTouchCancel, { passive: true  });
+
+    return () => {
+      window.removeEventListener('touchstart',  onTouchStart);
+      window.removeEventListener('touchend',    onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchCancel);
+    };
+  }, [getCurrentTabIndex, getSearchPath, navigate]);
 
   // Suspended account — user was signed out; show full-page blocked screen
   if (isBlacklisted) {
@@ -403,54 +396,42 @@ export default function AppLayout() {
 
   return (
     <VerificationGate user={gateUser} userLoading={userLoading}>
-      <div className="flex min-h-screen bg-background">
-        <NavigationProgressBar pathname={location.pathname} />
-        <Sidebar />
+    <div className="flex min-h-screen bg-background">
+      <style>{`
+        .main-content {
+          transition: none !important;
+          touch-action: pan-y;
+          overscroll-behavior-x: none;
+        }
+        @keyframes slideFromRight {
+          from { transform: translateX(100%); }
+          to   { transform: translateX(0);    }
+        }
+        @keyframes slideFromLeft {
+          from { transform: translateX(-100%); }
+          to   { transform: translateX(0);     }
+        }
+        .slide-from-right { animation: slideFromRight 0.3s ease-out forwards; }
+        .slide-from-left  { animation: slideFromLeft  0.3s ease-out forwards; }
+      `}</style>
 
-        <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-screen">
-          <MobileHeader />
+      <NavigationProgressBar pathname={location.pathname} />
+      <Sidebar />
 
-          <div
-            ref={stripRef}
-            className="flex-1 min-h-0 overflow-hidden relative"
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
-            style={{ touchAction: 'pan-y' }}
-          >
-            {isTabRoute ? (
-              <div
-                className="absolute inset-0 flex"
-                style={{
-                  width: `${N * 100}%`,
-                  transform: `translateX(${stripX}%)`,
-                  transition: isDragging ? 'none' : 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-                  willChange: 'transform',
-                }}
-              >
-                {TABS.map(({ path, component: Page }, i) => {
-                  const isVisible = Math.abs(i - tabIndex) <= 1;
-                  return (
-                    <div
-                      key={path}
-                      className="h-full overflow-y-auto pb-20 lg:pb-0"
-                      style={{ width: `${100 / N}%`, flexShrink: 0, minHeight: '100vh' }}
-                    >
-                      {isVisible ? <Page /> : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="scroll-container h-full overflow-y-auto pb-20 lg:pb-0">
-                <Outlet />
-              </div>
-            )}
-          </div>
-        </div>
+      <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-screen">
+        <MobileHeader />
+        <main
+          ref={mainRef}
+          className={`flex-1 min-h-0 overflow-y-auto pb-20 lg:pb-0 main-content ${slideClass}`}
+        >
+          <Outlet />
+        </main>
+      </div>
 
+      <div style={{ display: creditModalOpen ? 'none' : undefined }}>
         <MobileNav />
       </div>
+    </div>
     </VerificationGate>
   );
 }

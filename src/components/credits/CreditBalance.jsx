@@ -11,9 +11,9 @@ import { toast } from 'sonner';
 
 // ── Credit packages (Skootlink pricing) ─────────────────────────────────────
 const PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 29,  credits: 10  },
-  { id: 'standard', label: 'Standard Pack', price: 49,  credits: 30, popular: true },
-  { id: 'pro',      label: 'Pro Pack',      price: 79,  credits: 60  },
+  { id: 'starter',  label: 'Starter Pack',  price: 39,  credits: 15  },
+  { id: 'standard', label: 'Standard Pack', price: 59,  credits: 30, popular: true },
+  { id: 'pro',      label: 'Pro Pack',      price: 99,  credits: 60  },
   { id: 'business', label: 'Business Pack', price: 199, credits: 200 },
 ];
 
@@ -52,7 +52,10 @@ export default function CreditBalance() {
   return (
     <>
       <button
-        onClick={() => setShowModal(true)}
+        onClick={() => {
+          setShowModal(true);
+          window.dispatchEvent(new Event('skootlink:credit-modal-open'));
+        }}
         className="flex items-center gap-1.5 bg-primary/10 text-primary px-3 py-1.5 rounded-full text-sm font-semibold hover:bg-primary/20 transition-colors"
         title="Your credits — tap to buy more"
       >
@@ -64,7 +67,11 @@ export default function CreditBalance() {
       {showModal && (
         <PurchaseModal
           balance={balance}
-          onClose={() => { setShowModal(false); refetch(); }}
+          onClose={() => {
+            setShowModal(false);
+            refetch();
+            window.dispatchEvent(new Event('skootlink:credit-modal-close'));
+          }}
         />
       )}
     </>

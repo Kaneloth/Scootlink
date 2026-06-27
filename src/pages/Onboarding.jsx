@@ -101,6 +101,7 @@ const ROLES = [
     id: 'driver',
     name: 'Driver',
     description: 'Search for and rent vehicles listed by owners on Skootlink.',
+    freeCredits: 18,
     icon: Bike,
     bg:   'bg-blue-50',
     border: 'border-blue-200',
@@ -110,6 +111,7 @@ const ROLES = [
     id: 'owner',
     name: 'Owner',
     description: 'List your vehicles and connect with verified drivers.',
+    freeCredits: 36,
     icon: Crown,
     bg:   'bg-amber-50',
     border: 'border-amber-200',
@@ -119,6 +121,7 @@ const ROLES = [
     id: 'both',
     name: 'Driver & Owner',
     description: 'Drive other vehicles and list your own — full platform access.',
+    freeCredits: 36,
     icon: Users,
     bg:   'bg-primary/5',
     border: 'border-primary/30',
@@ -252,6 +255,24 @@ export default function Onboarding() {
         }).eq('id', authUser.id);
       }
       await saveGeoLocation(buildLocation(), authUser?.id);
+
+      // ── Award sign-up free credits based on role ──────────────────────────
+      // Driver → 18 credits, Owner or Both → 36 credits
+      if (authUser?.id) {
+        const freeCredits = form.role === 'driver' ? 18 : 36;
+        try {
+          await supabase.rpc('add_credits', {
+            p_user_id:    authUser.id,
+            p_amount:     freeCredits,
+            p_type:       'bonus',
+            p_description: 'Welcome bonus credits',
+          });
+        } catch (creditErr) {
+          // Non-fatal — profile was saved successfully; credits can be added manually
+          console.warn('[Onboarding] free credits grant failed:', creditErr);
+        }
+      }
+
       toast.success('Profile saved! Welcome to Skootlink.');
       navigate('/home');
     } catch (err) {
@@ -338,6 +359,7 @@ export default function Onboarding() {
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-sm text-foreground">{role.name}</p>
                         <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{role.description}</p>
+                        <p className="text-xs text-primary font-medium mt-1">🎁 {role.freeCredits} free credits on sign-up</p>
                       </div>
                       {selected
                         ? <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
