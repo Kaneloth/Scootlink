@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { sendSMS } from '@/lib/sms';
+import { downloadContractPDF } from '@/lib/contractExport';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
 
@@ -347,57 +348,31 @@ export default function Dashboard() {
       await Vehicle.update(rental.vehicle_id, { status: 'rented' });
       toast.success('Rental confirmed! Vehicle assigned.');
 
-      // Fetch owner profile once — reused for SMS and email
+      // Resolve vehicle info for the PDF filename and header
+      const vehicle =
+        vehicles.find(v => v.id === rental.vehicle_id) ||
+        allVehiclesLookup.find(v => v.id === rental.vehicle_id) ||
+        allVehicles.find(v => v.id === rental.vehicle_id);
+      const vehicleInfo = vehicle
+        ? `${vehicle.make} ${vehicle.model}${vehicle.year ? ` (${vehicle.year})` : ''}`.trim()
+        : '';
+
+      // Download the signed contract as PDF to the driver's device
+      try {
+        downloadContractPDF(editableContractText, rental.id, vehicleInfo);
+        toast.info('Signed agreement downloaded to your device. Find a copy anytime in My Briefcase.');
+      } catch (pdfErr) {
+        console.error('[Dashboard] PDF download failed:', pdfErr);
+        toast.warning('Rental confirmed, but the PDF could not be generated. You can download it from My Briefcase.');
+      }
+
+      // SMS notification to owner
       try {
         const [ownerProfile] = await fetchProfilesViaFunction([rental.owner_id]);
-
-        // SMS notification to owner
         if (ownerProfile?.phone) {
-          await sendSMS(ownerProfile.phone, 'Great news! The driver has confirmed the Skootlink rental. The rental is now active.');
+          await sendSMS(ownerProfile.phone, 'Great news! The driver has confirmed the Skootlink rental. The rental is now active. Please check My Briefcase to download the signed agreement.');
         }
-
-        // Email signed agreement PDF to both parties
-        const vehicle =
-          vehicles.find(v => v.id === rental.vehicle_id) ||
-          allVehiclesLookup.find(v => v.id === rental.vehicle_id) ||
-          allVehicles.find(v => v.id === rental.vehicle_id);
-
-        // owner_email on the rental row is the most reliable source — the
-        // profiles function may not return emails due to RLS.
-        const ownerEmail = rental.owner_email || ownerProfile?.email || '';
-        const ownerName  = ownerProfile?.full_name || getCounterpartyName(rental.owner_id) || 'Owner';
-        // driver is the current user — their session always has an email.
-        const driverEmail = user?.email || '';
-        const driverName  = user?.full_name || 'Driver';
-        const vehicleInfo = vehicle
-          ? `${vehicle.make} ${vehicle.model}${vehicle.year ? ` (${vehicle.year})` : ''}`.trim()
-          : '';
-
-        if (driverEmail) {
-          const emailRes = await fetch('/.netlify/functions/send-contract-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contractText: editableContractText,
-              ownerEmail,
-              ownerName,
-              driverEmail,
-              driverName,
-              vehicleInfo,
-            }),
-          });
-          if (!emailRes.ok) {
-            const errBody = await emailRes.json().catch(() => ({}));
-            console.error('Contract email error:', errBody);
-            toast.warning('Rental confirmed, but the agreement email could not be sent. Please contact support.');
-          } else {
-            toast.info('Signed agreement emailed to both parties.');
-          }
-        }
-      } catch (emailErr) {
-        // Email/SMS failure must never block the main rental flow
-        console.error('Post-confirm notification error:', emailErr);
-      }
+      } catch { /* SMS failure must never block the main flow */ }
 
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });

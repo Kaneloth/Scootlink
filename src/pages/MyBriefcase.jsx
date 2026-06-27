@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/api/supabaseClient";
+import { downloadContractPDF } from "@/lib/contractExport";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,8 +73,9 @@ function Spinner() {
 
 function downloadContract(rental) {
   const v = rental.vehicles ?? {};
+  const vehicleInfo = [v.make, v.model, v.year ? `(${v.year})` : ''].filter(Boolean).join(' ');
   const text = rental.contract_text || [
-    "SKOOTLINK VEHICLE RENTAL CONTRACT",
+    "VEHICLE RENTAL AGREEMENT",
     "=".repeat(40),
     "",
     `Rental ID:   ${rental.id}`,
@@ -94,13 +96,7 @@ function downloadContract(rental) {
     "www.skootlink.co.za | help@skootlink.co.za",
   ].join("\n");
 
-  const blob = new Blob([text], { type: "text/plain" });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href     = url;
-  a.download = `skootlink_contract_${rental.id}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadContractPDF(text, rental.id, vehicleInfo);
 }
 
 /* ─── Contracts tab ──────────────────────────────────────────────────────── */
@@ -184,7 +180,7 @@ function ContractsTab({ userId, role }) {
                   onClick={() => downloadContract(r)}
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Download
+                  PDF
                 </Button>
               </div>
             </CardContent>
@@ -451,11 +447,10 @@ export default function MyBriefcase() {
         if (uid) {
           const { data: profile } = await supabase
             .from("profiles")
-            .select("account_type")
+            .select("role, account_type")
             .eq("id", uid)
             .single();
-          setRole(profile?.account_type || "driver");
-          console.log('[MyBriefcase] resolved role:', profile?.account_type);
+          setRole(profile?.role || profile?.account_type || "driver");
         } else {
           setRole("driver");
         }
@@ -476,18 +471,10 @@ export default function MyBriefcase() {
     );
   }
 
-  const isDriver = role === "driver";
-  const isOwner  = role === "owner";
-  const isBoth   = role === "both";
+  const isOwner  = role === "owner" || role === "both";
+  const gridCols = isOwner ? "grid-cols-3" : "grid-cols-2";
 
-  const tabs = isBoth
-    ? [
-        { value: "rentals",     label: "My Rentals",  icon: Car,      section: "Active Rentals",    sub: "Vehicles you are currently renting" },
-        { value: "listings",    label: "My Vehicles", icon: Truck,    section: "My Vehicles",       sub: "All your listed vehicles" },
-        { value: "assignments", label: "Assignments", icon: Truck,    section: "Active Assignments", sub: "Vehicles currently out on rental" },
-        { value: "contracts",   label: "Contracts",   icon: FileText, section: "Contracts",          sub: "Rentals with a signed contract" },
-      ]
-    : isOwner
+  const tabs = isOwner
     ? [
         { value: "listings",    label: "My Vehicles", icon: Car,      section: "My Vehicles",       sub: "All your listed vehicles" },
         { value: "assignments", label: "Assignments", icon: Truck,    section: "Active Assignments", sub: "Vehicles currently out on rental" },
@@ -497,8 +484,6 @@ export default function MyBriefcase() {
         { value: "rentals",   label: "Rentals",   icon: Car,      section: "Active Rentals", sub: "Vehicles you are currently renting" },
         { value: "contracts", label: "Contracts", icon: FileText, section: "Contracts",       sub: "Rentals with a signed contract" },
       ];
-
-  const gridCols = tabs.length === 4 ? "grid-cols-4" : tabs.length === 3 ? "grid-cols-3" : "grid-cols-2";
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
