@@ -438,29 +438,55 @@ export default function MyBriefcase() {
   const [pageLoading, setPageLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    let resolved = false;
+
+    const loadProfile = async (uid) => {
+      if (!uid) { setRole('driver'); setPageLoading(false); return; }
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('account_type')
+          .eq('id', uid)
+          .single();
+        console.log('[MyBriefcase] account_type:', profile?.account_type);
+        setRole(profile?.account_type || 'driver');
+      } catch {
+        setRole('driver');
+      } finally {
+        setPageLoading(false);
+      }
+    };
+
+    // Use onAuthStateChange — reliable on mobile where getSession() may return null
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (resolved) return;
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+        resolved = true;
+        const uid = session?.user?.id ?? null;
+        setUserId(uid);
+        loadProfile(uid);
+      }
+    });
+
+    // Fallback: if onAuthStateChange never fires within 5s
+    const fallback = setTimeout(async () => {
+      if (resolved) return;
+      resolved = true;
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const uid = session?.user?.id ?? null;
         setUserId(uid);
-
-        if (uid) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("role, account_type")
-            .eq("id", uid)
-            .single();
-          setRole(profile?.role || profile?.account_type || "driver");
-        } else {
-          setRole("driver");
-        }
-      } catch (err) {
-        console.error("MyBriefcase init:", err);
-        setRole("driver");
-      } finally {
+        await loadProfile(uid);
+      } catch {
+        setRole('driver');
         setPageLoading(false);
       }
-    })();
+    }, 5000);
+
+    return () => {
+      clearTimeout(fallback);
+      subscription?.unsubscribe();
+    };
   }, []);
 
   if (pageLoading) {
@@ -471,19 +497,29 @@ export default function MyBriefcase() {
     );
   }
 
-  const isOwner  = role === "owner" || role === "both";
-  const gridCols = isOwner ? "grid-cols-3" : "grid-cols-2";
+  const isDriver = role === 'driver';
+  const isOwner  = role === 'owner';
+  const isBoth   = role === 'both';
 
-  const tabs = isOwner
+  const tabs = isBoth
     ? [
-        { value: "listings",    label: "My Vehicles", icon: Car,      section: "My Vehicles",       sub: "All your listed vehicles" },
-        { value: "assignments", label: "Assignments", icon: Truck,    section: "Active Assignments", sub: "Vehicles currently out on rental" },
-        { value: "contracts",   label: "Contracts",   icon: FileText, section: "Contracts",          sub: "Rentals with a signed contract" },
+        { value: 'rentals',     label: 'My Rentals',  icon: Car,      section: 'Active Rentals',    sub: 'Vehicles you are currently renting' },
+        { value: 'listings',    label: 'My Vehicles', icon: Truck,    section: 'My Vehicles',       sub: 'All your listed vehicles' },
+        { value: 'assignments', label: 'Assignments', icon: Truck,    section: 'Active Assignments', sub: 'Vehicles currently out on rental' },
+        { value: 'contracts',   label: 'Contracts',   icon: FileText, section: 'Contracts',          sub: 'Rentals with a signed contract' },
+      ]
+    : isOwner
+    ? [
+        { value: 'listings',    label: 'My Vehicles', icon: Car,      section: 'My Vehicles',       sub: 'All your listed vehicles' },
+        { value: 'assignments', label: 'Assignments', icon: Truck,    section: 'Active Assignments', sub: 'Vehicles currently out on rental' },
+        { value: 'contracts',   label: 'Contracts',   icon: FileText, section: 'Contracts',          sub: 'Rentals with a signed contract' },
       ]
     : [
-        { value: "rentals",   label: "Rentals",   icon: Car,      section: "Active Rentals", sub: "Vehicles you are currently renting" },
-        { value: "contracts", label: "Contracts", icon: FileText, section: "Contracts",       sub: "Rentals with a signed contract" },
+        { value: 'rentals',   label: 'Rentals',   icon: Car,      section: 'Active Rentals', sub: 'Vehicles you are currently renting' },
+        { value: 'contracts', label: 'Contracts', icon: FileText, section: 'Contracts',       sub: 'Rentals with a signed contract' },
       ];
+
+  const gridCols = tabs.length === 4 ? 'grid-cols-4' : tabs.length === 3 ? 'grid-cols-3' : 'grid-cols-2';
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">

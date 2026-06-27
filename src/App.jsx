@@ -36,62 +36,30 @@ const AuthenticatedApp = () => {
   React.useEffect(() => {
     const path = window.location.pathname;
     const publicPaths = ['/', '/auth'];
-    let resolved = false;
 
-    const resolve = (redirectTo) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(safetyTimer);
-      if (redirectTo) {
-        window.location.replace(redirectTo);
+    // Safety net — never stay stuck beyond 5 seconds
+    const timer = setTimeout(() => setSupabaseChecked(true), 5000);
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(timer);
+      const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
+
+      if (isRecovery) {
+        if (path !== '/auth') { window.location.replace('/auth'); }
+        else { setSupabaseChecked(true); }
+      } else if (session && path === '/auth') {
+        window.location.replace('/home');
+      } else if (!session && !publicPaths.includes(path)) {
+        window.location.replace('/auth');
       } else {
         setSupabaseChecked(true);
       }
-    };
-
-    // Hard safety net — never stuck beyond 6s regardless of what Supabase does
-    const safetyTimer = setTimeout(() => {
-      resolve(null); // show whatever route we're on
-    }, 6000);
-
-    // onAuthStateChange is the most reliable signal on mobile —
-    // it fires even when getSession() returns null during session restore
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        if (path === '/auth') {
-          resolve('/home');
-        } else {
-          resolve(null);
-        }
-      }
-      if (event === 'SIGNED_OUT') {
-        if (!publicPaths.includes(path)) {
-          resolve('/auth');
-        } else {
-          resolve(null);
-        }
-      }
-      if (event === 'INITIAL_SESSION') {
-        const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
-        if (isRecovery) {
-          resolve(path !== '/auth' ? '/auth' : null);
-          return;
-        }
-        if (session && path === '/auth') {
-          resolve('/home');
-        } else if (!session && !publicPaths.includes(path)) {
-          // No session — redirect to auth immediately
-          resolve('/auth');
-        } else {
-          resolve(null);
-        }
-      }
+    }).catch(() => {
+      clearTimeout(timer);
+      setSupabaseChecked(true);
     });
 
-    return () => {
-      clearTimeout(safetyTimer);
-      subscription?.unsubscribe();
-    };
+    return () => clearTimeout(timer);
   }, []);
 
   if (!supabaseChecked) {
