@@ -359,7 +359,6 @@ export default function Onboarding() {
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-sm text-foreground">{role.name}</p>
                         <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{role.description}</p>
-                        <p className="text-xs text-primary font-medium mt-1">🎁 {role.freeCredits} free credits on sign-up</p>
                       </div>
                       {selected
                         ? <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
