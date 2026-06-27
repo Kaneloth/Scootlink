@@ -36,74 +36,57 @@ const AuthenticatedApp = () => {
   React.useEffect(() => {
     const path = window.location.pathname;
     const publicPaths = ['/', '/auth'];
+    let resolved = false;
 
-    // Safety net — never stay stuck beyond 8 seconds on mobile
-    const safetyTimer = setTimeout(() => {
-      setSupabaseChecked(true);
-    }, 8000);
-
-    const handleSession = (session) => {
+    const resolve = (redirectTo) => {
+      if (resolved) return;
+      resolved = true;
       clearTimeout(safetyTimer);
-      const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
-
-      if (isRecovery) {
-        if (path !== '/auth') {
-          window.location.replace('/auth');
-        } else {
-          setSupabaseChecked(true);
-        }
-        return;
-      }
-
-      if (session && path === '/auth') {
-        // Session exists but we're on /auth — go home
-        window.location.replace('/home');
-        return;
-      }
-
-      if (!session && !publicPaths.includes(path)) {
-        // No session on a protected route — but wait for onAuthStateChange
-        // before redirecting, in case Supabase is still restoring the session
-        // from localStorage (common on mobile after a fresh sign-in).
-        // We set checked=true here so the app renders — individual protected
-        // pages can handle their own auth guard if needed.
-        // The onAuthStateChange listener below will catch a late SIGNED_IN
-        // event and redirect to /home if it fires.
+      if (redirectTo) {
+        window.location.replace(redirectTo);
+      } else {
         setSupabaseChecked(true);
-        return;
       }
-
-      setSupabaseChecked(true);
     };
 
-    // Listen for auth state changes — catches late SIGNED_IN on mobile
-    // where getSession() returns null but the session arrives shortly after
+    // Hard safety net — never stuck beyond 6s regardless of what Supabase does
+    const safetyTimer = setTimeout(() => {
+      resolve(null); // show whatever route we're on
+    }, 6000);
+
+    // onAuthStateChange is the most reliable signal on mobile —
+    // it fires even when getSession() returns null during session restore
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        clearTimeout(safetyTimer);
-        const path = window.location.pathname;
         if (path === '/auth') {
-          window.location.replace('/home');
+          resolve('/home');
         } else {
-          setSupabaseChecked(true);
+          resolve(null);
         }
       }
       if (event === 'SIGNED_OUT') {
-        const path = window.location.pathname;
-        const publicPaths = ['/', '/auth'];
         if (!publicPaths.includes(path)) {
-          window.location.replace('/auth');
+          resolve('/auth');
+        } else {
+          resolve(null);
+        }
+      }
+      if (event === 'INITIAL_SESSION') {
+        const isRecovery = sessionStorage.getItem('skootlink_recovery') === '1';
+        if (isRecovery) {
+          resolve(path !== '/auth' ? '/auth' : null);
+          return;
+        }
+        if (session && path === '/auth') {
+          resolve('/home');
+        } else if (!session && !publicPaths.includes(path)) {
+          // No session — redirect to auth immediately
+          resolve('/auth');
+        } else {
+          resolve(null);
         }
       }
     });
-
-    // Primary session check
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => handleSession(session))
-      .catch(() => {
-        clearTimeout(safetyTimer);
-        setSupabaseChecked(true);
-      });
 
     return () => {
       clearTimeout(safetyTimer);
