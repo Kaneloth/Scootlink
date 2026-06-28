@@ -12,6 +12,7 @@ import { ShieldCheck, Loader2, Camera, Eye, EyeOff } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import StarRating from '@/components/reviews/StarRating';
 import { toast } from 'sonner';
+import VerificationPanel from '@/components/verification/VerificationPanel';
 
 // ─── Skeleton components ──────────────────────────────────────────────────────
 
@@ -93,6 +94,24 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [myReviews, setMyReviews] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [accountType, setAccountType] = useState('driver');
+
+  // Handle PayFast return after verification payment
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const verifStatus = params.get('verif_payment');
+    const service = params.get('service');
+    if (verifStatus === 'success' && service) {
+      toast.success('Payment received! You can now proceed with verification.');
+    } else if (verifStatus === 'cancelled') {
+      toast.info('Payment cancelled — verification was not started.');
+    }
+    if (verifStatus) {
+      params.delete('verif_payment'); params.delete('service');
+      const newUrl = window.location.pathname + (params.toString() ? `?${params}` : '');
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
 
   const fetchMyReviews = async (userId) => {
     setReviewsLoading(true);
@@ -117,7 +136,8 @@ export default function Profile() {
         setUser(u);
         setAvatarUrl(u.avatar_url || null);
         fetchMyReviews(u.id);
-        setAvatarVisible(u.avatar_visible !== false); // default true
+        setAvatarVisible(u.avatar_visible !== false);
+        setAccountType(u.account_type || 'driver');
         setForm({
           full_name: u.full_name || '',
           email: u.email || '',
@@ -207,6 +227,15 @@ export default function Profile() {
   };
 
   const handleSave = async () => {
+    if (!form.full_name.trim()) { toast.error('Full name is required'); return; }
+    if (!form.phone.trim()) { toast.error('Phone number is required'); return; }
+    if (!form.license_number.trim()) { toast.error('License number is required'); return; }
+    if (form.citizenship === 'South African' && !sensitiveForm.sa_id.trim()) {
+      toast.error('SA ID number is required'); return;
+    }
+    if (form.citizenship !== 'South African' && !sensitiveForm.passport.trim()) {
+      toast.error('Passport number is required'); return;
+    }
     setSaving(true);
     try {
       // ── 1. Update non-sensitive user metadata ──────────────────────────────
@@ -423,9 +452,10 @@ export default function Profile() {
       ) : null}
 
       <Tabs defaultValue="edit">
-        <TabsList className="grid w-full grid-cols-2 mb-4">
+        <TabsList className="grid w-full grid-cols-3 mb-4">
           <TabsTrigger value="edit">Edit Info</TabsTrigger>
-          <TabsTrigger value="reviews-received">My Reviews</TabsTrigger>
+          <TabsTrigger value="verification">Verification</TabsTrigger>
+          <TabsTrigger value="reviews-received">Reviews</TabsTrigger>
         </TabsList>
 
         <TabsContent value="edit">
@@ -436,7 +466,7 @@ export default function Profile() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
-                    <Label>Full Name</Label>
+                    <Label>Full Name <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
                       value={form.full_name}
@@ -463,7 +493,7 @@ export default function Profile() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
-                    <Label>Phone</Label>
+                    <Label>Phone <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
                       placeholder="+27 123 456 789"
@@ -518,7 +548,7 @@ export default function Profile() {
                 {/* Sensitive identity fields — saved to a separate RLS-protected table */}
                 {form.citizenship === 'South African' ? (
                   <div>
-                    <Label>SA ID Number</Label>
+                    <Label>SA ID Number <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
                       placeholder="13-digit ID"
@@ -528,7 +558,7 @@ export default function Profile() {
                   </div>
                 ) : (
                   <div>
-                    <Label>Passport Number</Label>
+                    <Label>Passport Number <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
                       placeholder="Passport number"
@@ -540,7 +570,7 @@ export default function Profile() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label>License Number</Label>
+                    <Label>License Number <span className="text-red-500">*</span></Label>
                     <Input
                       className="mt-1"
                       placeholder="DL123"
@@ -567,6 +597,17 @@ export default function Profile() {
               </div>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="verification">
+          <VerificationPanel
+            user={user}
+            accountType={accountType}
+            onUserUpdated={async () => {
+              const u = await auth.me();
+              setUser(u);
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="reviews-received">
