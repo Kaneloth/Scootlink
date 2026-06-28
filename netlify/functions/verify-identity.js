@@ -4,7 +4,6 @@ const { randomUUID } = require('crypto');
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const VERIFYNOW_API_KEY = process.env.VERIFYNOW_API_KEY;
-const VERIFYNOW_MODE    = process.env.VERIFYNOW_MODE || 'live';
 
 // ⚠️ SANDBOX MODE — Remove the `mode` field from both payloads below when going live
 
@@ -80,9 +79,7 @@ exports.handler = async (event) => {
   // ── Call VerifyNow ────────────────────────────────────────────────────────
   // SA ID:     reportType = 'said_verification'
   // Passport:  reportType = 'document_authentication'   (confirm with VerifyNow if needed)
-  const payload = {
-    mode: VERIFYNOW_MODE,
-  };
+  const payload = { mode: 'live' };
 
   if (documentType === 'sa_id') {
     payload.reportType = 'said_verification';

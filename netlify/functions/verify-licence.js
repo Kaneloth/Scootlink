@@ -9,7 +9,6 @@ const crypto = require('crypto');
 const SUPABASE_URL       = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY       = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const VERIFYNOW_API_KEY  = process.env.VERIFYNOW_API_KEY;
-const VERIFYNOW_MODE     = process.env.VERIFYNOW_MODE || 'live';
 
 // ── UUID helper — works on Node 14.0+ ────────────────────────────────────────
 function uuid() {
@@ -156,7 +155,7 @@ exports.handler = async (event) => {
     console.log('[verify-licence] Image sizes: front=%dB back=%dB', frontBuf.length, backBuf.length);
 
     // ── Build multipart ───────────────────────────────────────────────────
-    const textFields = { bundle: 'id_document_verification', mode: VERIFYNOW_MODE };
+    const textFields = { bundle: 'id_document_verification', mode: 'live' };
 
     const { body: formBody, contentType } = buildMultipart(textFields, [
       { name: 'front_image', buffer: frontBuf, filename: 'licence-front.jpg' },
