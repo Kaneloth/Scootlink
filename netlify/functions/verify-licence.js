@@ -155,7 +155,7 @@ exports.handler = async (event) => {
     console.log('[verify-licence] Image sizes: front=%dB back=%dB', frontBuf.length, backBuf.length);
 
     // ── Build multipart ───────────────────────────────────────────────────
-    const textFields = { bundle: 'id_document_verification' };
+    const textFields = { bundle: 'id_document_verification', mode: 'live' };
 
     const { body: formBody, contentType } = buildMultipart(textFields, [
       { name: 'front_image', buffer: frontBuf, filename: 'licence-front.jpg' },
