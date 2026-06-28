@@ -433,7 +433,7 @@ export default function AppLayout() {
                   return (
                     <div
                       key={path}
-                      className="h-full overflow-y-auto pb-20 lg:pb-0"
+                      className="h-full overflow-y-auto pb-28 lg:pb-0"
                       style={{ width: `${100 / N}%`, flexShrink: 0, minHeight: '100vh' }}
                     >
                       {isVisible ? <Page /> : null}
@@ -442,7 +442,7 @@ export default function AppLayout() {
                 })}
               </div>
             ) : (
-              <div className="scroll-container h-full overflow-y-auto pb-20 lg:pb-0">
+              <div className="scroll-container h-full overflow-y-auto pb-28 lg:pb-0">
                 <Outlet />
               </div>
             )}
