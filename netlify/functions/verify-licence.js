@@ -11,7 +11,7 @@ const SUPABASE_KEY       = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const VERIFYNOW_API_KEY  = process.env.VERIFYNOW_API_KEY;
 
 // ⚠️ Set to false for production
-const USE_SANDBOX = true;
+const USE_SANDBOX = false;
 
 // ── UUID helper — works on Node 14.0+ ────────────────────────────────────────
 function uuid() {
