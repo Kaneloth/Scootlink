@@ -84,6 +84,15 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
         },
         body: JSON.stringify({ service_type: service }),
       });
+
+      // Guard against HTML error pages (function not found, crashed, etc.)
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('[payfast-initiate-verification] non-JSON response:', res.status, text.slice(0, 200));
+        throw new Error(`Function error (${res.status}). Please ensure the payfast-initiate-verification function is deployed.`);
+      }
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
 
@@ -279,7 +288,10 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
       const res = await fetch('/.netlify/functions/verify-identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ documentType: 'sa_id', idNumber: saId.trim() }),
+        body: JSON.stringify({
+          documentType: 'sa_id',
+          idNumber:     saId.trim(),
+        }),
       });
       const data = await res.json();
       if (data.verified) {
@@ -319,7 +331,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
           documentType:     'passport',
-          passportNumber:   passportNumber.trim(),
+          idNumber:         passportNumber.trim(), // verify-identity.js uses idNumber for both types
           frontImageBase64: frontB64,
           backImageBase64:  backB64,
         }),

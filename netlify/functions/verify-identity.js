@@ -39,12 +39,25 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body); }
   catch { return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
-  const { idNumber, documentType } = body;
-  if (!idNumber || !documentType) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'idNumber and documentType are required' }) };
+  const { idNumber, documentType, frontImageBase64, backImageBase64 } = body;
+
+  // SA ID requires idNumber; passport requires idNumber + both images
+  if (!documentType) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'documentType is required' }) };
+  }
+  if (documentType === 'sa_id' && !idNumber) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'idNumber is required for SA ID verification' }) };
+  }
+  if (documentType === 'passport') {
+    if (!idNumber) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'idNumber (passport number) is required' }) };
+    }
+    if (!frontImageBase64 || !backImageBase64) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Both passport images are required' }) };
+    }
   }
 
-  const cleanId = idNumber.trim().toUpperCase();
+  const cleanId = idNumber ? idNumber.trim().toUpperCase() : '';
 
   // ── Blacklist check ───────────────────────────────────────────────────────
   const { data: banned } = await supabase
@@ -66,9 +79,7 @@ exports.handler = async (event) => {
   // ── Call VerifyNow ────────────────────────────────────────────────────────
   // SA ID:     reportType = 'said_verification'
   // Passport:  reportType = 'document_authentication'   (confirm with VerifyNow if needed)
-  const payload = {
-    mode: 'sandbox', // ← remove this line for production (or set to 'live')
-  };
+  const payload = {};
 
   if (documentType === 'sa_id') {
     payload.reportType = 'said_verification';
@@ -76,6 +87,12 @@ exports.handler = async (event) => {
   } else {
     payload.reportType = 'document_authentication';
     payload.passportNumber = cleanId;
+    // Include images if provided (required by VerifyNow for passport)
+    if (frontImageBase64 && backImageBase64) {
+      const toBuffer = b64 => Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64').toString('base64');
+      payload.frontImageBase64 = toBuffer(frontImageBase64);
+      payload.backImageBase64  = toBuffer(backImageBase64);
+    }
   }
 
   let vnResult;
