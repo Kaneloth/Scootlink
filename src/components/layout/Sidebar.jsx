@@ -1,52 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Search, MapPin, Briefcase, Settings, Bike, LogOut, Users, Plus, MessageCircle
+  LayoutDashboard, Search, MapPin, Briefcase, Settings, LogOut, Users, Plus, MessageCircle
 } from 'lucide-react';
-import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
+import { auth } from '@/api/supabaseData';
 
 const navItems = [
-  { label: 'Dashboard',      icon: LayoutDashboard, path: '/app'           },
+  { label: 'Dashboard',       icon: LayoutDashboard, path: '/home'           },
   { label: 'Search Vehicles', icon: Search,          path: '/search-vehicles' },
-  { label: 'Messages',        icon: MessageCircle,   path: '/messages'      },
-  { label: 'Find Drivers',    icon: Users,           path: '/find-drivers'  },
-  { label: 'Add Vehicle',     icon: Plus,            path: '/add-vehicle'   },
-  { label: 'GPS Tracking',    icon: MapPin,          path: '/tracking'      },
-  { label: 'Briefcase',       icon: Briefcase,       path: '/briefcase'     },
-  { label: 'Settings',        icon: Settings,        path: '/settings'      },
+  { label: 'Messages',        icon: MessageCircle,   path: '/messages'        },
+  { label: 'Find Drivers',    icon: Users,           path: '/find-drivers'    },
+  { label: 'Add Vehicle',     icon: Plus,            path: '/add-vehicle'     },
+  { label: 'GPS Tracking',    icon: MapPin,          path: '/tracking'        },
+  { label: 'Briefcase',       icon: Briefcase,       path: '/briefcase'       },
+  { label: 'Settings',        icon: Settings,        path: '/settings'        },
 ];
 
 export default function Sidebar() {
   const location = useLocation();
-  const navigate = useNavigate();
   const [user, setUser] = useState(null);
 
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
   }, []);
 
-  const handleLogout = async () => {
-    if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (data?.session) saveBiometricRefreshToken(data.session);
-      } catch { /* non-fatal */ }
-      navigate('/auth');
-    } else {
-      await supabase.auth.signOut();
-      navigate('/auth');
-    }
-  };
-
   return (
     <aside className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-card border-r border-border z-40">
       <div className="p-6 border-b border-border">
-        <Link to="/app" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-            <Bike className="w-5 h-5 text-primary-foreground" />
-          </div>
+        <Link to="/home" className="flex items-center gap-3">
+          <img src="/favicon.png" alt="Skootlink" className="w-10 h-10 rounded-xl" />
           <div>
-            <h1 className="text-lg font-bold text-foreground tracking-tight">Scootlink</h1>
+            <h1 className="text-lg font-bold text-foreground tracking-tight">Skootlink</h1>
             <p className="text-xs text-muted-foreground">Delivery Rentals</p>
           </div>
         </Link>
@@ -85,7 +69,7 @@ export default function Sidebar() {
           </div>
         )}
         <button
-          onClick={handleLogout}
+          onClick={() => auth.logout()}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all w-full"
         >
           <LogOut className="w-4 h-4" />
