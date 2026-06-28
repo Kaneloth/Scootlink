@@ -104,7 +104,7 @@ export default function NotificationBell() {
   };
 
   return (
-    <div className="relative" ref={panelRef}>
+    <div className="relative flex-shrink-0" ref={panelRef}>
       {/* Bell button */}
       <button
         onClick={handleOpen}
@@ -122,7 +122,14 @@ export default function NotificationBell() {
 
       {/* Dropdown panel */}
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-card shadow-xl z-50 overflow-hidden">
+        <div
+          className="absolute mt-2 rounded-2xl border border-border bg-card shadow-xl z-50 overflow-hidden"
+          style={{
+            right: 0,
+            width: '320px',
+            maxWidth: 'calc(100vw - 1rem)',
+          }}
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <p className="text-sm font-semibold text-foreground">Notifications</p>
