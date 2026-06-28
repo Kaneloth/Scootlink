@@ -74,12 +74,27 @@ export const handler = async (event) => {
 
   const user_id    = fields.custom_str1;
   const package_id = fields.custom_str2;
+  const payment_category = fields.custom_str3; // 'verification' or undefined (credit purchase)
 
   if (!user_id) {
     console.error('[payfast-webhook] missing custom_str1 (user_id)');
     return { statusCode: 200, body: 'OK' };
   }
 
+  // ── Handle verification service payments ────────────────────────────────────
+  if (payment_category === 'verification') {
+    const { error } = await supabase.rpc('mark_verification_paid', {
+      p_m_payment_id: fields.m_payment_id,
+    });
+    if (error) {
+      console.error('[payfast-webhook] mark_verification_paid failed:', error);
+    } else {
+      console.log(`[payfast-webhook] Verification payment marked paid: user=${user_id} service=${package_id}`);
+    }
+    return { statusCode: 200, body: 'OK' };
+  }
+
+  // ── Handle credit package payments (existing flow) ──────────────────────────
   const pkg = PACKAGES[package_id];
   if (!pkg) {
     console.error('[payfast-webhook] unknown package:', package_id);
