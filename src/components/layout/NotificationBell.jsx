@@ -123,12 +123,7 @@ export default function NotificationBell() {
       {/* Dropdown panel */}
       {open && (
         <div
-          className="absolute mt-2 rounded-2xl border border-border bg-card shadow-xl z-50 overflow-hidden"
-          style={{
-            right: 0,
-            width: '320px',
-            maxWidth: 'calc(100vw - 1rem)',
-          }}
+          className="fixed top-16 right-2 w-80 max-w-[calc(100vw-1rem)] rounded-2xl border border-border bg-card shadow-xl z-[999] overflow-hidden"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
