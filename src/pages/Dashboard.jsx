@@ -812,7 +812,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         </div>
       )}
 
-      {user ? (
+      {user && (
         ownerActiveRentals.length > 0 ? (
           <div className="space-y-3">
             {ownerActiveRentals.map(r => {
