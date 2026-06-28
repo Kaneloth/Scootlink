@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
-  Plus, Search, MapPin, Bike, Users, Car, Crown, ShieldCheck, AlertTriangle,
+  Plus, Search, MapPin, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -865,11 +865,6 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         ) : (
           <EmptyState icon="📋" title="No active assignments" description="When drivers rent your vehicles, they'll appear here" />
         )
-      ) : (
-        <Card className="p-4 border border-primary/20 bg-primary/5 flex items-center gap-3">
-          <Crown className="w-5 h-5 text-primary shrink-0" />
-          <div className="flex-1"><p className="text-sm font-medium">Manage rental assignments</p><p className="text-xs text-muted-foreground">View and manage your active rentals</p></div>
-        </Card>
       )}
     </>
   );
