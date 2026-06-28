@@ -79,7 +79,9 @@ exports.handler = async (event) => {
   // ── Call VerifyNow ────────────────────────────────────────────────────────
   // SA ID:     reportType = 'said_verification'
   // Passport:  reportType = 'document_authentication'   (confirm with VerifyNow if needed)
-  const payload = { mode: 'live' };
+  const payload = {
+    mode: 'sandbox', // ← remove this line for production (or set to 'live')
+  };
 
   if (documentType === 'sa_id') {
     payload.reportType = 'said_verification';
