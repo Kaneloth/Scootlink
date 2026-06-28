@@ -70,14 +70,18 @@ export const handler = async (event) => {
   const signature = generateSignature(fields, PASSPHRASE);
 
   // Pre-create a pending payment record so the webhook can mark it as paid
-  await supabase.from('verification_payments').insert({
-    user_id:      user.id,
-    service_type: body.service_type,
-    amount:       service.price,
-    m_payment_id,
-    status:       'pending',
-    used:         false,
-  }).catch(err => console.error('[payfast-initiate-verification] pre-insert failed:', err));
+  try {
+    await supabase.from('verification_payments').insert({
+      user_id:      user.id,
+      service_type: body.service_type,
+      amount:       service.price,
+      m_payment_id,
+      status:       'pending',
+      used:         false,
+    });
+  } catch (err) {
+    console.error('[payfast-initiate-verification] pre-insert failed:', err);
+  }
 
   console.log(`[payfast-initiate-verification] user=${user.id} service=${body.service_type} m_payment_id=${m_payment_id}`);
 
