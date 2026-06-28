@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import SearchVehicles from '@/pages/SearchVehicles';
 import FindDrivers from '@/pages/FindDrivers';
-import PageHeader from '@/components/layout/PageHeader';
 import { supabase } from '@/api/supabaseClient';
 import { Loader2 } from 'lucide-react';
 
@@ -84,7 +83,6 @@ export default function SearchPage() {
   if (roleLoading) {
     return (
       <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-        <PageHeader title="Search" backTo="/home" />
         <div className="flex justify-center py-16">
           <Loader2 className="w-7 h-7 animate-spin text-primary opacity-60" />
         </div>
@@ -99,27 +97,22 @@ export default function SearchPage() {
   // Driver — only vehicle search, no tabs needed
   if (isDriver) {
     return (
-      <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-        <PageHeader title="Find Vehicles" backTo="/home" />
-        {mounted ? <SearchVehicles /> : <SearchSkeleton />}
+      <div className="max-w-5xl mx-auto">
+        {mounted ? <SearchVehicles /> : <div className="p-4"><SearchSkeleton /></div>}
       </div>
     );
   }
 
-  // Owner — only driver search, no tabs needed
   if (isOwner) {
     return (
-      <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-        <PageHeader title="Find Drivers" backTo="/home" />
-        {mounted ? <FindDrivers /> : <SearchSkeleton />}
+      <div className="max-w-5xl mx-auto">
+        {mounted ? <FindDrivers /> : <div className="p-4"><SearchSkeleton /></div>}
       </div>
     );
   }
 
-  // Both — tabbed interface
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      <PageHeader title="Search" backTo="/home" />
       <Tabs defaultValue="vehicles">
         <TabsList className="mb-4">
           <TabsTrigger value="vehicles">🔍 Find Vehicles</TabsTrigger>
