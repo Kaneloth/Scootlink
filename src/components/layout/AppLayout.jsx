@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Bike, User, Settings, LogOut } from 'lucide-react';
-import CreditBalance from '@/components/credits/CreditBalance';
+import NotificationBell from '@/components/layout/NotificationBell';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
@@ -185,9 +185,9 @@ function MobileHeader() {
         <span className="text-base font-bold text-foreground">Skootlink</span>
       </Link>
 
-      {/* Credit balance + profile button + dropdown */}
+      {/* Notification bell + profile button + dropdown */}
       <div className="flex items-center gap-2">
-        <CreditBalance />
+        <NotificationBell />
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setOpen(v => !v)}

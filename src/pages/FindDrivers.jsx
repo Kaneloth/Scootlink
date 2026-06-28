@@ -17,7 +17,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/api/supabaseClient';
 import { geocodeLocation } from '@/lib/geocode';
 import ImageLightbox from '@/components/ui/ImageLightbox';
-import { sendSMS } from '@/lib/sms';
+import { notify } from '@/lib/notify';
 
 export default function FindDrivers() {
   const navigate = useNavigate();
@@ -251,12 +251,16 @@ export default function FindDrivers() {
       }]);
       if (error) throw error;
 
-      // Notify the driver by SMS
+      // Notify the driver in-app
       try {
-        if (selectedDriver.phone) {
-          await sendSMS(selectedDriver.phone, `${currentUser?.full_name?.split(' ')[0] || 'An owner'} has sent you a rental contract on Skootlink. Open the app to review and confirm.`);
-        }
-      } catch { /* SMS failure must never block the main flow */ }
+        await notify(
+          selectedDriver.id,
+          'rental_contract',
+          'New Rental Contract',
+          `${currentUser?.full_name?.split(' ')[0] || 'An owner'} has sent you a rental contract. Open your dashboard to review and confirm.`,
+          { owner_id: currentUser?.id }
+        );
+      } catch { /* notification failure must never block the main flow */ }
 
       toast.success(`Contract sent to ${selectedDriver.full_name?.split(' ')[0] || 'driver'}! They'll confirm on their dashboard.`);
       setSelectedDriver(null);
