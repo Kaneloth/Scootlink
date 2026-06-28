@@ -765,12 +765,32 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
   };
 
   const handleAcceptWithContract = async () => {
-    if (!contractAgreed || !selectedProposal) return;
+    if (!selectedProposal) return;
     try {
-      await Rental.update(selectedProposal.id, { contract_text: editableContractText });
-    } catch { /* non-fatal */ }
-    await handleProposalResponse(selectedProposal.id, 'accept');
-    closeContractModal();
+      // Save the edited contract text and send to driver in one atomic step
+      await Rental.update(selectedProposal.id, {
+        contract_text: editableContractText,
+        status: 'awaiting_driver_confirmation',
+      });
+      toast.success('Contract sent to driver for review!');
+
+      // Notify the driver
+      try {
+        await notify(
+          selectedProposal.driver_id,
+          'rental_contract',
+          'New Rental Contract',
+          'The owner has sent you a rental contract. Open your dashboard to review and accept.',
+          { rental_id: selectedProposal.id }
+        );
+      } catch { /* non-fatal */ }
+
+      queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
+    } catch (err) {
+      toast.error('Could not send contract: ' + err.message);
+    } finally {
+      closeContractModal();
+    }
   };
 
   // =============== RENDER HELPERS ===============
@@ -1281,7 +1301,12 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
           <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-1 shrink-0">
-              <h2 className="text-xl font-bold">Rental Agreement</h2>
+              <h2 className="text-xl font-bold">
+                {contractEditMode === 'accept' ? 'Draft & Send Contract' :
+                 contractEditMode === 'edit' ? 'Edit Contract' :
+                 contractEditMode === 'finalise' ? 'Confirm & Activate' :
+                 'Rental Agreement'}
+              </h2>
               <button onClick={closeContractModal} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
 
@@ -1292,11 +1317,14 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                   ? 'Edit the contract to reflect changes agreed via Messages, then save. The driver will see the updated version.'
                   : contractEditMode === 'finalise'
                     ? 'The driver has accepted this contract. Review it one final time, then confirm to activate the rental (10 credits will be deducted).'
-                    : 'Review and edit all details before sending to the driver. Once sent, the driver will review and accept before you finalise.'}
+                    : 'Edit the contract below — fill in all details, dates and terms. When ready, send it to the driver to review and accept.'}
             </p>
 
-            {/* Full contract textarea — editable for owner (accept/edit modes), read-only for driver (review) */}
-            <div className="bg-muted rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0">
+            {/* Full contract textarea */}
+            <div className={`rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0 ${contractEditMode === 'accept' ? 'bg-background border-2 border-primary/30 ring-1 ring-primary/10' : 'bg-muted'}`}>
+              {contractEditMode === 'accept' && (
+                <p className="text-[10px] text-primary font-medium mb-2 uppercase tracking-wide">✏️ Editable — tap to make changes</p>
+              )}
               <textarea
                 className="w-full h-full min-h-[40vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
                 value={editableContractText}
@@ -1305,8 +1333,8 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
               />
             </div>
 
-            {/* Checkbox shown for accept, review and finalise steps */}
-            {contractEditMode !== 'edit' && (
+            {/* Checkbox only for review and finalise (driver/owner signing steps) */}
+            {(contractEditMode === 'review' || contractEditMode === 'finalise') && (
               <div className="flex items-start gap-3 mb-4 shrink-0">
                 <input type="checkbox" id="agree-contract" checked={contractAgreed} onChange={e => setContractAgreed(e.target.checked)}
                   className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
@@ -1320,7 +1348,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
               <Button variant="outline" className="flex-1" onClick={closeContractModal}>Cancel</Button>
 
               {contractEditMode === 'accept' && (
-                <Button className="flex-1" disabled={!contractAgreed} onClick={handleAcceptWithContract}>
+                <Button className="flex-1" onClick={handleAcceptWithContract}>
                   Send to Driver
                 </Button>
               )}
