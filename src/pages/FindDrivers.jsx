@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
-import { MapPin, Clock, MessageCircle, ShieldCheck, SlidersHorizontal, X, User as UserIcon, FileText, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { MapPin, Clock, MessageCircle, ShieldCheck, SlidersHorizontal, X, User as UserIcon, FileText, ChevronDown, ChevronUp, Loader2, Check } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import StarRating from '@/components/reviews/StarRating';
 import PageHeader from '@/components/layout/PageHeader';
@@ -52,6 +52,8 @@ export default function FindDrivers() {
     message:        '',
   });
   const [sendingContract, setSendingContract] = useState(false);
+  const [showContractPreview, setShowContractPreview] = useState(false);
+  const [contractPreviewText, setContractPreviewText] = useState('');
 
   useEffect(() => {
     auth.me().then(u => {
@@ -230,15 +232,135 @@ export default function FindDrivers() {
   const isCurrentUserAdmin = ADMIN_EMAILS.includes(currentUser?.email);
   const canSendContract = true; // no subscription required — any owner can initiate a rental
 
-  const handleSendContract = async () => {
-    if (!selectedDriver || !currentUser) return;
+  const generateContractText = (vehicle, driver, owner, form) => {
+    const startDate = form.start_date ? new Date(form.start_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }) : '___________';
+    const endDate   = form.end_date   ? new Date(form.end_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }) : '___________';
+    const today     = new Date().toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' });
+    const weeks     = (form.start_date && form.end_date)
+      ? Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / (1000 * 60 * 60 * 24 * 7)))
+      : 0;
+    const rate      = parseFloat(form.price_per_week) || vehicle?.price_per_week || 0;
+    const deposit   = parseFloat(form.deposit) || vehicle?.deposit || 0;
+    const total     = weeks * rate;
+
+    return `VEHICLE RENTAL AGREEMENT
+${'='.repeat(50)}
+
+This Rental Agreement ("Agreement") is entered into on ${today} between:
+
+OWNER:  ${owner?.full_name || '___________'}
+        ID/Passport: ${owner?.id_number || owner?.id_document_number || '___________'}
+        Phone: ${owner?.phone || '___________'}
+
+DRIVER: ${driver?.full_name || '___________'}
+        ID/Passport: ${driver?.id_number || driver?.id_document_number || '___________'}
+        Licence No:  ${driver?.license_number || '___________'}
+        Phone: ${driver?.phone || '___________'}
+
+${'─'.repeat(50)}
+1. VEHICLE DETAILS
+${'─'.repeat(50)}
+
+Make & Model:  ${vehicle ? `${vehicle.make} ${vehicle.model}` : '___________'}
+Year:          ${vehicle?.year || '___________'}
+Plate Number:  ${vehicle?.plate || '___________'}
+Vehicle Type:  ${vehicle?.type || vehicle?.vehicle_type || '___________'}
+Colour:        ${vehicle?.colour || vehicle?.color || '___________'}
+
+${'─'.repeat(50)}
+2. RENTAL PERIOD
+${'─'.repeat(50)}
+
+Start Date:  ${startDate}
+End Date:    ${endDate}
+Duration:    ${weeks} week${weeks !== 1 ? 's' : ''}
+
+${'─'.repeat(50)}
+3. FINANCIAL TERMS
+${'─'.repeat(50)}
+
+Weekly Rate:   R ${rate.toFixed(2)}
+Total Amount:  R ${total.toFixed(2)} (${weeks} week${weeks !== 1 ? 's' : ''})
+Deposit:       R ${deposit.toFixed(2)}
+Payment Due:   Weekly in advance
+
+${form.message ? `Notes: ${form.message}\n` : ''}
+${'─'.repeat(50)}
+4. DRIVER RESPONSIBILITIES
+${'─'.repeat(50)}
+
+The Driver agrees to:
+• Use the vehicle solely for lawful delivery and transport purposes
+• Maintain the vehicle in clean and roadworthy condition
+• Report any accident, damage, or mechanical fault to the Owner within 24 hours
+• Not sublet or loan the vehicle to any third party
+• Return the vehicle on the agreed end date in the same condition as received
+• Cover all traffic fines, fuel, and day-to-day running costs
+
+${'─'.repeat(50)}
+5. OWNER RESPONSIBILITIES
+${'─'.repeat(50)}
+
+The Owner agrees to:
+• Provide the vehicle in a roadworthy and insured condition
+• Ensure the vehicle has a valid licence disc and roadworthy certificate
+• Not recall the vehicle before the end date without 7 days' written notice, except in the case of breach
+
+${'─'.repeat(50)}
+6. DEPOSIT & REFUND
+${'─'.repeat(50)}
+
+The deposit of R ${deposit.toFixed(2)} is held as security against damages, unpaid rent, or fines.
+Any damages, fines, or additional charges will be deducted from the deposit.
+The remaining deposit balance will be refunded within 7 days of the vehicle's return, subject to inspection.
+
+${'─'.repeat(50)}
+7. TERMINATION
+${'─'.repeat(50)}
+
+Either party may terminate this Agreement with 7 days' written notice.
+Immediate termination is permitted in the event of:
+• Non-payment of weekly rental
+• Reckless or unlawful use of the vehicle
+• Material breach of any term of this Agreement
+
+${'─'.repeat(50)}
+8. GOVERNING LAW
+${'─'.repeat(50)}
+
+This Agreement is governed by the laws of the Republic of South Africa.
+Any disputes shall be resolved through mediation before escalating to legal proceedings.
+
+${'─'.repeat(50)}
+9. SIGNATURES
+${'─'.repeat(50)}
+
+By confirming this Agreement on the Skootlink platform, both parties agree to be legally bound by all terms above.
+
+Owner:   ${owner?.full_name || '___________'}    Date: ${today}
+Driver:  ${driver?.full_name || '___________'}   Date: ___________
+
+${'='.repeat(50)}
+Generated by Skootlink (Pty) Ltd · www.skootlink.co.za
+`;
+  };
+
+  const handlePreviewContract = () => {
     if (!contractForm.vehicle_id)                            { toast.error('Please select a vehicle'); return; }
     if (!contractForm.start_date || !contractForm.end_date)  { toast.error('Please set the rental dates'); return; }
     if (!contractForm.price_per_week)                        { toast.error('Please enter the weekly rate'); return; }
 
+    const vehicle = ownerVehicles.find(v => String(v.id) === String(contractForm.vehicle_id));
+    const text = generateContractText(vehicle, selectedDriver, currentUser, contractForm);
+    setContractPreviewText(text);
+    setShowContractPreview(true);
+  };
+
+  const handleSendContract = async () => {
+    if (!selectedDriver || !currentUser) return;
     setSendingContract(true);
     try {
-      const { error } = await supabase.from('rentals').insert([{
+      const { data: rental, error } = await supabase.from('rentals').insert([{
         vehicle_id:     contractForm.vehicle_id,
         owner_id:       currentUser.id,
         driver_id:      selectedDriver.id,
@@ -248,7 +370,8 @@ export default function FindDrivers() {
         price_per_week: parseFloat(contractForm.price_per_week),
         deposit:        parseFloat(contractForm.deposit) || 0,
         message:        contractForm.message || '',
-      }]);
+        contract_text:  contractPreviewText,
+      }]).select().single();
       if (error) throw error;
 
       // Notify the driver in-app
@@ -265,6 +388,8 @@ export default function FindDrivers() {
       toast.success(`Contract sent to ${selectedDriver.full_name?.split(' ')[0] || 'driver'}! They'll confirm on their dashboard.`);
       setSelectedDriver(null);
       setShowContractForm(false);
+      setShowContractPreview(false);
+      setContractPreviewText('');
     } catch (err) {
       toast.error('Failed to send contract: ' + (err.message || 'please try again'));
     } finally {
@@ -632,12 +757,10 @@ export default function FindDrivers() {
 
                       <Button
                         className="w-full gap-2"
-                        disabled={sendingContract || ownerVehicles.length === 0}
-                        onClick={handleSendContract}
+                        disabled={ownerVehicles.length === 0}
+                        onClick={handlePreviewContract}
                       >
-                        {sendingContract
-                          ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
-                          : <><FileText className="w-4 h-4" /> Send Contract to {selectedDriver.full_name?.split(' ')[0] || 'Driver'}</>}
+                        <FileText className="w-4 h-4" /> Preview Contract Before Sending
                       </Button>
                     </div>
                   )}
@@ -664,6 +787,52 @@ export default function FindDrivers() {
       )}
 
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+
+      {/* Contract Preview Modal */}
+      {showContractPreview && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40"
+          onClick={() => setShowContractPreview(false)}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border flex flex-col max-h-[92vh]"
+            onClick={e => e.stopPropagation()}>
+
+            <div className="flex items-center justify-between mb-1 shrink-0">
+              <h2 className="text-xl font-bold">Draft & Send Contract</h2>
+              <button onClick={() => setShowContractPreview(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-muted-foreground mb-3 shrink-0">
+              Review and edit the contract below before sending to {selectedDriver?.full_name?.split(' ')[0] || 'the driver'}. Once sent, the driver will review and accept.
+            </p>
+
+            <div className="bg-background border-2 border-primary/30 rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0">
+              <p className="text-[10px] text-primary font-medium mb-2 uppercase tracking-wide">✏️ Editable — tap to make changes</p>
+              <textarea
+                className="w-full h-full min-h-[50vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
+                value={contractPreviewText}
+                onChange={e => setContractPreviewText(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-3 shrink-0">
+              <Button variant="outline" className="flex-1" onClick={() => setShowContractPreview(false)}>
+                Back to Edit
+              </Button>
+              <Button
+                className="flex-1 gap-2"
+                disabled={sendingContract}
+                onClick={handleSendContract}
+              >
+                {sendingContract
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
+                  : <><FileText className="w-4 h-4" /> Send to {selectedDriver?.full_name?.split(' ')[0] || 'Driver'}</>}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
