@@ -276,9 +276,11 @@ export default function Dashboard() {
   const ownerRentals = rentals.filter(r => r.owner_id === user?.id);
   const ownerPendingRentals = ownerRentals.filter(r => r.status === 'pending');
   const ownerAwaitingRentals = ownerRentals.filter(r => r.status === 'awaiting_driver_confirmation');
+  const ownerDriverAcceptedRentals = ownerRentals.filter(r => r.status === 'driver_accepted');
   const ownerActiveRentals = ownerRentals.filter(r => r.status === 'active');
 
   const driverPendingConfRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'awaiting_driver_confirmation');
+  const driverAcceptedRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'driver_accepted');
   const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
 
   const accountType = user?.account_type || 'both';
@@ -342,6 +344,53 @@ export default function Dashboard() {
   const handleDriverConfirm = async () => {
     if (!selectedProposal) return;
     try {
+      await safeRentalUpdate(
+        selectedProposal.id,
+        { status: 'driver_accepted' },
+        {}
+      );
+      toast.success('Contract accepted! The owner will finalise and activate the rental.');
+
+      // Notify the owner that driver has accepted
+      try {
+        await notify(
+          selectedProposal.owner_id,
+          'rental_accepted',
+          'Driver Accepted the Contract!',
+          'The driver has reviewed and accepted the rental contract. Go to your dashboard to finalise and activate the rental.',
+          { rental_id: selectedProposal.id }
+        );
+      } catch { /* non-fatal */ }
+
+      queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
+    } catch (err) {
+      toast.error('Could not accept contract: ' + err.message);
+    } finally {
+      closeContractModal();
+    }
+  };
+
+  // Owner's final confirm — deducts 10 credits, activates rental, downloads PDF
+  const handleOwnerFinalise = async () => {
+    if (!selectedProposal) return;
+
+    // Deduct 10 credits from the owner for accessing the rental agreement
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser) {
+      const { error: creditErr } = await supabase.rpc('deduct_credits', {
+        p_user_id:     currentUser.id,
+        p_amount:      10,
+        p_type:        'spend',
+        p_description: 'Access rental agreement',
+        p_ref_id:      selectedProposal.id,
+      });
+      if (creditErr?.message?.includes('insufficient_credits')) {
+        toast.error('You need 10 credits to finalise this rental agreement. Top up in Settings → Credits.');
+        return;
+      }
+    }
+
+    try {
       const rental = rentals.find(r => r.id === selectedProposal.id);
       if (!rental) return;
       await safeRentalUpdate(
@@ -350,9 +399,9 @@ export default function Dashboard() {
         { confirmed_at: new Date().toISOString() }
       );
       await Vehicle.update(rental.vehicle_id, { status: 'rented' });
-      toast.success('Rental confirmed! Vehicle assigned.');
+      toast.success('Rental activated!');
 
-      // Resolve vehicle info for the PDF filename and header
+      // Download signed contract PDF
       const vehicle =
         vehicles.find(v => v.id === rental.vehicle_id) ||
         allVehiclesLookup.find(v => v.id === rental.vehicle_id) ||
@@ -360,32 +409,29 @@ export default function Dashboard() {
       const vehicleInfo = vehicle
         ? `${vehicle.make} ${vehicle.model}${vehicle.year ? ` (${vehicle.year})` : ''}`.trim()
         : '';
-
-      // Download the signed contract as PDF to the driver's device
       try {
         downloadContractPDF(editableContractText, rental.id, vehicleInfo);
-        toast.info('Signed agreement downloaded to your device. Find a copy anytime in My Briefcase.');
+        toast.info('Signed agreement downloaded. Driver can also download it from My Briefcase.');
       } catch (pdfErr) {
         console.error('[Dashboard] PDF download failed:', pdfErr);
-        toast.warning('Rental confirmed, but the PDF could not be generated. You can download it from My Briefcase.');
       }
 
-      // Notify owner
+      // Notify driver that rental is now active
       try {
         await notify(
-          rental.owner_id,
+          rental.driver_id,
           'rental_active',
           'Rental is Now Active!',
-          'The driver has confirmed the rental. Check My Briefcase to download the signed agreement.',
+          'The owner has finalised the rental. Download the signed agreement from My Briefcase.',
           { rental_id: rental.id }
         );
-      } catch { /* notification failure must never block the main flow */ }
+      } catch { /* non-fatal */ }
 
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
     } catch (err) {
-      toast.error('Confirmation failed: ' + err.message);
+      toast.error('Could not finalise rental: ' + err.message);
     } finally {
       closeContractModal();
     }
@@ -793,7 +839,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
 
       {ownerAwaitingRentals.length > 0 && (
         <div className="mb-6">
-          <p className="text-sm font-medium text-muted-foreground mb-2">AWAITING DRIVER CONFIRMATION</p>
+          <p className="text-sm font-medium text-muted-foreground mb-2">AWAITING DRIVER REVIEW</p>
           <div className="space-y-3">
             {ownerAwaitingRentals.map(r => {
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
@@ -806,7 +852,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                     <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                   </div>
                   <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
-                    Contract sent — waiting for driver to confirm. Edit if changes were agreed via Messages, or withdraw to cancel.
+                    Contract sent — waiting for driver to review. Edit if changes were agreed via Messages, or withdraw to cancel.
                   </p>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" className="flex-1 gap-1.5" onClick={() => openContractModal(r, 'edit')}>
@@ -814,6 +860,39 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                     </Button>
                     <Button size="sm" variant="outline" className="flex-1 gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => handleWithdrawContract(r)}>
                       ✕ Withdraw
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {ownerDriverAcceptedRentals.length > 0 && (
+        <div className="mb-6">
+          <p className="text-sm font-medium text-muted-foreground mb-2">DRIVER ACCEPTED — AWAITING YOUR FINALISATION</p>
+          <div className="space-y-3">
+            {ownerDriverAcceptedRentals.map(r => {
+              const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
+              const driverName = getCounterpartyName(r.driver_id) || r.driver_email || 'Driver';
+              return (
+                <Card key={r.id} className="p-4 border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800">
+                  <div className="mb-3">
+                    <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
+                    <p className="text-xs text-muted-foreground">Driver: {driverName}</p>
+                    <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
+                    <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
+                  </div>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300 mb-3">
+                    ✅ Driver has accepted the contract. Review it and confirm to activate the rental (costs 10 credits).
+                  </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="flex-1 gap-1" onClick={() => openContractModal(r, 'finalise')}>
+                      <Check className="w-3.5 h-3.5" /> Confirm & Finalise
+                    </Button>
+                    <Button size="sm" variant="outline" className="flex-1 gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => handleWithdrawContract(r)}>
+                      ✕ Cancel
                     </Button>
                   </div>
                 </Card>
@@ -901,29 +980,53 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
 
       {driverPendingConfRentals.length > 0 && (
         <div className="mt-6">
-          <h3 className="text-lg font-semibold mb-3">Pending Confirmation</h3>
+          <h3 className="text-lg font-semibold mb-3">Contract Pending Your Review</h3>
           <div className="space-y-3">
             {driverPendingConfRentals.map(r => {
               const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
               const ownerName = getCounterpartyName(r.owner_id) || r.owner_email || 'Owner';
               return (
                 <Card key={r.id} className="p-4 border border-primary/30 bg-primary/5">
-                  <div className="flex flex-col sm:flex-row justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
-                      <p className="text-xs text-muted-foreground">Owner: {ownerName}</p>
-                      <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
-                      <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Button size="sm" className="gap-1" onClick={() => openContractModal(r, 'review')}>
-                        <Check className="w-3.5 h-3.5" /> Review & Confirm
-                      </Button>
-                      <Button size="sm" variant="outline" className="gap-1 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => handleRejectContract(r)}>
-                        ✕ Reject Contract
-                      </Button>
-                    </div>
+                  <div className="mb-3">
+                    <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
+                    <p className="text-xs text-muted-foreground">Owner: {ownerName}</p>
+                    <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
+                    <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                   </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Review the contract carefully. If you need changes, use Messages to discuss with the owner first.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="flex-1 gap-1" onClick={() => openContractModal(r, 'review')}>
+                      <Check className="w-3.5 h-3.5" /> Review & Accept
+                    </Button>
+                    <Button size="sm" variant="outline" className="flex-1 gap-1 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => handleRejectContract(r)}>
+                      ✕ Reject
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {driverAcceptedRentals.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold mb-3">Awaiting Owner Finalisation</h3>
+          <div className="space-y-3">
+            {driverAcceptedRentals.map(r => {
+              const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
+              const ownerName = getCounterpartyName(r.owner_id) || r.owner_email || 'Owner';
+              return (
+                <Card key={r.id} className="p-4 border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
+                  <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
+                  <p className="text-xs text-muted-foreground">Owner: {ownerName}</p>
+                  <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
+                  <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                    ✅ You accepted the contract. Waiting for the owner to confirm and activate the rental.
+                  </p>
                 </Card>
               );
             })}
@@ -1184,10 +1287,12 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
 
             <p className="text-xs text-muted-foreground mb-3 shrink-0">
               {contractEditMode === 'review'
-                ? 'Read the full agreement below. If you want any changes, request them via Messages — the owner will update the contract. Confirm only when you are fully satisfied.'
+                ? 'Read the full agreement carefully. If you need changes, close this and discuss with the owner via Messages. Accept only when fully satisfied.'
                 : contractEditMode === 'edit'
-                  ? 'Edit the contract below to reflect any changes agreed via Messages, then save. The driver will see the updated version.'
-                  : 'Review and edit all details below before sending to the driver. Once you accept, the driver will confirm to finalise the rental.'}
+                  ? 'Edit the contract to reflect changes agreed via Messages, then save. The driver will see the updated version.'
+                  : contractEditMode === 'finalise'
+                    ? 'The driver has accepted this contract. Review it one final time, then confirm to activate the rental (10 credits will be deducted).'
+                    : 'Review and edit all details before sending to the driver. Once sent, the driver will review and accept before you finalise.'}
             </p>
 
             {/* Full contract textarea — editable for owner (accept/edit modes), read-only for driver (review) */}
@@ -1196,11 +1301,11 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                 className="w-full h-full min-h-[40vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
                 value={editableContractText}
                 onChange={e => setEditableContractText(e.target.value)}
-                readOnly={contractEditMode === 'review'}
+                readOnly={contractEditMode === 'review' || contractEditMode === 'finalise'}
               />
             </div>
 
-            {/* Checkbox only shown for accept and review (actual signing steps) */}
+            {/* Checkbox shown for accept, review and finalise steps */}
             {contractEditMode !== 'edit' && (
               <div className="flex items-start gap-3 mb-4 shrink-0">
                 <input type="checkbox" id="agree-contract" checked={contractAgreed} onChange={e => setContractAgreed(e.target.checked)}
@@ -1216,17 +1321,22 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
 
               {contractEditMode === 'accept' && (
                 <Button className="flex-1" disabled={!contractAgreed} onClick={handleAcceptWithContract}>
-                  Accept & Send to Driver
+                  Send to Driver
                 </Button>
               )}
               {contractEditMode === 'edit' && (
                 <Button className="flex-1" onClick={handleSaveContractEdits}>
-                  Save Contract Changes
+                  Save Changes
                 </Button>
               )}
               {contractEditMode === 'review' && (
                 <Button className="flex-1" disabled={!contractAgreed} onClick={handleDriverConfirm}>
-                  Confirm & Finalise Rental
+                  Accept Contract
+                </Button>
+              )}
+              {contractEditMode === 'finalise' && (
+                <Button className="flex-1" disabled={!contractAgreed} onClick={handleOwnerFinalise}>
+                  <Check className="w-4 h-4 mr-1" /> Confirm & Activate (10 cr)
                 </Button>
               )}
             </div>
