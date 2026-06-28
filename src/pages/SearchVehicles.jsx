@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Card } from '@/components/ui/card';
-import { SlidersHorizontal, X, Lock, Loader2, MapPin } from 'lucide-react';
+import { SlidersHorizontal, X, Loader2, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/layout/PageHeader';
 import VehicleCard from '@/components/vehicles/VehicleCard';
@@ -242,6 +242,7 @@ export default function SearchVehicles() {
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
       <PageHeader
         title="Find Vehicles"
+        backTo="/home"
         subtitle={
           geocoding
             ? 'Locating…'
@@ -412,28 +413,10 @@ export default function SearchVehicles() {
         <>
           <div className="space-y-3">
             {(() => {
-              const isAdmin     = ['kanelothelejane@gmail.com'].includes(user?.email);
-              const canInteract = isAdmin || (user?.subscription_active && user?.verified);
-              const lockLabel   = !user?.subscription_active ? 'Subscribe to rent' : 'Verification pending';
-              const lockMessage = !user?.subscription_active
-                ? 'You need an active subscription to request a rental'
-                : "Your account is awaiting verification — you'll be able to rent once approved";
-
               return vehicles.map((v) => {
               if (!v?.id) return null;
-
-              if (canInteract) {
-                return (
-                  <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
-                );
-              }
               return (
-                <div key={v.id} className="relative">
-                  <VehicleCard vehicle={v} onClick={() => toast.warning(lockMessage)} />
-                  <div className="absolute bottom-0 left-0 right-0 bg-amber-500/90 text-white text-[11px] font-medium px-3 py-1.5 rounded-b-xl flex items-center justify-center gap-1.5 pointer-events-none">
-                    <Lock className="w-3 h-3 shrink-0" /> {lockLabel}
-                  </div>
-                </div>
+                <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
               );
             });
             })()}
