@@ -10,6 +10,7 @@ import {
   Copy, Trash2, Trash, Check, CheckCheck, Clock, AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { sendSMS } from '@/lib/sms';
 import { supabase as supabaseClient } from '@/api/supabaseClient';
 
 // ── localStorage helpers for client-side "delete for me" ─────────────────────
@@ -469,6 +470,13 @@ export default function Messages() {
     } else if (inserted) {
       // Replace optimistic with real DB message
       setMessages((prev) => prev.map((m) => m.id === tempId ? inserted : m));
+      try {
+        const { data: recipientProfile } = await supabase
+          .from('profiles').select('phone').eq('id', selectedChat.otherUserId).single();
+        if (recipientProfile?.phone) {
+          await sendSMS(recipientProfile.phone, `You have a new message from ${user.full_name || 'a Skootlink user'}. Open the app to reply.`);
+        }
+      } catch { /* SMS failure must never block the main flow */ }
     }
   };
 
@@ -566,25 +574,9 @@ export default function Messages() {
     setContextMenu({
       type: 'conversation', conv,
       options: [
-        { action: 'delete_chat', label: 'Delete chat',   icon: <Trash2 className="w-4 h-4" />, destructive: true  },
-        { action: 'block_user',  label: 'Block user',    icon: <Lock   className="w-4 h-4" />, destructive: true  },
+        { action: 'delete_chat', label: 'Delete chat', icon: <Trash2 className="w-4 h-4" />, destructive: true },
       ],
     });
-  };
-
-  const handleBlockUser = async (otherUserId, otherUserName) => {
-    try {
-      await supabase.from('blocked_users').upsert({
-        blocker_id: user.id,
-        blocked_id: otherUserId,
-      }, { onConflict: 'blocker_id,blocked_id' });
-      handleDeleteChat(otherUserId);
-      toast.success(`${otherUserName || 'User'} has been blocked.`);
-    } catch (err) {
-      // Table may not exist yet — still hide the chat locally
-      handleDeleteChat(otherUserId);
-      toast.success(`${otherUserName || 'User'} has been blocked.`);
-    }
   };
 
   const handleMenuAction = (action) => {
@@ -593,7 +585,6 @@ export default function Messages() {
     if (action === 'delete_for_me')       handleDeleteForMe(contextMenu.msg?.id);
     if (action === 'delete_for_everyone') handleDeleteForEveryone(contextMenu.msg?.id);
     if (action === 'delete_chat')         handleDeleteChat(contextMenu.conv?.otherUserId);
-    if (action === 'block_user')          handleBlockUser(contextMenu.conv?.otherUserId, contextMenu.conv?.otherUserName);
   };
 
   // ── Visible messages ──────────────────────────────────────────────────────
@@ -616,7 +607,7 @@ export default function Messages() {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/home'); }}
+                onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/app'); }}
                 className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg p-2 -ml-2"
                 style={{ touchAction: 'manipulation', minHeight: '44px' }}
               >
@@ -697,9 +688,8 @@ export default function Messages() {
           )}
         </>
       ) : (
-        <div className="fixed inset-0 z-40 bg-background flex flex-col" style={{ top: 0, bottom: 0 }}>
-          {/* Chat header */}
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-background shrink-0">
+        <>
+          <div className="flex items-center gap-3 mb-4">
             <button
               onClick={closeChat}
               className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg py-2 px-1 -ml-1"
@@ -710,7 +700,7 @@ export default function Messages() {
             <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
               {selectedChat.otherUserAvatar
                 ? <img src={selectedChat.otherUserAvatar} alt="" className="w-full h-full object-cover" />
-                : <span className="text-sm font-bold text-primary">{(selectedChat.otherUserName || 'U')[0].toUpperCase()}</span>}
+                : <User className="w-4 h-4 text-primary" />}
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="text-base font-bold text-foreground leading-tight truncate">{selectedChat.otherUserName}</h2>
@@ -728,8 +718,7 @@ export default function Messages() {
             </button>
           </div>
 
-          {/* Scrollable messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" id="messages-container" style={{ touchAction: 'pan-y' }}>
+          <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto" id="messages-container" style={{ touchAction: 'pan-y' }}>
             {chatLoading ? (
               <MessagesSkeleton />
             ) : !isSubscribed ? (
@@ -792,7 +781,7 @@ export default function Messages() {
           </div>
 
           {canMessage && (
-            <div className="border-t border-border px-4 pt-3 pb-6 shrink-0 bg-background">
+            <div className="border-t border-border pt-4">
               <Textarea
                 placeholder="Type your message…"
                 value={newMessage}
@@ -807,7 +796,7 @@ export default function Messages() {
               </Button>
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );
