@@ -385,7 +385,7 @@ function Footer() {
             <div style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <img src="/favicon.png" alt="Skootlink" style={{ height: 40, width: "auto" }} />
-                <span style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: "-0.5px" }}>Skootlink</span>
+                <span style={{ fontSize: 20, fontWeight: 700, color: "#fff", letterSpacing: "-0.025em", fontFamily: "inherit" }}>Skootlink</span>
               </div>
             </div>
             <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 14 }}>The formal way to rent vehicles for gig work in South Africa.</p>
