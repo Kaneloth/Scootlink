@@ -697,9 +697,9 @@ export default function Messages() {
           )}
         </>
       ) : (
-        <div className="flex flex-col h-[calc(100vh-5rem)] lg:h-[calc(100vh-2rem)]">
-          {/* Sticky chat header */}
-          <div className="flex items-center gap-3 py-3 border-b border-border bg-background sticky top-0 z-10 shrink-0">
+        <div className="fixed inset-0 z-40 bg-background flex flex-col" style={{ top: 0, bottom: 0 }}>
+          {/* Chat header */}
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-background shrink-0">
             <button
               onClick={closeChat}
               className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg py-2 px-1 -ml-1"
@@ -729,7 +729,7 @@ export default function Messages() {
           </div>
 
           {/* Scrollable messages */}
-          <div className="flex-1 overflow-y-auto py-4 space-y-3" id="messages-container" style={{ touchAction: 'pan-y' }}>
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" id="messages-container" style={{ touchAction: 'pan-y' }}>
             {chatLoading ? (
               <MessagesSkeleton />
             ) : !isSubscribed ? (
@@ -792,7 +792,7 @@ export default function Messages() {
           </div>
 
           {canMessage && (
-            <div className="border-t border-border pt-3 pb-2 shrink-0 bg-background">
+            <div className="border-t border-border px-4 pt-3 pb-6 shrink-0 bg-background">
               <Textarea
                 placeholder="Type your message…"
                 value={newMessage}
