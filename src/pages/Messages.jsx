@@ -9,7 +9,6 @@ import {
   Copy, Trash, Trash2, Check, CheckCheck, UserX, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
-
 // ── localStorage helpers ──────────────────────────────────────────────────────
 const hiddenKey      = (uid) => `skootlink_hidden_msgs_${uid}`;
 const hiddenChatsKey = (uid) => `skootlink_hidden_chats_${uid}`;
@@ -17,8 +16,7 @@ const getHidden      = (uid) => { try { return new Set(JSON.parse(localStorage.g
 const getHiddenChats = (uid) => { try { return new Set(JSON.parse(localStorage.getItem(hiddenChatsKey(uid))|| '[]')); } catch { return new Set(); } };
 const addHidden      = (uid, id)  => { const s = getHidden(uid);      s.add(id);  localStorage.setItem(hiddenKey(uid),      JSON.stringify([...s])); };
 const addHiddenChat  = (uid, pid) => { const s = getHiddenChats(uid); s.add(pid); localStorage.setItem(hiddenChatsKey(uid), JSON.stringify([...s])); };
-
-// ── Time helpers ──────────────────────────────────────────────────────────────
+// ── Date separator helper ─────────────────────────────────────────────────────
 function dateSep(iso) {
   const d = new Date(iso);
   const today = new Date();
@@ -31,52 +29,137 @@ function sameDay(a, b) { return new Date(a).toDateString() === new Date(b).toDat
 function fmtTime(iso) { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 function fmtThread(iso) {
   const d = new Date(iso);
-  if (d.toDateString() === new Date().toDateString()) return fmtTime(iso);
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return fmtTime(iso);
   return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CHAT ROOM
-// Uses h-[calc(100vh-56px-64px)] exactly like Crosssa to fit between
-// the app header (56px) and the bottom nav (64px)
-// ═══════════════════════════════════════════════════════════════════════════════
-function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
-  const [messages,       setMessages]       = useState([]);
-  const [text,           setText]           = useState('');
-  const [sending,        setSending]        = useState(false);
-  const [loading,        setLoading]        = useState(true);
-  const [selectedMsg,    setSelectedMsg]    = useState(null);
-  const [hiddenMsgs,     setHiddenMsgs]     = useState(() => getHidden(user.id));
-  const [partnerProfile, setPartnerProfile] = useState(null);
-  const [partnerVehicles,setPartnerVehicles]= useState([]);
-  const [showProfile,    setShowProfile]    = useState(false);
+// ── Shared ProfileCard modal ──────────────────────────────────────────────────
+// Renders via createPortal so it floats above everything.
+function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
+  const [profile,  setProfile]  = useState(null);
+  const [vehicles, setVehicles] = useState([]);
 
-  const bottomRef     = useRef(null);
-  const menuRef       = useRef(null);
-  const longPressRef  = useRef(null);
-  const longTriggered = useRef(false);
-  const broadcastRef  = useRef(null);
-
-  const isAdmin = ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
-  const canSend = isAdmin || (creditBalance !== null && creditBalance >= 3);
-  const initials = partner.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
-
-  // Fetch partner profile + vehicles
   useEffect(() => {
     (async () => {
-      const { data: profile } = await supabase
+      const { data: p } = await supabase
         .from('profiles')
-        .select('id, full_name, location, account_type, verified, avatar_url, rating, total_reviews')
-        .eq('id', partner.id).single();
-      setPartnerProfile(profile);
-      if (profile?.account_type === 'owner' || profile?.account_type === 'both') {
-        const { data: vehicles } = await supabase
+        .select('id, full_name, phone, location, account_type, verified, avatar_url, rating, total_reviews')
+        .eq('id', partnerId)
+        .single();
+      setProfile(p);
+      if (p?.account_type === 'owner' || p?.account_type === 'both') {
+        const { data: v } = await supabase
           .from('vehicles')
-          .select('id, make, model, year, type, plate, price_per_week, status')
-          .eq('owner_id', partner.id).limit(5);
-        setPartnerVehicles(vehicles || []);
+          .select('id, make, model, year, type, plate, price_per_week, deposit, status')
+          .eq('owner_id', partnerId)
+          .limit(5);
+        setVehicles(v || []);
       }
     })();
+  }, [partnerId]);
+
+  const initials = partnerName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] bg-black/50 flex items-end justify-center p-4"
+      onClick={onClose}>
+      <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        {!profile ? (
+          <div className="flex justify-center py-10">
+            <Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" />
+          </div>
+        ) : (
+          <>
+            {/* Header */}
+            <div className="bg-primary/10 px-5 pt-5 pb-4 flex items-center gap-4">
+              <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden shrink-0">
+                {partnerAvatar
+                  ? <img src={partnerAvatar} alt="" className="w-full h-full object-cover" />
+                  : <span className="text-xl font-bold text-primary">{initials}</span>}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-foreground truncate">{profile.full_name || partnerName}</p>
+                {profile.location && <p className="text-xs text-muted-foreground">{profile.location}</p>}
+                <div className="flex items-center gap-2 mt-1">
+                  {profile.verified && (
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-0.5 rounded-full font-medium">✅ Verified</span>
+                  )}
+                  <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium capitalize">
+                    {profile.account_type || 'driver'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            {/* Stats */}
+            {(profile.rating > 0 || profile.total_reviews > 0) && (
+              <div className="px-5 py-3 border-b border-border flex items-center gap-4">
+                <div className="text-center">
+                  <p className="font-bold text-foreground">{Number(profile.rating || 0).toFixed(1)}</p>
+                  <p className="text-xs text-muted-foreground">Rating</p>
+                </div>
+                <div className="text-center">
+                  <p className="font-bold text-foreground">{profile.total_reviews || 0}</p>
+                  <p className="text-xs text-muted-foreground">Reviews</p>
+                </div>
+              </div>
+            )}
+            {/* Vehicles */}
+            {vehicles.length > 0 && (
+              <div className="px-5 py-3 border-b border-border">
+                <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Listed Vehicles</p>
+                <div className="space-y-2">
+                  {vehicles.map(v => (
+                    <div key={v.id} className="flex items-center justify-between text-sm">
+                      <div>
+                        <p className="font-medium text-foreground">{v.make} {v.model} {v.year && `(${v.year})`}</p>
+                        <p className="text-xs text-muted-foreground">{v.type} · {v.plate}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-primary text-xs">R{v.price_per_week}/wk</p>
+                        <p className={`text-[10px] ${v.status === 'available' ? 'text-emerald-600' : 'text-amber-600'}`}>{v.status}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="px-5 py-4">
+              <button onClick={onClose} className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors">Close</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHAT ROOM — shown when a conversation is open
+// ═══════════════════════════════════════════════════════════════════════════════
+function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
+  const [messages,     setMessages]     = useState([]);
+  const [text,         setText]         = useState('');
+  const [sending,      setSending]      = useState(false);
+  const [loading,      setLoading]      = useState(true);
+  const [selectedMsg,  setSelectedMsg]  = useState(null);
+  const [hiddenMsgs,   setHiddenMsgs]   = useState(() => getHidden(user.id));
+  const [showProfile,  setShowProfile]  = useState(false);
+  const [partnerLocation, setPartnerLocation] = useState('');
+  const bottomRef       = useRef(null);
+  const menuRef         = useRef(null);
+  const longPressRef    = useRef(null);
+  const longTriggered   = useRef(false);
+  const broadcastRef    = useRef(null);
+  const isAdmin   = ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
+  const canSend   = isAdmin || (creditBalance !== null && creditBalance >= 3);
+
+  // Load partner location for header subtitle
+  useEffect(() => {
+    supabase.from('profiles').select('location').eq('id', partner.id).single()
+      .then(({ data }) => { if (data?.location) setPartnerLocation(data.location); });
   }, [partner.id]);
 
   // Load messages
@@ -84,7 +167,8 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     (async () => {
       setLoading(true);
       const { data } = await supabase
-        .from('messages').select('*')
+        .from('messages')
+        .select('*')
         .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partner.id}),and(sender_id.eq.${partner.id},receiver_id.eq.${user.id})`)
         .order('created_at', { ascending: true });
       const hidden = getHidden(user.id);
@@ -96,34 +180,33 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     })();
   }, []);
 
-  // Scroll to bottom
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // Realtime
   useEffect(() => {
     const convKey = [user.id, partner.id].sort().join('_');
     const ch = supabase.channel(`chat-${convKey}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
-        async (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages',
+        filter: `receiver_id=eq.${user.id}` }, async (payload) => {
           const msg = payload.new;
           if (msg.sender_id !== partner.id) return;
-          const hidden = getHidden(user.id);
-          if (!hidden.has(msg.id)) setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+          setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
           await supabase.from('messages').update({ read: true }).eq('id', msg.id);
         })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' },
-        (payload) => { if (payload.old?.id) setMessages(prev => prev.filter(m => m.id !== payload.old.id)); })
       .on('broadcast', { event: 'msg_deleted' }, ({ payload }) => {
-          if (payload?.id) { setMessages(prev => prev.filter(m => m.id !== payload.id)); addHidden(user.id, payload.id); }
+          if (payload?.id) {
+            setMessages(prev => prev.filter(m => m.id !== payload.id));
+            addHidden(user.id, payload.id);
+          }
         })
       .subscribe();
     broadcastRef.current = ch;
     return () => supabase.removeChannel(ch);
   }, []);
 
-  // Close menu on outside click
   useEffect(() => {
-    const handle = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setSelectedMsg(null); };
+    const handle = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setSelectedMsg(null);
+    };
     document.addEventListener('mousedown', handle);
     document.addEventListener('touchstart', handle);
     return () => { document.removeEventListener('mousedown', handle); document.removeEventListener('touchstart', handle); };
@@ -143,12 +226,9 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     e?.preventDefault();
     if (!text.trim() || sending) return;
     if (!canSend) { toast.warning('You need at least 3 credits to send messages.'); return; }
-
     const body = text.trim();
     setText('');
     setSending(true);
-
-    // Deduct 3 credits on first message in conversation
     if (!isAdmin) {
       const hasSentBefore = messages.some(m => m.sender_id === user.id);
       if (!hasSentBefore) {
@@ -164,14 +244,14 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         setCreditBalance(prev => Math.max(0, (prev ?? 0) - 3));
       }
     }
-
     const tempId = `temp-${Date.now()}`;
-    setMessages(prev => [...prev, { id: tempId, sender_id: user.id, receiver_id: partner.id, body, created_at: new Date().toISOString(), read: false, _temp: true }]);
-
+    const optimistic = { id: tempId, sender_id: user.id, receiver_id: partner.id, body, created_at: new Date().toISOString(), read: false, _temp: true };
+    setMessages(prev => [...prev, optimistic]);
     const { data: inserted, error } = await supabase
-      .from('messages').insert([{ sender_id: user.id, receiver_id: partner.id, body }]).select().single();
+      .from('messages')
+      .insert([{ sender_id: user.id, receiver_id: partner.id, body }])
+      .select().single();
     setSending(false);
-
     if (error) {
       setMessages(prev => prev.filter(m => m.id !== tempId));
       setText(body);
@@ -201,21 +281,25 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     broadcastRef.current?.send({ type: 'broadcast', event: 'msg_deleted', payload: { id: msg.id } });
   };
 
+  const initials = partner.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+
   return (
-    <div className="flex flex-col h-[calc(100vh-56px-64px)]">
+    <div className="fixed inset-0 z-[9999] bg-background flex flex-col" style={{ top: '57px' }}>
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted shrink-0">
-        <button onClick={onClose} className="p-1 -ml-1 rounded-full hover:bg-accent transition-colors" style={{ minWidth: 36, minHeight: 36 }}>
+        <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full hover:bg-muted transition-colors" style={{ minWidth: 40, minHeight: 40 }}>
           <ArrowLeft className="w-5 h-5 text-foreground" />
         </button>
+        {/* Avatar — opens profile card */}
         <button onClick={() => setShowProfile(true)} className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 overflow-hidden hover:ring-2 hover:ring-primary/40 transition-all">
           {partner.avatar
-            ? <img src={partner.avatar} alt="" className="w-full h-full object-cover" />
+            ? <img src={partner.avatar} alt="" className="w-full h-full object-cover rounded-full" />
             : <span className="text-sm font-bold text-primary">{initials}</span>}
         </button>
+        {/* Name — opens profile card */}
         <button onClick={() => setShowProfile(true)} className="flex-1 min-w-0 text-left">
           <p className="font-semibold text-sm text-foreground leading-tight truncate">{partner.name}</p>
-          {partnerProfile?.location && <p className="text-xs text-muted-foreground leading-tight truncate">{partnerProfile.location}</p>}
+          {partnerLocation && <p className="text-xs text-muted-foreground leading-tight truncate">{partnerLocation}</p>}
         </button>
       </div>
 
@@ -225,15 +309,15 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
           <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" /></div>
         ) : messages.length === 0 ? (
           <div className="flex justify-center py-8">
-            <div className="bg-card border border-border rounded-xl px-4 py-3 text-center max-w-xs shadow-sm">
+            <div className="bg-card border border-border rounded-xl px-4 py-3 text-center max-w-xs">
               <p className="text-sm text-muted-foreground">Start the conversation!</p>
             </div>
           </div>
         ) : (
           messages.map((msg, i) => {
-            const isMe       = msg.sender_id === user.id;
-            const isSelected = selectedMsg?.id === msg.id;
-            const showSep    = i === 0 || !sameDay(messages[i - 1].created_at, msg.created_at);
+            const isMe      = msg.sender_id === user.id;
+            const isSelected= selectedMsg?.id === msg.id;
+            const showSep   = i === 0 || !sameDay(messages[i - 1].created_at, msg.created_at);
             return (
               <div key={msg.id}>
                 {showSep && (
@@ -244,14 +328,14 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
                 <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-1 relative`}>
                   {isSelected && (
                     <div ref={menuRef} className={`absolute z-50 top-full mt-1 ${isMe ? 'right-0' : 'left-0'} bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[180px]`}>
-                      <button onClick={() => handleCopy(msg)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
+                      <button onClick={() => handleCopy(msg)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-foreground hover:bg-muted">
                         <Copy className="w-4 h-4 text-muted-foreground" /> Copy
                       </button>
-                      <button onClick={() => handleDeleteForMe(msg)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
+                      <button onClick={() => handleDeleteForMe(msg)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-foreground hover:bg-muted">
                         <Trash className="w-4 h-4 text-muted-foreground" /> Delete for me
                       </button>
                       {isMe && !msg._temp && (
-                        <button onClick={() => handleDeleteForEveryone(msg)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-destructive hover:bg-muted transition-colors">
+                        <button onClick={() => handleDeleteForEveryone(msg)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-destructive hover:bg-muted">
                           <Trash2 className="w-4 h-4" /> Delete for everyone
                         </button>
                       )}
@@ -264,7 +348,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
                     onTouchStart={() => !msg._temp && startLongPress(msg)}
                     onTouchEnd={cancelLongPress}
                     onClick={() => !msg._temp && handleBubbleClick(msg)}
-                    className={`relative max-w-[72%] rounded-2xl px-3.5 py-2 text-sm cursor-pointer select-none transition-opacity ${
+                    className={`relative max-w-[72%] rounded-2xl px-3.5 py-2 text-sm cursor-pointer select-none ${
                       isMe
                         ? msg._temp ? 'bg-primary/60 text-white rounded-br-[4px]' : 'bg-primary text-white rounded-br-[4px]'
                         : 'bg-card border border-border text-foreground rounded-bl-[4px]'
@@ -290,12 +374,21 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <form onSubmit={handleSend} className="flex items-center gap-2 px-4 py-3 border-t border-border bg-background shrink-0">
+      {/* Profile card modal */}
+      {showProfile && (
+        <ProfileCard
+          partnerId={partner.id}
+          partnerName={partner.name}
+          partnerAvatar={partner.avatar}
+          onClose={() => setShowProfile(false)}
+        />
+      )}
+
+      <form onSubmit={handleSend} className="flex items-center gap-2 px-4 py-3 border-t border-border bg-background shrink-0" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
         <Input
           value={text}
           onChange={e => setText(e.target.value)}
-          placeholder="Type a message..."
+          placeholder="Type a message…"
           disabled={sending}
           className="rounded-full flex-1 bg-muted/40 border-border"
         />
@@ -303,105 +396,53 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
           {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
         </Button>
       </form>
-
-      {/* Partner profile card — portal to escape any overflow constraints */}
-      {showProfile && partnerProfile && createPortal(
-        <div className="fixed inset-0 z-[99999] bg-black/50 flex items-end justify-center p-4" onClick={() => setShowProfile(false)}>
-          <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="bg-primary/10 px-5 pt-5 pb-4 flex items-center gap-4">
-              <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden shrink-0">
-                {partner.avatar
-                  ? <img src={partner.avatar} alt="" className="w-full h-full object-cover" />
-                  : <span className="text-xl font-bold text-primary">{initials}</span>}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-foreground truncate">{partnerProfile.full_name || partner.name}</p>
-                {partnerProfile.location && <p className="text-xs text-muted-foreground">{partnerProfile.location}</p>}
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  {partnerProfile.verified && <span className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-0.5 rounded-full font-medium">✅ Verified</span>}
-                  <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium capitalize">{partnerProfile.account_type || 'driver'}</span>
-                </div>
-              </div>
-            </div>
-            {(partnerProfile.rating > 0 || partnerProfile.total_reviews > 0) && (
-              <div className="px-5 py-3 border-b border-border flex gap-6">
-                <div><p className="font-bold text-foreground">{Number(partnerProfile.rating || 0).toFixed(1)}</p><p className="text-xs text-muted-foreground">Rating</p></div>
-                <div><p className="font-bold text-foreground">{partnerProfile.total_reviews || 0}</p><p className="text-xs text-muted-foreground">Reviews</p></div>
-              </div>
-            )}
-            {partnerVehicles.length > 0 && (
-              <div className="px-5 py-3 border-b border-border">
-                <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Listed Vehicles</p>
-                <div className="space-y-2">
-                  {partnerVehicles.map(v => (
-                    <div key={v.id} className="flex items-center justify-between text-sm">
-                      <div>
-                        <p className="font-medium text-foreground">{v.make} {v.model}{v.year ? ` (${v.year})` : ''}</p>
-                        <p className="text-xs text-muted-foreground">{v.type} · {v.plate}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-primary text-xs">R{v.price_per_week}/wk</p>
-                        <p className={`text-[10px] ${v.status === 'available' ? 'text-emerald-600' : 'text-amber-600'}`}>{v.status}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="px-5 py-4">
-              <button onClick={() => setShowProfile(false)} className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors">Close</button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CHATS LIST
+// CHATS LIST — conversation threads
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function Messages() {
   const navigate       = useNavigate();
   const [searchParams] = useSearchParams();
   const urlUserId      = searchParams.get('userId');
-
-  const [user,           setUser]           = useState(null);
-  const [threads,        setThreads]        = useState([]);
-  const [loading,        setLoading]        = useState(true);
-  const [refreshing,     setRefreshing]     = useState(false);
-  const [openPartner,    setOpenPartner]    = useState(null);
-  const [creditBalance,  setCreditBalance]  = useState(null);
-  const [newChatEmail,   setNewChatEmail]   = useState('');
-  const [showNewChat,    setShowNewChat]    = useState(false);
+  const [user,          setUser]          = useState(null);
+  const [threads,       setThreads]       = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [refreshing,    setRefreshing]    = useState(false);
+  const [openPartner,   setOpenPartner]   = useState(null);
+  const [creditBalance, setCreditBalance] = useState(null);
+  const [newChatEmail,  setNewChatEmail]  = useState('');
+  const [showNewChat,   setShowNewChat]   = useState(false);
   const [selectedThread, setSelectedThread] = useState(null);
+  const [hiddenChats,   setHiddenChats]   = useState(new Set());
+  // Profile card shown from thread list
+  const [previewProfile, setPreviewProfile] = useState(null); // { id, name, avatar }
+  const menuRef      = useRef(null);
+  const longPressRef = useRef(null);
+  const longTriggered= useRef(false);
 
-  const menuRef       = useRef(null);
-  const longPressRef  = useRef(null);
-  const longTriggered = useRef(false);
-
-  // Load user
   useEffect(() => {
     auth.me().then(u => {
       setUser(u);
       if (u?.id) {
+        setHiddenChats(getHiddenChats(u.id));
         supabase.rpc('get_credit_balance', { p_user_id: u.id }).then(({ data }) => setCreditBalance(data ?? 0));
       }
     }).catch(() => {});
   }, []);
 
-  // Fetch threads
   const fetchThreads = useCallback(async () => {
     if (!user) return;
     try {
       const { data: msgs } = await supabase
-        .from('messages').select('*')
+        .from('messages')
+        .select('*')
         .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-        .order('created_at', { ascending: false }).limit(200);
-
+        .order('created_at', { ascending: false })
+        .limit(200);
       if (!msgs) { setThreads([]); return; }
-
       const hidden = getHiddenChats(user.id);
       const seenIds = new Set();
       const unreadCount = new Map();
@@ -418,7 +459,6 @@ export default function Messages() {
         seenIds.add(pid);
         raw.push({ id: pid, name: pid, avatar: null, lastMsg: m.body, lastTime: m.created_at, unread: unreadCount.get(pid) || 0, isMine: m.sender_id === user.id });
       }
-
       if (raw.length) {
         const ids = raw.map(t => t.id);
         const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', ids);
@@ -439,7 +479,6 @@ export default function Messages() {
 
   useEffect(() => { if (user) fetchThreads(); }, [user, fetchThreads]);
 
-  // Realtime
   useEffect(() => {
     if (!user) return;
     const ch = supabase.channel(`threads-${user.id}`)
@@ -449,18 +488,18 @@ export default function Messages() {
     return () => supabase.removeChannel(ch);
   }, [user, fetchThreads]);
 
-  // Auto-open from URL
   useEffect(() => {
     if (!urlUserId || !user || user.id === urlUserId) return;
     (async () => {
-      const { data } = await supabase.from('profiles').select('full_name').eq('id', urlUserId).single();
-      setOpenPartner({ id: urlUserId, name: data?.full_name || 'User', avatar: null });
+      const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', urlUserId).single();
+      setOpenPartner({ id: urlUserId, name: profile?.full_name || 'User', avatar: null });
     })();
   }, [urlUserId, user]);
 
-  // Close context menu on outside click
   useEffect(() => {
-    const handle = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setSelectedThread(null); };
+    const handle = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setSelectedThread(null);
+    };
     document.addEventListener('mousedown', handle);
     document.addEventListener('touchstart', handle);
     return () => { document.removeEventListener('mousedown', handle); document.removeEventListener('touchstart', handle); };
@@ -477,21 +516,22 @@ export default function Messages() {
     if (selectedThread) { setSelectedThread(null); return; }
     const thread = threads.find(t => t.id === pid);
     if (thread) { setOpenPartner({ id: pid, name: thread.name, avatar: thread.avatar }); return; }
-    const { data } = await supabase.from('profiles').select('full_name').eq('id', pid).single();
-    setOpenPartner({ id: pid, name: data?.full_name || 'User', avatar: null });
+    const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', pid).single();
+    setOpenPartner({ id: pid, name: profile?.full_name || 'User', avatar: null });
   };
 
   const handleDeleteChat = (pid) => {
     addHiddenChat(user.id, pid);
+    setHiddenChats(prev => new Set([...prev, pid]));
     setThreads(prev => prev.filter(t => t.id !== pid));
     setSelectedThread(null);
-    toast.success('Chat removed.');
+    toast.success('Chat removed from your inbox.');
   };
 
   const handleBlockUser = async (pid, name) => {
     try {
       await supabase.from('blocked_users').upsert({ blocker_id: user.id, blocked_id: pid }, { onConflict: 'blocker_id,blocked_id' });
-    } catch { /* ignore */ }
+    } catch { /* table may not exist yet */ }
     handleDeleteChat(pid);
     toast.success(`${name || 'User'} has been blocked.`);
   };
@@ -506,115 +546,127 @@ export default function Messages() {
   };
 
   if (!user) return (
-    <div className="max-w-2xl mx-auto flex justify-center py-16">
-      <Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" />
+    <div className="p-4 max-w-2xl mx-auto">
+      <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" /></div>
     </div>
   );
 
-  // Show chat room instead of list
-  if (openPartner) {
-    return (
-      <div className="max-w-2xl mx-auto">
+  return (
+    <>
+      {openPartner && createPortal(
         <ChatRoom
           user={user}
           partner={openPartner}
           onClose={() => { setOpenPartner(null); fetchThreads(); }}
           creditBalance={creditBalance}
           setCreditBalance={setCreditBalance}
-        />
-      </div>
-    );
-  }
-
-  // Threads list
-  return (
-    <div className="max-w-2xl mx-auto pb-28">
-      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
-        <button onClick={() => navigate('/home')} className="p-1 -ml-1 rounded-full hover:bg-muted transition-colors">
-          <ArrowLeft className="w-5 h-5 text-foreground" />
-        </button>
-        <h1 className="text-xl font-bold text-foreground flex-1">Messages</h1>
-        <button onClick={async () => { setRefreshing(true); await fetchThreads(); setRefreshing(false); }} className="p-1 rounded-full hover:bg-muted transition-colors">
-          <RefreshCw className={`w-4 h-4 text-primary ${refreshing ? 'animate-spin' : ''}`} />
-        </button>
-        <button onClick={() => setShowNewChat(!showNewChat)} className="p-1 rounded-full hover:bg-muted transition-colors">
-          <Plus className="w-4 h-4 text-primary" />
-        </button>
-      </div>
-
-      {showNewChat && (
-        <div className="px-4 pb-3 flex gap-2">
-          <Input placeholder="Enter email address…" value={newChatEmail} onChange={e => setNewChatEmail(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleNewChat()} className="flex-1" />
-          <Button onClick={handleNewChat} size="sm">Start</Button>
-        </div>
+        />,
+        document.body
       )}
 
-      {loading ? (
-        <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" /></div>
-      ) : threads.length === 0 ? (
-        <div className="text-center py-16 px-8 text-muted-foreground">
-          <MessageCircle className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p className="font-medium">No conversations yet</p>
-          <p className="text-sm mt-1">Tap + to start a new conversation.</p>
+      {/* Profile card preview from thread list */}
+      {previewProfile && (
+        <ProfileCard
+          partnerId={previewProfile.id}
+          partnerName={previewProfile.name}
+          partnerAvatar={previewProfile.avatar}
+          onClose={() => setPreviewProfile(null)}
+        />
+      )}
+
+      <div className="max-w-2xl mx-auto pb-28">
+        <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+          <button onClick={() => navigate('/home')} className="p-1.5 -ml-1.5 rounded-full hover:bg-muted transition-colors">
+            <ArrowLeft className="w-5 h-5 text-foreground" />
+          </button>
+          <h1 className="text-xl font-bold text-foreground flex-1">Messages</h1>
+          <button onClick={async () => { setRefreshing(true); await fetchThreads(); setRefreshing(false); }} className="p-1.5 rounded-full hover:bg-muted transition-colors">
+            <RefreshCw className={`w-4 h-4 text-primary ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+          <button onClick={() => setShowNewChat(!showNewChat)} className="p-1.5 rounded-full hover:bg-muted transition-colors">
+            <Plus className="w-4 h-4 text-primary" />
+          </button>
         </div>
-      ) : (
-        <div className="px-4 space-y-2">
-          {threads.map(t => {
-            const isSelected = selectedThread === t.id;
-            const initials   = t.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
-            return (
-              <div key={t.id} className="relative">
-                <div
-                  onMouseDown={() => startLongPress(t.id)}
-                  onMouseUp={cancelLongPress}
-                  onMouseLeave={cancelLongPress}
-                  onTouchStart={() => startLongPress(t.id)}
-                  onTouchEnd={cancelLongPress}
-                  onClick={() => openChat(t.id)}
-                  className={`flex items-center gap-3 bg-card rounded-2xl border px-4 py-3.5 cursor-pointer select-none transition-all hover:shadow-sm ${
-                    isSelected ? 'border-primary/40 bg-primary/5' : t.unread > 0 ? 'border-primary/30' : 'border-border'
-                  }`}
-                >
-                  <div className="w-11 h-11 rounded-full bg-primary/15 flex items-center justify-center shrink-0 overflow-hidden">
-                    {t.avatar
-                      ? <img src={t.avatar} alt="" className="w-full h-full object-cover" />
-                      : <span className="text-sm font-bold text-primary">{initials}</span>}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <p className={`text-sm truncate ${t.unread > 0 ? 'font-bold' : 'font-semibold'} text-foreground`}>{t.name}</p>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[11px] text-muted-foreground">{fmtThread(t.lastTime)}</span>
-                        {t.unread > 0 && (
-                          <span className="min-w-[18px] h-[18px] rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center px-1">
-                            {t.unread > 99 ? '99+' : t.unread}
-                          </span>
-                        )}
+
+        {showNewChat && (
+          <div className="px-4 pb-3 flex gap-2">
+            <Input placeholder="Enter email address…" value={newChatEmail} onChange={e => setNewChatEmail(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleNewChat()} className="flex-1" />
+            <Button onClick={handleNewChat} size="sm">Start</Button>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" /></div>
+        ) : threads.length === 0 ? (
+          <div className="text-center py-16 px-8 text-muted-foreground">
+            <MessageCircle className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">No conversations yet</p>
+            <p className="text-sm mt-1">Tap + to start a new conversation.</p>
+          </div>
+        ) : (
+          <div className="px-4 space-y-2">
+            {threads.map(t => {
+              const isSelected = selectedThread === t.id;
+              const initials   = t.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+              return (
+                <div key={t.id} className="relative">
+                  <div
+                    onMouseDown={() => startLongPress(t.id)}
+                    onMouseUp={cancelLongPress}
+                    onMouseLeave={cancelLongPress}
+                    onTouchStart={() => startLongPress(t.id)}
+                    onTouchEnd={cancelLongPress}
+                    onClick={() => openChat(t.id)}
+                    className={`flex items-center gap-3 bg-card rounded-2xl border px-4 py-3.5 cursor-pointer select-none transition-all hover:shadow-sm ${
+                      isSelected ? 'border-primary/40 bg-primary/5' : t.unread > 0 ? 'border-primary/30' : 'border-border'
+                    }`}
+                  >
+                    {/* Avatar — tapping opens profile card, not chat */}
+                    <button
+                      onClick={e => { e.stopPropagation(); setPreviewProfile({ id: t.id, name: t.name, avatar: t.avatar }); }}
+                      className="w-11 h-11 rounded-full bg-primary/15 flex items-center justify-center shrink-0 overflow-hidden hover:ring-2 hover:ring-primary/40 transition-all"
+                    >
+                      {t.avatar
+                        ? <img src={t.avatar} alt="" className="w-full h-full object-cover" />
+                        : <span className="text-sm font-bold text-primary">{initials}</span>}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <p className={`text-sm truncate ${t.unread > 0 ? 'font-bold' : 'font-semibold'} text-foreground`}>{t.name}</p>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[11px] text-muted-foreground">{fmtThread(t.lastTime)}</span>
+                          {t.unread > 0 && (
+                            <span className="min-w-[18px] h-[18px] rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center px-1">
+                              {t.unread > 99 ? '99+' : t.unread}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {t.isMine && <CheckCheck className="w-3.5 h-3.5 text-primary shrink-0" />}
+                        <p className={`text-xs truncate ${t.unread > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{t.lastMsg}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {t.isMine && <CheckCheck className="w-3.5 h-3.5 text-primary shrink-0" />}
-                      <p className={`text-xs truncate ${t.unread > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{t.lastMsg}</p>
+                  </div>
+                  {isSelected && (
+                    <div ref={menuRef} className="absolute z-50 top-full mt-1 right-4 bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[160px]">
+                      <button onClick={() => handleDeleteChat(t.id)}
+                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-destructive hover:bg-muted transition-colors">
+                        <Trash2 className="w-4 h-4" /> Delete chat
+                      </button>
+                      <button onClick={() => handleBlockUser(t.id, t.name)}
+                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
+                        <UserX className="w-4 h-4" /> Block user
+                      </button>
                     </div>
-                  </div>
+                  )}
                 </div>
-
-                {isSelected && (
-                  <div ref={menuRef} className="absolute z-50 top-full mt-1 right-4 bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[160px]">
-                    <button onClick={() => handleDeleteChat(t.id)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-destructive hover:bg-muted transition-colors">
-                      <Trash2 className="w-4 h-4" /> Delete chat
-                    </button>
-                    <button onClick={() => handleBlockUser(t.id, t.name)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
-                      <UserX className="w-4 h-4" /> Block user
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
