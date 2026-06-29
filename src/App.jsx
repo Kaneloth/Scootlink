@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
@@ -19,7 +19,7 @@ import SearchPage from '@/pages/SearchPage';
 import AddVehicle from '@/pages/AddVehicle';
 import EditVehicle from '@/pages/EditVehicle';
 import RentalRequest from '@/pages/RentalRequest';
-import Tracking from '@/pages/Tracking';
+import Activity from '@/pages/Activity';
 import MyBriefcase from '@/pages/MyBriefcase';
 import Wallet from '@/pages/Wallet';
 import Settings from '@/pages/Settings';
@@ -93,7 +93,7 @@ const AuthenticatedApp = () => {
         <Route path="/add-vehicle" element={<AddVehicle />} />
         <Route path="/edit-vehicle" element={<EditVehicle />} />
         <Route path="/rental-request" element={<RentalRequest />} />
-        <Route path="/tracking" element={<Tracking />} />
+        <Route path="/activity" element={<Activity />} />
         <Route path="/briefcase" element={<MyBriefcase />} />
         <Route path="/wallet" element={<Wallet />} />
         <Route path="/settings" element={<Settings />} />
@@ -102,6 +102,9 @@ const AuthenticatedApp = () => {
         <Route path="/messages" element={<Messages />} />
         <Route path="/contact" element={<ContactUs />} />
       </Route>
+
+      {/* Redirect legacy /dashboard to /home */}
+      <Route path="/dashboard" element={<Navigate to="/home" replace />} />
 
       <Route path="*" element={<PageNotFound />} />
     </Routes>

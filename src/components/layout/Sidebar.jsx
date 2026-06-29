@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Search, MapPin, Briefcase, Settings, LogOut, Users, Plus, MessageCircle
+  LayoutDashboard, Search, Clock, Briefcase, Settings, LogOut, Users, Plus, MessageCircle
 } from 'lucide-react';
 import { auth } from '@/api/supabaseData';
 
@@ -11,7 +11,7 @@ const navItems = [
   { label: 'Messages',        icon: MessageCircle,   path: '/messages'        },
   { label: 'Find Drivers',    icon: Users,           path: '/find-drivers'    },
   { label: 'Add Vehicle',     icon: Plus,            path: '/add-vehicle'     },
-  { label: 'GPS Tracking',    icon: MapPin,          path: '/tracking'        },
+  { label: 'Activity',        icon: Clock,           path: '/activity'        },
   { label: 'Briefcase',       icon: Briefcase,       path: '/briefcase'       },
   { label: 'Settings',        icon: Settings,        path: '/settings'        },
 ];
