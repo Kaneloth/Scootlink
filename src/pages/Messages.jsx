@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, supabase, fetchProfilesByIds } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
@@ -457,15 +458,16 @@ export default function Messages() {
 
   return (
     <>
-      {/* Chat room overlay */}
-      {openPartner && (
+      {/* Chat room — rendered via portal to escape AppLayout's overflow:hidden */}
+      {openPartner && createPortal(
         <ChatRoom
           user={user}
           partner={openPartner}
           onClose={() => { setOpenPartner(null); fetchThreads(); }}
           creditBalance={creditBalance}
           setCreditBalance={setCreditBalance}
-        />
+        />,
+        document.body
       )}
 
       {/* Threads list */}
