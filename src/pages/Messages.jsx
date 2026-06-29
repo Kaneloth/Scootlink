@@ -80,6 +80,9 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       }
     })();
   }, [partner.id]);
+
+  // Load messages
+  useEffect(() => {
     (async () => {
       setLoading(true);
       const { data } = await supabase
