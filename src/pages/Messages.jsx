@@ -40,12 +40,15 @@ function fmtThread(iso) {
 // CHAT ROOM — shown when a conversation is open
 // ═══════════════════════════════════════════════════════════════════════════════
 function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
-  const [messages,    setMessages]    = useState([]);
-  const [text,        setText]        = useState('');
-  const [sending,     setSending]     = useState(false);
-  const [loading,     setLoading]     = useState(true);
-  const [selectedMsg, setSelectedMsg] = useState(null);
-  const [hiddenMsgs,  setHiddenMsgs]  = useState(() => getHidden(user.id));
+  const [messages,     setMessages]     = useState([]);
+  const [text,         setText]         = useState('');
+  const [sending,      setSending]      = useState(false);
+  const [loading,      setLoading]      = useState(true);
+  const [selectedMsg,  setSelectedMsg]  = useState(null);
+  const [hiddenMsgs,   setHiddenMsgs]   = useState(() => getHidden(user.id));
+  const [showProfile,  setShowProfile]  = useState(false);
+  const [partnerProfile, setPartnerProfile] = useState(null);
+  const [partnerVehicles, setPartnerVehicles] = useState([]);
 
   const bottomRef       = useRef(null);
   const menuRef         = useRef(null);
@@ -56,8 +59,27 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const isAdmin   = ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
   const canSend   = isAdmin || (creditBalance !== null && creditBalance >= 3);
 
-  // Load messages
+  // Load partner profile + vehicles
   useEffect(() => {
+    (async () => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, full_name, phone, location, account_type, verified, avatar_url, rating, total_reviews, license_number')
+        .eq('id', partner.id)
+        .single();
+      setPartnerProfile(profile);
+
+      // If owner or both — fetch their vehicles
+      if (profile?.account_type === 'owner' || profile?.account_type === 'both') {
+        const { data: vehicles } = await supabase
+          .from('vehicles')
+          .select('id, make, model, year, type, plate, price_per_week, deposit, status')
+          .eq('owner_id', partner.id)
+          .limit(5);
+        setPartnerVehicles(vehicles || []);
+      }
+    })();
+  }, [partner.id]);
     (async () => {
       setLoading(true);
       const { data } = await supabase
@@ -197,14 +219,15 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full hover:bg-muted transition-colors" style={{ minWidth: 40, minHeight: 40 }}>
           <ArrowLeft className="w-5 h-5 text-foreground" />
         </button>
-        <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+        <button onClick={() => setShowProfile(true)} className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 overflow-hidden hover:ring-2 hover:ring-primary/40 transition-all">
           {partner.avatar
-            ? <img src={partner.avatar} alt="" className="w-full h-full rounded-full object-cover" />
+            ? <img src={partner.avatar} alt="" className="w-full h-full object-cover rounded-full" />
             : <span className="text-sm font-bold text-primary">{initials}</span>}
-        </div>
-        <div className="flex-1 min-w-0">
+        </button>
+        <button onClick={() => setShowProfile(true)} className="flex-1 min-w-0 text-left">
           <p className="font-semibold text-sm text-foreground leading-tight truncate">{partner.name}</p>
-        </div>
+          {partnerProfile?.location && <p className="text-xs text-muted-foreground leading-tight truncate">{partnerProfile.location}</p>}
+        </button>
       </div>
 
       {/* Messages */}
@@ -278,7 +301,70 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
+      {/* Partner profile / vehicle modal */}
+      {showProfile && partnerProfile && createPortal(
+        <div className="fixed inset-0 z-[99999] bg-black/50 flex items-end justify-center p-4"
+          onClick={() => setShowProfile(false)}>
+          <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* Profile header */}
+            <div className="bg-primary/10 px-5 pt-5 pb-4 flex items-center gap-4">
+              <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden shrink-0">
+                {partner.avatar
+                  ? <img src={partner.avatar} alt="" className="w-full h-full object-cover" />
+                  : <span className="text-xl font-bold text-primary">{initials}</span>}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-foreground truncate">{partnerProfile.full_name || partner.name}</p>
+                {partnerProfile.location && <p className="text-xs text-muted-foreground">{partnerProfile.location}</p>}
+                <div className="flex items-center gap-2 mt-1">
+                  {partnerProfile.verified && <span className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-0.5 rounded-full font-medium">✅ Verified</span>}
+                  <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium capitalize">{partnerProfile.account_type || 'driver'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Stats */}
+            {(partnerProfile.rating > 0 || partnerProfile.total_reviews > 0) && (
+              <div className="px-5 py-3 border-b border-border flex items-center gap-4">
+                <div className="text-center">
+                  <p className="font-bold text-foreground">{Number(partnerProfile.rating || 0).toFixed(1)}</p>
+                  <p className="text-xs text-muted-foreground">Rating</p>
+                </div>
+                <div className="text-center">
+                  <p className="font-bold text-foreground">{partnerProfile.total_reviews || 0}</p>
+                  <p className="text-xs text-muted-foreground">Reviews</p>
+                </div>
+              </div>
+            )}
+
+            {/* Vehicles (if owner/both) */}
+            {partnerVehicles.length > 0 && (
+              <div className="px-5 py-3 border-b border-border">
+                <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Listed Vehicles</p>
+                <div className="space-y-2">
+                  {partnerVehicles.map(v => (
+                    <div key={v.id} className="flex items-center justify-between text-sm">
+                      <div>
+                        <p className="font-medium text-foreground">{v.make} {v.model} {v.year && `(${v.year})`}</p>
+                        <p className="text-xs text-muted-foreground">{v.type} · {v.plate}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-primary text-xs">R{v.price_per_week}/wk</p>
+                        <p className={`text-[10px] ${v.status === 'available' ? 'text-emerald-600' : 'text-amber-600'}`}>{v.status}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="px-5 py-4">
+              <button onClick={() => setShowProfile(false)} className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors">Close</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       <form onSubmit={handleSend} className="flex items-center gap-2 px-4 py-3 border-t border-border bg-background shrink-0" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
         <Input
           value={text}
