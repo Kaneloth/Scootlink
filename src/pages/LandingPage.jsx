@@ -383,7 +383,7 @@ function Footer() {
         <div style={styles.footerGrid}>
           <div>
             <div style={{ marginBottom: 12 }}>
-              <img src="/logo.png" alt="Skootlink" style={{ height: 40, width: "auto" }} />
+              <img src="/logo.png" alt="Skootlink" style={{ height: 40, width: "auto", mixBlendMode: "lighten" }} />
             </div>
             <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 14 }}>The formal way to rent vehicles for gig work in South Africa.</p>
           </div>
