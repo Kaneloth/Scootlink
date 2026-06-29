@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Search, MapPin, Briefcase, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Search, Clock, Briefcase, MessageCircle } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 
 const baseItems = [
   { label: 'Home',     icon: LayoutDashboard, path: '/home'            },
   { label: 'Search',   icon: Search,          path: '/search-vehicles' },
-  { label: 'Track',    icon: MapPin,          path: '/tracking'        },
+  { label: 'Activity',  icon: Clock,           path: '/activity'        },
   { icon: Briefcase, label: 'Briefcase', path: '/briefcase' },
   { label: 'Messages', icon: MessageCircle,   path: '/messages'        },
 ];

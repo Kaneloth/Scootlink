@@ -9,20 +9,20 @@ import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 // ─── Page components for the five main tabs ────────────────────────────────
 import HomePage    from '@/pages/Dashboard';
 import SearchPage  from '@/pages/SearchPage';
-import TrackingPage   from '@/pages/Tracking';
+import ActivityPage    from '@/pages/Activity';
 import BriefcasePage  from '@/pages/MyBriefcase';
 import MessagesPage   from '@/pages/Messages';
 
-// Must match bottom nav order exactly: Home → Search → Track → Wallet → Messages
+// Must match bottom nav order exactly: Home → Search → Activity → Briefcase → Messages
 // ─── Search paths (dynamic based on account type) ───────────────────────────
 const SEARCH_PATHS = ['/search-vehicles', '/find-drivers', '/mysearch'];
 const CANONICAL_SEARCH_PATH = '/search-vehicles';
-const CANONICAL_PATHS = ['/home', CANONICAL_SEARCH_PATH, '/tracking', '/briefcase', '/messages'];
+const CANONICAL_PATHS = ['/home', CANONICAL_SEARCH_PATH, '/activity', '/briefcase', '/messages'];
 
 const TABS = [
   { path: '/home',               component: HomePage,      icon: Bike, label: 'Home'      },
   { path: CANONICAL_SEARCH_PATH, component: SearchPage,    icon: Bike, label: 'Search'    },
-  { path: '/tracking',           component: TrackingPage,  icon: Bike, label: 'Track'     },
+  { path: '/activity',            component: ActivityPage,  icon: Bike, label: 'Activity'  },
   { path: '/briefcase',          component: BriefcasePage, icon: Bike, label: 'Briefcase' },
   { path: '/messages',           component: MessagesPage,  icon: Bike, label: 'Messages'  },
 ];
