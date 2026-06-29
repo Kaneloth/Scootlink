@@ -47,7 +47,7 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
         // avatar_url excluded — avatar is passed via prop from thread list
         const { data: p, error: pErr } = await supabase
           .from('profiles')
-          .select('id, full_name, phone, location, account_type, verified, rating, total_reviews, license_number')
+          .select('id, full_name, location, account_type, verified, rating, total_reviews')
           .eq('id', partnerId)
           .single();
         if (pErr) {
@@ -124,25 +124,6 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
                 <p className="text-xs text-muted-foreground">Reviews</p>
               </div>
             </div>
-
-            {/* Contact + license info */}
-            {(profile.phone || profile.license_number) && (
-              <div className="px-5 py-3 border-b border-border space-y-1.5">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Contact Info</p>
-                {profile.phone && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">📞</span>
-                    <span className="text-foreground">{profile.phone}</span>
-                  </div>
-                )}
-                {profile.license_number && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">🪪</span>
-                    <span className="text-foreground font-mono">{profile.license_number}</span>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Vehicles — shown for owners and both */}
             {vehicles.length > 0 && (
