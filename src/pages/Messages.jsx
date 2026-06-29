@@ -43,10 +43,11 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
   useEffect(() => {
     (async () => {
       try {
-        // Fetch core fields first — minimal safe query
+        // Use exact columns from original working ChatRoom profile fetch
+        // avatar_url excluded — avatar is passed via prop from thread list
         const { data: p, error: pErr } = await supabase
           .from('profiles')
-          .select('id, full_name, phone, location, account_type, verified')
+          .select('id, full_name, phone, location, account_type, verified, rating, total_reviews, license_number')
           .eq('id', partnerId)
           .single();
         if (pErr) {
@@ -54,15 +55,7 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
           setProfile({ full_name: partnerName, location: '', account_type: null, verified: false, rating: 0, total_reviews: 0 });
           return;
         }
-        // Try to get rating/reviews separately — may not exist on all DBs
-        let rating = 0, total_reviews = 0;
-        try {
-          const { data: stats } = await supabase
-            .from('profiles').select('rating, total_reviews').eq('id', partnerId).single();
-          rating = stats?.rating || 0;
-          total_reviews = stats?.total_reviews || 0;
-        } catch {}
-        setProfile(p ? { ...p, rating, total_reviews } : { full_name: partnerName, location: '', account_type: null, verified: false, rating: 0, total_reviews: 0 });
+        setProfile(p || { full_name: partnerName, location: '', account_type: null, verified: false, rating: 0, total_reviews: 0 });
         if (p?.account_type === 'owner' || p?.account_type === 'both') {
           const { data: v } = await supabase
             .from('vehicles')
@@ -91,61 +84,105 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
           </div>
         ) : (
           <>
-            {/* Header */}
+            {/* Header — avatar, name, location, badges */}
             <div className="bg-primary/10 px-5 pt-5 pb-4 flex items-center gap-4">
-              <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden shrink-0">
+              <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden shrink-0 ring-2 ring-white/30">
                 {partnerAvatar
                   ? <img src={partnerAvatar} alt="" className="w-full h-full object-cover" />
-                  : <span className="text-xl font-bold text-primary">{initials}</span>}
+                  : <span className="text-2xl font-bold text-primary">{initials}</span>}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-foreground truncate">{profile.full_name || partnerName}</p>
-                {profile.location && <p className="text-xs text-muted-foreground">{profile.location}</p>}
-                <div className="flex items-center gap-2 mt-1">
-                  {profile.verified && (
-                    <span className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-0.5 rounded-full font-medium">✅ Verified</span>
-                  )}
-                  <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium capitalize">
-                    {profile.account_type || 'driver'}
+                <p className="font-bold text-base text-foreground truncate">{profile.full_name || partnerName}</p>
+                {profile.location && (
+                  <p className="text-xs text-muted-foreground mt-0.5">📍 {profile.location}</p>
+                )}
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold capitalize ${
+                    profile.account_type === 'owner' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
+                    profile.account_type === 'both'  ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
+                                                       'bg-primary/10 text-primary'
+                  }`}>
+                    {profile.account_type === 'both' ? '🚗 Owner & Driver' : profile.account_type === 'owner' ? '🚗 Owner' : '🧑 Driver'}
                   </span>
+                  {profile.verified
+                    ? <span className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 px-2 py-0.5 rounded-full font-semibold">✅ Verified</span>
+                    : <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-semibold">⏳ Unverified</span>}
                 </div>
               </div>
             </div>
-            {/* Stats */}
-            {(profile.rating > 0 || profile.total_reviews > 0) && (
-              <div className="px-5 py-3 border-b border-border flex items-center gap-4">
-                <div className="text-center">
-                  <p className="font-bold text-foreground">{Number(profile.rating || 0).toFixed(1)}</p>
-                  <p className="text-xs text-muted-foreground">Rating</p>
-                </div>
-                <div className="text-center">
-                  <p className="font-bold text-foreground">{profile.total_reviews || 0}</p>
-                  <p className="text-xs text-muted-foreground">Reviews</p>
-                </div>
+
+            {/* Stats — rating + reviews */}
+            <div className="px-5 py-3 border-b border-border grid grid-cols-2 divide-x divide-border">
+              <div className="text-center pr-4">
+                <p className="font-bold text-lg text-foreground">
+                  {Number(profile.rating || 0) > 0 ? Number(profile.rating).toFixed(1) : '—'}
+                </p>
+                <p className="text-xs text-muted-foreground">⭐ Rating</p>
+              </div>
+              <div className="text-center pl-4">
+                <p className="font-bold text-lg text-foreground">{profile.total_reviews || 0}</p>
+                <p className="text-xs text-muted-foreground">Reviews</p>
+              </div>
+            </div>
+
+            {/* Contact + license info */}
+            {(profile.phone || profile.license_number) && (
+              <div className="px-5 py-3 border-b border-border space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Contact Info</p>
+                {profile.phone && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">📞</span>
+                    <span className="text-foreground">{profile.phone}</span>
+                  </div>
+                )}
+                {profile.license_number && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">🪪</span>
+                    <span className="text-foreground font-mono">{profile.license_number}</span>
+                  </div>
+                )}
               </div>
             )}
-            {/* Vehicles */}
+
+            {/* Vehicles — shown for owners and both */}
             {vehicles.length > 0 && (
               <div className="px-5 py-3 border-b border-border">
-                <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Listed Vehicles</p>
-                <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Listed Vehicles</p>
+                <div className="space-y-3">
                   {vehicles.map(v => (
-                    <div key={v.id} className="flex items-center justify-between text-sm">
-                      <div>
-                        <p className="font-medium text-foreground">{v.make} {v.model} {v.year && `(${v.year})`}</p>
-                        <p className="text-xs text-muted-foreground">{v.type} · {v.plate}</p>
+                    <div key={v.id} className="bg-muted/40 rounded-xl px-3 py-2.5 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm text-foreground">{v.year && `${v.year} `}{v.make} {v.model}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 capitalize">{v.type}</p>
+                        {v.deposit > 0 && (
+                          <p className="text-xs text-muted-foreground mt-0.5">Deposit: R{v.deposit}</p>
+                        )}
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-primary text-xs">R{v.price_per_week}/wk</p>
-                        <p className={`text-[10px] ${v.status === 'available' ? 'text-emerald-600' : 'text-amber-600'}`}>{v.status}</p>
+                      <div className="text-right shrink-0">
+                        <p className="font-bold text-primary text-sm">R{v.price_per_week}<span className="text-xs font-normal text-muted-foreground">/wk</span></p>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-1 inline-block ${
+                          v.status === 'available'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        }`}>
+                          {v.status === 'available' ? '✅ Available' : '⏸ ' + v.status}
+                        </span>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
+
+            {vehicles.length === 0 && (profile.account_type === 'owner' || profile.account_type === 'both') && (
+              <div className="px-5 py-3 border-b border-border">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Listed Vehicles</p>
+                <p className="text-xs text-muted-foreground italic">No vehicles listed yet.</p>
+              </div>
+            )}
+
             <div className="px-5 py-4">
-              <button onClick={onClose} className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors">Close</button>
+              <button onClick={onClose} className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-1">Close</button>
             </div>
           </>
         )}
