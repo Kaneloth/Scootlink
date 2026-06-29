@@ -42,22 +42,33 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
 
   useEffect(() => {
     (async () => {
-      const { data: p } = await supabase
-        .from('profiles')
-        .select('id, full_name, phone, location, account_type, verified, avatar_url, rating, total_reviews')
-        .eq('id', partnerId)
-        .single();
-      setProfile(p);
-      if (p?.account_type === 'owner' || p?.account_type === 'both') {
-        const { data: v } = await supabase
-          .from('vehicles')
-          .select('id, make, model, year, type, plate, price_per_week, deposit, status')
-          .eq('owner_id', partnerId)
-          .limit(5);
-        setVehicles(v || []);
+      try {
+        const { data: p, error: pErr } = await supabase
+          .from('profiles')
+          .select('id, full_name, phone, location, account_type, verified, avatar_url, rating, total_reviews')
+          .eq('id', partnerId)
+          .single();
+        if (pErr) {
+          console.warn('[ProfileCard] profile fetch error:', pErr.message);
+          // Set a minimal profile so we don't stay in loading loop
+          setProfile({ full_name: partnerName, location: '', account_type: null, verified: false, rating: 0, total_reviews: 0 });
+          return;
+        }
+        setProfile(p || { full_name: partnerName, location: '', account_type: null, verified: false, rating: 0, total_reviews: 0 });
+        if (p?.account_type === 'owner' || p?.account_type === 'both') {
+          const { data: v } = await supabase
+            .from('vehicles')
+            .select('id, make, model, year, type, plate, price_per_week, deposit, status')
+            .eq('owner_id', partnerId)
+            .limit(5);
+          setVehicles(v || []);
+        }
+      } catch (err) {
+        console.warn('[ProfileCard] unexpected error:', err);
+        setProfile({ full_name: partnerName, location: '', account_type: null, verified: false, rating: 0, total_reviews: 0 });
       }
     })();
-  }, [partnerId]);
+  }, [partnerId, partnerName]);
 
   const initials = partnerName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
 
