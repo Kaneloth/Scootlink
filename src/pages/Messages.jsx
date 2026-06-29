@@ -193,7 +193,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   return (
     <div className="fixed inset-0 z-[9999] bg-background flex flex-col" style={{ top: '57px' }}>
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b-2 border-primary/20 bg-card shadow-sm shrink-0">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted shrink-0">
         <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full hover:bg-muted transition-colors" style={{ minWidth: 40, minHeight: 40 }}>
           <ArrowLeft className="w-5 h-5 text-foreground" />
         </button>
