@@ -43,18 +43,26 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
   useEffect(() => {
     (async () => {
       try {
+        // Fetch core fields first — minimal safe query
         const { data: p, error: pErr } = await supabase
           .from('profiles')
-          .select('id, full_name, phone, location, account_type, verified, avatar_url, rating, total_reviews')
+          .select('id, full_name, phone, location, account_type, verified')
           .eq('id', partnerId)
           .single();
         if (pErr) {
           console.warn('[ProfileCard] profile fetch error:', pErr.message);
-          // Set a minimal profile so we don't stay in loading loop
           setProfile({ full_name: partnerName, location: '', account_type: null, verified: false, rating: 0, total_reviews: 0 });
           return;
         }
-        setProfile(p || { full_name: partnerName, location: '', account_type: null, verified: false, rating: 0, total_reviews: 0 });
+        // Try to get rating/reviews separately — may not exist on all DBs
+        let rating = 0, total_reviews = 0;
+        try {
+          const { data: stats } = await supabase
+            .from('profiles').select('rating, total_reviews').eq('id', partnerId).single();
+          rating = stats?.rating || 0;
+          total_reviews = stats?.total_reviews || 0;
+        } catch {}
+        setProfile(p ? { ...p, rating, total_reviews } : { full_name: partnerName, location: '', account_type: null, verified: false, rating: 0, total_reviews: 0 });
         if (p?.account_type === 'owner' || p?.account_type === 'both') {
           const { data: v } = await supabase
             .from('vehicles')
