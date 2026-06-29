@@ -191,7 +191,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const initials = partner.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-background flex flex-col">
+    <div className="fixed inset-0 z-[9999] bg-background flex flex-col" style={{ top: '57px' }}>
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card shrink-0">
         <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full hover:bg-muted transition-colors" style={{ minWidth: 40, minHeight: 40 }}>
