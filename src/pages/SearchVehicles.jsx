@@ -277,11 +277,6 @@ export default function SearchVehicles() {
       ) : (
         <>
       {showFilters && (
-          </Button>
-        }
-      />
-
-      {showFilters && (
         <Card className="p-5 mb-6 border border-border/50">
           <div className="flex items-center justify-between mb-4">
             <h4 className="font-semibold text-sm">Filters</h4>
