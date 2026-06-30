@@ -189,7 +189,6 @@ function CreditBalanceWidget() {
           ['Start or reply to a new chat', 3],
           ['List a vehicle', 10],
           ['Access rental agreement', 15],
-          ['ID / licence verification', 30],
         ].map(([action, cost]) => (
           <div key={action} className="flex justify-between text-xs">
             <span className="text-muted-foreground">{action}</span>
