@@ -5,7 +5,7 @@
  *
  * Credits awarded:
  *   Driver              → 15 credits
- *   Owner or Both       → 25 credits
+ *   Owner or Both       → 45 credits
  *
  * Fraud guards (layered):
  *   0. email_grants table   — blocks re-registration with same email
@@ -43,8 +43,8 @@ export const handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'user_id required' }) };
   }
 
-  // Driver → 15 credits, Owner or Both → 25 credits
-  const freeCredits = (profile_type === 'owner' || profile_type === 'both') ? 25 : 15;
+  // Driver → 15 credits, Owner or Both → 45 credits
+  const freeCredits = (profile_type === 'owner' || profile_type === 'both') ? 45 : 15;
 
   // ── Verify user_id actually exists in profiles (prevent spoofed requests) ──
   const { data: profile, error: profileErr } = await supabase

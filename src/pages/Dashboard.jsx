@@ -447,28 +447,11 @@ export default function Dashboard() {
         { ended_at: new Date().toISOString() }
       );
 
-      // If the vehicle's listing had already expired during the rental,
-      // remove it now instead of marking it available again.
-      const { data: vehicleRow } = await supabase
-        .from('vehicles')
-        .select('listing_state')
-        .eq('id', rental.vehicle_id)
-        .single();
-
-      if (vehicleRow?.listing_state === 'expired') {
-        await Vehicle.update(rental.vehicle_id, { status: 'removed', listing_state: 'removed' });
-        try {
-          await notify(
-            rental.owner_id,
-            'listing_removed',
-            'Listing removed after rental ended',
-            'Your vehicle listing had expired during this rental and has now been removed. You can list it again from My Briefcase.',
-            { vehicle_id: rental.vehicle_id }
-          );
-        } catch { /* non-fatal */ }
-      } else {
-        await Vehicle.update(rental.vehicle_id, { status: 'available' });
-      }
+      // If the vehicle's listing had expired during the rental, it stays
+      // hidden from search (listing_state stays 'expired') but its status
+      // still flips to 'available' so it shows correctly in My Vehicles.
+      // The owner can re-list anytime — vehicles are never deleted.
+      await Vehicle.update(rental.vehicle_id, { status: 'available' });
 
       toast.success('Rental ended. You can now leave a review.');
       try {

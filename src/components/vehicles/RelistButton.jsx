@@ -15,13 +15,12 @@ import { RefreshCw, Coins, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
 
-const RELIST_COST = 10; // credits — same as initial listing cost
-
 export default function RelistButton({ vehicle, onRelisted, className = '' }) {
   const navigate = useNavigate();
   const [checking, setChecking] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
   const [balance, setBalance] = useState(null);
+  const [price, setPrice] = useState(null);
 
   const handleRelistClick = async () => {
     setChecking(true);
@@ -29,10 +28,14 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('Please sign in again.'); return; }
 
-      const { data: bal } = await supabase.rpc('get_credit_balance', { p_user_id: user.id });
+      const [{ data: bal }, { data: tierPrice }] = await Promise.all([
+        supabase.rpc('get_credit_balance', { p_user_id: user.id }),
+        supabase.rpc('get_listing_price', { p_owner_id: user.id }),
+      ]);
       setBalance(bal ?? 0);
+      setPrice(tierPrice ?? 30);
 
-      if ((bal ?? 0) < RELIST_COST) {
+      if ((bal ?? 0) < (tierPrice ?? 30)) {
         setShowTopUp(true);
         return;
       }
@@ -55,7 +58,7 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
         onClick={handleRelistClick}
         disabled={checking}
       >
-        <RefreshCw className="w-3.5 h-3.5" /> Re-list ({RELIST_COST} cr)
+        <RefreshCw className="w-3.5 h-3.5" /> Re-list{price ? ` (${price} cr)` : ''}
       </Button>
 
       {showTopUp && (
@@ -67,7 +70,7 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
               </div>
               <div>
                 <p className="font-semibold text-foreground">Not enough credits</p>
-                <p className="text-xs text-muted-foreground">You need {RELIST_COST} credits to re-list this vehicle</p>
+                <p className="text-xs text-muted-foreground">You need {price ?? 30} credits to re-list this vehicle</p>
               </div>
             </div>
 
