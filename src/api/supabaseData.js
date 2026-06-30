@@ -18,7 +18,7 @@ const PROFILE_FIELDS = [
   // Identity & verification
   'verified', 'id_document_number', 'id_document_type',
   // Profile
-  'full_name', 'phone', 'location', 'residential_address',
+  'full_name', 'email', 'phone', 'location', 'residential_address',
   'gender', 'date_of_birth', 'account_type',
   // Onboarding
   'onboarding_completed', 'customer_code',
@@ -43,11 +43,24 @@ export const auth = {
       .eq('id', user.id)
       .single();
 
+    // ── Self-healing backfill ──────────────────────────────────────────────
+    // Some users were created before email/full_name were written to
+    // profiles (pre-dating this fix). Silently backfill on next load so
+    // the profiles table catches up without requiring a manual save.
+    const backfill = {};
+    if (!profile?.email && user.email) backfill.email = user.email;
+    if (!profile?.full_name && user.user_metadata?.full_name) backfill.full_name = user.user_metadata.full_name;
+    if (Object.keys(backfill).length > 0) {
+      supabase.from('profiles').update(backfill).eq('id', user.id).then(({ error }) => {
+        if (error) console.warn('[auth.me] backfill failed:', error.message);
+      });
+    }
+
     return {
       // auth metadata last (lowest priority — may be stale)
       ...user.user_metadata,
       id: user.id,
-      email: user.email,
+      email: profile?.email ?? user.email,
       // profiles table values always win over auth metadata
       wallet_balance:       profile?.wallet_balance       ?? 0,
       rating:               profile?.rating               ?? 0,
