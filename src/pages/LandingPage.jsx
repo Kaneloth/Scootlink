@@ -187,7 +187,7 @@ function HowItWorks() {
             {[
               ["Find a Vehicle", "Search available cars, scooters, and bikes near you. Filter by location, type, price, and owner rating."],
               ["Book & Sign Contract", "Send a rental request. Once accepted, sign a digital rental agreement that protects both parties."],
-              ["Start Delivering", "Pick up the vehicle and start earning. GPS tracking gives you and the owner peace of mind."],
+              ["Start Delivering", "Pick up the vehicle and start earning, backed by a formal rental agreement that protects both you and the owner."],
             ].map(([title, desc], i) => (
               <div key={i} style={styles.stepItem}>
                 <div style={styles.stepNumber}>{i + 1}</div>
@@ -229,7 +229,7 @@ function DemoSection() {
               <li>🔍 Finding a scooter near you</li>
               <li>📝 Submitting a rental request</li>
               <li>✍️ Signing a digital contract</li>
-              <li>📍 Live GPS tracking</li>
+              <li>💬 Messaging the owner directly</li>
             </ul>
             <button
               onClick={openAuth}
@@ -251,7 +251,7 @@ function TrustSafety() {
   const cards = [
     { icon: "🛡️", title: "Identity Verification", desc: "We offer all users the option to verify their identity through a government ID check. Verified users build more trust on the platform and help keep the community safe for everyone." },
     { icon: "📄", title: "Digital Contracts", desc: "Legally binding rental agreements are signed in the app before every rental." },
-    { icon: "📍", title: "GPS Tracking", desc: "Real-time location monitoring helps owners track their vehicles and recover them if needed." },
+    { icon: "🔔", title: "Activity & Notifications", desc: "Stay updated on every rental request, contract signature, and message — all in one place." },
   ];
   return (
     <section style={styles.section} id="trust">
@@ -291,7 +291,7 @@ function Audiences() {
           <div style={styles.contentCard}>
             <h3 style={styles.contentH3}>📦 Drivers: Why Rent, Not Buy</h3>
             <p style={styles.contentP}>Buying a vehicle for gig work is expensive. Renting gives you flexibility—choose from cars, scooters, or bikes, and only pay for the weeks you need.</p>
-            <p style={styles.contentP}>All rentals include a formal agreement, GPS tracking, and access to verified owners.</p>
+            <p style={styles.contentP}>All rentals include a formal agreement and access to verified owners.</p>
             <a href="#how-it-works" style={{ ...styles.btnBase, ...styles.btnOutline, ...styles.btnLarge, marginTop: 12 }}
               onClick={e => { e.preventDefault(); scroll("how-it-works"); }}
               onMouseEnter={e => (e.currentTarget.style.background = "#eff6ff")}
@@ -311,7 +311,7 @@ function About() {
         <h2 style={styles.sectionTitle}>About Skootlink</h2>
         {[
           "Skootlink was born from a simple observation: delivery drivers and other gig workers struggle to access affordable vehicles, and vehicle owners have no secure way to rent them out. The industry runs on informal, word-of-mouth arrangements with no contracts, no protection, and no trust.",
-          "We built Skootlink to change that. A formal, digital platform that connects verified owners with verified drivers, backed by legal contracts, and GPS tracking. Whether it's a car, scooter, or motorbike, we're making vehicle rental safe, transparent, and profitable for everyone.",
+          "We built Skootlink to change that. A formal, digital platform that connects verified owners with verified drivers, backed by legal contracts. Whether it's a car, scooter, or motorbike, we're making vehicle rental safe, transparent, and profitable for everyone.",
           "Skootlink is a registered South African company, committed to building trust in the gig economy.",
         ].map((text, i) => (
           <p key={i} style={{ fontSize: 18, color: "#71717a", marginBottom: 24 }}>{text}</p>
