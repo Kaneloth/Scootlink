@@ -221,7 +221,7 @@ export default function Onboarding() {
     account_type:         form.role,
     phone:                normalisePhone(form.phone),
     gender:               form.gender,
-    date_of_birth:        form.date_of_birth,
+    date_of_birth:        form.date_of_birth || null,
     location:             buildLocation(),
     residential_address:  form.residential_address,
     onboarding_completed: true,
