@@ -9,3 +9,7 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[scheduled.functions]]
+  name = "vehicle-expiry-check"
+  schedule = "0 6 * * *"

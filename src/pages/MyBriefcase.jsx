@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/api/supabaseClient";
 import { downloadContractPDF } from "@/lib/contractExport";
+import RelistButton from "@/components/vehicles/RelistButton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -371,7 +372,7 @@ function VehicleListingsTab({ userId }) {
         setLoading(true);
         const { data, error: err } = await supabase
           .from("vehicles")
-          .select("id, make, model, year, plate, type, location, price, status, images, pickup_return_location")
+          .select("id, make, model, year, plate, type, location, price, status, images, pickup_return_location, expires_at, listing_state")
           .eq("owner_id", userId)
           .order("created_at", { ascending: false });
 
@@ -418,6 +419,28 @@ function VehicleListingsTab({ userId }) {
                   {v.price    && (
                     <p className="text-xs font-semibold text-primary mt-1">R {v.price}/week</p>
                   )}
+                  {v.expires_at && (() => {
+                    const daysLeft = Math.ceil((new Date(v.expires_at) - Date.now()) / (24 * 60 * 60 * 1000));
+                    const isGrace  = v.listing_state === 'grace';
+                    const isExpiredOrRemoved = v.listing_state === 'expired' || v.listing_state === 'removed';
+                    if (isExpiredOrRemoved) return (
+                      <p className="text-[11px] font-medium text-destructive mt-1">⚠️ Listing expired</p>
+                    );
+                    if (isGrace) return (
+                      <p className="text-[11px] font-medium text-amber-600 mt-1">⏳ Grace period — renew now</p>
+                    );
+                    if (daysLeft <= 7) return (
+                      <p className="text-[11px] font-medium text-amber-600 mt-1">
+                        ⏰ Expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''}
+                      </p>
+                    );
+                    return null;
+                  })()}
+                  {(v.listing_state === 'grace' || v.listing_state === 'expired' || (v.expires_at && Math.ceil((new Date(v.expires_at) - Date.now()) / (24 * 60 * 60 * 1000)) <= 7)) && (
+                    <div className="mt-2">
+                      <RelistButton vehicle={v} />
+                    </div>
+                  )}
                 </div>
                 <StatusBadge status={v.status ?? "available"} />
               </div>
@@ -443,26 +466,25 @@ export default function MyBriefcase() {
     const loadProfile = async (uid) => {
       if (!uid) { setRole('driver'); setPageLoading(false); return; }
       try {
-        // Check profiles table first
+        // auth.me() reads account_type from profiles table (source of truth)
+        // then falls back to auth user_metadata — covers all user cohorts
         const { data: profile } = await supabase
           .from('profiles')
           .select('account_type, role')
           .eq('id', uid)
           .single();
 
-        // Also check auth user_metadata as final fallback —
-        // covers users whose profiles row predates the account_type column write
         const { data: { user: authUser } } = await supabase.auth.getUser();
         const metaType = authUser?.user_metadata?.account_type;
-
         const resolved = profile?.account_type || profile?.role || metaType || 'driver';
-        console.log('[MyBriefcase] profile.account_type:', profile?.account_type, '| profile.role:', profile?.role, '| meta:', metaType, '| resolved:', resolved);
 
-        // If profiles row is missing account_type but metadata has it, backfill it now
-        if (!profile?.account_type && metaType) {
-          supabase.from('profiles').update({ account_type: metaType }).eq('id', uid).then(() => {
-            console.log('[MyBriefcase] backfilled account_type:', metaType);
-          });
+        console.log('[MyBriefcase] account_type:', profile?.account_type, '| role:', profile?.role, '| meta:', metaType, '| resolved:', resolved);
+
+        // Backfill missing account_type so future loads don't need fallback
+        if (!profile?.account_type && (profile?.role || metaType)) {
+          const fill = profile?.role || metaType;
+          supabase.from('profiles').update({ account_type: fill }).eq('id', uid)
+            .then(() => console.log('[MyBriefcase] backfilled account_type:', fill));
         }
 
         setRole(resolved);
