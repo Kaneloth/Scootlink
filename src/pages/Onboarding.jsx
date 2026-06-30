@@ -256,6 +256,26 @@ export default function Onboarding() {
       }
       await saveGeoLocation(buildLocation(), authUser?.id);
 
+      // ── Verify the role actually persisted — if not, force-correct it ────
+      // Defends against any residual race between Supabase auth side-effects
+      // and our profiles write. Without this, a user could silently end up
+      // with the wrong account_type in the database.
+      if (authUser?.id) {
+        const { data: verifyProfile } = await supabase
+          .from('profiles')
+          .select('account_type')
+          .eq('id', authUser.id)
+          .single();
+
+        if (verifyProfile?.account_type !== form.role) {
+          console.warn('[Onboarding] account_type mismatch after save — correcting:', verifyProfile?.account_type, '→', form.role);
+          await supabase
+            .from('profiles')
+            .update({ account_type: form.role })
+            .eq('id', authUser.id);
+        }
+      }
+
       // ── Award sign-up free credits via Netlify function ──────────────────
       // Uses grant-signup-credits.js which guards against duplicate grants
       // (same email, phone, device, or IP) across account re-registrations.
