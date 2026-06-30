@@ -33,18 +33,14 @@ function fmtThread(iso) {
   if (d.toDateString() === today.toDateString()) return fmtTime(iso);
   return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
 }
-
 // ── Shared ProfileCard modal ──────────────────────────────────────────────────
 // Renders via createPortal so it floats above everything.
 function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
   const [profile,  setProfile]  = useState(null);
   const [vehicles, setVehicles] = useState([]);
-
   useEffect(() => {
     (async () => {
       try {
-        // Use exact columns from original working ChatRoom profile fetch
-        // avatar_url excluded — avatar is passed via prop from thread list
         const { data: p, error: pErr } = await supabase
           .from('profiles')
           .select('id, full_name, location, account_type, verified, rating, total_reviews')
@@ -70,9 +66,7 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
       }
     })();
   }, [partnerId, partnerName]);
-
   const initials = partnerName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
-
   return createPortal(
     <div className="fixed inset-0 z-[99999] bg-black/50 flex items-end justify-center p-4"
       onClick={onClose}>
@@ -84,7 +78,6 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
           </div>
         ) : (
           <>
-            {/* Header — avatar, name, location, badges */}
             <div className="bg-primary/10 px-5 pt-5 pb-4 flex items-center gap-4">
               <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden shrink-0 ring-2 ring-white/30">
                 {partnerAvatar
@@ -110,8 +103,6 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
                 </div>
               </div>
             </div>
-
-            {/* Stats — rating + reviews */}
             <div className="px-5 py-3 border-b border-border grid grid-cols-2 divide-x divide-border">
               <div className="text-center pr-4">
                 <p className="font-bold text-lg text-foreground">
@@ -124,8 +115,6 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
                 <p className="text-xs text-muted-foreground">Reviews</p>
               </div>
             </div>
-
-            {/* Vehicles — shown for owners and both */}
             {vehicles.length > 0 && (
               <div className="px-5 py-3 border-b border-border">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Listed Vehicles</p>
@@ -154,14 +143,12 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
                 </div>
               </div>
             )}
-
             {vehicles.length === 0 && (profile.account_type === 'owner' || profile.account_type === 'both') && (
               <div className="px-5 py-3 border-b border-border">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Listed Vehicles</p>
                 <p className="text-xs text-muted-foreground italic">No vehicles listed yet.</p>
               </div>
             )}
-
             <div className="px-5 py-4">
               <button onClick={onClose} className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-1">Close</button>
             </div>
@@ -172,7 +159,6 @@ function ProfileCard({ partnerId, partnerName, partnerAvatar, onClose }) {
     document.body
   );
 }
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // CHAT ROOM — shown when a conversation is open
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -182,6 +168,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const [sending,      setSending]      = useState(false);
   const [loading,      setLoading]      = useState(true);
   const [selectedMsg,  setSelectedMsg]  = useState(null);
+  const [menuOpenUp,   setMenuOpenUp]   = useState(false);
   const [hiddenMsgs,   setHiddenMsgs]   = useState(() => getHidden(user.id));
   const [showProfile,  setShowProfile]  = useState(false);
   const [partnerLocation, setPartnerLocation] = useState('');
@@ -193,13 +180,11 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const isAdmin   = ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
   const canSend   = isAdmin || (creditBalance !== null && creditBalance >= 3);
 
-  // Load partner location for header subtitle
   useEffect(() => {
     supabase.from('profiles').select('location').eq('id', partner.id).single()
       .then(({ data }) => { if (data?.location) setPartnerLocation(data.location); });
   }, [partner.id]);
 
-  // Load messages
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -249,14 +234,34 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     return () => { document.removeEventListener('mousedown', handle); document.removeEventListener('touchstart', handle); };
   }, []);
 
-  const startLongPress = (msg) => {
+  // Decide whether the context menu should open upward or downward based on
+  // how much space is left below the bubble in the viewport. The menu is
+  // ~140-180px tall (2-3 rows), so if there's less than that below the
+  // bubble, flip it upward so it never gets hidden behind the bottom nav.
+  const decideMenuDirection = (target) => {
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    setMenuOpenUp(spaceBelow < 180);
+  };
+
+  const startLongPress = (msg, e) => {
     longTriggered.current = false;
-    longPressRef.current = setTimeout(() => { longTriggered.current = true; setSelectedMsg(msg); }, 400);
+    const target = e?.currentTarget;
+    longPressRef.current = setTimeout(() => {
+      longTriggered.current = true;
+      decideMenuDirection(target);
+      setSelectedMsg(msg);
+    }, 400);
   };
   const cancelLongPress = () => { if (longPressRef.current) clearTimeout(longPressRef.current); };
-  const handleBubbleClick = (msg) => {
+  const handleBubbleClick = (msg, e) => {
     if (longTriggered.current) { longTriggered.current = false; return; }
-    setSelectedMsg(prev => prev?.id === msg.id ? null : msg);
+    setSelectedMsg(prev => {
+      if (prev?.id === msg.id) return null;
+      decideMenuDirection(e?.currentTarget);
+      return msg;
+    });
   };
 
   const handleSend = async (e) => {
@@ -322,25 +327,21 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
 
   return (
     <div className="fixed inset-0 z-[9999] bg-background flex flex-col" style={{ top: '57px' }}>
-      {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted shrink-0">
         <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full hover:bg-muted transition-colors" style={{ minWidth: 40, minHeight: 40 }}>
           <ArrowLeft className="w-5 h-5 text-foreground" />
         </button>
-        {/* Avatar — opens profile card */}
         <button onClick={() => setShowProfile(true)} className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 overflow-hidden hover:ring-2 hover:ring-primary/40 transition-all">
           {partner.avatar
             ? <img src={partner.avatar} alt="" className="w-full h-full object-cover rounded-full" />
             : <span className="text-sm font-bold text-primary">{initials}</span>}
         </button>
-        {/* Name — opens profile card */}
         <button onClick={() => setShowProfile(true)} className="flex-1 min-w-0 text-left">
           <p className="font-semibold text-sm text-foreground leading-tight truncate">{partner.name}</p>
           {partnerLocation && <p className="text-xs text-muted-foreground leading-tight truncate">{partnerLocation}</p>}
         </button>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 bg-background">
         {loading ? (
           <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" /></div>
@@ -364,7 +365,10 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
                 )}
                 <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-1 relative`}>
                   {isSelected && (
-                    <div ref={menuRef} className={`absolute z-50 top-full mt-1 ${isMe ? 'right-0' : 'left-0'} bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[180px]`}>
+                    <div
+                      ref={menuRef}
+                      className={`absolute z-50 ${menuOpenUp ? 'bottom-full mb-1' : 'top-full mt-1'} ${isMe ? 'right-0' : 'left-0'} bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[180px]`}
+                    >
                       <button onClick={() => handleCopy(msg)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-foreground hover:bg-muted">
                         <Copy className="w-4 h-4 text-muted-foreground" /> Copy
                       </button>
@@ -379,12 +383,12 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
                     </div>
                   )}
                   <div
-                    onMouseDown={() => !msg._temp && startLongPress(msg)}
+                    onMouseDown={(e) => !msg._temp && startLongPress(msg, e)}
                     onMouseUp={cancelLongPress}
                     onMouseLeave={cancelLongPress}
-                    onTouchStart={() => !msg._temp && startLongPress(msg)}
+                    onTouchStart={(e) => !msg._temp && startLongPress(msg, e)}
                     onTouchEnd={cancelLongPress}
-                    onClick={() => !msg._temp && handleBubbleClick(msg)}
+                    onClick={(e) => !msg._temp && handleBubbleClick(msg, e)}
                     className={`relative max-w-[72%] rounded-2xl px-3.5 py-2 text-sm cursor-pointer select-none ${
                       isMe
                         ? msg._temp ? 'bg-primary/60 text-white rounded-br-[4px]' : 'bg-primary text-white rounded-br-[4px]'
@@ -411,7 +415,6 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Profile card modal */}
       {showProfile && (
         <ProfileCard
           partnerId={partner.id}
@@ -436,7 +439,6 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     </div>
   );
 }
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // CHATS LIST — conversation threads
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -454,8 +456,7 @@ export default function Messages() {
   const [showNewChat,   setShowNewChat]   = useState(false);
   const [selectedThread, setSelectedThread] = useState(null);
   const [hiddenChats,   setHiddenChats]   = useState(new Set());
-  // Profile card shown from thread list
-  const [previewProfile, setPreviewProfile] = useState(null); // { id, name, avatar }
+  const [previewProfile, setPreviewProfile] = useState(null);
   const menuRef      = useRef(null);
   const longPressRef = useRef(null);
   const longTriggered= useRef(false);
@@ -600,8 +601,6 @@ export default function Messages() {
         />,
         document.body
       )}
-
-      {/* Profile card preview from thread list */}
       {previewProfile && (
         <ProfileCard
           partnerId={previewProfile.id}
@@ -610,7 +609,6 @@ export default function Messages() {
           onClose={() => setPreviewProfile(null)}
         />
       )}
-
       <div className="max-w-2xl mx-auto pb-28">
         <div className="flex items-center gap-2 px-4 pt-4 pb-3">
           <button onClick={() => navigate('/home')} className="p-1.5 -ml-1.5 rounded-full hover:bg-muted transition-colors">
@@ -624,7 +622,6 @@ export default function Messages() {
             <Plus className="w-4 h-4 text-primary" />
           </button>
         </div>
-
         {showNewChat && (
           <div className="px-4 pb-3 flex gap-2">
             <Input placeholder="Enter email address…" value={newChatEmail} onChange={e => setNewChatEmail(e.target.value)}
@@ -632,7 +629,6 @@ export default function Messages() {
             <Button onClick={handleNewChat} size="sm">Start</Button>
           </div>
         )}
-
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" /></div>
         ) : threads.length === 0 ? (
@@ -659,7 +655,6 @@ export default function Messages() {
                       isSelected ? 'border-primary/40 bg-primary/5' : t.unread > 0 ? 'border-primary/30' : 'border-border'
                     }`}
                   >
-                    {/* Avatar — tapping opens profile card, not chat */}
                     <button
                       onClick={e => { e.stopPropagation(); setPreviewProfile({ id: t.id, name: t.name, avatar: t.avatar }); }}
                       className="w-11 h-11 rounded-full bg-primary/15 flex items-center justify-center shrink-0 overflow-hidden hover:ring-2 hover:ring-primary/40 transition-all"
