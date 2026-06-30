@@ -83,6 +83,13 @@ export const auth = {
       if (k in updates) profileUpdates[k] = updates[k];
     });
 
+    // Postgres date/timestamp columns reject empty strings outright —
+    // normalise any '' to null so a blank field never breaks the whole save.
+    const DATE_FIELDS = ['date_of_birth', 'subscription_start', 'subscription_expires'];
+    DATE_FIELDS.forEach((k) => {
+      if (profileUpdates[k] === '') profileUpdates[k] = null;
+    });
+
     if (Object.keys(profileUpdates).length > 0) {
       // Try update first (fast path for existing rows)
       let { data: updated, error: updateErr } = await supabase
@@ -109,6 +116,24 @@ export const auth = {
           .update(profileUpdates)
           .eq('id', user.id)
           .select('id'));
+      }
+
+      // 22007 = "invalid input syntax for type date/timestamp" — almost
+      // always caused by an empty string slipping through. Null out any
+      // empty-string values and retry once rather than failing the save.
+      if (updateErr?.code === '22007') {
+        let changed = false;
+        Object.keys(profileUpdates).forEach((k) => {
+          if (profileUpdates[k] === '') { profileUpdates[k] = null; changed = true; }
+        });
+        if (changed) {
+          console.warn('[auth.updateMe] empty-string date value detected, nulling and retrying');
+          ({ data: updated, error: updateErr } = await supabase
+            .from('profiles')
+            .update(profileUpdates)
+            .eq('id', user.id)
+            .select('id'));
+        }
       }
 
       // If no row was updated (brand new user, profiles row doesn't exist yet),
