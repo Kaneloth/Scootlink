@@ -96,7 +96,7 @@ function buildActivityItems(rentals, notifications, userId, accountType) {
         type:  'rental_contract',
         title: 'Contract Awaiting Your Review',
         body:  `${counterparty} sent you a rental contract for ${vehicle}. Review and accept.`,
-        ts:    r.updated_at || r.created_at,
+        ts:    r.created_at,
         read:  false,
         action: { label: 'Review', path: '/home' },
       });
@@ -108,7 +108,7 @@ function buildActivityItems(rentals, notifications, userId, accountType) {
         type:  'driver_accepted',
         title: 'Driver Accepted Your Contract',
         body:  `${counterparty} accepted the contract for ${vehicle}. Confirm to activate the rental.`,
-        ts:    r.updated_at || r.created_at,
+        ts:    r.created_at,
         read:  false,
         action: { label: 'Finalise', path: '/home' },
       });
@@ -140,7 +140,7 @@ function buildActivityItems(rentals, notifications, userId, accountType) {
         body:  isDriver
           ? `Your rental of ${vehicle} from ${counterparty} is active. Ends ${formatDate(r.end_date)}.`
           : `${counterparty} is renting your ${vehicle}. Ends ${formatDate(r.end_date)}.`,
-        ts:    r.updated_at || r.created_at,
+        ts:    r.created_at,
         read:  true,
         action: { label: 'Briefcase', path: '/briefcase' },
       });
@@ -154,7 +154,7 @@ function buildActivityItems(rentals, notifications, userId, accountType) {
         body:  isDriver
           ? `Your rental of ${vehicle} has ended. Leave a review for ${counterparty}.`
           : `${counterparty} has returned your ${vehicle}. Leave a review.`,
-        ts:    r.updated_at || r.created_at,
+        ts:    r.created_at,
         read:  true,
         action: { label: 'Leave Review', path: '/home' },
       });
@@ -193,9 +193,9 @@ export default function Activity() {
         // registered in the schema cache)
         const { data: rentalData, error: rentalErr } = await supabase
           .from('rentals')
-          .select('id, status, created_at, updated_at, start_date, end_date, vehicle_id, owner_id, driver_id, price_per_week, deposit')
+          .select('id, status, created_at, start_date, end_date, vehicle_id, owner_id, driver_id, price_per_week, deposit')
           .or(`owner_id.eq.${uid},driver_id.eq.${uid}`)
-          .order('updated_at', { ascending: false })
+          .order('created_at', { ascending: false })
           .limit(30);
 
         if (rentalErr) console.error('[Activity] rentals fetch error:', rentalErr);

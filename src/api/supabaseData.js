@@ -85,18 +85,53 @@ export const auth = {
 
     if (Object.keys(profileUpdates).length > 0) {
       // Try update first (fast path for existing rows)
-      const { data: updated, error: updateErr } = await supabase
+      let { data: updated, error: updateErr } = await supabase
         .from('profiles')
         .update(profileUpdates)
         .eq('id', user.id)
         .select('id');
 
+      // PGRST204 = "column does not exist in schema cache" — the profiles
+      // table is missing a column we tried to write (e.g. date_of_birth,
+      // avatar_visible). Strip it out and retry so the REST of the update
+      // still goes through instead of failing entirely.
+      let retries = 0;
+      while (updateErr?.code === 'PGRST204' && retries < 5) {
+        const match = updateErr.message?.match(/'([^']+)'\s+column/);
+        const badColumn = match?.[1];
+        if (!badColumn || !(badColumn in profileUpdates)) break;
+        console.warn(`[auth.updateMe] dropping unknown column "${badColumn}" and retrying`);
+        delete profileUpdates[badColumn];
+        retries++;
+        if (Object.keys(profileUpdates).length === 0) break;
+        ({ data: updated, error: updateErr } = await supabase
+          .from('profiles')
+          .update(profileUpdates)
+          .eq('id', user.id)
+          .select('id'));
+      }
+
       // If no row was updated (brand new user, profiles row doesn't exist yet),
       // insert it explicitly rather than relying on upsert timing.
-      if (!updateErr && (!updated || updated.length === 0)) {
-        const { error: insertErr } = await supabase
-          .from('profiles')
-          .insert({ id: user.id, ...profileUpdates });
+      if (!updateErr && (!updated || updated.length === 0) && Object.keys(profileUpdates).length > 0) {
+        let insertPayload = { id: user.id, ...profileUpdates };
+        let insertErr;
+        let insertRetries = 0;
+        do {
+          ({ error: insertErr } = await supabase.from('profiles').insert(insertPayload));
+          if (insertErr?.code === 'PGRST204') {
+            const match = insertErr.message?.match(/'([^']+)'\s+column/);
+            const badColumn = match?.[1];
+            if (badColumn && badColumn in insertPayload) {
+              console.warn(`[auth.updateMe] dropping unknown column "${badColumn}" from insert and retrying`);
+              const { [badColumn]: _, ...rest } = insertPayload;
+              insertPayload = rest;
+              insertRetries++;
+              continue;
+            }
+          }
+          break;
+        } while (insertRetries < 5);
         if (insertErr && insertErr.code !== '23505') { // ignore duplicate-key races
           console.error('[auth.updateMe] profiles insert failed:', insertErr);
         }
