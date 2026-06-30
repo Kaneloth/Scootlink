@@ -229,13 +229,6 @@ export default function Profile() {
   const handleSave = async () => {
     if (!form.full_name.trim()) { toast.error('Full name is required'); return; }
     if (!form.phone.trim()) { toast.error('Phone number is required'); return; }
-    if (!form.license_number.trim()) { toast.error('License number is required'); return; }
-    if (form.citizenship === 'South African' && !sensitiveForm.sa_id.trim()) {
-      toast.error('SA ID number is required'); return;
-    }
-    if (form.citizenship !== 'South African' && !sensitiveForm.passport.trim()) {
-      toast.error('Passport number is required'); return;
-    }
     setSaving(true);
     try {
       // ── 1. Update non-sensitive user metadata ──────────────────────────────
