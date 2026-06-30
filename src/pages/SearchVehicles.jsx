@@ -280,6 +280,11 @@ export default function SearchVehicles() {
         <ProvinceBrowser mode="vehicles" onSelectProvince={handleSelectProvince} />
       ) : (
         <>
+      <div className="mb-3">
+        <button onClick={backToProvinces} className="text-xs text-primary hover:underline">
+          ← Browse a different province
+        </button>
+      </div>
       {showFilters && (
         <Card className="p-5 mb-6 border border-border/50">
           <div className="flex items-center justify-between mb-4">
@@ -464,11 +469,6 @@ export default function SearchVehicles() {
           }
         />
       )}
-      <div className="mt-4 text-center">
-        <button onClick={backToProvinces} className="text-xs text-primary hover:underline">
-          ← Browse a different province
-        </button>
-      </div>
       </>
       )}
     </div>
