@@ -4,8 +4,8 @@
  * Called from Onboarding.jsx once the profile is saved.
  *
  * Credits awarded:
- *   Driver              → 18 credits
- *   Owner or Both       → 36 credits
+ *   Driver              → 15 credits
+ *   Owner or Both       → 25 credits
  *
  * Fraud guards (layered):
  *   0. email_grants table   — blocks re-registration with same email
@@ -43,8 +43,8 @@ export const handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'user_id required' }) };
   }
 
-  // Driver → 18 credits, Owner or Both → 36 credits
-  const freeCredits = (profile_type === 'owner' || profile_type === 'both') ? 36 : 18;
+  // Driver → 15 credits, Owner or Both → 25 credits
+  const freeCredits = (profile_type === 'owner' || profile_type === 'both') ? 25 : 15;
 
   // ── Verify user_id actually exists in profiles (prevent spoofed requests) ──
   const { data: profile, error: profileErr } = await supabase

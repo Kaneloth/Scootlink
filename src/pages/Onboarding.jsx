@@ -101,7 +101,7 @@ const ROLES = [
     id: 'driver',
     name: 'Driver',
     description: 'Search for and rent vehicles listed by owners on Skootlink.',
-    freeCredits: 18,
+    freeCredits: 15,
     icon: Bike,
     bg:   'bg-blue-50',
     border: 'border-blue-200',
@@ -111,7 +111,7 @@ const ROLES = [
     id: 'owner',
     name: 'Owner',
     description: 'List your vehicles and connect with verified drivers.',
-    freeCredits: 36,
+    freeCredits: 25,
     icon: Crown,
     bg:   'bg-amber-50',
     border: 'border-amber-200',
@@ -121,7 +121,7 @@ const ROLES = [
     id: 'both',
     name: 'Driver & Owner',
     description: 'Drive other vehicles and list your own — full platform access.',
-    freeCredits: 36,
+    freeCredits: 25,
     icon: Users,
     bg:   'bg-primary/5',
     border: 'border-primary/30',
@@ -380,7 +380,7 @@ export default function Onboarding() {
               <div className="flex items-start gap-2.5 bg-muted/50 rounded-xl p-3.5">
                 <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Driver's licence verification costs 30 credits and can be done from Settings.
+                  Driver's licence verification is a paid service and can be done from your Profile.
                   You can browse and list vehicles right after completing setup.
                 </p>
               </div>

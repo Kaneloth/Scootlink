@@ -18,8 +18,7 @@ const PACKAGES = [
 const CREDIT_COSTS = [
   { action: 'Start or reply to a new chat', cost: 3  },
   { action: 'List a vehicle',               cost: 10 },
-  { action: 'Access rental agreement',      cost: 30 },
-  { action: 'ID / licence verification',    cost: 30 },
+  { action: 'Access rental agreement',      cost: 15 },
 ];
 
 export default function Credits() {
