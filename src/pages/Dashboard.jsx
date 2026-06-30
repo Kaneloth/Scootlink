@@ -370,22 +370,22 @@ export default function Dashboard() {
     }
   };
 
-  // Owner's final confirm — deducts 10 credits, activates rental, downloads PDF
+  // Owner's final confirm — deducts 15 credits, activates rental, downloads PDF
   const handleOwnerFinalise = async () => {
     if (!selectedProposal) return;
 
-    // Deduct 10 credits from the owner for accessing the rental agreement
+    // Deduct 15 credits from the owner for accessing the rental agreement
     const { data: { user: currentUser } } = await supabase.auth.getUser();
     if (currentUser) {
       const { error: creditErr } = await supabase.rpc('deduct_credits', {
         p_user_id:     currentUser.id,
-        p_amount:      10,
+        p_amount:      15,
         p_type:        'spend',
         p_description: 'Access rental agreement',
         p_ref_id:      selectedProposal.id,
       });
       if (creditErr?.message?.includes('insufficient_credits')) {
-        toast.error('You need 10 credits to finalise this rental agreement. Top up in Settings → Credits.');
+        toast.error('You need 15 credits to finalise this rental agreement. Top up in Settings → Credits.');
         return;
       }
     }
@@ -905,7 +905,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                     <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                   </div>
                   <p className="text-xs text-emerald-700 dark:text-emerald-300 mb-3">
-                    ✅ Driver has accepted the contract. Review it and confirm to activate the rental (costs 10 credits).
+                    ✅ Driver has accepted the contract. Review it and confirm to activate the rental (costs 15 credits).
                   </p>
                   <div className="flex gap-2">
                     <Button size="sm" className="flex-1 gap-1" onClick={() => openContractModal(r, 'finalise')}>
@@ -1316,7 +1316,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                 : contractEditMode === 'edit'
                   ? 'Edit the contract to reflect changes agreed via Messages, then save. The driver will see the updated version.'
                   : contractEditMode === 'finalise'
-                    ? 'The driver has accepted this contract. Review it one final time, then confirm to activate the rental (10 credits will be deducted).'
+                    ? 'The driver has accepted this contract. Review it one final time, then confirm to activate the rental (15 credits will be deducted).'
                     : 'Edit the contract below — fill in all details, dates and terms. When ready, send it to the driver to review and accept.'}
             </p>
 
@@ -1364,7 +1364,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
               )}
               {contractEditMode === 'finalise' && (
                 <Button className="flex-1" disabled={!contractAgreed} onClick={handleOwnerFinalise}>
-                  <Check className="w-4 h-4 mr-1" /> Confirm & Activate (10 cr)
+                  <Check className="w-4 h-4 mr-1" /> Confirm & Activate (15 cr)
                 </Button>
               )}
             </div>
