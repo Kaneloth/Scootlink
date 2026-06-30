@@ -4,10 +4,9 @@
  *
  *   1. Sends reminder notifications at 7, 3, and 1 days before expires_at
  *   2. Moves vehicles past expires_at into 'grace' state (2-day grace period)
- *   3. Moves vehicles past grace_expires_at into 'expired' state
- *   4. Removes expired vehicles from search — UNLESS they are currently
- *      part of an active rental, in which case removal is deferred until
- *      the rental ends (handled by a trigger / Dashboard.jsx on rental end)
+ *   3. Moves vehicles past grace_expires_at into 'expired' state — HIDDEN
+ *      from search but always remains visible to the owner under My Vehicles.
+ *      Vehicles are never deleted; owners can re-list at any time.
  *
  * Schedule in netlify.toml:
  *   [[scheduled.functions]]
@@ -37,10 +36,9 @@ async function notify(userId, type, title, body, data = null) {
 
 export const handler = async () => {
   const now = new Date();
-  const results = { reminders_7d: 0, reminders_3d: 0, reminders_1d: 0, moved_to_grace: 0, expired: 0, removed: 0, errors: [] };
+  const results = { reminders_7d: 0, reminders_3d: 0, reminders_1d: 0, moved_to_grace: 0, expired_hidden: 0, errors: [] };
 
   try {
-    // ── 1. Fetch all active vehicles with their expiry info ─────────────────
     const { data: vehicles, error } = await supabase
       .from('vehicles')
       .select('id, owner_id, make, model, status, listing_state, expires_at, grace_expires_at, reminder_7d_sent, reminder_3d_sent, reminder_1d_sent')
@@ -70,7 +68,7 @@ export const handler = async () => {
           await notify(
             v.owner_id, 'listing_expiry_3d',
             `Listing expires in 3 days`,
-            `Your ${vehicleLabel} listing expires soon. Re-list now to avoid it being removed from search.`,
+            `Your ${vehicleLabel} listing expires soon. Re-list now to avoid it being hidden from search.`,
             { vehicle_id: v.id, action: 'relist' }
           );
           await supabase.from('vehicles').update({ reminder_3d_sent: true }).eq('id', v.id);
@@ -79,7 +77,7 @@ export const handler = async () => {
           await notify(
             v.owner_id, 'listing_expiry_1d',
             `Listing expires tomorrow!`,
-            `Your ${vehicleLabel} listing expires within 24 hours. Re-list now — after expiry you'll have a 2-day grace period before it's removed.`,
+            `Your ${vehicleLabel} listing expires within 24 hours. Re-list now — after expiry you'll have a 2-day grace period before it's hidden from search.`,
             { vehicle_id: v.id, action: 'relist' }
           );
           await supabase.from('vehicles').update({ reminder_1d_sent: true }).eq('id', v.id);
@@ -97,46 +95,29 @@ export const handler = async () => {
           await notify(
             v.owner_id, 'listing_expired',
             `Listing expired — 2 days left to renew`,
-            `Your ${vehicleLabel} listing has expired and is hidden from search. You have until ${graceExpiresAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })} to re-list it before it's permanently removed.`,
+            `Your ${vehicleLabel} listing has expired and is hidden from search. You have until ${graceExpiresAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })} to re-list it before drivers can no longer find it.`,
             { vehicle_id: v.id, action: 'relist' }
           );
           results.moved_to_grace++;
         }
       }
 
-      // ── Move from grace into expired/removed ───────────────────────────────
+      // ── Move from grace into expired (hidden, never deleted) ─────────────
       if (v.listing_state === 'grace' && v.grace_expires_at) {
         const graceExpiresAt = new Date(v.grace_expires_at);
         if (graceExpiresAt <= now) {
-          // Check if vehicle is currently part of an active rental —
-          // if so, defer removal until the rental ends.
-          const { data: activeRental } = await supabase
-            .from('rentals')
-            .select('id')
-            .eq('vehicle_id', v.id)
-            .eq('status', 'active')
-            .maybeSingle();
+          // Hide from search permanently until owner re-lists.
+          // The vehicle row is NEVER deleted — it stays visible to the
+          // owner under My Vehicles regardless of any active rental.
+          await supabase.from('vehicles').update({ listing_state: 'expired' }).eq('id', v.id);
 
-          if (activeRental) {
-            // Mark as expired but don't remove yet — Dashboard.jsx removes it
-            // when the rental is ended (status becomes 'completed'/'ended')
-            await supabase.from('vehicles').update({ listing_state: 'expired' }).eq('id', v.id);
-            results.expired++;
-          } else {
-            // No active rental — remove immediately
-            await supabase.from('vehicles').update({
-              listing_state: 'removed',
-              status: 'removed',
-            }).eq('id', v.id);
-
-            await notify(
-              v.owner_id, 'listing_removed',
-              `Listing removed`,
-              `Your ${vehicleLabel} listing has been removed from Skootlink after the renewal grace period expired. You can list it again from My Briefcase.`,
-              { vehicle_id: v.id }
-            );
-            results.removed++;
-          }
+          await notify(
+            v.owner_id, 'listing_hidden',
+            `Listing hidden from search`,
+            `Your ${vehicleLabel} listing is now hidden from search after the renewal grace period expired. It's still visible in My Vehicles — re-list it anytime to make it searchable again.`,
+            { vehicle_id: v.id, action: 'relist' }
+          );
+          results.expired_hidden++;
         }
       }
     }

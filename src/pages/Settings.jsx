@@ -187,7 +187,9 @@ function CreditBalanceWidget() {
         <p className="text-xs font-semibold text-foreground">Credit costs:</p>
         {[
           ['Start or reply to a new chat', 3],
-          ['List a vehicle', 10],
+          ['List a vehicle (1st)', 30],
+          ['List a vehicle (2nd)', 25],
+          ['List a vehicle (3rd+)', 20],
           ['Access rental agreement', 15],
         ].map(([action, cost]) => (
           <div key={action} className="flex justify-between text-xs">
