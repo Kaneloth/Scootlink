@@ -69,6 +69,7 @@ async function fetchVehiclePage({ pageParam = 0, filters }) {
     if (error) throw error;
     return (data || [])
       .filter(v => v.status === 'available')
+      .filter(v => !v.listing_state || v.listing_state === 'active')
       .filter(v => filters.type === 'all' || v.type === filters.type)
       .filter(v => (v.price ?? 0) <= filters.maxPrice)
       .filter(v => filters.minRating === 0 || (v.rating ?? 0) >= filters.minRating)
@@ -80,6 +81,7 @@ async function fetchVehiclePage({ pageParam = 0, filters }) {
     .from('vehicles')
     .select('*')
     .eq('status', 'available')
+    .or('listing_state.is.null,listing_state.eq.active')
     .lte('price', filters.maxPrice)
     .order('created_at', { ascending: false })
     .range(pageParam * PAGE_SIZE, (pageParam + 1) * PAGE_SIZE - 1);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth } from '@/api/supabaseData';
 import { supabase } from '@/api/supabaseClient';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card } from '@/components/ui/card';
 import { ImagePlus, X } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
-import SubscriptionGate from '@/components/subscription/SubscriptionGate';
 import { toast } from 'sonner';
 import { geocodeLocation } from '@/lib/geocode';
 
@@ -18,6 +17,13 @@ export default function AddVehicle() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
+  const [searchParams] = useSearchParams();
+
+  const editingId  = searchParams.get('id');
+  const isRelist   = searchParams.get('relist') === '1';
+  const isEditMode = !!editingId;
+
+  const [loadingExisting, setLoadingExisting] = useState(isEditMode);
 
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
@@ -38,6 +44,39 @@ export default function AddVehicle() {
 
   const [images,    setImages]    = useState([]);
   const [uploading, setUploading] = useState(false);
+
+  // Prefill form when editing/relisting an existing vehicle
+  useEffect(() => {
+    if (!editingId) return;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('vehicles')
+          .select('*')
+          .eq('id', editingId)
+          .single();
+        if (error) throw error;
+
+        setForm({
+          vehicle_type:           data.type || 'scooter',
+          make:                   data.make || '',
+          model:                  data.model || '',
+          year:                   data.year ? String(data.year) : '',
+          plate:                  data.plate || '',
+          location:               data.location || '',
+          price_per_week:         data.price ? String(data.price) : '',
+          deposit:                data.deposit ? String(data.deposit) : '',
+          storage_type:           data.storage_type || 'owner_address',
+          pickup_return_location: data.pickup_return_location || '',
+        });
+        setImages(data.images || []);
+      } catch (err) {
+        toast.error('Could not load vehicle details: ' + err.message);
+      } finally {
+        setLoadingExisting(false);
+      }
+    })();
+  }, [editingId]);
 
   const mutation = useMutation({
     mutationFn: async (data) => {
@@ -60,6 +99,36 @@ export default function AddVehicle() {
         } catch { /* non-fatal — vehicle still lists without coordinates */ }
       }
 
+      // ── Editing or relisting an existing vehicle ──────────────────────────
+      if (editingId) {
+        const { data: result, error } = await supabase
+          .from('vehicles')
+          .update(dbRow)
+          .eq('id', editingId)
+          .eq('owner_id', user.id)
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+
+        // Relist = pay credits to reset the 6-month expiry clock
+        if (isRelist) {
+          const { data: relistResult, error: relistErr } = await supabase.rpc('relist_vehicle', {
+            p_vehicle_id: editingId,
+            p_owner_id:   user.id,
+          });
+          if (relistErr) throw new Error(relistErr.message);
+          if (relistResult && relistResult.success === false) {
+            if (relistResult.error === 'insufficient_credits') {
+              throw new Error('insufficient_credits');
+            }
+            throw new Error(relistResult.error || 'Could not relist vehicle');
+          }
+        }
+
+        return result;
+      }
+
+      // ── Creating a brand new listing ───────────────────────────────────────
       const { data: result, error } = await supabase
         .from('vehicles')
         .insert(dbRow)
@@ -72,12 +141,21 @@ export default function AddVehicle() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
-      toast.success('Vehicle listed successfully!');
-      navigate('/home');
+      toast.success(
+        isRelist ? 'Vehicle re-listed! Your listing is active for another 6 months.' :
+        isEditMode ? 'Vehicle details updated!' :
+        'Vehicle listed successfully!'
+      );
+      navigate(isEditMode ? '/briefcase' : '/home');
     },
     onError: (err) => {
-      console.error('Vehicle create error:', err);
-      toast.error('Failed to list vehicle: ' + (err?.message || 'Unknown error'));
+      console.error('Vehicle save error:', err);
+      if (err?.message === 'insufficient_credits') {
+        toast.error('Not enough credits to relist. Top up in Settings → Credits.');
+        navigate('/credits');
+        return;
+      }
+      toast.error('Failed to save vehicle: ' + (err?.message || 'Unknown error'));
     },
   });
 
@@ -112,23 +190,49 @@ export default function AddVehicle() {
       toast.error('Please specify the pickup/return address');
       return;
     }
-    mutation.mutate({
+    const payload = {
       ...form,
       year:           parseInt(form.year) || 2024,
       price_per_week: parseFloat(form.price_per_week),
       deposit:        parseFloat(form.deposit) || 0,
-      status:         'available',
       images,
       rating:         0,
       total_reviews:  0,
-    });
+    };
+    // Only set status to 'available' for brand new listings —
+    // editing/relisting must not override 'rented' or other states
+    if (!isEditMode) payload.status = 'available';
+
+    mutation.mutate(payload);
   };
 
   const update = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
+  if (loadingExisting) {
+    return (
+      <div className="p-4 lg:p-8 max-w-2xl mx-auto">
+        <PageHeader title={isRelist ? 'Re-list Vehicle' : 'Edit Vehicle'} backTo="/briefcase" />
+        <div className="flex justify-center py-16">
+          <div className="w-7 h-7 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <PageHeader title="Add Vehicle" subtitle="List your vehicle for drivers to rent" backTo="/home" />
+      <PageHeader
+        title={isRelist ? 'Re-list Vehicle' : isEditMode ? 'Edit Vehicle' : 'Add Vehicle'}
+        subtitle={isRelist ? 'Confirm or update details, then re-list for another 6 months' : isEditMode ? 'Update your vehicle details' : 'List your vehicle for drivers to rent'}
+        backTo={isEditMode ? '/briefcase' : '/home'}
+      />
+      {isRelist && (
+        <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            🔄 Re-listing costs <strong>10 credits</strong> and resets your listing's 6-month expiry from today.
+          </p>
+        </div>
+      )}
       <Card className="p-6 border border-border/50">
         <div className="space-y-4">
           <div>
@@ -235,7 +339,9 @@ export default function AddVehicle() {
           </div>
 
           <Button onClick={handleSubmit} className="w-full mt-2" disabled={mutation.isPending}>
-            {mutation.isPending ? 'Listing...' : 'List Vehicle'}
+            {mutation.isPending
+              ? (isRelist ? 'Re-listing…' : isEditMode ? 'Saving…' : 'Listing…')
+              : (isRelist ? 'Re-list Vehicle (10 cr)' : isEditMode ? 'Save Changes' : 'List Vehicle')}
           </Button>
         </div>
       </Card>
