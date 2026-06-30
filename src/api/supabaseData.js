@@ -70,43 +70,68 @@ export const auth = {
   },
 
   updateMe: async (updates) => {
-    // 1. Write to Supabase auth metadata (keeps auth token in sync)
-    const { data, error } = await supabase.auth.updateUser({ data: updates });
-    if (error) throw error;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
 
-    // 2. Sync relevant fields to profiles table so auth.me() always reads
-    //    the latest values regardless of token refresh timing.
+    // 1. Write to profiles FIRST and directly — this is the source of truth.
+    //    Writing here before touching auth metadata avoids a race condition
+    //    where Supabase's own auth-state-change side effects (or a DB trigger
+    //    on auth.users) can re-create/overwrite the profiles row with default
+    //    values AFTER our write, silently reverting fields like account_type.
     const profileUpdates = {};
     PROFILE_FIELDS.forEach((k) => {
       if (k in updates) profileUpdates[k] = updates[k];
     });
+
     if (Object.keys(profileUpdates).length > 0) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        // Use upsert so the row is created if it doesn't exist yet.
-        // Plain .update() silently no-ops when the row is missing, leaving
-        // the profiles table stale and auth.me() returning old values.
-        await supabase
+      // Try update first (fast path for existing rows)
+      const { data: updated, error: updateErr } = await supabase
+        .from('profiles')
+        .update(profileUpdates)
+        .eq('id', user.id)
+        .select('id');
+
+      // If no row was updated (brand new user, profiles row doesn't exist yet),
+      // insert it explicitly rather than relying on upsert timing.
+      if (!updateErr && (!updated || updated.length === 0)) {
+        const { error: insertErr } = await supabase
           .from('profiles')
-          .upsert({ id: user.id, ...profileUpdates }, { onConflict: 'id' });
+          .insert({ id: user.id, ...profileUpdates });
+        if (insertErr && insertErr.code !== '23505') { // ignore duplicate-key races
+          console.error('[auth.updateMe] profiles insert failed:', insertErr);
+        }
+      } else if (updateErr) {
+        console.error('[auth.updateMe] profiles update failed:', updateErr);
       }
     }
+
+    // 2. Update auth metadata AFTER profiles is confirmed written —
+    //    this keeps the JWT in sync but profiles remains the source of truth.
+    const { data, error } = await supabase.auth.updateUser({ data: updates });
+    if (error) throw error;
 
     return data;
   },
 
   logout: async () => {
     try {
-      await supabase.auth.signOut({ scope: 'local' }); // 'local' clears this device only, faster than global
-    } catch { /* non-fatal — clear storage regardless */ }
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch { /* non-fatal */ }
 
-    // Wipe every piece of local state so a new sign-in starts completely clean
-    try { localStorage.removeItem(BIOMETRIC_SESSION_KEY); } catch { /* ignore */ }
-    try { sessionStorage.removeItem('skootlink_recovery'); } catch { /* ignore */ }
+    // Manually wipe all Supabase auth keys from localStorage
+    // so the next getSession() call never reads a stale session
+    try {
+      const keysToRemove = Object.keys(localStorage).filter(k =>
+        k.startsWith('sb-') || k.includes('supabase') || k === BIOMETRIC_SESSION_KEY
+      );
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch { /* ignore */ }
 
-    // Small delay to let Supabase finish writing the cleared state to localStorage
-    // before the page reloads and App.jsx calls getSession()
-    setTimeout(() => { window.location.replace('/auth'); }, 200);
+    try { sessionStorage.clear(); } catch { /* ignore */ }
+
+    // Longer delay on mobile — give the browser time to flush storage
+    // before App.jsx runs getSession() on the new page load
+    setTimeout(() => { window.location.replace('/auth'); }, 500);
   },
 
   isAuthenticated: async () => {
