@@ -23,28 +23,37 @@ const SERVICES = {
   licence:  { label: "Driver's Licence Verification", price: 35 },
 };
 
+const HEADERS = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+};
+
 export const handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: HEADERS, body: '' };
+  }
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
+    return { statusCode: 405, headers: HEADERS, body: JSON.stringify({ error: 'Method Not Allowed' }) };
   }
 
   if (!MERCHANT_ID || !MERCHANT_KEY) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'Payments not configured.' }) };
+    return { statusCode: 500, headers: HEADERS, body: JSON.stringify({ error: 'Payments not configured.' }) };
   }
 
   const jwt = (event.headers['authorization'] || '').replace('Bearer ', '').trim();
-  if (!jwt) return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
+  if (!jwt) return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
 
   const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt);
-  if (authErr || !user) return { statusCode: 401, body: JSON.stringify({ error: 'Invalid session' }) };
+  if (authErr || !user) return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Invalid session' }) };
 
   let body;
   try { body = JSON.parse(event.body); }
-  catch { return { statusCode: 400, body: 'Invalid JSON' }; }
+  catch { return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
   const service = SERVICES[body.service_type];
   if (!service) {
-    return { statusCode: 400, body: JSON.stringify({ error: `Unknown service "${body.service_type}"` }) };
+    return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: `Unknown service "${body.service_type}"` }) };
   }
 
   const m_payment_id = `skoot_verif_${body.service_type}_${user.id.slice(0, 8)}_${Date.now()}`;
@@ -87,6 +96,7 @@ export const handler = async (event) => {
 
   return {
     statusCode: 200,
+    headers: HEADERS,
     body: JSON.stringify({
       action_url: PAYFAST_PROCESS_URL,
       fields: { ...fields, signature },

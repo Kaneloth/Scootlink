@@ -188,17 +188,34 @@ export default function Activity() {
         if (!uid) { setLoading(false); return; }
         setUserId(uid);
 
-        // Fetch rentals with vehicle + counterparty info
-        const { data: rentalData } = await supabase
+        // Fetch rentals (no embedded join — avoids PostgREST relationship
+        // errors if the FK between rentals.vehicle_id and vehicles isn't
+        // registered in the schema cache)
+        const { data: rentalData, error: rentalErr } = await supabase
           .from('rentals')
-          .select(`
-            id, status, created_at, updated_at, start_date, end_date,
-            vehicle_id, owner_id, driver_id, price_per_week, deposit,
-            vehicles ( make, model, year )
-          `)
+          .select('id, status, created_at, updated_at, start_date, end_date, vehicle_id, owner_id, driver_id, price_per_week, deposit')
           .or(`owner_id.eq.${uid},driver_id.eq.${uid}`)
           .order('updated_at', { ascending: false })
           .limit(30);
+
+        if (rentalErr) console.error('[Activity] rentals fetch error:', rentalErr);
+
+        // Fetch vehicle details separately for the rentals we have
+        let rentalsWithVehicles = rentalData || [];
+        if (rentalsWithVehicles.length > 0) {
+          const vehicleIds = [...new Set(rentalsWithVehicles.map(r => r.vehicle_id).filter(Boolean))];
+          if (vehicleIds.length > 0) {
+            const { data: vehicleData } = await supabase
+              .from('vehicles')
+              .select('id, make, model, year')
+              .in('id', vehicleIds);
+            const vehicleMap = Object.fromEntries((vehicleData || []).map(v => [v.id, v]));
+            rentalsWithVehicles = rentalsWithVehicles.map(r => ({
+              ...r,
+              vehicles: vehicleMap[r.vehicle_id] || null,
+            }));
+          }
+        }
 
         // Fetch notifications
         const { data: notifData } = await supabase
@@ -208,7 +225,7 @@ export default function Activity() {
           .order('created_at', { ascending: false })
           .limit(30);
 
-        setRentals(rentalData || []);
+        setRentals(rentalsWithVehicles);
         setNotifications(notifData || []);
       } catch (err) {
         console.error('[Activity] load error:', err);
