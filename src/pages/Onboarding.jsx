@@ -134,9 +134,13 @@ export default function Onboarding() {
   const [step, setStep]   = useState(0);
   const [saving, setSaving] = useState(false);
   const [currentEmail, setCurrentEmail] = useState('');
+  const [currentFullName, setCurrentFullName] = useState('');
 
   useEffect(() => {
-    auth.me().then(u => { if (u?.email) setCurrentEmail(u.email); }).catch(() => {});
+    auth.me().then(u => {
+      if (u?.email) setCurrentEmail(u.email);
+      if (u?.full_name) setCurrentFullName(u.full_name);
+    }).catch(() => {});
   }, []);
 
   const [form, setForm] = useState({
@@ -219,6 +223,7 @@ export default function Onboarding() {
 
   const buildProfilePayload = () => ({
     account_type:         form.role,
+    full_name:            currentFullName || undefined, // write through from signup metadata so profiles.full_name is set immediately
     phone:                normalisePhone(form.phone),
     gender:               form.gender,
     date_of_birth:        form.date_of_birth || null,
@@ -246,7 +251,18 @@ export default function Onboarding() {
   const saveAndNavigate = async (destination) => {
     setSaving(true);
     try {
-      await auth.updateMe(buildProfilePayload());
+      // Fetch fresh auth metadata right before saving — guarantees full_name
+      // is current even if the earlier auth.me() call hadn't resolved yet
+      // when this step was reached.
+      const { data: { user: freshAuthUser } } = await supabase.auth.getUser();
+      const freshFullName = freshAuthUser?.user_metadata?.full_name || currentFullName;
+      const freshEmail = freshAuthUser?.email || currentEmail;
+
+      await auth.updateMe({
+        ...buildProfilePayload(),
+        full_name: freshFullName || undefined,
+        email:     freshEmail || undefined,
+      });
       const { data: { user: authUser } } = await supabase.auth.getUser();
       // Write residential_address directly to profiles — auth.updateMe() does not sync it
       if (authUser?.id && form.residential_address) {
