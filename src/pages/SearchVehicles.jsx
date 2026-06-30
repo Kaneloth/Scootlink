@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import PageHeader from '@/components/layout/PageHeader';
 import VehicleCard from '@/components/vehicles/VehicleCard';
 import EmptyState from '@/components/common/EmptyState';
+import ProvinceBrowser, { SEARCH_RADIUS_KM } from '@/components/search/ProvinceBrowser';
 import { geocodeLocation } from '@/lib/geocode';
 
 const PAGE_SIZE = 10;
@@ -105,38 +106,43 @@ export default function SearchVehicles() {
     maxPrice:       3000,
     location:       '',
     minRating:      0,
-    radiusKm:       50,
+    radiusKm:       SEARCH_RADIUS_KM,
     locationCoords: null,
   });
 
   const [localMaxPrice,  setLocalMaxPrice]  = useState(3000);
-  const [localRadiusKm,  setLocalRadiusKm]  = useState(50);
+  const [localRadiusKm,  setLocalRadiusKm]  = useState(SEARCH_RADIUS_KM);
   const [geocoding,      setGeocoding]      = useState(false);
-  // geocodeTarget only changes on blur/Enter — keeps geocoding off every keystroke
-  // while filters.location updates live so text-match responds immediately.
   const [geocodeTarget,  setGeocodeTarget]  = useState('');
+  const [selectedProvince, setSelectedProvince] = useState(null); // null = show province browser
+  const [hasSearched, setHasSearched] = useState(false);
 
-  // Auto-detect user's location on mount for default 50 km proximity filter.
-  useEffect(() => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, displayName: 'Your location' };
-        autoLocationRef.current = coords;
-        setFilters(prev => ({ ...prev, locationCoords: coords, location: 'Your location' }));
-      },
-      () => {}, // silently ignore denied / unavailable
-      { timeout: 8000, maximumAge: 5 * 60 * 1000 },
-    );
-  }, []);
+  const handleSelectProvince = (province) => {
+    setSelectedProvince(province);
+    setHasSearched(true);
+    setFilters(prev => ({
+      ...prev,
+      location: province.city,
+      locationCoords: { latitude: province.lat, longitude: province.lng, displayName: `${province.city}, ${province.name}` },
+      radiusKm: SEARCH_RADIUS_KM,
+    }));
+  };
+
+  const backToProvinces = () => {
+    setSelectedProvince(null);
+    setHasSearched(false);
+    setShowFilters(false);
+    setFilters({
+      type: 'all', maxPrice: 3000, location: '', minRating: 0,
+      radiusKm: SEARCH_RADIUS_KM, locationCoords: null,
+    });
+  };
 
   // Geocode only when the user commits a location (blur or Enter).
   // Requires ≥3 characters — shorter strings fall back to text-match silently.
   useEffect(() => {
     if (!geocodeTarget || geocodeTarget.trim().length < 3) {
       setGeocoding(false);
-      // Restore auto-location when the user clears the location input.
-      setFilters(prev => ({ ...prev, locationCoords: autoLocationRef.current, location: autoLocationRef.current ? 'Your location' : '' }));
       return;
     }
     let cancelled = false;
@@ -192,6 +198,7 @@ export default function SearchVehicles() {
     queryKey:        ['search-vehicles', filters],
     queryFn:         ({ pageParam }) => fetchVehiclePage({ pageParam, filters }),
     initialPageParam: 0,
+    enabled:          hasSearched,
     getNextPageParam: (lastPage, allPages) => {
       if (filters.locationCoords) return undefined; // RPC gives all at once
       return lastPage.length === PAGE_SIZE ? allPages.length : undefined;
@@ -227,16 +234,18 @@ export default function SearchVehicles() {
 
   const clearFilters = () => {
     setLocalMaxPrice(3000);
-    setLocalRadiusKm(50);
+    setLocalRadiusKm(SEARCH_RADIUS_KM);
     setGeocodeTarget('');
     setVerifiedOwnerFilter('all');
     setFilters({
       type:           'all',
       maxPrice:       3000,
-      location:       autoLocationRef.current ? 'Your location' : '',
+      location:       selectedProvince?.city || '',
       minRating:      0,
-      radiusKm:       50,
-      locationCoords: autoLocationRef.current,
+      radiusKm:       SEARCH_RADIUS_KM,
+      locationCoords: selectedProvince
+        ? { latitude: selectedProvince.lat, longitude: selectedProvince.lng, displayName: `${selectedProvince.city}, ${selectedProvince.name}` }
+        : null,
     });
   };
 
@@ -246,19 +255,28 @@ export default function SearchVehicles() {
         title="Find Vehicles"
         backTo="/home"
         subtitle={
-          geocoding
-            ? 'Locating…'
-            : isLoading
-              ? 'Loading…'
-              : filters.locationCoords
-                ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} within ${filters.radiusKm} km`
-                : totalLoaded > 0
-                  ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} loaded`
-                  : 'No vehicles found'
+          !hasSearched
+            ? 'Choose a province to see nearby vehicles'
+            : geocoding
+              ? 'Locating…'
+              : isLoading
+                ? 'Loading…'
+                : `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} within ${filters.radiusKm} km of ${selectedProvince?.city || filters.location}`
         }
         action={
-          <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="gap-2">
-            <SlidersHorizontal className="w-4 h-4" /> Filters
+          hasSearched && (
+            <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="gap-2">
+              <SlidersHorizontal className="w-4 h-4" /> Filters
+            </Button>
+          )
+        }
+      />
+
+      {!hasSearched ? (
+        <ProvinceBrowser mode="vehicles" onSelectProvince={handleSelectProvince} />
+      ) : (
+        <>
+      {showFilters && (
           </Button>
         }
       />
@@ -446,6 +464,13 @@ export default function SearchVehicles() {
                 : 'Try adjusting your filters'
           }
         />
+      )}
+      <div className="mt-4 text-center">
+        <button onClick={backToProvinces} className="text-xs text-primary hover:underline">
+          ← Browse a different province
+        </button>
+      </div>
+      </>
       )}
     </div>
   );
