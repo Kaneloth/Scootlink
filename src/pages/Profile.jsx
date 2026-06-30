@@ -534,62 +534,6 @@ export default function Profile() {
                   />
                 </div>
 
-                <div>
-                  <Label>Citizenship</Label>
-                  <Select value={form.citizenship} onValueChange={(v) => update('citizenship', v)}>
-                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="South African">South African</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Sensitive identity fields — saved to a separate RLS-protected table */}
-                {form.citizenship === 'South African' ? (
-                  <div>
-                    <Label>SA ID Number <span className="text-red-500">*</span></Label>
-                    <Input
-                      className="mt-1"
-                      placeholder="13-digit ID"
-                      value={sensitiveForm.sa_id}
-                      onChange={(e) => updateSensitive('sa_id', e.target.value)}
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <Label>Passport Number <span className="text-red-500">*</span></Label>
-                    <Input
-                      className="mt-1"
-                      placeholder="Passport number"
-                      value={sensitiveForm.passport}
-                      onChange={(e) => updateSensitive('passport', e.target.value)}
-                    />
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>License Number <span className="text-red-500">*</span></Label>
-                    <Input
-                      className="mt-1"
-                      placeholder="DL123"
-                      value={form.license_number}
-                      onChange={(e) => update('license_number', e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label>License Year</Label>
-                    <Input
-                      className="mt-1"
-                      type="number"
-                      placeholder="2018"
-                      value={form.license_year}
-                      onChange={(e) => update('license_year', e.target.value)}
-                    />
-                  </div>
-                </div>
-
                 <Button onClick={handleSave} className="w-full" disabled={saving}>
                   {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                   {saving ? 'Saving...' : 'Save Changes'}

@@ -273,6 +273,159 @@ export default function Settings() {
   const [adminSaving, setAdminSaving] = useState(false);
   const [adminModalTab, setAdminModalTab] = useState('view');        // 'view' | 'edit'
 
+  useEffect(() => {
+    const isDark = localStorage.getItem('theme') === 'dark';
+    setDarkMode(isDark);
+    document.documentElement.classList.toggle('dark', isDark);
+    const savedSize = localStorage.getItem('scootlink_font_size') || '16px';
+    setFontSize(savedSize);
+    document.documentElement.style.fontSize = savedSize;
+    setSignInMethod(localStorage.getItem('scootlink_signin_method') || 'password');
+    setNotifications(localStorage.getItem('scootlink_notifications') !== 'false');
+    loadUser().then(setUser).catch(() => {});
+    // Detect Google OAuth users — they have no password so we show "Create" instead of "Change"
+    supabase.auth.getUser().then(({ data: { user: authUser } }) => {
+      const identities = authUser?.identities ?? [];
+      const isGoogle = identities.some(i => i.provider === 'google') &&
+                       !identities.some(i => i.provider === 'email');
+      setIsGoogleUser(isGoogle);
+    }).catch(() => {});
+  }, []);
+
+  const toggleDarkMode = () => {
+    const newDark = !darkMode;
+    setDarkMode(newDark);
+    document.documentElement.classList.toggle('dark', newDark);
+    localStorage.setItem('theme', newDark ? 'dark' : 'light');
+  };
+
+  const changeFontSize = (size) => {
+    setFontSize(size);
+    document.documentElement.style.fontSize = size;
+    localStorage.setItem('scootlink_font_size', size);
+  };
+
+  const toggleNotifications = () => {
+    const val = !notifications;
+    setNotifications(val);
+    localStorage.setItem('scootlink_notifications', String(val));
+    toast.success(`Notifications ${val ? 'enabled' : 'disabled'}`);
+  };
+
+  // ── Sign-in method toggle ────────────────────────────────────────────────
+
+  const toggleSignInMethod = async () => {
+    const switchingTo = signInMethod === 'password' ? 'biometric' : 'password';
+    if (switchingTo === 'biometric') {
+      setBiometricLoading(true);
+      try {
+        await registerBiometric(user);
+        setSignInMethod('biometric');
+        localStorage.setItem('scootlink_signin_method', 'biometric');
+        supabase.auth.updateUser({ data: { sign_in_method: 'biometric' } });
+        toast.success('Fingerprint registered! You can now sign in with your fingerprint.');
+      } catch (err) {
+        if (err.name === 'NotAllowedError') {
+          toast.error('Fingerprint setup was cancelled.');
+        } else {
+          toast.error(err.message || 'Biometric setup failed.');
+        }
+      } finally {
+        setBiometricLoading(false);
+      }
+    } else {
+      localStorage.removeItem('scootlink_biometric_credential_id');
+      setSignInMethod('password');
+      localStorage.setItem('scootlink_signin_method', 'password');
+      supabase.auth.updateUser({ data: { sign_in_method: 'password' } });
+      toast.success('Sign-in method changed to Password.');
+    }
+  };
+
+  // ── Logout ────────────────────────────────────────────────────────────────
+
+  const handleLogout = async () => {
+    if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
+      // Screen lock — do NOT call signOut(). The Supabase session stays alive
+      // in localStorage so fingerprint can restore it instantly on next login.
+      // (Crosssa pattern: unlockApp() reads this kept-alive session directly.)
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data?.session) saveBiometricRefreshToken(data.session);
+      } catch { /* non-fatal */ }
+      navigate('/auth');
+    } else {
+      await clearTokenCookie();
+      await auth.logout();
+      navigate('/auth');
+    }
+  };
+
+  // ── Delete: step 1 — verify identity ─────────────────────────────────────
+
+  const handleVerifyIdentity = async () => {
+    setVerifying(true);
+    try {
+      if (signInMethod === 'biometric' && !biometricFallback) {
+        await verifyBiometric();
+        setDeleteVerified(true);
+        toast.success('Fingerprint verified. You can now confirm deletion.');
+      } else {
+        // Password path (either always-password user, or biometric fallback)
+        if (!deletePassword) { toast.error('Enter your password to continue.'); return; }
+        const { error } = await supabase.auth.signInWithPassword({
+          email: user?.email,
+          password: deletePassword,
+        });
+        if (error) throw new Error('Incorrect password.');
+        setDeleteVerified(true);
+        toast.success('Password confirmed. You can now confirm deletion.');
+      }
+    } catch (err) {
+      if (err.code === 'no-passkey-on-domain') {
+        // Fingerprint registered on a different domain — silently switch to
+        // the password fallback so the user isn't blocked.
+        setBiometricFallback(true);
+        toast.error('Fingerprint not registered on this browser. Enter your password instead.');
+      } else if (err.name === 'NotAllowedError') {
+        toast.error('Fingerprint scan was cancelled. Try again or use your password.');
+      } else {
+        toast.error(err.message || 'Verification failed. Try again.');
+      }
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // ── Delete: step 2 — final deletion ──────────────────────────────────────
+
+  const handleDeleteAccount = async () => {
+    if (!deleteVerified) { toast.error('Verify your identity first.'); return; }
+    if (deleteConfirmText !== 'DELETE') { toast.error('Type DELETE in capitals to confirm.'); return; }
+    setDeleting(true);
+    try {
+      // Force a fresh access token via the Supabase client's stored refresh
+      // token (set during login via supabase.auth.setSession). This is more
+      // reliable than the httpOnly-cookie route, which can fail if the cookie
+      // has already rotated since the last page load.
+      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+      const access_token = refreshed?.session?.access_token;
+      if (refreshErr || !access_token) {
+        throw new Error('Session expired — please log out and log in again before deleting your account.');
+      }
+
+      await deleteAccount(access_token);
+      await clearTokenCookie();
+      localStorage.clear();
+      toast.success('Your account has been permanently deleted.');
+      navigate('/auth');
+    } catch (err) {
+      toast.error(err.message || 'Could not delete account. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // ── User loader (merges customer_code which auth.me() may omit) ──────────
 
   const loadUser = async () => {
