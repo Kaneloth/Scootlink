@@ -174,17 +174,7 @@ export default function AddVehicle() {
 
       if (error) throw new Error(error.message);
 
-      // Charge tiered listing fee directly — avoids RPC type issues
-      // Count owner's other vehicles to determine tier
-      const { data: otherVehicles } = await supabase
-        .from('vehicles')
-        .select('id', { count: 'exact' })
-        .eq('owner_id', user.id)
-        .neq('id', result.id);
-
-      const vehicleCount = otherVehicles?.length ?? 0;
-      const creditCost = vehicleCount === 0 ? 30 : vehicleCount === 1 ? 25 : 20;
-
+      // Charge tiered listing fee directly using the already-calculated creditCost
       const { error: deductErr } = await supabase.rpc('deduct_credits', {
         p_user_id:    user.id,
         p_amount:     creditCost,
