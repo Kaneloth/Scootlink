@@ -175,16 +175,14 @@ export default function Dashboard() {
   useEffect(() => {
     auth.me().then(async u => {
       setUser(u);
-      console.log('[Dashboard] auth.me account_type:', u?.account_type);
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('profiles')
           .select('account_type')
           .eq('id', u.id)
           .single();
-        console.log('[Dashboard] profiles account_type:', data?.account_type, 'error:', error?.message);
         if (data?.account_type) setFreshAccountType(data.account_type);
-      } catch (e) { console.error('[Dashboard] profiles fetch failed:', e); }
+      } catch { /* fall back to u.account_type */ }
     }).catch(() => {});
   }, []);
 
@@ -1163,8 +1161,19 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
 
     const isAdminUser = user?.user_metadata?.is_admin === true || ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
 
+    // Driver — single primary Find Vehicles button
+    if (accountType === 'driver') {
+      return (
+        <div className="mt-6">
+          <Link to="/search-vehicles" className="block w-full">
+            <Button className="w-full gap-2 py-5 text-base"><Search className="w-4 h-4" /> Find Vehicles</Button>
+          </Link>
+        </div>
+      );
+    }
+
     // Owner — Add Vehicle (primary) + Find Drivers
-    if (isAdminUser || accountType === 'owner') {
+    if (accountType === 'owner') {
       return (
         <div className="mt-6">
           <Link to="/add-vehicle" className="block w-full mb-2">
@@ -1177,33 +1186,18 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       );
     }
 
-    // Driver — single primary Find Vehicles button
-    if (accountType === 'driver') {
-      return (
-        <div className="mt-6">
-          <Link to="/search-vehicles" className="block w-full">
-            <Button className="w-full gap-2 py-5 text-base"><Search className="w-4 h-4" /> Find Vehicles</Button>
-          </Link>
+    // Both (or admin) — Add Vehicle (primary) + Find Drivers + Find Vehicles
+    return (
+      <div className="mt-6">
+        <Link to="/add-vehicle" className="block w-full mb-2">
+          <Button className="w-full gap-2 py-5 text-base"><Plus className="w-4 h-4" /> Add Vehicle</Button>
+        </Link>
+        <div className="grid grid-cols-2 gap-2">
+          <Link to="/find-drivers"><Button variant="outline" className="w-full gap-1.5 py-3 text-xs lg:text-sm"><Users className="w-4 h-4" /> Find Drivers</Button></Link>
+          <Link to="/search-vehicles"><Button variant="outline" className="w-full gap-1.5 py-3 text-xs lg:text-sm"><Search className="w-4 h-4" /> Find Vehicles</Button></Link>
         </div>
-      );
-    }
-
-    // Both — Add Vehicle (primary) + Find Drivers + Find Vehicles
-    if (accountType === 'both') {
-      return (
-        <div className="mt-6">
-          <Link to="/add-vehicle" className="block w-full mb-2">
-            <Button className="w-full gap-2 py-5 text-base"><Plus className="w-4 h-4" /> Add Vehicle</Button>
-          </Link>
-          <div className="grid grid-cols-2 gap-2">
-            <Link to="/find-drivers"><Button variant="outline" className="w-full gap-1.5 py-3 text-xs lg:text-sm"><Users className="w-4 h-4" /> Find Drivers</Button></Link>
-            <Link to="/search-vehicles"><Button variant="outline" className="w-full gap-1.5 py-3 text-xs lg:text-sm"><Search className="w-4 h-4" /> Find Vehicles</Button></Link>
-          </div>
-        </div>
-      );
-    }
-
-    return null;
+      </div>
+    );
   };
 
   const currentYear = new Date().getFullYear();
