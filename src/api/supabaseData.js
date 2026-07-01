@@ -151,6 +151,14 @@ export const auth = {
 
       // If no row was updated (brand new user, profiles row doesn't exist yet),
       // insert it explicitly rather than relying on upsert timing.
+      // Unique constraint violations (email/phone already in use)
+      if (updateErr?.code === '23505') {
+        const msg = updateErr.message?.toLowerCase() || '';
+        if (msg.includes('email')) throw Object.assign(new Error('An account with this email address already exists.'), { code: '23505' });
+        if (msg.includes('phone')) throw Object.assign(new Error('An account with this phone number already exists.'), { code: '23505' });
+        throw Object.assign(new Error('This information is already in use by another account.'), { code: '23505' });
+      }
+
       if (!updateErr && (!updated || updated.length === 0) && Object.keys(profileUpdates).length > 0) {
         let insertPayload = { id: user.id, ...profileUpdates };
         let insertErr;
