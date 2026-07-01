@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
 import { geocodeLocation } from '@/lib/geocode';
@@ -95,6 +96,76 @@ export default function Profile() {
   const [myReviews, setMyReviews] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [accountType, setAccountType] = useState('driver');
+  const [showRoleConfirm, setShowRoleConfirm] = useState(false);
+  const [pendingRole, setPendingRole] = useState(null);
+
+  // Location dropdowns — mirrors Onboarding
+  const [sa_province, setSaProvince] = useState('');
+  const [sa_city, setSaCity] = useState('');
+  const [sa_city_other, setSaCityOther] = useState('');
+
+  const SA_PROVINCE_CITIES = {
+    'Eastern Cape': ['Aliwal North','Bhisho','East London','Gqeberha (Port Elizabeth)','Grahamstown','Humansdorp','Jeffreys Bay',"King William's Town",'Mthatha','Port Alfred','Queenstown','Stutterheim'],
+    'Free State': ['Bethlehem','Bloemfontein','Ficksburg','Harrismith','Kroonstad','Parys','Phuthaditjhaba','Sasolburg','Virginia','Welkom'],
+    'Gauteng': ['Alberton','Benoni','Boksburg','Carletonville','Centurion','Edenvale','Fourways','Germiston','Johannesburg','Kempton Park','Midrand','Pretoria','Randburg','Randfontein','Roodepoort','Sandton','Soweto','Springs','Vanderbijlpark','Vereeniging'],
+    'KwaZulu-Natal': ['Ballito','Durban','Empangeni','Kloof','Ladysmith','Margate','Newcastle','Pietermaritzburg','Pinetown','Port Shepstone','Richards Bay','Stanger','Ulundi','Umhlanga','Vryheid','Westville'],
+    'Limpopo': ['Bela-Bela','Giyani','Louis Trichardt','Modimolle','Mokopane','Musina','Phalaborwa','Polokwane','Thohoyandou','Tzaneen'],
+    'Mpumalanga': ['Barberton','Ermelo','Graskop','Hazyview','Komatipoort','Malelane','Mbombela (Nelspruit)','Middelburg','Piet Retief','Sabie','Secunda','Witbank (eMalahleni)'],
+    'North West': ['Brits','Hartbeespoort','Klerksdorp','Lichtenburg','Mahikeng','Potchefstroom','Rustenburg','Wolmaransstad','Zeerust'],
+    'Northern Cape': ['Colesberg','De Aar','Kathu','Kimberley','Kuruman','Pofadder','Springbok','Upington'],
+    'Western Cape': ['Beaufort West','Bellville','Cape Town','Durbanville','George','Hermanus','Knysna','Malmesbury','Mossel Bay','Oudtshoorn','Paarl','Saldanha','Somerset West','Stellenbosch','Strand','Swellendam','Vredenburg','Worcester'],
+  };
+
+  const cityList = sa_province ? (SA_PROVINCE_CITIES[sa_province] ?? []) : [];
+  const cityIsOther = sa_city === '__other__';
+
+  // Parse existing location string (e.g. "Johannesburg, Gauteng, South Africa") into dropdowns
+  const parseLocationIntoDropdowns = (locationStr) => {
+    if (!locationStr) return;
+    const parts = locationStr.split(',').map(p => p.trim());
+    // Parts: [city, province, country] or [city, province]
+    if (parts.length >= 2) {
+      const province = parts[parts.length >= 3 ? parts.length - 2 : 1];
+      const city = parts[0];
+      if (SA_PROVINCE_CITIES[province]) {
+        setSaProvince(province);
+        const cities = SA_PROVINCE_CITIES[province];
+        if (cities.includes(city)) {
+          setSaCity(city);
+        } else {
+          setSaCity('__other__');
+          setSaCityOther(city);
+        }
+      }
+    }
+  };
+
+  const buildLocation = () => {
+    const city = sa_city === '__other__' ? sa_city_other : sa_city;
+    return [city, sa_province, 'South Africa'].filter(Boolean).join(', ');
+  };
+
+  const handleRoleChange = (newRole) => {
+    if (newRole === accountType) return;
+    setPendingRole(newRole);
+    setShowRoleConfirm(true);
+  };
+
+  const confirmRoleChange = async () => {
+    if (!pendingRole || !user) return;
+    try {
+      await supabase.from('profiles').update({ account_type: pendingRole }).eq('id', user.id);
+      await supabase.auth.updateUser({ data: { account_type: pendingRole } });
+      setAccountType(pendingRole);
+      setShowRoleConfirm(false);
+      setPendingRole(null);
+      toast.success(`Role updated to ${pendingRole}. Your dashboard will reflect this immediately.`);
+      // Force full reload so Dashboard re-renders with the new role
+      window.location.reload();
+    } catch (err) {
+      toast.error('Could not update role: ' + err.message);
+    }
+  };
 
   // Handle PayFast return after verification payment
   useEffect(() => {
@@ -138,6 +209,7 @@ export default function Profile() {
         fetchMyReviews(u.id);
         setAvatarVisible(u.avatar_visible !== false);
         setAccountType(u.account_type || 'driver');
+        parseLocationIntoDropdowns(u.location || '');
         setForm({
           full_name: u.full_name || '',
           email: u.email || '',
@@ -230,13 +302,14 @@ export default function Profile() {
     if (!form.full_name.trim()) { toast.error('Full name is required'); return; }
     if (!form.phone.trim()) { toast.error('Phone number is required'); return; }
     setSaving(true);
+    const locationStr = buildLocation() || form.location || '';
     try {
       // ── 1. Update non-sensitive user metadata ──────────────────────────────
       const metadataUpdates = {
         full_name: form.full_name,
         phone: form.phone,
         gender: form.gender,
-        location: form.location,
+        location: locationStr,
         residential_address: form.residential_address,
         license_number: form.license_number,
         license_year: form.license_year ? parseInt(form.license_year) : null,
@@ -246,19 +319,13 @@ export default function Profile() {
 
       await auth.updateMe(metadataUpdates);
 
-      // ── 1b. Sync key fields to the profiles table so counterparties can see
-      //        this user's details. auth.updateMe() syncs PROFILE_FIELDS; this
-      //        call covers the extra columns not in that list.
-      //        Use .update() (not .upsert()) — upsert requires both INSERT and
-      //        UPDATE RLS policies. Profile tables typically only grant UPDATE
-      //        to the row owner, so upsert silently no-ops and changes are lost.
       const { error: profileUpdateErr } = await supabase
         .from('profiles')
         .update({
           full_name:           form.full_name           || null,
           email:               form.email               || user.email || null,
           phone:               form.phone               || null,
-          location:            form.location            || null,
+          location:            locationStr              || null,
           residential_address: form.residential_address || null,
           license_year:        form.license_year        ? parseInt(form.license_year) : null,
           license_number:      form.license_number      || null,
@@ -507,15 +574,45 @@ export default function Profile() {
                   </div>
                 </div>
 
+                {/* Location — province + city dropdowns matching Onboarding */}
                 <div>
-                  <Label>Location</Label>
-                  <Input
-                    className="mt-1"
-                    placeholder="Johannesburg CBD"
-                    value={form.location}
-                    onChange={(e) => update('location', e.target.value)}
-                  />
+                  <Label>Province</Label>
+                  <Select value={sa_province} onValueChange={(v) => { setSaProvince(v); setSaCity(''); setSaCityOther(''); }}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select province" /></SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(SA_PROVINCE_CITIES).sort().map(p => (
+                        <SelectItem key={p} value={p}>{p}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+
+                {sa_province && (
+                  <div>
+                    <Label>City / Town</Label>
+                    <Select value={sa_city} onValueChange={setSaCity}>
+                      <SelectTrigger className="mt-1"><SelectValue placeholder="Select city or town" /></SelectTrigger>
+                      <SelectContent>
+                        {cityList.map(c => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                        <SelectItem value="__other__">Other (type below)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {cityIsOther && (
+                  <div>
+                    <Label>Your city / town</Label>
+                    <Input
+                      className="mt-1"
+                      placeholder="Enter your city or town"
+                      value={sa_city_other}
+                      onChange={e => setSaCityOther(e.target.value)}
+                    />
+                  </div>
+                )}
 
                 <div>
                   <Label>Residential Address</Label>
@@ -525,6 +622,33 @@ export default function Profile() {
                     value={form.residential_address}
                     onChange={(e) => update('residential_address', e.target.value)}
                   />
+                </div>
+
+                {/* Role switcher */}
+                <div>
+                  <Label>Account Role</Label>
+                  <p className="text-xs text-muted-foreground mb-2">Switch your role if your needs have changed. Your dashboard will update immediately.</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'driver', label: '🏍️ Driver',    desc: 'Rent vehicles' },
+                      { id: 'owner',  label: '🚗 Owner',     desc: 'List vehicles' },
+                      { id: 'both',   label: '🔄 Both',      desc: 'Driver & owner' },
+                    ].map(r => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => handleRoleChange(r.id)}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          accountType === r.id
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                            : 'border-border hover:border-primary/50'
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-foreground">{r.label}</p>
+                        <p className="text-[11px] text-muted-foreground">{r.desc}</p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <Button onClick={handleSave} className="w-full" disabled={saving}>
@@ -586,6 +710,27 @@ export default function Profile() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Role change confirmation modal */}
+      {showRoleConfirm && pendingRole && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl shadow-xl max-w-sm w-full p-6 border border-border">
+            <h2 className="text-base font-bold text-foreground mb-2">Switch to {pendingRole.charAt(0).toUpperCase() + pendingRole.slice(1)}?</h2>
+            <p className="text-sm text-muted-foreground mb-5">
+              Your dashboard and search experience will update immediately to reflect your new role. You can switch again at any time from your profile.
+            </p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => { setShowRoleConfirm(false); setPendingRole(null); }}>
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={confirmRoleChange}>
+                Switch Role
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
