@@ -144,7 +144,7 @@ export default function AddVehicle() {
       const { data: result, error } = await supabase
         .from('vehicles')
         .insert(dbRow)
-        .select()
+        .select('*')
         .single();
 
       if (error) throw new Error(error.message);
