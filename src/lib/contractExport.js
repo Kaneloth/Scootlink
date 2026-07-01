@@ -130,9 +130,9 @@ export function downloadContractPDF(contractText, rentalId = '', vehicleInfo = '
       continue;
     }
 
-    // Bullet / dash
+    // Bullet / dash — keep the • character as the visual bullet
     if (/^[•–\-]/.test(trimmed) || /^–/.test(line.slice(0, 6))) {
-      styled.push({ text: trimmed.replace(/^[•–\-]\s*/, ''), style: 'bullet' });
+      styled.push({ text: trimmed, style: 'bullet' }); // keep original • intact
       continue;
     }
 
@@ -214,14 +214,11 @@ export function downloadContractPDF(contractText, rentalId = '', vehicleInfo = '
     if (style === 'bullet') {
       p.setFont('helvetica', 'normal');
       p.setFontSize(9);
-      const lines = p.splitTextToSize(text, BODY_W - 5);
-      checkY(lines.length * LINE_H);
-      // Bullet dot
-      fc(p, MID);
-      p.circle(ML + 1.5, y - 1.5, 0.8, 'F');
       tc(p, MID);
+      const lines = p.splitTextToSize(text, BODY_W - 4);
+      checkY(lines.length * LINE_H);
       for (let i = 0; i < lines.length; i++) {
-        p.text(lines[i], ML + 4, y);
+        p.text(lines[i], ML + 2, y);
         y += LINE_H;
       }
       continue;
