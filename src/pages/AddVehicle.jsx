@@ -122,25 +122,50 @@ export default function AddVehicle() {
           .single();
         if (error) throw new Error(error.message);
 
-        // Relist = pay credits to reset the 6-month expiry clock
+        // Relist = pay credits and reset the 6-month expiry clock
         if (isRelist) {
-          const { data: relistResult, error: relistErr } = await supabase.rpc('relist_vehicle', {
-            p_vehicle_id: editingId,
-            p_owner_id:   user.id,
+          const { data: tierPrice } = await supabase.rpc('get_listing_price', { p_owner_id: user.id });
+          const relistCost = tierPrice ?? 30;
+
+          const { error: deductErr } = await supabase.rpc('deduct_credits', {
+            p_user_id:     user.id,
+            p_amount:      relistCost,
+            p_type:        'spend',
+            p_description: 'Vehicle relisting',
+            p_ref_id:      String(editingId),
           });
-          if (relistErr) throw new Error(relistErr.message);
-          if (relistResult && relistResult.success === false) {
-            if (relistResult.error === 'insufficient_credits') {
-              throw new Error('insufficient_credits');
-            }
-            throw new Error(relistResult.error || 'Could not relist vehicle');
+          if (deductErr) {
+            if (deductErr.message?.includes('insufficient_credits')) throw new Error('insufficient_credits');
+            throw new Error(deductErr.message || 'Could not charge relisting fee');
           }
+
+          // Reset the expiry clock directly
+          await supabase.from('vehicles').update({
+            listed_at:        new Date().toISOString(),
+            expires_at:       new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000).toISOString(),
+            grace_expires_at: null,
+            listing_state:    'active',
+            reminder_7d_sent: false,
+            reminder_3d_sent: false,
+            reminder_1d_sent: false,
+          }).eq('id', editingId);
         }
 
         return result;
       }
 
       // ── Creating a brand new listing ───────────────────────────────────────
+      // Check credits BEFORE inserting to avoid orphan rows if payment fails.
+      // get_listing_price tells us the tier cost without charging yet.
+      const { data: tierPrice } = await supabase.rpc('get_listing_price', { p_owner_id: user.id });
+      const creditCost = tierPrice ?? 30;
+
+      // Check balance
+      const { data: balance } = await supabase.rpc('get_credit_balance', { p_user_id: user.id });
+      if ((balance ?? 0) < creditCost) {
+        throw new Error('insufficient_credits');
+      }
+
       const { data: result, error } = await supabase
         .from('vehicles')
         .insert(dbRow)
@@ -149,18 +174,31 @@ export default function AddVehicle() {
 
       if (error) throw new Error(error.message);
 
-      // Charge tiered listing fee: 1st=30cr, 2nd=25cr, 3rd+=20cr
-      const { data: chargeResult, error: chargeErr } = await supabase.rpc('charge_vehicle_listing', {
-        p_owner_id:   user.id,
-        p_vehicle_id: result.id,
+      // Charge tiered listing fee directly — avoids RPC type issues
+      // Count owner's other vehicles to determine tier
+      const { data: otherVehicles } = await supabase
+        .from('vehicles')
+        .select('id', { count: 'exact' })
+        .eq('owner_id', user.id)
+        .neq('id', result.id);
+
+      const vehicleCount = otherVehicles?.length ?? 0;
+      const creditCost = vehicleCount === 0 ? 30 : vehicleCount === 1 ? 25 : 20;
+
+      const { error: deductErr } = await supabase.rpc('deduct_credits', {
+        p_user_id:    user.id,
+        p_amount:     creditCost,
+        p_type:       'spend',
+        p_description: 'Vehicle listing',
+        p_ref_id:     String(result.id),
       });
-      if (chargeErr || (chargeResult && chargeResult.success === false)) {
-        // Roll back the vehicle insert if payment failed
+
+      if (deductErr) {
         await supabase.from('vehicles').delete().eq('id', result.id);
-        if (chargeResult?.error === 'insufficient_credits') {
+        if (deductErr.message?.includes('insufficient_credits')) {
           throw new Error('insufficient_credits');
         }
-        throw new Error(chargeErr?.message || chargeResult?.error || 'Could not charge listing fee');
+        throw new Error(deductErr.message || 'Could not charge listing fee');
       }
 
       return result;
