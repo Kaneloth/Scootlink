@@ -6,12 +6,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
+import { useNavigate } from 'react-router-dom';
 
 export default function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
   const [open, setOpen]                   = useState(false);
   const [userId, setUserId]               = useState(null);
   const panelRef                          = useRef(null);
+  const navigate                          = useNavigate();
 
   // ── Fetch user id once ────────────────────────────────────────────────────
   useEffect(() => {
@@ -55,7 +57,14 @@ export default function NotificationBell() {
       }, () => fetchNotifications())
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    // Polling fallback — re-fetches every 30s in case realtime doesn't fire
+    // (e.g. notification inserted server-side before realtime replication was enabled)
+    const poll = setInterval(fetchNotifications, 30_000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(poll);
+    };
   }, [userId, fetchNotifications]);
 
   // ── Close on outside click ────────────────────────────────────────────────
@@ -161,6 +170,18 @@ export default function NotificationBell() {
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
                     <p className="text-[10px] text-muted-foreground mt-1">{formatTime(n.created_at)}</p>
+                    {/* Action button for listing expiry notifications */}
+                    {['listing_expiry_7d','listing_expiry_3d','listing_expiry_1d','listing_expired','listing_hidden'].includes(n.type) && n.data?.vehicle_id && (
+                      <button
+                        onClick={() => {
+                          setOpen(false);
+                          navigate(`/edit-vehicle?id=${n.data.vehicle_id}&relist=1`);
+                        }}
+                        className="mt-2 text-[11px] font-semibold text-primary hover:underline"
+                      >
+                        Re-list now →
+                      </button>
+                    )}
                   </div>
                   {!n.read && (
                     <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1.5" />
