@@ -620,10 +620,10 @@ export default function Onboarding() {
 
             <div className="space-y-3 mb-5">
               <p className="text-sm text-foreground leading-relaxed">
-                The personal details you provide on this screen — such as your date of birth, gender, and residential address — are collected <strong>for verification and platform control purposes only</strong>.
+                The personal details you provide on this screen — such as your date of birth and residential address — are collected <strong>for verification and platform control purposes only</strong>.
               </p>
               <p className="text-sm text-foreground leading-relaxed">
-                This information is <strong>never displayed publicly</strong> to other users. Only your name, location area, and profile photo will be visible to others on the platform.
+                This information is <strong>never displayed publicly</strong> to other users. Only your name, gender, location area, and profile photo will be visible to others on the platform.
               </p>
               <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
                 <p className="text-xs text-primary leading-relaxed">
