@@ -17,6 +17,7 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { Zap, CheckCircle2, SlidersHorizontal, MapPin, LocateFixed } from 'lucide-react';
+import { supabase } from '@/api/supabaseClient';
 
 // Main city per province — used as the radius search center point
 export const PROVINCES = [
@@ -56,29 +57,71 @@ function findNearestProvince(lat, lng) {
 export default function ProvinceBrowser({ onSelectProvince, mode = 'vehicles', howItWorks }) {
   const subjectLabel = mode === 'vehicles' ? 'vehicles' : 'drivers';
   const [userCoords, setUserCoords] = useState(null);
-  const [userProvince, setUserProvince] = useState(null); // the province the user is physically in
+  const [userProvince, setUserProvince] = useState(null);
   const geoRequested = useRef(false);
 
-  // Silently request geolocation once on mount — used only to detect which
-  // province the user is in, so tapping THAT chip uses their exact location.
+  // Detect the user's province using two sources (priority order):
+  // 1. Their saved profile location (e.g. "Johannesburg, Gauteng, South Africa")
+  //    — reflects wherever they said they are, even after moving/changing profile
+  // 2. Browser GPS — supplements with exact coordinates when available AND
+  //    when the GPS province matches the profile province (so we search near
+  //    them precisely rather than just the main city)
   useEffect(() => {
-    if (geoRequested.current || !navigator.geolocation) return;
-    geoRequested.current = true;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-        setUserCoords(coords);
-        setUserProvince(findNearestProvince(coords.latitude, coords.longitude));
-      },
-      () => { /* denied/unavailable — falls back to main-city search for every province */ },
-      { timeout: 8000, maximumAge: 5 * 60 * 1000 },
-    );
+    (async () => {
+      // ── 1. Read profile location ─────────────────────────────────────────
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const uid = session?.user?.id;
+        if (uid) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('location')
+            .eq('id', uid)
+            .single();
+
+          if (profile?.location) {
+            // Location string format: "City, Province, South Africa"
+            const parts = profile.location.split(',').map(p => p.trim());
+            // Province is the second-to-last part for SA addresses
+            const provincePart = parts.length >= 2 ? parts[parts.length >= 3 ? parts.length - 2 : 1] : null;
+            const matched = provincePart
+              ? PROVINCES.find(p => p.name.toLowerCase() === provincePart.toLowerCase())
+              : null;
+            if (matched) setUserProvince(matched);
+          }
+        }
+      } catch { /* non-fatal */ }
+
+      // ── 2. Request GPS to get exact coords ──────────────────────────────
+      // Only used to refine the search center within the already-known province.
+      if (geoRequested.current || !navigator.geolocation) return;
+      geoRequested.current = true;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          setUserCoords(coords);
+          // If GPS province matches profile province, we can search at exact coords.
+          // If they differ (user moved but hasn't updated profile), profile wins —
+          // GPS coords are NOT used so we don't silently override the saved location.
+          setUserProvince(prev => {
+            const gpsProvince = findNearestProvince(coords.latitude, coords.longitude);
+            if (!prev) return gpsProvince; // no profile location — use GPS
+            if (prev.name === gpsProvince?.name) return prev; // same — keep profile (coords added below)
+            return prev; // different — profile location takes priority
+          });
+        },
+        () => { /* denied/unavailable */ },
+        { timeout: 8000, maximumAge: 5 * 60 * 1000 },
+      );
+    })();
   }, []);
 
   const handleClick = (province) => {
-    // If this is the user's own (nearest) province AND we have their exact
-    // coords, search around them directly instead of the main city.
-    if (userProvince && province.name === userProvince.name && userCoords) {
+    const isMyProvince = userProvince && province.name === userProvince.name;
+    const gpsMatchesProfile = userCoords && findNearestProvince(userCoords.latitude, userCoords.longitude)?.name === province.name;
+
+    if (isMyProvince && userCoords && gpsMatchesProfile) {
+      // GPS and profile agree — search at exact user location
       onSelectProvince({
         ...province,
         lat: userCoords.latitude,
@@ -86,6 +129,7 @@ export default function ProvinceBrowser({ onSelectProvince, mode = 'vehicles', h
         isUserLocation: true,
       });
     } else {
+      // Use profile province main city (or main city for any other province)
       onSelectProvince(province);
     }
   };
@@ -117,7 +161,7 @@ export default function ProvinceBrowser({ onSelectProvince, mode = 'vehicles', h
         {userProvince && (
           <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1">
             <LocateFixed className="w-3 h-3 text-primary" />
-            We'll search near your exact location for <strong className="text-foreground">{userProvince.name}</strong> — other provinces search around their main city.
+            Based on your profile location — <strong className="text-foreground">{userProvince.name}</strong> is highlighted. Update your profile to change this.
           </p>
         )}
       </div>
