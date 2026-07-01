@@ -175,16 +175,16 @@ export default function Dashboard() {
   useEffect(() => {
     auth.me().then(async u => {
       setUser(u);
-      // Read account_type fresh from profiles — auth metadata can be
-      // stale after a role switch until the JWT refreshes.
+      console.log('[Dashboard] auth.me account_type:', u?.account_type);
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('profiles')
           .select('account_type')
           .eq('id', u.id)
           .single();
+        console.log('[Dashboard] profiles account_type:', data?.account_type, 'error:', error?.message);
         if (data?.account_type) setFreshAccountType(data.account_type);
-      } catch { /* fall back to u.account_type */ }
+      } catch (e) { console.error('[Dashboard] profiles fetch failed:', e); }
     }).catch(() => {});
   }, []);
 
