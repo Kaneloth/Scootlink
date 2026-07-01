@@ -1187,13 +1187,31 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
       <PageHeader title={`Welcome${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`} subtitle="Manage your vehicles and rentals" />
 
-      {user && !user.onboarding_completed && (
-        <Card className="p-4 border-2 border-amber-300 bg-amber-50 mb-4 flex items-center justify-between gap-3">
+      {/* Banner 1 — profile incomplete (location missing or onboarding not done) */}
+      {user && (!user.onboarding_completed || !user.location) && (
+        <Card className="p-4 border-2 border-amber-300 bg-amber-50 mb-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
-            <div><p className="text-sm font-semibold text-amber-800">Complete your profile to get started</p><p className="text-xs text-amber-700">Identity verification required before using Skootlink</p></div>
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Complete your profile</p>
+              <p className="text-xs text-amber-700">Add your location and personal details so owners and drivers can find and trust you</p>
+            </div>
           </div>
           <Link to="/onboarding"><Button size="sm" className="shrink-0 bg-amber-500 hover:bg-amber-600">Set Up</Button></Link>
+        </Card>
+      )}
+
+      {/* Banner 2 — profile done but not yet verified */}
+      {user && user.onboarding_completed && user.location && !user.verified && !user.id_verified && (
+        <Card className="p-4 border-2 border-blue-200 bg-blue-50 mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="w-5 h-5 text-blue-500 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-blue-800">Get your Verified badge</p>
+              <p className="text-xs text-blue-700">Verified users earn a ✅ badge that builds trust with owners and drivers on the platform</p>
+            </div>
+          </div>
+          <Link to="/profile?tab=verification"><Button size="sm" variant="outline" className="shrink-0 border-blue-400 text-blue-700 hover:bg-blue-100">Verify</Button></Link>
         </Card>
       )}
 
