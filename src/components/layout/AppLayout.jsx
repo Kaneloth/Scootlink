@@ -117,9 +117,9 @@ function VerificationGate({ user, userLoading, children }) {
           </svg>
         </div>
         <div>
-          <h2 className="text-xl font-bold mb-2">Complete your profile first</h2>
+          <h2 className="text-xl font-bold mb-2">Complete your profile</h2>
           <p className="text-muted-foreground text-sm max-w-xs">
-            Identity verification is required before you can access Skootlink features.
+            Please finish setting up your profile so owners and drivers can find you on the platform.
           </p>
         </div>
         <button
