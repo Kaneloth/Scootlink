@@ -253,6 +253,21 @@ export default function Onboarding() {
   const saveAndNavigate = async (destination) => {
     setSaving(true);
     try {
+      // Check for duplicate phone number before saving
+      if (form.phone?.trim()) {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        const { data: existing } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('phone', normalisePhone(form.phone))
+          .neq('id', authUser?.id)
+          .limit(1);
+        if (existing?.length > 0) {
+          toast.error('An account with this phone number already exists. Please use a different number.');
+          setSaving(false);
+          return;
+        }
+      }
       // Fetch fresh auth metadata right before saving — guarantees full_name
       // is current even if the earlier auth.me() call hadn't resolved yet
       // when this step was reached.

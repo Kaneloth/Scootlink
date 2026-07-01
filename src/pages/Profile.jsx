@@ -306,6 +306,37 @@ export default function Profile() {
     setSaving(true);
     const locationStr = buildLocation() || form.location || '';
     try {
+      // ── Check for duplicate email / phone ────────────────────────────────
+      const checks = [];
+      if (form.email?.trim()) {
+        checks.push(
+          supabase.from('profiles')
+            .select('id')
+            .ilike('email', form.email.trim())
+            .neq('id', user.id)
+            .limit(1)
+            .then(({ data }) => data?.length > 0 ? 'email' : null)
+        );
+      }
+      if (form.phone?.trim()) {
+        checks.push(
+          supabase.from('profiles')
+            .select('id')
+            .eq('phone', form.phone.trim())
+            .neq('id', user.id)
+            .limit(1)
+            .then(({ data }) => data?.length > 0 ? 'phone' : null)
+        );
+      }
+      const dupes = (await Promise.all(checks)).filter(Boolean);
+      if (dupes.includes('email')) {
+        toast.error('An account with this email address already exists.');
+        setSaving(false); return;
+      }
+      if (dupes.includes('phone')) {
+        toast.error('An account with this phone number already exists.');
+        setSaving(false); return;
+      }
       // ── 1. Update non-sensitive user metadata ──────────────────────────────
       const metadataUpdates = {
         full_name: form.full_name,
