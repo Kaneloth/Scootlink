@@ -324,13 +324,16 @@ export default function Profile() {
       const { error: profileUpdateErr } = await supabase
         .from('profiles')
         .update({
-          full_name:           form.full_name           || null,
-          email:               form.email               || user.email || null,
-          phone:               form.phone               || null,
-          location:            locationStr              || null,
-          residential_address: form.residential_address || null,
-          license_year:        form.license_year        ? parseInt(form.license_year) : null,
-          license_number:      form.license_number      || null,
+          full_name:            form.full_name           || null,
+          email:                form.email               || user.email || null,
+          phone:                form.phone               || null,
+          location:             locationStr              || null,
+          residential_address:  form.residential_address || null,
+          license_year:         form.license_year        ? parseInt(form.license_year) : null,
+          license_number:       form.license_number      || null,
+          // Mark onboarding complete if the user has the minimum required fields —
+          // covers users who skipped Onboarding and filled in details via Profile instead.
+          onboarding_completed: !!(form.full_name?.trim() && form.phone?.trim() && locationStr),
         })
         .eq('id', user.id);
 

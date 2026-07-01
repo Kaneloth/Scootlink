@@ -107,8 +107,13 @@ function VerificationGate({ user, userLoading, children }) {
   const isExempt  = GATE_EXEMPT.some((p) => location.pathname.startsWith(p));
   if (isAdmin || isExempt) return children;
 
-  // Step 1 — onboarding not started/completed → redirect immediately
-  if (!user.onboarding_completed) {
+  // Step 1 — onboarding not completed → show setup prompt
+  // A user is considered "set up" if they have completed the onboarding flow
+  // OR if they have manually saved their profile with at minimum a name,
+  // phone and location — covers users who skipped onboarding and went
+  // straight to Profile page instead.
+  const hasMinProfile = !!(user.full_name?.trim() && user.phone?.trim() && user.location?.trim());
+  if (!user.onboarding_completed && !hasMinProfile) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
         <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center">
