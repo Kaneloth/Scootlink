@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
 import { geocodeLocation } from '@/lib/geocode';
 import { Input } from '@/components/ui/input';
@@ -66,6 +66,8 @@ function FormSkeleton() {
 
 export default function Profile() {
   const navigate        = useNavigate();
+  const [searchParams]  = useSearchParams();
+  const defaultTab      = searchParams.get('tab') || 'edit';
   const fileInputRef    = useRef(null);
   const [user,          setUser]          = useState(null);
   const [userLoading,   setUserLoading]   = useState(true);
@@ -511,7 +513,7 @@ export default function Profile() {
         </Card>
       ) : null}
 
-      <Tabs defaultValue="edit">
+      <Tabs defaultValue={defaultTab}>
         <TabsList className="grid w-full grid-cols-3 mb-4">
           <TabsTrigger value="edit">Edit Info</TabsTrigger>
           <TabsTrigger value="verification">Verification</TabsTrigger>
