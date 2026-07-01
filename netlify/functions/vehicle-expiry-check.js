@@ -36,13 +36,13 @@ async function notify(userId, type, title, body, data = null) {
 
 export const handler = async () => {
   const now = new Date();
-  const results = { reminders_7d: 0, reminders_3d: 0, reminders_1d: 0, moved_to_grace: 0, expired_hidden: 0, errors: [] };
+  const results = { reminders_7d: 0, reminders_3d: 0, reminders_1d: 0, expired_hidden: 0, errors: [] };
 
   try {
     const { data: vehicles, error } = await supabase
       .from('vehicles')
-      .select('id, owner_id, make, model, status, listing_state, expires_at, grace_expires_at, reminder_7d_sent, reminder_3d_sent, reminder_1d_sent')
-      .in('listing_state', ['active', 'grace']);
+      .select('id, owner_id, make, model, listing_state, expires_at, reminder_7d_sent, reminder_3d_sent, reminder_1d_sent')
+      .eq('listing_state', 'active');
 
     if (error) throw error;
 
@@ -77,44 +77,23 @@ export const handler = async () => {
           await notify(
             v.owner_id, 'listing_expiry_1d',
             `Listing expires tomorrow!`,
-            `Your ${vehicleLabel} listing expires within 24 hours. Re-list now — after expiry you'll have a 2-day grace period before it's hidden from search.`,
+            `Your ${vehicleLabel} listing expires within 24 hours. Re-list it to keep it visible to drivers.`,
             { vehicle_id: v.id, action: 'relist' }
           );
           await supabase.from('vehicles').update({ reminder_1d_sent: true }).eq('id', v.id);
           results.reminders_1d++;
         }
 
-        // ── Move into grace period once past expiry ────────────────────────
+        // ── Hide immediately on expiry — no grace period ───────────────────
         if (expiresAt <= now) {
-          const graceExpiresAt = new Date(expiresAt.getTime() + 2 * DAY_MS);
           await supabase.from('vehicles').update({
-            listing_state: 'grace',
-            grace_expires_at: graceExpiresAt.toISOString(),
+            listing_state: 'expired',
           }).eq('id', v.id);
-
-          await notify(
-            v.owner_id, 'listing_expired',
-            `Listing expired — 2 days left to renew`,
-            `Your ${vehicleLabel} listing has expired and is hidden from search. You have until ${graceExpiresAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })} to re-list it before drivers can no longer find it.`,
-            { vehicle_id: v.id, action: 'relist' }
-          );
-          results.moved_to_grace++;
-        }
-      }
-
-      // ── Move from grace into expired (hidden, never deleted) ─────────────
-      if (v.listing_state === 'grace' && v.grace_expires_at) {
-        const graceExpiresAt = new Date(v.grace_expires_at);
-        if (graceExpiresAt <= now) {
-          // Hide from search permanently until owner re-lists.
-          // The vehicle row is NEVER deleted — it stays visible to the
-          // owner under My Vehicles regardless of any active rental.
-          await supabase.from('vehicles').update({ listing_state: 'expired' }).eq('id', v.id);
 
           await notify(
             v.owner_id, 'listing_hidden',
             `Listing hidden from search`,
-            `Your ${vehicleLabel} listing is now hidden from search after the renewal grace period expired. It's still visible in My Vehicles — re-list it anytime to make it searchable again.`,
+            `Your ${vehicleLabel} listing has expired and is now hidden from search. Re-list it anytime from My Briefcase to make it visible again.`,
             { vehicle_id: v.id, action: 'relist' }
           );
           results.expired_hidden++;
