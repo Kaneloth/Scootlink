@@ -120,13 +120,16 @@ export default function SearchVehicles() {
   const handleSelectProvince = (province) => {
     setSelectedProvince(province);
     setHasSearched(true);
+    const label = province.locationLabel || (province.isUserLocation ? 'Your location' : province.city);
     setFilters(prev => ({
       ...prev,
-      location: province.isUserLocation ? 'Your location' : province.city,
+      location: label,
       locationCoords: {
         latitude: province.lat,
         longitude: province.lng,
-        displayName: province.isUserLocation ? 'Your location' : `${province.city}, ${province.name}`,
+        displayName: province.locationLabel
+          ? `${province.locationLabel}, ${province.name}`
+          : province.isUserLocation ? 'Your location' : `${province.city}, ${province.name}`,
       },
       radiusKm: SEARCH_RADIUS_KM,
     }));
@@ -265,7 +268,7 @@ export default function SearchVehicles() {
               ? 'Locating…'
               : isLoading
                 ? 'Loading…'
-                : `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} within ${filters.radiusKm} km of ${selectedProvince?.isUserLocation ? 'your location' : (selectedProvince?.city || filters.location)}`
+                : `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} within ${filters.radiusKm} km of ${selectedProvince?.locationLabel || (selectedProvince?.isUserLocation ? 'your location' : (selectedProvince?.city || filters.location))}`
         }
         action={
           hasSearched && (
