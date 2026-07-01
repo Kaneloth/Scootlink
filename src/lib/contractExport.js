@@ -132,7 +132,7 @@ export function downloadContractPDF(contractText, rentalId = '', vehicleInfo = '
 
     // Bullet / dash
     if (/^[•–\-]/.test(trimmed) || /^–/.test(line.slice(0, 6))) {
-      styled.push({ text: trimmed, style: 'bullet' });
+      styled.push({ text: trimmed.replace(/^[•–\-]\s*/, ''), style: 'bullet' });
       continue;
     }
 
