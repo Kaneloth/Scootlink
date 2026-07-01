@@ -141,6 +141,7 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
 export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
+  const [freshAccountType, setFreshAccountType] = useState(null);
  
   const [reviewModal, setReviewModal] = useState(null);
   const [selectedDriver,  setSelectedDriver]  = useState(null);
@@ -171,13 +172,24 @@ export default function Dashboard() {
   // Counterparty names cache: { [userId]: displayName }
   const [counterpartyNames, setCounterpartyNames] = useState({});
 
-    useEffect(() => {
-    auth.me().then(u => {
+  useEffect(() => {
+    auth.me().then(async u => {
       setUser(u);
+      // Read account_type fresh from profiles — auth metadata can be
+      // stale after a role switch until the JWT refreshes.
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('account_type')
+          .eq('id', u.id)
+          .single();
+        if (data?.account_type) setFreshAccountType(data.account_type);
+      } catch { /* fall back to u.account_type */ }
     }).catch(() => {});
   }, []);
 
   const queryClient = useQueryClient();
+  const accountType = freshAccountType || user?.account_type || 'driver';
 
   const { data: vehicles = [] } = useQuery({
     queryKey: ['my-vehicles'],
@@ -282,25 +294,6 @@ export default function Dashboard() {
   const driverPendingConfRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'awaiting_driver_confirmation');
   const driverAcceptedRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'driver_accepted');
   const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
-
-  const [freshAccountType, setFreshAccountType] = useState(null);
-
-  // Read account_type directly from profiles table on mount —
-  // auth.me() / user.account_type can be stale after a role switch
-  // if the auth JWT hasn't refreshed yet.
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const uid = session?.user?.id;
-        if (!uid) return;
-        const { data } = await supabase.from('profiles').select('account_type').eq('id', uid).single();
-        if (data?.account_type) setFreshAccountType(data.account_type);
-      } catch { /* non-fatal — falls back to user.account_type */ }
-    })();
-  }, []);
-
-  const accountType = freshAccountType || user?.account_type || 'both';
 
   const scrollToSection = (ref) => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
