@@ -126,11 +126,7 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
         </div>
 
         <div className="bg-muted rounded-xl p-4 mb-4 space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">{price.label}</span>
-            <span className="font-bold text-foreground">R{price.amount}.00</span>
-          </div>
-          <p className="text-[10px] text-muted-foreground border-t border-border pt-2">
+          <p className="text-[10px] text-muted-foreground">
             This is a direct payment — free credits cannot be used for verification services.
             If verification fails due to a technical issue on our side before VerifyNow is contacted,
             you will receive {creditsForRefund(price.amount)} usage credits as compensation,
@@ -142,7 +138,7 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
         <div className="flex gap-3">
           <Button variant="outline" className="flex-1" onClick={onCancel}>Cancel</Button>
           <Button className="flex-1 gap-2" onClick={handlePayFast}>
-            Pay R{price.amount} via PayFast
+            Pay Securely
           </Button>
         </div>
       </div>
@@ -423,8 +419,8 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
 
         <Tabs value={idTab} onValueChange={setIdTab}>
           <TabsList className="mb-4 w-full grid grid-cols-2">
-            <TabsTrigger value="sa_id">🇿🇦 RSA ID — R15</TabsTrigger>
-            <TabsTrigger value="passport">🛂 Passport — R35</TabsTrigger>
+            <TabsTrigger value="sa_id">🇿🇦 RSA ID</TabsTrigger>
+            <TabsTrigger value="passport">🛂 Passport</TabsTrigger>
           </TabsList>
 
           {/* RSA ID tab */}
@@ -456,8 +452,8 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
             >
               {idStatus === 'verifying' ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</> :
                idStatus === 'verified'  ? <><CheckCircle2 className="w-4 h-4" /> Verified</> :
-               idStatus === 'failed'    ? <><RefreshCw className="w-4 h-4" /> Retry (R15)</> :
-               <><ShieldCheck className="w-4 h-4" /> Verify RSA ID — R15</>}
+               idStatus === 'failed'    ? <><RefreshCw className="w-4 h-4" /> Retry</> :
+               <><ShieldCheck className="w-4 h-4" /> Verify RSA ID</>}
             </Button>
           </TabsContent>
 
@@ -497,8 +493,8 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
             >
               {idStatus === 'verifying' ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</> :
                idStatus === 'verified'  ? <><CheckCircle2 className="w-4 h-4" /> Verified</> :
-               idStatus === 'failed'    ? <><RefreshCw className="w-4 h-4" /> Retry (R35)</> :
-               <><ShieldCheck className="w-4 h-4" /> Verify Passport — R35</>}
+               idStatus === 'failed'    ? <><RefreshCw className="w-4 h-4" /> Retry</> :
+               <><ShieldCheck className="w-4 h-4" /> Verify Passport</>}
             </Button>
           </TabsContent>
         </Tabs>
@@ -551,8 +547,8 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
             >
               {licStatus === 'verifying' ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</> :
                licStatus === 'verified'  ? <><CheckCircle2 className="w-4 h-4" /> Verified</> :
-               licStatus === 'failed'    ? <><RefreshCw className="w-4 h-4" /> Retry (R35)</> :
-               <><ShieldCheck className="w-4 h-4" /> Verify Licence — R35</>}
+               licStatus === 'failed'    ? <><RefreshCw className="w-4 h-4" /> Retry</> :
+               <><ShieldCheck className="w-4 h-4" /> Verify Licence</>}
             </Button>
           </div>
         </Card>
@@ -560,7 +556,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
 
       <p className="text-[10px] text-muted-foreground text-center px-4">
         Verification is powered by VerifyNow. Your documents are processed securely and never stored on Skootlink servers.
-        Payments are processed via PayFast and are non-refundable except in the case of technical failure.
+        Payments are processed securely and are non-refundable except in the case of technical failure.
       </p>
     </div>
   );
