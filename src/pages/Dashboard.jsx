@@ -1168,30 +1168,48 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
   const renderActionButtons = () => {
     if (!user) return <ActionButtonsSkeleton />;
 
-    const rowButtonClass = "w-full gap-1.5 py-3 text-xs lg:text-sm";
-    const iconClass = "w-4 h-4";
     const isAdminUser = user?.user_metadata?.is_admin === true || ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
 
-    if (isAdminUser || accountType === 'owner' || accountType === 'both') {
+    // Owner — Add Vehicle (primary) + Find Drivers
+    if (isAdminUser || accountType === 'owner') {
       return (
         <div className="mt-6">
           <Link to="/add-vehicle" className="block w-full mb-2">
-            <Button className="w-full gap-2 py-5 text-base"><Plus className={iconClass} /> Add Vehicle</Button>
+            <Button className="w-full gap-2 py-5 text-base"><Plus className="w-4 h-4" /> Add Vehicle</Button>
           </Link>
-          <div className={`grid gap-2 ${accountType === 'both' || isAdminUser ? 'grid-cols-2' : 'grid-cols-2'}`}>
-            <Link to="/find-drivers"><Button variant="outline" className={rowButtonClass}><Users className={iconClass} /> Find Drivers</Button></Link>
-            {(isAdminUser || accountType === 'both') && <Link to="/search-vehicles"><Button variant="outline" className={rowButtonClass}><Search className={iconClass} /> Find Vehicles</Button></Link>}
+          <Link to="/find-drivers" className="block w-full">
+            <Button variant="outline" className="w-full gap-2 py-4 text-sm"><Users className="w-4 h-4" /> Find Drivers</Button>
+          </Link>
+        </div>
+      );
+    }
+
+    // Driver — single primary Find Vehicles button
+    if (accountType === 'driver') {
+      return (
+        <div className="mt-6">
+          <Link to="/search-vehicles" className="block w-full">
+            <Button className="w-full gap-2 py-5 text-base"><Search className="w-4 h-4" /> Find Vehicles</Button>
+          </Link>
+        </div>
+      );
+    }
+
+    // Both — Add Vehicle (primary) + Find Drivers + Find Vehicles
+    if (accountType === 'both') {
+      return (
+        <div className="mt-6">
+          <Link to="/add-vehicle" className="block w-full mb-2">
+            <Button className="w-full gap-2 py-5 text-base"><Plus className="w-4 h-4" /> Add Vehicle</Button>
+          </Link>
+          <div className="grid grid-cols-2 gap-2">
+            <Link to="/find-drivers"><Button variant="outline" className="w-full gap-1.5 py-3 text-xs lg:text-sm"><Users className="w-4 h-4" /> Find Drivers</Button></Link>
+            <Link to="/search-vehicles"><Button variant="outline" className="w-full gap-1.5 py-3 text-xs lg:text-sm"><Search className="w-4 h-4" /> Find Vehicles</Button></Link>
           </div>
         </div>
       );
     }
-    if (accountType === 'driver') {
-      return (
-        <div className="grid grid-cols-1 gap-2 mt-6">
-          <Link to="/search-vehicles"><Button className="w-full gap-2 py-4 text-sm"><Search className="w-4 h-4" /> Find Vehicles</Button></Link>
-        </div>
-      );
-    }
+
     return null;
   };
 
