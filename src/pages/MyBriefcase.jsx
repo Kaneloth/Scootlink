@@ -421,13 +421,9 @@ function VehicleListingsTab({ userId }) {
                   )}
                   {v.expires_at && (() => {
                     const daysLeft = Math.ceil((new Date(v.expires_at) - Date.now()) / (24 * 60 * 60 * 1000));
-                    const isGrace   = v.listing_state === 'grace';
                     const isExpired = v.listing_state === 'expired';
                     if (isExpired) return (
                       <p className="text-[11px] font-medium text-destructive mt-1">🚫 Hidden from search — re-list to make visible</p>
-                    );
-                    if (isGrace) return (
-                      <p className="text-[11px] font-medium text-amber-600 mt-1">⏳ Grace period — renew now</p>
                     );
                     if (daysLeft <= 7) return (
                       <p className="text-[11px] font-medium text-amber-600 mt-1">
@@ -436,7 +432,7 @@ function VehicleListingsTab({ userId }) {
                     );
                     return null;
                   })()}
-                  {(v.listing_state === 'grace' || v.listing_state === 'expired' || (v.expires_at && Math.ceil((new Date(v.expires_at) - Date.now()) / (24 * 60 * 60 * 1000)) <= 7)) && (
+                  {(v.listing_state === 'expired' || (v.expires_at && Math.ceil((new Date(v.expires_at) - Date.now()) / (24 * 60 * 60 * 1000)) <= 7)) && (
                     <div className="mt-2">
                       <RelistButton vehicle={v} />
                     </div>
