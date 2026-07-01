@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
 import { geocodeLocation } from '@/lib/geocode';
@@ -133,6 +134,7 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep]   = useState(0);
   const [saving, setSaving] = useState(false);
+  const [showPrivacyNotice, setShowPrivacyNotice] = useState(false);
   const [currentEmail, setCurrentEmail] = useState('');
   const [currentFullName, setCurrentFullName] = useState('');
 
@@ -329,7 +331,13 @@ export default function Onboarding() {
 
   const nextStep = () => {
     if (step === 1 && !validatePersonal()) return;
-    if (step < STEPS.length - 1) { setStep(s => s + 1); return; }
+    if (step < STEPS.length - 1) {
+      const nextIndex = step + 1;
+      setStep(nextIndex);
+      // Show privacy notice when entering Personal Info step
+      if (nextIndex === 1) setShowPrivacyNotice(true);
+      return;
+    }
     saveAndNavigate('home');
   };
 
@@ -594,6 +602,46 @@ export default function Onboarding() {
 
         </Card>
       </div>
+
+      {/* Privacy notice modal — shown when user enters the Personal Info step */}
+      {showPrivacyNotice && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-card rounded-2xl shadow-xl max-w-sm w-full p-6 border border-border">
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="text-2xl">🔒</span>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-foreground">Your privacy matters</h2>
+                <p className="text-xs text-muted-foreground">About the information we collect</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 mb-5">
+              <p className="text-sm text-foreground leading-relaxed">
+                The personal details you provide on this screen — such as your date of birth, gender, and residential address — are collected <strong>for verification and platform control purposes only</strong>.
+              </p>
+              <p className="text-sm text-foreground leading-relaxed">
+                This information is <strong>never displayed publicly</strong> to other users. Only your name, location area, and profile photo will be visible to others on the platform.
+              </p>
+              <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
+                <p className="text-xs text-primary leading-relaxed">
+                  🛡️ Your data is stored securely and handled in accordance with applicable data protection laws. You can request deletion at any time from your Settings.
+                </p>
+              </div>
+            </div>
+
+            <Button
+              className="w-full"
+              onClick={() => setShowPrivacyNotice(false)}
+            >
+              I understand — proceed
+            </Button>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
