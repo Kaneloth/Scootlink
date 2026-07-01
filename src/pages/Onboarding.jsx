@@ -354,7 +354,7 @@ export default function Onboarding() {
         {/* Logo */}
         <div className="flex justify-center mb-6">
           <a href="/home" className="flex items-center gap-2">
-            <img src="/favicon.png" alt="Skootlink" className="w-9 h-9 rounded-xl shadow" />
+            <img src="/favicon.png" alt="Skootlink" className="w-9 h-9" />
             <span className="text-lg font-bold text-foreground">Skootlink</span>
           </a>
         </div>
