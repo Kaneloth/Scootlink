@@ -17,7 +17,6 @@ import SearchVehicles from '@/pages/SearchVehicles';
 import FindDrivers from '@/pages/FindDrivers';
 import SearchPage from '@/pages/SearchPage';
 import AddVehicle from '@/pages/AddVehicle';
-import EditVehicle from '@/pages/EditVehicle';
 import RentalRequest from '@/pages/RentalRequest';
 import Activity from '@/pages/Activity';
 import MyBriefcase from '@/pages/MyBriefcase';
@@ -91,7 +90,7 @@ const AuthenticatedApp = () => {
         <Route path="/search-vehicles" element={<SearchVehicles />} />
         <Route path="/find-drivers" element={<FindDrivers />} />
         <Route path="/add-vehicle" element={<AddVehicle />} />
-        <Route path="/edit-vehicle" element={<EditVehicle />} />
+        <Route path="/edit-vehicle" element={<AddVehicle />} />
         <Route path="/rental-request" element={<RentalRequest />} />
         <Route path="/activity" element={<Activity />} />
         <Route path="/briefcase" element={<MyBriefcase />} />
