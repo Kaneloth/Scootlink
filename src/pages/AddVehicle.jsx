@@ -124,8 +124,16 @@ export default function AddVehicle() {
 
         // Relist = pay credits and reset the 6-month expiry clock
         if (isRelist) {
-          const { data: tierPrice } = await supabase.rpc('get_listing_price', { p_owner_id: user.id });
-          const relistCost = tierPrice ?? 30;
+          // Count OTHER active vehicles (excluding this one) to determine tier:
+          // 0 others = 30cr (only vehicle), 1 other = 25cr, 2+ others = 20cr
+          const { data: otherVehicles } = await supabase
+            .from('vehicles')
+            .select('id', { count: 'exact' })
+            .eq('owner_id', user.id)
+            .neq('id', editingId);
+
+          const otherCount = otherVehicles?.length ?? 0;
+          const relistCost = otherCount === 0 ? 30 : otherCount === 1 ? 25 : 20;
 
           const { error: deductErr } = await supabase.rpc('deduct_credits', {
             p_user_id:     user.id,

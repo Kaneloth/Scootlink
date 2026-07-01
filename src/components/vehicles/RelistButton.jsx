@@ -28,14 +28,19 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('Please sign in again.'); return; }
 
-      const [{ data: bal }, { data: tierPrice }] = await Promise.all([
+      // Count OTHER vehicles (excluding this one) to determine correct tier
+      const [{ data: bal }, { data: otherVehicles }] = await Promise.all([
         supabase.rpc('get_credit_balance', { p_user_id: user.id }),
-        supabase.rpc('get_listing_price', { p_owner_id: user.id }),
+        supabase.from('vehicles').select('id', { count: 'exact' }).eq('owner_id', user.id).neq('id', vehicle.id),
       ]);
-      setBalance(bal ?? 0);
-      setPrice(tierPrice ?? 30);
 
-      if ((bal ?? 0) < (tierPrice ?? 30)) {
+      const otherCount = otherVehicles?.length ?? 0;
+      const tierPrice  = otherCount === 0 ? 30 : otherCount === 1 ? 25 : 20;
+
+      setBalance(bal ?? 0);
+      setPrice(tierPrice);
+
+      if ((bal ?? 0) < tierPrice) {
         setShowTopUp(true);
         return;
       }
