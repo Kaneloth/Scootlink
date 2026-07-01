@@ -112,20 +112,29 @@ function ContractsTab({ userId, role }) {
     (async () => {
       try {
         setLoading(true);
-        const isOwner = role === "owner" || role === "both";
-        const col     = isOwner ? "owner_id" : "driver_id";
 
-        const { data, error: err } = await supabase
+        let query = supabase
           .from("rentals")
           .select(`
             id, status, start_date, end_date,
             price_per_week, deposit, contract_text, created_at,
+            owner_id, driver_id,
             vehicles ( make, model, plate, type, images )
           `)
-          .eq(col, userId)
           .not("contract_text", "is", null)
           .order("created_at", { ascending: false });
 
+        // For 'both' role, fetch contracts where user is either owner OR driver.
+        // For single roles, filter by the relevant column only.
+        if (role === "both") {
+          query = query.or(`owner_id.eq.${userId},driver_id.eq.${userId}`);
+        } else if (role === "owner") {
+          query = query.eq("owner_id", userId);
+        } else {
+          query = query.eq("driver_id", userId);
+        }
+
+        const { data, error: err } = await query;
         if (err) throw err;
         setItems(data ?? []);
       } catch (err) {
