@@ -40,9 +40,6 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
         return;
       }
 
-      // Enough credits — go straight to the edit form, prefilled with
-      // existing vehicle details, with a relist flag in the URL so
-      // EditVehicle.jsx knows to call relist_vehicle() on save.
       navigate(`/edit-vehicle?id=${vehicle.id}&relist=1`);
     } finally {
       setChecking(false);
