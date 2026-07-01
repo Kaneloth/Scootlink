@@ -715,8 +715,14 @@ export default function Profile() {
 
       {/* Role change confirmation modal */}
       {showRoleConfirm && pendingRole && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl shadow-xl max-w-sm w-full p-6 border border-border">
+        <div
+          className="fixed inset-0 z-[99999] bg-black/50 flex items-center justify-center p-4"
+          onClick={() => { setShowRoleConfirm(false); setPendingRole(null); }}
+        >
+          <div
+            className="bg-card rounded-2xl shadow-xl max-w-sm w-full p-6 border border-border"
+            onClick={e => e.stopPropagation()}
+          >
             <h2 className="text-base font-bold text-foreground mb-2">Switch to {pendingRole.charAt(0).toUpperCase() + pendingRole.slice(1)}?</h2>
             <p className="text-sm text-muted-foreground mb-5">
               Your dashboard and search experience will update immediately to reflect your new role. You can switch again at any time from your profile.
