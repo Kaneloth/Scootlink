@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
+import { supabase } from '@/api/supabaseClient';
 
-const openAuth = () => window.open("/auth", "_blank", "noopener,noreferrer");
+const openAuth = () => window.location.href = '/auth';
 
 const PRIMARY = "#2563eb";
 const PRIMARY_DARK = "#1d4ed8";
@@ -425,6 +426,20 @@ function Footer() {
 }
 
 export default function LandingPage() {
+  // Redirect authenticated users straight to the app —
+  // handles the case where Google OAuth sends them back to /
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) window.location.replace('/home');
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
+        window.location.replace('/home');
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   return (
     <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: "#09090b", lineHeight: 1.6, overflowX: "hidden", background: "#fff" }}>
       <style>{demoCSS}</style>

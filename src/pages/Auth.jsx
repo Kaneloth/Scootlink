@@ -560,12 +560,15 @@ export default function Auth() {
         options: { data: { full_name: regName, account_type: 'driver' } },
       });
       if (error) throw error;
-      // Supabase may return an active session before the email is confirmed.
-      // Sign it out immediately so the user cannot enter the app without clicking the link.
+
+      // If Supabase returns a session immediately (email confirmation disabled),
+      // go straight into the app → onboarding
       if (signupData?.session) {
-        await supabase.auth.signOut();
+        window.location.replace('/onboarding');
+        return;
       }
-      // Show the dedicated confirmation screen instead of a disappearing toast
+
+      // Email confirmation is enabled — show confirmation screen
       setSignupEmail(regEmail);
       setSignupDone(true);
     } catch (err) {
