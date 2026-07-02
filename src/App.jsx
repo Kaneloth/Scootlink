@@ -74,7 +74,15 @@ const AuthenticatedApp = () => {
         if (path !== '/auth') { window.location.replace('/auth'); }
         else { setSupabaseChecked(true); }
       } else if (session && (path === '/auth' || path === '/')) {
-        window.location.replace('/home');
+        // If the user has biometric as their sign-in method and lands on /auth,
+        // sign them out so they must re-verify their fingerprint.
+        // Without this, refreshing /auth would skip biometric and go straight to /home.
+        const savedMethod = localStorage.getItem('scootlink_signin_method');
+        if (path === '/auth' && savedMethod === 'biometric') {
+          supabase.auth.signOut().finally(() => setSupabaseChecked(true));
+        } else {
+          window.location.replace('/home');
+        }
       } else if (!session && !publicPaths.includes(path)) {
         window.location.replace('/auth');
       } else {

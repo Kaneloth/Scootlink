@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Bike, LogIn, ArrowRight, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Bike, LogIn, ArrowRight, ArrowLeft, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
 
@@ -823,9 +823,9 @@ export default function Auth() {
                   <button
                     type="button"
                     onClick={() => { setBannerReason(null); setLoginStage('password'); }}
-                    className="text-sm text-muted-foreground hover:text-foreground"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                   >
-                    Use password instead
+                    <ArrowLeft className="w-4 h-4" /> Use password instead
                   </button>
                 </div>
               )}
