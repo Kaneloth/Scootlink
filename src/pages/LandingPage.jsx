@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from '@/api/supabaseClient';
 
-const openAuth = () => window.location.href = '/auth';
+const openAuth = () => window.open("/auth", "_blank", "noopener,noreferrer");
 
 const PRIMARY = "#2563eb";
 const PRIMARY_DARK = "#1d4ed8";
