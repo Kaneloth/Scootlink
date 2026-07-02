@@ -174,6 +174,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const [partnerLocation, setPartnerLocation] = useState('');
   const [chatCapReached,    setChatCapReached]    = useState(false);
   const [hasSentInThisConvo, setHasSentInThisConvo] = useState(false);
+  const [showTopUp, setShowTopUp] = useState(false);
   const bottomRef       = useRef(null);
   const menuRef         = useRef(null);
   const longPressRef    = useRef(null);
@@ -283,8 +284,14 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const handleSend = async (e) => {
     e?.preventDefault();
     if (!text.trim() || sending) return;
-    if (!canSend) { toast.warning('You need at least 3 credits to send messages.'); return; }
     const body = text.trim();
+
+    // If starting a new conversation and not enough credits — show top-up prompt
+    const hasSentBefore = messages.some(m => m.sender_id === user.id);
+    if (!isAdmin && !hasSentBefore && (creditBalance === null || creditBalance < 3)) {
+      setShowTopUp(true);
+      return;
+    }
     setText('');
     setSending(true);
     if (!isAdmin) {
@@ -449,25 +456,38 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         />
       )}
 
+      {showTopUp && createPortal(
+        <div className="fixed inset-0 z-[99999] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowTopUp(false)}>
+          <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl p-6 border border-border" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="text-xl">💬</span>
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">Credits needed</p>
+                <p className="text-xs text-muted-foreground">Starting a new conversation costs 3 credits</p>
+              </div>
+            </div>
+            <div className="bg-muted rounded-xl p-4 mb-4 flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Your balance</span>
+              <span className="font-bold text-foreground">{creditBalance ?? 0} credits</span>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setShowTopUp(false)}>Cancel</Button>
+              <Button className="flex-1" onClick={() => { setShowTopUp(false); onClose(); setTimeout(() => window.location.href = '/credits', 100); }}>
+                Top Up Credits
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       <form onSubmit={handleSend} className="flex items-center gap-2 px-4 py-3 border-t border-border bg-background shrink-0" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
         {chatCapReached && !hasSentInThisConvo ? (
           <div className="flex-1 text-center py-1">
             <p className="text-xs font-medium text-destructive">Free chat credits used up</p>
             <p className="text-[11px] text-muted-foreground">Top up credits to start new conversations</p>
-          </div>
-        ) : !isAdmin && creditBalance !== null && creditBalance < 3 ? (
-          <div className="flex-1 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-medium text-destructive">Not enough credits</p>
-              <p className="text-[11px] text-muted-foreground">You need at least 3 credits to send a message</p>
-            </div>
-            <Button
-              size="sm"
-              className="shrink-0 text-xs"
-              onClick={() => { onClose(); setTimeout(() => window.location.href = '/credits', 100); }}
-            >
-              Top Up
-            </Button>
           </div>
         ) : (
           <>
@@ -478,7 +498,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
               disabled={sending}
               className="rounded-full flex-1 bg-muted/40 border-border"
             />
-            <Button type="submit" size="icon" disabled={sending || !text.trim() || !canSend} className="rounded-full shrink-0 w-10 h-10">
+            <Button type="submit" size="icon" disabled={sending || !text.trim()} className="rounded-full shrink-0 w-10 h-10">
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </Button>
           </>
