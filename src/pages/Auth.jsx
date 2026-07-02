@@ -238,10 +238,15 @@ export default function Auth() {
     }
 
     // ── Capacitor deep link handler ──────────────────────────────────────────
+    // Only runs in native app — import is wrapped to prevent Rollup bundling it
     let appListener = null;
     (async () => {
       try {
-        const { App } = await import('@capacitor/app');
+        // Use indirect import string to prevent Rollup from trying to bundle
+        // @capacitor/app (not installed on web/Netlify builds)
+        const capacitorAppPkg = '@' + 'capacitor/app';
+        const capacitorBrowserPkg = '@' + 'capacitor/browser';
+        const { App } = await import(/* @vite-ignore */ capacitorAppPkg);
         appListener = await App.addListener('appUrlOpen', async ({ url }) => {
           if (url.includes('/auth')) {
             const urlParams = new URLSearchParams(url.split('?')[1] || '');
@@ -250,7 +255,7 @@ export default function Auth() {
               await supabase.auth.exchangeCodeForSession(deepCode);
             }
             try {
-              const { Browser } = await import('@capacitor/browser');
+              const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
               await Browser.close();
             } catch { /* already closed */ }
           }
@@ -592,7 +597,7 @@ export default function Auth() {
         // both have a built-in close/cancel button so the user is never stuck.
         // Falls back to window.location.href in plain browser.
         try {
-          const { Browser } = await import('@capacitor/browser');
+          const { Browser } = await import(/* @vite-ignore */ '@' + 'capacitor/browser');
           await Browser.open({
             url: data.url,
             windowName: '_self',
