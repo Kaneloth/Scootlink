@@ -172,13 +172,15 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const [hiddenMsgs,   setHiddenMsgs]   = useState(() => getHidden(user.id));
   const [showProfile,  setShowProfile]  = useState(false);
   const [partnerLocation, setPartnerLocation] = useState('');
+  const [chatCapReached,    setChatCapReached]    = useState(false);
+  const [hasSentInThisConvo, setHasSentInThisConvo] = useState(false);
   const bottomRef       = useRef(null);
   const menuRef         = useRef(null);
   const longPressRef    = useRef(null);
   const longTriggered   = useRef(false);
   const broadcastRef    = useRef(null);
   const isAdmin   = ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
-  const canSend   = isAdmin || (creditBalance !== null && creditBalance >= 3);
+  const canSend   = isAdmin || (creditBalance !== null && creditBalance >= 3 && (!chatCapReached || hasSentInThisConvo));
 
   useEffect(() => {
     supabase.from('profiles').select('location').eq('id', partner.id).single()
@@ -195,7 +197,21 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         .order('created_at', { ascending: true });
       const hidden = getHidden(user.id);
       setHiddenMsgs(hidden);
-      setMessages((data || []).filter(m => !hidden.has(m.id)));
+      const filtered = (data || []).filter(m => !hidden.has(m.id));
+      setMessages(filtered);
+
+      // Track whether user has already sent in this conversation —
+      // the cap only applies to STARTING new conversations, not replying
+      const alreadySent = filtered.some(m => m.sender_id === user.id);
+      setHasSentInThisConvo(alreadySent);
+
+      // Check free chat cap (15 credits max from sign-up grant)
+      // Only blocks STARTING new conversations, not existing ones
+      if (!alreadySent && !isAdmin) {
+        const { data: capCheck } = await supabase.rpc('can_start_chat', { p_user_id: user.id });
+        if (capCheck && !capCheck.allowed) setChatCapReached(true);
+      }
+
       const unread = (data || []).filter(m => m.receiver_id === user.id && !m.read).map(m => m.id);
       if (unread.length) await supabase.from('messages').update({ read: true }).in('id', unread);
       setLoading(false);
@@ -274,6 +290,15 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     if (!isAdmin) {
       const hasSentBefore = messages.some(m => m.sender_id === user.id);
       if (!hasSentBefore) {
+        // Check free chat cap — max 15 credits from sign-up grant on chats
+        const { data: capCheck } = await supabase.rpc('can_start_chat', { p_user_id: user.id });
+        if (capCheck && !capCheck.allowed) {
+          setText(body); setSending(false);
+          setChatCapReached(true);
+          toast.error('You\'ve used your free chat credits. Top up to start new conversations.', { duration: 5000 });
+          return;
+        }
+
         const { error: creditErr } = await supabase.rpc('deduct_credits', {
           p_user_id: user.id, p_amount: 3, p_type: 'spend',
           p_description: `Message to ${partner.name}`, p_ref_id: partner.id,
@@ -425,16 +450,25 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       )}
 
       <form onSubmit={handleSend} className="flex items-center gap-2 px-4 py-3 border-t border-border bg-background shrink-0" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-        <Input
-          value={text}
-          onChange={e => setText(e.target.value)}
-          placeholder="Type a message…"
-          disabled={sending}
-          className="rounded-full flex-1 bg-muted/40 border-border"
-        />
-        <Button type="submit" size="icon" disabled={sending || !text.trim()} className="rounded-full shrink-0 w-10 h-10">
-          {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-        </Button>
+        {chatCapReached && !hasSentInThisConvo ? (
+          <div className="flex-1 text-center py-1">
+            <p className="text-xs font-medium text-destructive">Free chat credits used up</p>
+            <p className="text-[11px] text-muted-foreground">Top up credits to start new conversations</p>
+          </div>
+        ) : (
+          <>
+            <Input
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder="Type a message…"
+              disabled={sending}
+              className="rounded-full flex-1 bg-muted/40 border-border"
+            />
+            <Button type="submit" size="icon" disabled={sending || !text.trim() || !canSend} className="rounded-full shrink-0 w-10 h-10">
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </Button>
+          </>
+        )}
       </form>
     </div>
   );
