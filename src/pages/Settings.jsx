@@ -659,6 +659,8 @@ export default function Settings() {
     }
     setTogglingId(null);
   };
+
+  const blacklistUser = (userId, currentBlacklisted, userName) => {
     if (!currentBlacklisted) {
       setActionModal({ type: 'ban', userId, currentState: currentBlacklisted, userName });
       setActionReason('');
