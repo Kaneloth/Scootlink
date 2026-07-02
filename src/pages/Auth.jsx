@@ -1052,11 +1052,21 @@ export default function Auth() {
                 <label htmlFor="terms" className="text-sm text-muted-foreground">
                   I agree to the{' '}
                   <a
-                    href="#"
-                    onClick={(e) => { e.preventDefault(); alert('Terms and Conditions will be available soon.'); }}
+                    href="/Terms%20and%20Conditions.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="text-primary hover:underline"
                   >
                     Terms and Conditions
+                  </a>
+                  {' '}and{' '}
+                  <a
+                    href="/Privacy%20Policy.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    Privacy Policy
                   </a>
                 </label>
               </div>
@@ -1080,12 +1090,6 @@ export default function Auth() {
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                 Sign Up
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                By signing up you agree to our{' '}
-                <a href="/Terms%20and%20Conditions.html" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Terms and Conditions</a>
-                {' '}and{' '}
-                <a href="/Privacy%20Policy.html" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Privacy Policy</a>
-              </p>
               <p className="text-center text-sm text-muted-foreground">
                 Already have an account?{' '}
                 <button onClick={() => setIsLogin(true)} className="text-primary hover:underline">
