@@ -881,7 +881,7 @@ export default function Auth() {
                     <Label>Email</Label>
                     <Input type="email" placeholder="your@email.com" value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)} autoComplete="email"
-                      onKeyDown={(e) => e.key === 'Enter' && handleSignIn()} />
+                      onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
                   </div>
 
                   <div>
@@ -895,7 +895,7 @@ export default function Auth() {
                       <Input type={showLoginPw ? 'text' : 'password'} placeholder="••••••••"
                         value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
                         autoComplete="current-password" className="pr-10"
-                        onKeyDown={(e) => e.key === 'Enter' && handleSignIn()} />
+                        onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
                       <button type="button" tabIndex={-1} onClick={() => setShowLoginPw(v => !v)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                         {showLoginPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
