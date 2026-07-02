@@ -638,8 +638,6 @@ export default function Settings() {
     }
   };
 
-  };
-
   const openAdminUser = (u) => {
     setAdminSelectedUser(u);
     setAdminEditForm({
