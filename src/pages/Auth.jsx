@@ -903,7 +903,7 @@ export default function Auth() {
                     </div>
                   </div>
 
-                  <Button onClick={handleSignIn} className="w-full gap-2" disabled={loading}>
+                  <Button onClick={handleLogin} className="w-full gap-2" disabled={loading}>
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
                     Sign In
                   </Button>
