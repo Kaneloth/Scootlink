@@ -212,17 +212,78 @@ export default function Auth() {
       setRecoveryMode(true);
     }
 
+    // ── Handle OAuth code in URL (web browser PKCE flow) ────────────────────
+    // When Google redirects back to /auth?code=xxx in a plain browser
+    // (not Capacitor), we must manually exchange the code since we used
+    // skipBrowserRedirect: true. Capacitor handles this via appUrlOpen instead.
+    const code = params.get('code');
+    const oauthError = params.get('error');
+
+    if (code && !oauthError) {
+      // Exchange the code — onAuthStateChange will fire SIGNED_IN on success
+      supabase.auth.exchangeCodeForSession(code).catch(() => {});
+      // Clean the code from the URL immediately
+      window.history.replaceState({}, '', '/auth');
+    }
+
+    // Google sends ?error=access_denied when the user cancels the account picker
+    if (oauthError) {
+      setGoogleLoading(false);
+      if (oauthError === 'access_denied') {
+        toast.info('Sign-in cancelled. You can try again whenever you\'re ready.');
+      } else {
+        toast.error('Sign-in failed: ' + (params.get('error_description') || oauthError));
+      }
+      window.history.replaceState({}, '', '/auth');
+    }
+
+    // ── Capacitor deep link handler ──────────────────────────────────────────
+    let appListener = null;
+    (async () => {
+      try {
+        const { App } = await import('@capacitor/app');
+        appListener = await App.addListener('appUrlOpen', async ({ url }) => {
+          if (url.includes('/auth')) {
+            const urlParams = new URLSearchParams(url.split('?')[1] || '');
+            const deepCode = urlParams.get('code');
+            if (deepCode) {
+              await supabase.auth.exchangeCodeForSession(deepCode);
+            }
+            try {
+              const { Browser } = await import('@capacitor/browser');
+              await Browser.close();
+            } catch { /* already closed */ }
+          }
+        });
+      } catch { /* not in Capacitor environment */ }
+    })();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
         setRecoveryMode(true);
       }
-      // Handle Google OAuth return — Supabase exchanges the code and fires SIGNED_IN
       if (event === 'SIGNED_IN' && session && !sessionStorage.getItem('skootlink_recovery')) {
-        window.location.replace('/home');
+        // Poll until session is fully confirmed before navigating to prevent blank screen
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts++;
+          const { data: { session: s } } = await supabase.auth.getSession();
+          if (s?.user) {
+            clearInterval(poll);
+            window.location.replace('/home');
+          } else if (attempts > 10) {
+            clearInterval(poll);
+            window.location.replace('/home'); // give up and navigate anyway
+          }
+        }, 150);
       }
     });
-    return () => subscription.unsubscribe();
+
+    return () => {
+      subscription.unsubscribe();
+      if (appListener) appListener.remove();
+    };
   }, []);
 
   // ── Set new password handler ──────────────────────────────────────────────
@@ -526,8 +587,25 @@ export default function Auth() {
       });
       if (error) throw error;
       if (data?.url) {
-        // Use replace() so the Base44 vite plugin cannot intercept it
-        window.location.replace(data.url);
+        // On Capacitor (native app), open in an in-app browser sheet.
+        // iOS uses SFSafariViewController, Android uses Chrome Custom Tabs —
+        // both have a built-in close/cancel button so the user is never stuck.
+        // Falls back to window.location.href in plain browser.
+        try {
+          const { Browser } = await import('@capacitor/browser');
+          await Browser.open({
+            url: data.url,
+            windowName: '_self',
+            presentationStyle: 'popover', // sheet on iOS
+          });
+          // Listen for the app returning from the browser (user cancelled or completed)
+          Browser.addListener('browserFinished', () => {
+            setGoogleLoading(false);
+          });
+        } catch {
+          // Not running in Capacitor — fall back to standard navigation
+          window.location.href = data.url;
+        }
       }
     } catch (err) {
       toast.error(err.message || 'Google sign-in failed');
