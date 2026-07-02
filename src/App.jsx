@@ -35,6 +35,33 @@ const AuthenticatedApp = () => {
   React.useEffect(() => {
     const path = window.location.pathname;
     const publicPaths = ['/', '/auth'];
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const oauthError = params.get('error');
+
+    // ── Handle OAuth code on ANY page ────────────────────────────────────────
+    // Google may redirect to / or /auth with ?code=xxx depending on the
+    // redirectTo setting. Exchange it here regardless of which page we're on.
+    if (code && !oauthError) {
+      window.history.replaceState({}, '', path); // clean URL first
+      supabase.auth.exchangeCodeForSession(code)
+        .then(({ data: { session } }) => {
+          if (session) {
+            window.location.replace('/home');
+          } else {
+            window.location.replace('/auth');
+          }
+        })
+        .catch(() => window.location.replace('/auth'));
+      return; // don't run the session check below while exchanging
+    }
+
+    // ── Handle OAuth cancellation ─────────────────────────────────────────────
+    if (oauthError) {
+      window.history.replaceState({}, '', '/auth');
+      window.location.replace('/auth');
+      return;
+    }
 
     // Safety net — never stay stuck beyond 5 seconds
     const timer = setTimeout(() => setSupabaseChecked(true), 5000);
@@ -47,7 +74,6 @@ const AuthenticatedApp = () => {
         if (path !== '/auth') { window.location.replace('/auth'); }
         else { setSupabaseChecked(true); }
       } else if (session && (path === '/auth' || path === '/')) {
-        // Authenticated users should never see the login or landing page
         window.location.replace('/home');
       } else if (!session && !publicPaths.includes(path)) {
         window.location.replace('/auth');

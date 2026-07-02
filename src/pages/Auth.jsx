@@ -199,42 +199,13 @@ export default function Auth() {
   //   3. onAuthStateChange event (PKCE flow: code exchanged async)
   useEffect(() => {
     const hash = window.location.hash;
-    const params = new URLSearchParams(window.location.search);
 
-    const isRecoveryUrl =
-      hash.includes('type=recovery') ||
-      params.get('type') === 'recovery';
-
+    const isRecoveryUrl = hash.includes('type=recovery');
     const isRecoveryStored = sessionStorage.getItem('skootlink_recovery') === '1';
 
     if (isRecoveryUrl || isRecoveryStored) {
       sessionStorage.setItem('skootlink_recovery', '1');
       setRecoveryMode(true);
-    }
-
-    // ── Handle OAuth code in URL (web browser PKCE flow) ────────────────────
-    // When Google redirects back to /auth?code=xxx in a plain browser
-    // (not Capacitor), we must manually exchange the code since we used
-    // skipBrowserRedirect: true. Capacitor handles this via appUrlOpen instead.
-    const code = params.get('code');
-    const oauthError = params.get('error');
-
-    if (code && !oauthError) {
-      // Exchange the code — onAuthStateChange will fire SIGNED_IN on success
-      supabase.auth.exchangeCodeForSession(code).catch(() => {});
-      // Clean the code from the URL immediately
-      window.history.replaceState({}, '', '/auth');
-    }
-
-    // Google sends ?error=access_denied when the user cancels the account picker
-    if (oauthError) {
-      setGoogleLoading(false);
-      if (oauthError === 'access_denied') {
-        toast.info('Sign-in cancelled. You can try again whenever you\'re ready.');
-      } else {
-        toast.error('Sign-in failed: ' + (params.get('error_description') || oauthError));
-      }
-      window.history.replaceState({}, '', '/auth');
     }
 
     // ── Capacitor deep link handler ──────────────────────────────────────────
