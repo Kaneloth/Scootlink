@@ -1244,7 +1244,7 @@ export default function Settings() {
 
         {/* ── Admin User Detail / Edit Modal ── */}
         {isAdmin && adminSelectedUser && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setAdminSelectedUser(null)}>
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50" onClick={() => setAdminSelectedUser(null)}>
             <div
               className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[90vh]"
               onClick={e => e.stopPropagation()}
@@ -1340,7 +1340,6 @@ export default function Settings() {
                       <div className="rounded-xl border border-border/50 divide-y divide-border/50">
                         {[
                           ['Verified', adminSelectedUser.verified ? '✓ Yes' : '✗ No'],
-                          ['Subscription', adminSelectedUser.subscription_active ? `Active — ${adminSelectedUser.subscription_plan || '?'}` : 'Inactive'],
                           ['Blacklisted', adminSelectedUser.blacklisted ? '⛔ Yes' : '✓ No'],
                           ['Member Since', adminSelectedUser.created_at ? new Date(adminSelectedUser.created_at).toLocaleDateString() : '—'],
                         ].map(([label, value]) => (
@@ -1352,7 +1351,7 @@ export default function Settings() {
                       </div>
                     </div>
                     {/* Quick actions */}
-                    <div className="grid grid-cols-3 gap-2 pt-1">
+                    <div className="grid grid-cols-2 gap-2 pt-1">
                       <Button
                         size="sm"
                         variant={adminSelectedUser.verified ? 'outline' : 'default'}
@@ -1362,16 +1361,6 @@ export default function Settings() {
                       >
                         <ShieldCheck className="w-3 h-3" />
                         {adminSelectedUser.verified ? 'Unverify' : 'Verify'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={adminSelectedUser.subscription_active ? 'outline' : 'secondary'}
-                        className="h-8 text-xs gap-1"
-                        disabled={togglingId === adminSelectedUser.id + '_sub'}
-                        onClick={() => toggleSubscription(adminSelectedUser.id, adminSelectedUser.subscription_active, adminSelectedUser.subscription_plan)}
-                      >
-                        <Crown className="w-3 h-3" />
-                        {adminSelectedUser.subscription_active ? 'Deactivate' : 'Activate'}
                       </Button>
                       <Button
                         size="sm"
