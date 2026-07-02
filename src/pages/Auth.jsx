@@ -657,7 +657,7 @@ export default function Auth() {
           <img src="/favicon.png" alt="Skootlink" className="w-16 h-16 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-foreground">Skootlink</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            The formal way to connect owners and drivers in the delivery space.
+            The formal way to rent vehicles for gig work in South Africa.
           </p>
         </div>
 
@@ -827,13 +827,6 @@ export default function Auth() {
                       Use password instead
                     </button>
                   </div>
-
-                  <p className="text-center text-sm text-muted-foreground">
-                    Don't have an account?{' '}
-                    <button onClick={() => { setIsLogin(false); setLoginStage('idle'); setBannerReason(null); }} className="text-primary font-semibold hover:underline">
-                      Create one
-                    </button>
-                  </p>
                 </div>
 
               ) : loginStage !== 'forgot-password' ? (
