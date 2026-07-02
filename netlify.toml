@@ -1,3 +1,15 @@
+# Serve policy HTML files directly as static files (must come before the catch-all)
+[[redirects]]
+  from = "/Privacy_Policy.html"
+  to = "/Privacy_Policy.html"
+  status = 200
+
+[[redirects]]
+  from = "/Terms_and_Conditions.html"
+  to = "/Terms_and_Conditions.html"
+  status = 200
+
+# Catch-all — send everything else through the React app
 [[redirects]]
   from = "/*"
   to = "/index.html"
@@ -9,7 +21,3 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-
-[[scheduled.functions]]
-  name = "vehicle-expiry-check"
-  schedule = "0 6 * * *"
