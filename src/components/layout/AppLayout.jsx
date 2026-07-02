@@ -304,6 +304,7 @@ export default function AppLayout() {
   const [gateUser, setGateUser]       = useState(null);
   const [userLoading, setUserLoading] = useState(true);
   const [isBlacklisted, setIsBlacklisted] = useState(null);
+  const [suspendedEmail, setSuspendedEmail] = useState('');
 
 
   // ── Strip swipe state ──────────────────────────────────────────────────
@@ -392,6 +393,7 @@ export default function AppLayout() {
           .eq('id', user.id)
           .single();
         if (profile?.blacklisted || profile?.suspended) {
+          setSuspendedEmail(user.email || '');
           try { await supabase.auth.signOut(); } catch { /* non-fatal */ }
           setIsBlacklisted({ type: profile.blacklisted ? 'ban' : 'suspend', reason: profile.blacklisted ? profile.ban_reason : profile.suspension_reason });
           setUserLoading(false);
@@ -454,7 +456,7 @@ export default function AppLayout() {
                 ? 'If you believe this ban is a mistake, send us an appeal below.'
                 : 'To appeal this suspension, send us a message below and we\'ll review your account.'}
             </p>
-            <SuspendedContactForm userEmail={user?.email} />
+            <SuspendedContactForm userEmail={suspendedEmail} />
           </div>
         </div>
       </div>
