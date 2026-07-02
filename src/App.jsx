@@ -46,7 +46,8 @@ const AuthenticatedApp = () => {
       if (isRecovery) {
         if (path !== '/auth') { window.location.replace('/auth'); }
         else { setSupabaseChecked(true); }
-      } else if (session && path === '/auth') {
+      } else if (session && (path === '/auth' || path === '/')) {
+        // Authenticated users should never see the login or landing page
         window.location.replace('/home');
       } else if (!session && !publicPaths.includes(path)) {
         window.location.replace('/auth');
