@@ -1477,19 +1477,19 @@ export default function Settings() {
                         <Coins className="w-3 h-3" /> -3 Credits
                       </Button>
                       <Button size="sm"
-                        variant={adminSelectedUser.blacklisted ? 'default' : 'outline'}
-                        className={`h-8 text-xs gap-1 col-span-2 ${adminSelectedUser.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
-                        disabled={blacklistingId === adminSelectedUser.id}
-                        onClick={() => blacklistUser(adminSelectedUser.id, adminSelectedUser.blacklisted)}>
-                        {adminSelectedUser.blacklisted ? '✓ Unban User' : '⛔ Ban User'}
-                      </Button>
-                      <Button size="sm"
                         variant={adminSelectedUser.is_admin ? 'default' : 'outline'}
                         className={`h-8 text-xs gap-1 col-span-2 ${adminSelectedUser.is_admin ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'text-purple-600 border-purple-300 hover:bg-purple-50'}`}
                         disabled={togglingId === adminSelectedUser.id + '_admin'}
                         onClick={() => toggleAdminRole(adminSelectedUser.id, adminSelectedUser.is_admin)}>
                         {togglingId === adminSelectedUser.id + '_admin' ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
                         {adminSelectedUser.is_admin ? '👑 Remove Admin' : '👑 Make Admin'}
+                      </Button>
+                      <Button size="sm"
+                        variant={adminSelectedUser.blacklisted ? 'default' : 'outline'}
+                        className={`h-8 text-xs gap-1 col-span-2 ${adminSelectedUser.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
+                        disabled={blacklistingId === adminSelectedUser.id}
+                        onClick={() => blacklistUser(adminSelectedUser.id, adminSelectedUser.blacklisted)}>
+                        {adminSelectedUser.blacklisted ? '✓ Unban User' : '⛔ Ban User'}
                       </Button>
                     </div>
                   </div>
