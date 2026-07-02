@@ -1,0 +1,8 @@
+# Silently absorb Base44 analytics calls that are baked into the bundle.
+# These posted to /api/apps/{appId}/analytics/... when the app was on Base44.
+# Now that it runs on Netlify the app ID is null and the requests 404 — this
+# routes them to a no-op function instead.
+/api/apps/:id/analytics/*  /.netlify/functions/analytics-sink  200
+
+# SPA fallback — must be last
+/*  /index.html  200

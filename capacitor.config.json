@@ -1,0 +1,18 @@
+{
+  "appId": "co.za.skootlink.app",
+  "appName": "Skootlink",
+  "webDir": "dist",
+  "plugins": {
+    "Browser": {
+      "presentationStyle": "popover"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#ffffff"
+    },
+    "Keyboard": {
+      "resize": "body",
+      "resizeOnFullScreen": true
+    }
+  }
+}
