@@ -449,7 +449,7 @@ export default function Settings() {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, id_document_number, id_document_type, created_at')
+      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, suspended, id_document_number, id_document_type, created_at')
       .order('created_at', { ascending: false });
     if (!error) {
       // Fetch credit balances for each user
@@ -528,17 +528,37 @@ export default function Settings() {
 
   const addAdminCredits = async (userId, amount) => {
     setTogglingId(userId + '_sub');
-    const { error } = await supabase.rpc('add_credits', {
+    const isDeduct = amount < 0;
+    const rpc = isDeduct ? 'deduct_credits' : 'add_credits';
+    const absAmount = Math.abs(amount);
+    const { error } = await supabase.rpc(rpc, {
       p_user_id:     userId,
-      p_amount:      amount,
+      p_amount:      absAmount,
       p_type:        'adjustment',
-      p_description: `Admin credit adjustment`,
+      p_description: `Admin credit ${isDeduct ? 'deduction' : 'adjustment'}`,
       p_ref_id:      `admin:${userId}`,
     });
     if (!error) {
-      toast.success(`Added ${amount} credits to user`);
+      toast.success(isDeduct ? `Deducted ${absAmount} credits` : `Added ${absAmount} credits`);
     } else {
-      toast.error('Failed to add credits: ' + error.message);
+      toast.error(`Failed to ${isDeduct ? 'deduct' : 'add'} credits: ` + error.message);
+    }
+    setTogglingId(null);
+  };
+
+  const suspendUser = async (userId, currentSuspended) => {
+    setTogglingId(userId + '_suspend');
+    const suspending = !currentSuspended;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ suspended: suspending })
+      .eq('id', userId);
+    if (error) {
+      toast.error('Failed to update suspension: ' + error.message);
+    } else {
+      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended: suspending } : u));
+      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended: suspending }));
+      toast.success(suspending ? 'User suspended — they cannot log in' : 'Suspension lifted ✓');
     }
     setTogglingId(null);
   };
@@ -1186,7 +1206,7 @@ export default function Settings() {
                         </Button>
                       </div>
                       <div className="flex flex-col gap-1.5 pt-1 border-t border-border/50">
-                        <div className="grid grid-cols-3 gap-1.5">
+                        <div className="grid grid-cols-4 gap-1.5">
                           <Button
                             size="sm"
                             variant={u.verified ? 'outline' : 'default'}
@@ -1194,9 +1214,7 @@ export default function Settings() {
                             disabled={togglingId === u.id}
                             onClick={() => toggleVerified(u.id, u.verified)}
                           >
-                            {togglingId === u.id
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <ShieldCheck className="w-3 h-3" />}
+                            {togglingId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
                             {u.verified ? 'Un-ID' : '✅ ID'}
                           </Button>
                           <Button
@@ -1206,34 +1224,44 @@ export default function Settings() {
                             disabled={togglingId === u.id + '_lic'}
                             onClick={() => toggleLicenceVerified(u.id, u.licence_verified, u.id_verified)}
                           >
-                            {togglingId === u.id + '_lic'
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <FileText className="w-3 h-3" />}
-                            {u.licence_verified ? 'Un-Lic' : u.license_pending ? '⏳ Approve' : '🛡️ Lic'}
+                            {togglingId === u.id + '_lic' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                            {u.licence_verified ? 'Un-Lic' : u.license_pending ? '⏳ Lic' : '🛡️ Lic'}
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-[10px] gap-0.5 px-1"
+                            disabled={togglingId === u.id + '_sub'}
+                            onClick={() => addAdminCredits(u.id, 3)}>
+                            {togglingId === u.id + '_sub' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />}
+                            +3 Cr
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-[10px] gap-0.5 px-1 text-amber-600 border-amber-300 hover:bg-amber-50"
+                            disabled={togglingId === u.id + '_sub'}
+                            onClick={() => addAdminCredits(u.id, -3)}>
+                            {togglingId === u.id + '_sub' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />}
+                            -3 Cr
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <Button
+                            size="sm"
+                            variant={u.suspended ? 'default' : 'outline'}
+                            className={`h-7 text-[10px] gap-0.5 px-1 ${u.suspended ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500' : 'text-amber-600 border-amber-300 hover:bg-amber-50'}`}
+                            disabled={togglingId === u.id + '_suspend'}
+                            onClick={() => suspendUser(u.id, u.suspended)}
+                          >
+                            {togglingId === u.id + '_suspend' ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                            {u.suspended ? '▶ Unsuspend' : '⏸ Suspend'}
                           </Button>
                           <Button
                             size="sm"
-                            variant="outline"
-                            className="h-7 text-[10px] gap-0.5 px-1"
-                            disabled={togglingId === u.id + '_sub'}
-                            onClick={() => addAdminCredits(u.id, 10)}
+                            variant={u.blacklisted ? 'default' : 'outline'}
+                            className={`h-7 text-[10px] gap-0.5 px-1 ${u.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
+                            disabled={blacklistingId === u.id}
+                            onClick={() => blacklistUser(u.id, u.blacklisted)}
                           >
-                            {togglingId === u.id + '_sub'
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <Coins className="w-3 h-3" />}
-                            +10 Cr
+                            {blacklistingId === u.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                            {u.blacklisted ? '✓ Unban' : '⛔ Ban'}
                           </Button>
                         </div>
-                        <Button
-                          size="sm"
-                          variant={u.blacklisted ? 'default' : 'outline'}
-                          className={`h-7 text-[10px] gap-0.5 px-1 w-full ${u.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
-                          disabled={blacklistingId === u.id}
-                          onClick={() => blacklistUser(u.id, u.blacklisted)}
-                        >
-                          {blacklistingId === u.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
-                          {u.blacklisted ? 'Remove Blacklist' : '⛔ Blacklist User'}
-                        </Button>
                       </div>
                     </Card>
                   ))}
@@ -1340,6 +1368,7 @@ export default function Settings() {
                       <div className="rounded-xl border border-border/50 divide-y divide-border/50">
                         {[
                           ['Verified', adminSelectedUser.verified ? '✓ Yes' : '✗ No'],
+                          ['Suspended', adminSelectedUser.suspended ? '⏸ Yes' : '✓ No'],
                           ['Blacklisted', adminSelectedUser.blacklisted ? '⛔ Yes' : '✓ No'],
                           ['Member Since', adminSelectedUser.created_at ? new Date(adminSelectedUser.created_at).toLocaleDateString() : '—'],
                         ].map(([label, value]) => (
@@ -1352,24 +1381,35 @@ export default function Settings() {
                     </div>
                     {/* Quick actions */}
                     <div className="grid grid-cols-2 gap-2 pt-1">
-                      <Button
-                        size="sm"
-                        variant={adminSelectedUser.verified ? 'outline' : 'default'}
-                        className="h-8 text-xs gap-1"
-                        disabled={togglingId === adminSelectedUser.id}
-                        onClick={() => toggleVerified(adminSelectedUser.id, adminSelectedUser.verified)}
-                      >
+                      <Button size="sm" variant={adminSelectedUser.verified ? 'outline' : 'default'}
+                        className="h-8 text-xs gap-1" disabled={togglingId === adminSelectedUser.id}
+                        onClick={() => toggleVerified(adminSelectedUser.id, adminSelectedUser.verified)}>
                         <ShieldCheck className="w-3 h-3" />
                         {adminSelectedUser.verified ? 'Unverify' : 'Verify'}
                       </Button>
-                      <Button
-                        size="sm"
+                      <Button size="sm"
+                        variant={adminSelectedUser.suspended ? 'default' : 'outline'}
+                        className={`h-8 text-xs gap-1 ${adminSelectedUser.suspended ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'text-amber-600 border-amber-300 hover:bg-amber-50'}`}
+                        disabled={togglingId === adminSelectedUser.id + '_suspend'}
+                        onClick={() => suspendUser(adminSelectedUser.id, adminSelectedUser.suspended)}>
+                        {adminSelectedUser.suspended ? '▶ Unsuspend' : '⏸ Suspend'}
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1"
+                        disabled={togglingId === adminSelectedUser.id + '_sub'}
+                        onClick={() => addAdminCredits(adminSelectedUser.id, 3)}>
+                        <Coins className="w-3 h-3" /> +3 Credits
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1 text-amber-600 border-amber-300 hover:bg-amber-50"
+                        disabled={togglingId === adminSelectedUser.id + '_sub'}
+                        onClick={() => addAdminCredits(adminSelectedUser.id, -3)}>
+                        <Coins className="w-3 h-3" /> -3 Credits
+                      </Button>
+                      <Button size="sm"
                         variant={adminSelectedUser.blacklisted ? 'default' : 'outline'}
-                        className={`h-8 text-xs gap-1 ${adminSelectedUser.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
+                        className={`h-8 text-xs gap-1 col-span-2 ${adminSelectedUser.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
                         disabled={blacklistingId === adminSelectedUser.id}
-                        onClick={() => blacklistUser(adminSelectedUser.id, adminSelectedUser.blacklisted)}
-                      >
-                        {adminSelectedUser.blacklisted ? 'Unban' : '⛔ Ban'}
+                        onClick={() => blacklistUser(adminSelectedUser.id, adminSelectedUser.blacklisted)}>
+                        {adminSelectedUser.blacklisted ? '✓ Unban User' : '⛔ Ban User'}
                       </Button>
                     </div>
                   </div>

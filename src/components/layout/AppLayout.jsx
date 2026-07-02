@@ -328,10 +328,10 @@ export default function AppLayout() {
       if (user?.id) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('blacklisted')
+          .select('blacklisted, suspended')
           .eq('id', user.id)
           .single();
-        if (profile?.blacklisted) {
+        if (profile?.blacklisted || profile?.suspended) {
           // Sign out silently and show the suspended screen — do not grant app access
           try { await supabase.auth.signOut(); } catch { /* non-fatal */ }
           setIsBlacklisted(true);
