@@ -34,7 +34,7 @@ const AuthenticatedApp = () => {
 
   React.useEffect(() => {
     const path = window.location.pathname;
-    const publicPaths = ['/', '/auth'];
+    const publicPaths = ['/', '/auth', '/Privacy_Policy.html', '/Terms_and_Conditions.html'];
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     const oauthError = params.get('error');
