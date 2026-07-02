@@ -450,7 +450,7 @@ export default function Settings() {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, suspended, id_document_number, id_document_type, created_at')
+      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, suspended, is_admin, id_document_number, id_document_type, created_at')
       .order('created_at', { ascending: false });
     if (!error) {
       // Fetch credit balances for each user
@@ -629,7 +629,36 @@ export default function Settings() {
     setBlacklistingId(null);
   };
 
-  const blacklistUser = (userId, currentBlacklisted, userName) => {
+  const toggleAdminRole = async (userId, currentIsAdmin) => {
+    setTogglingId(userId + '_admin');
+    const granting = !currentIsAdmin;
+    try {
+      // Update profiles table flag
+      const { error: profileErr } = await supabase
+        .from('profiles')
+        .update({ is_admin: granting })
+        .eq('id', userId);
+      if (profileErr) throw profileErr;
+
+      // Update Supabase Auth user_metadata via service-role Netlify function
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (accessToken) {
+        await fetch('/.netlify/functions/admin-set-role', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ userId, is_admin: granting }),
+        });
+      }
+
+      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, is_admin: granting } : u));
+      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, is_admin: granting }));
+      toast.success(granting ? '✅ Admin rights granted' : 'Admin rights removed');
+    } catch (err) {
+      toast.error('Failed to update admin role: ' + err.message);
+    }
+    setTogglingId(null);
+  };
     if (!currentBlacklisted) {
       setActionModal({ type: 'ban', userId, currentState: currentBlacklisted, userName });
       setActionReason('');
@@ -1453,6 +1482,14 @@ export default function Settings() {
                         disabled={blacklistingId === adminSelectedUser.id}
                         onClick={() => blacklistUser(adminSelectedUser.id, adminSelectedUser.blacklisted)}>
                         {adminSelectedUser.blacklisted ? '✓ Unban User' : '⛔ Ban User'}
+                      </Button>
+                      <Button size="sm"
+                        variant={adminSelectedUser.is_admin ? 'default' : 'outline'}
+                        className={`h-8 text-xs gap-1 col-span-2 ${adminSelectedUser.is_admin ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'text-purple-600 border-purple-300 hover:bg-purple-50'}`}
+                        disabled={togglingId === adminSelectedUser.id + '_admin'}
+                        onClick={() => toggleAdminRole(adminSelectedUser.id, adminSelectedUser.is_admin)}>
+                        {togglingId === adminSelectedUser.id + '_admin' ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                        {adminSelectedUser.is_admin ? '👑 Remove Admin' : '👑 Make Admin'}
                       </Button>
                     </div>
                   </div>
