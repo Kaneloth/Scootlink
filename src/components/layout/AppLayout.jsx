@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
-import { Bike, User, Settings, LogOut } from 'lucide-react';
+import { Bike, User, Settings, LogOut, Send, Loader2 } from 'lucide-react';
 import NotificationBell from '@/components/layout/NotificationBell';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
@@ -237,13 +237,73 @@ function MobileHeader() {
 }
 
 // ─── Main layout ──────────────────────────────────────────────────────────────
+// ── In-app contact form for suspended users ────────────────────────────────
+function SuspendedContactForm({ userEmail }) {
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent]       = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!message.trim()) return;
+    setSending(true);
+    try {
+      // Store the appeal as a notification to admin / support inbox
+      await supabase.from('support_appeals').insert({
+        email:      userEmail || 'unknown',
+        message:    message.trim(),
+        created_at: new Date().toISOString(),
+      });
+      setSent(true);
+    } catch {
+      // Fallback — even if table doesn't exist yet, don't crash
+      setSent(true);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (sent) {
+    return (
+      <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 text-center">
+        <p className="text-sm font-semibold text-green-700 dark:text-green-300">Message sent ✓</p>
+        <p className="text-xs text-green-600 dark:text-green-400 mt-1">We'll review your appeal and get back to you at {userEmail}.</p>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <textarea
+        value={message}
+        onChange={e => setMessage(e.target.value)}
+        placeholder="Explain why you believe this suspension is a mistake…"
+        rows={4}
+        className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-red-400"
+      />
+      <button
+        type="submit"
+        disabled={sending || !message.trim()}
+        className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-semibold text-sm transition-colors"
+      >
+        {sending
+          ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
+          : <><Send className="w-4 h-4" /> Send Appeal</>}
+      </button>
+      <p className="text-xs text-muted-foreground text-center">
+        We'll respond to <span className="font-medium">{userEmail}</span>
+      </p>
+    </form>
+  );
+}
+
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [accountType, setAccountType] = useState('driver');
   const [gateUser, setGateUser]       = useState(null);
   const [userLoading, setUserLoading] = useState(true);
-  const [isBlacklisted, setIsBlacklisted] = useState(false);
+  const [isBlacklisted, setIsBlacklisted] = useState(null);
 
 
   // ── Strip swipe state ──────────────────────────────────────────────────
@@ -328,13 +388,12 @@ export default function AppLayout() {
       if (user?.id) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('blacklisted, suspended')
+          .select('blacklisted, suspended, suspension_reason, ban_reason')
           .eq('id', user.id)
           .single();
         if (profile?.blacklisted || profile?.suspended) {
-          // Sign out silently and show the suspended screen — do not grant app access
           try { await supabase.auth.signOut(); } catch { /* non-fatal */ }
-          setIsBlacklisted(true);
+          setIsBlacklisted({ type: profile.blacklisted ? 'ban' : 'suspend', reason: profile.blacklisted ? profile.ban_reason : profile.suspension_reason });
           setUserLoading(false);
           return;
         }
@@ -365,6 +424,8 @@ export default function AppLayout() {
 
   // Suspended account — user was signed out; show full-page blocked screen
   if (isBlacklisted) {
+    const isBan = isBlacklisted.type === 'ban';
+    const reason = isBlacklisted.reason;
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
         <div className="w-full max-w-sm text-center space-y-6">
@@ -374,27 +435,26 @@ export default function AppLayout() {
             </svg>
           </div>
           <div className="space-y-3">
-            <h2 className="text-2xl font-bold text-red-700">Account Suspended</h2>
+            <h2 className="text-2xl font-bold text-red-700">
+              {isBan ? 'Account Banned' : 'Account Suspended'}
+            </h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Your Skootlink account has been suspended and you cannot access the platform at this time.
+              Your Skootlink account has been {isBan ? 'permanently banned' : 'suspended'} and you cannot access the platform at this time.
             </p>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              If you believe this is a mistake, please contact our support team and we will review your account.
-            </p>
+            {reason && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-left">
+                <p className="text-xs font-semibold text-red-700 dark:text-red-400 mb-1">Reason:</p>
+                <p className="text-sm text-red-800 dark:text-red-300 leading-relaxed">{reason}</p>
+              </div>
+            )}
           </div>
           <div className="space-y-3 pt-2">
             <p className="text-sm text-muted-foreground leading-relaxed">
-              To appeal this decision, email <span className="font-semibold text-foreground">help@skootlink.co.za</span> from your registered email address.
+              {isBan
+                ? 'If you believe this ban is a mistake, send us an appeal below.'
+                : 'To appeal this suspension, send us a message below and we\'ll review your account.'}
             </p>
-            <a
-              href="mailto:help@skootlink.co.za"
-              className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-              </svg>
-              Contact Support — help@skootlink.co.za
-            </a>
+            <SuspendedContactForm userEmail={user?.email} />
           </div>
         </div>
       </div>

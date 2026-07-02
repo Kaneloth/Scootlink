@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 import { Input } from '@/components/ui/input';
@@ -546,88 +547,97 @@ export default function Settings() {
     setTogglingId(null);
   };
 
-  const suspendUser = async (userId, currentSuspended) => {
-    setTogglingId(userId + '_suspend');
-    const suspending = !currentSuspended;
-    const { error } = await supabase
-      .from('profiles')
-      .update({ suspended: suspending })
-      .eq('id', userId);
-    if (error) {
-      toast.error('Failed to update suspension: ' + error.message);
+  const [actionModal, setActionModal] = useState(null); // { type: 'suspend'|'ban', userId, currentState, userName }
+  const [actionReason, setActionReason] = useState('');
+
+  const confirmAction = async () => {
+    if (!actionModal) return;
+    const { type, userId, currentState } = actionModal;
+    const reason = actionReason.trim();
+    setActionModal(null);
+    setActionReason('');
+
+    if (type === 'suspend') {
+      const suspending = !currentState;
+      setTogglingId(userId + '_suspend');
+      const { error } = await supabase.from('profiles').update({
+        suspended: suspending,
+        suspension_reason: suspending ? reason || null : null,
+      }).eq('id', userId);
+      if (error) { toast.error('Failed: ' + error.message); }
+      else {
+        setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended: suspending, suspension_reason: reason } : u));
+        if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended: suspending, suspension_reason: reason }));
+        toast.success(suspending ? 'User suspended' : 'Suspension lifted ✓');
+      }
+      setTogglingId(null);
     } else {
-      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended: suspending } : u));
-      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended: suspending }));
-      toast.success(suspending ? 'User suspended — they cannot log in' : 'Suspension lifted ✓');
+      await blacklistUserWithReason(userId, currentState, reason);
     }
-    setTogglingId(null);
   };
 
-  const blacklistUser = async (userId, currentBlacklisted) => {
+  const suspendUser = (userId, currentSuspended, userName) => {
+    if (!currentSuspended) {
+      setActionModal({ type: 'suspend', userId, currentState: currentSuspended, userName });
+      setActionReason('');
+    } else {
+      // Lifting suspension — no reason needed
+      confirmDirectAction('suspend', userId, currentSuspended, '');
+    }
+  };
+
+  const confirmDirectAction = async (type, userId, currentState, reason) => {
+    if (type === 'suspend') {
+      setTogglingId(userId + '_suspend');
+      const { error } = await supabase.from('profiles').update({
+        suspended: false, suspension_reason: null,
+      }).eq('id', userId);
+      if (!error) {
+        setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended: false } : u));
+        if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended: false }));
+        toast.success('Suspension lifted ✓');
+      }
+      setTogglingId(null);
+    }
+  };
+
+  const blacklistUserWithReason = async (userId, currentBlacklisted, reason) => {
     setBlacklistingId(userId);
     const banning = !currentBlacklisted;
+    const { error } = await supabase.from('profiles').update({
+      blacklisted: banning,
+      ban_reason: banning ? reason || null : null,
+    }).eq('id', userId);
+    if (error) { toast.error('Failed to update ban: ' + error.message); setBlacklistingId(null); return; }
 
-    // 1. Toggle the blacklisted flag on the profile
-    const { error } = await supabase
-      .from('profiles')
-      .update({ blacklisted: banning })
-      .eq('id', userId);
-
-    if (error) {
-      toast.error('Failed to update blacklist: ' + (error.message || 'unknown error'));
-      setBlacklistingId(null);
-      return;
+    if (banning) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        if (accessToken) {
+          await fetch('/.netlify/functions/admin-ban-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+            body: JSON.stringify({ userId, ban: true }),
+          });
+        }
+      } catch { /* non-fatal */ }
     }
-
-    // 2. Look up the user's SA ID / passport from user_sensitive_info
-    //    (the authoritative source — not profiles.id_document_number)
-    const { data: sensitiveRow } = await supabase
-      .from('user_sensitive_info')
-      .select('sa_id, passport')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    const idNum = (sensitiveRow?.sa_id || sensitiveRow?.passport || '').trim().toUpperCase();
-
-    if (idNum) {
-      if (banning) {
-        await supabase
-          .from('blacklisted_id_numbers')
-          .upsert({ id_number: idNum }, { onConflict: 'id_number' });
-      } else {
-        await supabase
-          .from('blacklisted_id_numbers')
-          .delete()
-          .eq('id_number', idNum);
-      }
-    }
-
-    // 3. Ban / unban at the Supabase Auth level and revoke all active sessions.
-    //    This blocks any new sign-in attempt and immediately invalidates existing
-    //    sessions so the user is kicked out of the app without waiting for the
-    //    access token to expire naturally.
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
-      if (accessToken) {
-        await fetch('/.netlify/functions/admin-ban-user', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ userId, ban: banning }),
-        });
-      }
-    } catch {
-      // Non-fatal — profiles.blacklisted still blocks app access on next load
-    }
-
-    setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, blacklisted: banning } : u));
-    if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, blacklisted: banning }));
-    toast.success(currentBlacklisted ? 'User unblacklisted ✓' : 'User blacklisted ⛔');
+    setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, blacklisted: banning, ban_reason: reason } : u));
+    if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, blacklisted: banning, ban_reason: reason }));
+    toast.success(currentBlacklisted ? 'User unbanned ✓' : 'User banned ⛔');
     setBlacklistingId(null);
+  };
+
+  const blacklistUser = (userId, currentBlacklisted, userName) => {
+    if (!currentBlacklisted) {
+      setActionModal({ type: 'ban', userId, currentState: currentBlacklisted, userName });
+      setActionReason('');
+    } else {
+      blacklistUserWithReason(userId, currentBlacklisted, '');
+    }
+  };
+
   };
 
   const openAdminUser = (u) => {
@@ -1268,6 +1278,41 @@ export default function Settings() {
               </div>
             </div>
           </TabsContent>
+        )}
+
+        {/* ── Suspend / Ban reason modal ── */}
+        {actionModal && createPortal(
+          <div className="fixed inset-0 z-[99999] bg-black/50 flex items-center justify-center p-4" onClick={() => { setActionModal(null); setActionReason(''); }}>
+            <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl p-6 border border-border" onClick={e => e.stopPropagation()}>
+              <h2 className="text-base font-bold text-foreground mb-1">
+                {actionModal.type === 'ban' ? '⛔ Ban User' : '⏸ Suspend User'}
+              </h2>
+              <p className="text-xs text-muted-foreground mb-4">
+                {actionModal.userName && <span className="font-medium text-foreground">{actionModal.userName} — </span>}
+                {actionModal.type === 'ban'
+                  ? 'This will permanently block the user from accessing Skootlink.'
+                  : 'The user will be locked out until you lift the suspension.'}
+              </p>
+              <textarea
+                value={actionReason}
+                onChange={e => setActionReason(e.target.value)}
+                placeholder={`Reason for ${actionModal.type === 'ban' ? 'ban' : 'suspension'} (required)…`}
+                rows={3}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary mb-4"
+              />
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => { setActionModal(null); setActionReason(''); }}>Cancel</Button>
+                <Button
+                  className={`flex-1 ${actionModal.type === 'ban' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-500 hover:bg-amber-600'}`}
+                  disabled={!actionReason.trim()}
+                  onClick={confirmAction}
+                >
+                  Confirm {actionModal.type === 'ban' ? 'Ban' : 'Suspend'}
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body
         )}
 
         {/* ── Admin User Detail / Edit Modal ── */}
