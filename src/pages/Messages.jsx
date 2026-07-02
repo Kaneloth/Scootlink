@@ -455,6 +455,20 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
             <p className="text-xs font-medium text-destructive">Free chat credits used up</p>
             <p className="text-[11px] text-muted-foreground">Top up credits to start new conversations</p>
           </div>
+        ) : !isAdmin && creditBalance !== null && creditBalance < 3 ? (
+          <div className="flex-1 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium text-destructive">Not enough credits</p>
+              <p className="text-[11px] text-muted-foreground">You need at least 3 credits to send a message</p>
+            </div>
+            <Button
+              size="sm"
+              className="shrink-0 text-xs"
+              onClick={() => { onClose(); setTimeout(() => window.location.href = '/credits', 100); }}
+            >
+              Top Up
+            </Button>
+          </div>
         ) : (
           <>
             <Input
