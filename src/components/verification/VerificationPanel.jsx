@@ -282,16 +282,22 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     });
 
   const hasPaid = async (serviceType) => {
-    // Check if user has a recent verified_payment for this service_type
+    // Check if user has a recent verified_payment for this service_type —
+    // and that it actually covers the CURRENT price. A stale unused payment
+    // from before a price change (e.g. an old R15 SA ID payment that never
+    // got marked `used`) must not silently satisfy a higher new price.
     const { data } = await supabase
       .from('verification_payments')
-      .select('id')
+      .select('id, amount')
       .eq('user_id', user?.id)
       .eq('service_type', serviceType)
       .eq('status', 'paid')
       .eq('used', false)
       .maybeSingle();
-    return !!data;
+    if (!data) return false;
+    const requiredAmount = PRICES[serviceType]?.amount ?? 0;
+    if (data.amount != null && Number(data.amount) < requiredAmount) return false;
+    return true;
   };
 
   const refundCredits = async (serviceType, setRefundCredits) => {
