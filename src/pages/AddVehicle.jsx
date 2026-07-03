@@ -18,11 +18,9 @@ export default function AddVehicle() {
   const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
   const [searchParams] = useSearchParams();
-
   const editingId  = searchParams.get('id');
   const isRelist   = searchParams.get('relist') === '1';
   const isEditMode = !!editingId;
-
   const [loadingExisting, setLoadingExisting] = useState(isEditMode);
   const [listingPrice, setListingPrice] = useState(null);
 
@@ -37,7 +35,7 @@ export default function AddVehicle() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data } = await supabase.rpc('get_listing_price', { p_owner_id: user.id });
-      setListingPrice(data ?? 30);
+      setListingPrice(data ?? 250);
     })();
   }, [isEditMode]);
 
@@ -53,7 +51,6 @@ export default function AddVehicle() {
     storage_type:           'owner_address',
     pickup_return_location: '',
   });
-
   const [images,    setImages]    = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -68,7 +65,6 @@ export default function AddVehicle() {
           .eq('id', editingId)
           .single();
         if (error) throw error;
-
         setForm({
           vehicle_type:           data.type || 'scooter',
           make:                   data.make || '',
@@ -125,15 +121,14 @@ export default function AddVehicle() {
         // Relist = pay credits and reset the 6-month expiry clock
         if (isRelist) {
           // Count OTHER active vehicles (excluding this one) to determine tier:
-          // 0 others = 30cr (only vehicle), 1 other = 25cr, 2+ others = 20cr
+          // 0 others = 250cr (1st vehicle), 1 other = 200cr (2nd), 2+ others = 175cr (3rd+)
           const { data: otherVehicles } = await supabase
             .from('vehicles')
             .select('id', { count: 'exact' })
             .eq('owner_id', user.id)
             .neq('id', editingId);
-
           const otherCount = otherVehicles?.length ?? 0;
-          const relistCost = otherCount === 0 ? 30 : otherCount === 1 ? 25 : 20;
+          const relistCost = otherCount === 0 ? 250 : otherCount === 1 ? 200 : 175;
 
           const { error: deductErr } = await supabase.rpc('deduct_credits', {
             p_user_id:     user.id,
@@ -158,7 +153,6 @@ export default function AddVehicle() {
             reminder_1d_sent: false,
           }).eq('id', editingId);
         }
-
         return result;
       }
 
@@ -166,7 +160,7 @@ export default function AddVehicle() {
       // Check credits BEFORE inserting to avoid orphan rows if payment fails.
       // get_listing_price tells us the tier cost without charging yet.
       const { data: tierPrice } = await supabase.rpc('get_listing_price', { p_owner_id: user.id });
-      const creditCost = tierPrice ?? 30;
+      const creditCost = tierPrice ?? 250;
 
       // Check balance
       const { data: balance } = await supabase.rpc('get_credit_balance', { p_user_id: user.id });
@@ -179,7 +173,6 @@ export default function AddVehicle() {
         .insert(dbRow)
         .select('*')
         .single();
-
       if (error) throw new Error(error.message);
 
       // Charge tiered listing fee directly using the already-calculated creditCost
@@ -190,7 +183,6 @@ export default function AddVehicle() {
         p_description: 'Vehicle listing',
         p_ref_id:     String(result.id),
       });
-
       if (deductErr) {
         await supabase.from('vehicles').delete().eq('id', result.id);
         if (deductErr.message?.includes('insufficient_credits')) {
@@ -265,7 +257,6 @@ export default function AddVehicle() {
     // Only set status to 'available' for brand new listings —
     // editing/relisting must not override 'rented' or other states
     if (!isEditMode) payload.status = 'available';
-
     mutation.mutate(payload);
   };
 
@@ -300,7 +291,7 @@ export default function AddVehicle() {
         <div className="mb-4 p-3 rounded-xl bg-primary/5 border border-primary/20">
           <p className="text-xs text-primary">
             💳 Listing this vehicle costs <strong>{listingPrice} credits</strong>
-            {listingPrice < 30 && ' (discounted rate for additional vehicles)'}.
+            {listingPrice < 250 && ' (discounted rate for additional vehicles)'}.
           </p>
         </div>
       )}
@@ -317,7 +308,6 @@ export default function AddVehicle() {
               </SelectContent>
             </Select>
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Make *</Label>
@@ -328,7 +318,6 @@ export default function AddVehicle() {
               <Input className="mt-1" placeholder="PCX 150" value={form.model} onChange={e => update('model', e.target.value)} />
             </div>
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Year</Label>
@@ -339,13 +328,11 @@ export default function AddVehicle() {
               <Input className="mt-1" placeholder="ABC 123 GP" value={form.plate} onChange={e => update('plate', e.target.value)} />
             </div>
           </div>
-
           <div>
             <Label>Location *</Label>
             <Input className="mt-1" placeholder="Johannesburg CBD" value={form.location} onChange={e => update('location', e.target.value)} />
             <p className="text-[11px] text-muted-foreground mt-1">This will be geocoded so drivers can find you in proximity searches.</p>
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Storage Type</Label>
@@ -367,7 +354,6 @@ export default function AddVehicle() {
               />
             </div>
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Weekly Price (ZAR) *</Label>
@@ -378,7 +364,6 @@ export default function AddVehicle() {
               <Input className="mt-1" type="number" placeholder="1000" value={form.deposit} onChange={e => update('deposit', e.target.value)} />
             </div>
           </div>
-
           <div>
             <Label>Photos (up to 3)</Label>
             <div className="mt-2 flex gap-3 flex-wrap">
@@ -408,7 +393,6 @@ export default function AddVehicle() {
               )}
             </div>
           </div>
-
           <Button onClick={handleSubmit} className="w-full mt-2" disabled={mutation.isPending}>
             {mutation.isPending
               ? (isRelist ? 'Re-listing…' : isEditMode ? 'Saving…' : 'Listing…')
