@@ -50,6 +50,17 @@ export default function CreditBalance() {
     window.history.replaceState({}, '', newUrl);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Allow other parts of the app (e.g. an insufficient-credits prompt) to open
+  // this same purchase modal by dispatching a global event.
+  useEffect(() => {
+    const openModal = () => {
+      setShowModal(true);
+      window.dispatchEvent(new Event('skootlink:credit-modal-open'));
+    };
+    window.addEventListener('skootlink:open-topup-modal', openModal);
+    return () => window.removeEventListener('skootlink:open-topup-modal', openModal);
+  }, []);
+
   return (
     <>
       <button

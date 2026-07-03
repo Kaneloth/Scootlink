@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
-  Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle
+  Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
@@ -159,6 +159,9 @@ export default function Dashboard() {
   // 'edit'   = owner updating an already-accepted contract
   // 'review' = driver reading and confirming
   const [contractEditMode, setContractEditMode] = useState('accept');
+
+  // Insufficient-credits modal (shown when owner can't afford to finalise a rental)
+  const [showCreditsNeededModal, setShowCreditsNeededModal] = useState(false);
 
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
@@ -393,7 +396,7 @@ export default function Dashboard() {
         p_ref_id:      selectedProposal.id,
       });
       if (creditErr?.message?.includes('insufficient_credits')) {
-        toast.error('You need 200 credits to finalise this rental agreement. Top up in Settings → Credits.');
+        setShowCreditsNeededModal(true);
         return;
       }
     }
@@ -1425,6 +1428,48 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                   <Check className="w-4 h-4 mr-1" /> Confirm & Activate (200 cr)
                 </Button>
               )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Insufficient-credits prompt — shown when owner can't afford to finalise a rental */}
+      {showCreditsNeededModal && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40"
+          onClick={() => setShowCreditsNeededModal(false)}
+        >
+          <div
+            className="bg-card rounded-2xl shadow-xl max-w-sm w-full border border-border p-6 text-center space-y-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+              <Coins className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-bold text-foreground">You need more credits</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Finalising a rental agreement costs 200 credits. Top up your balance to continue.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowCreditsNeededModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 gap-1.5"
+                onClick={() => {
+                  setShowCreditsNeededModal(false);
+                  window.dispatchEvent(new Event('skootlink:open-topup-modal'));
+                }}
+              >
+                <Coins className="w-4 h-4" /> Top Up Credits
+              </Button>
             </div>
           </div>
         </div>,
