@@ -185,6 +185,7 @@ export default function FindDrivers() {
     return source.filter(u => {
       if (currentUser?.id && u.id === currentUser.id) return false; // never show yourself
       if (u.blacklisted) return false; // blacklisted users are hidden
+      if (u.profile_visible === false) return false; // user has hidden their profile from search
       if (ADMIN_EMAILS_FILTER.includes(u.email)) return false; // admin profile must never appear in search
       if (u.account_type !== 'driver' && u.account_type !== 'both') return false;
       if (!locationCoords && filters.location && !(u.location || '').toLowerCase().includes(filters.location.toLowerCase())) return false;

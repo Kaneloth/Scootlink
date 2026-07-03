@@ -73,6 +73,7 @@ export default function Profile() {
   const [userLoading,   setUserLoading]   = useState(true);
   const [avatarUrl,     setAvatarUrl]     = useState(null);
   const [avatarVisible, setAvatarVisible] = useState(true);
+  const [profileVisible, setProfileVisible] = useState(true);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   // Non-sensitive fields stored in user metadata
@@ -210,6 +211,7 @@ export default function Profile() {
         setAvatarUrl(u.avatar_url || null);
         fetchMyReviews(u.id);
         setAvatarVisible(u.avatar_visible !== false);
+        setProfileVisible(u.profile_visible !== false);
         setAccountType(u.account_type || 'driver');
         parseLocationIntoDropdowns(u.location || '');
         setForm({
@@ -348,6 +350,7 @@ export default function Profile() {
         license_year: form.license_year ? parseInt(form.license_year) : null,
         citizenship: form.citizenship,
         avatar_visible: avatarVisible,
+        profile_visible: profileVisible,
       };
 
       await auth.updateMe(metadataUpdates);
@@ -450,6 +453,7 @@ export default function Profile() {
         setUser(freshUser);
         setAvatarUrl(freshUser.avatar_url || null);
         setAvatarVisible(freshUser.avatar_visible !== false);
+        setProfileVisible(freshUser.profile_visible !== false);
         setForm({
           full_name:            freshUser.full_name || '',
           email:                freshUser.email || '',
@@ -541,6 +545,16 @@ export default function Profile() {
                 {avatarVisible
                   ? <><Eye className="w-3.5 h-3.5" /> Photo visible to others</>
                   : <><EyeOff className="w-3.5 h-3.5" /> Photo hidden from others</>}
+              </button>
+
+              {/* Profile visibility toggle — hides you entirely from driver/vehicle search */}
+              <button
+                onClick={() => setProfileVisible(v => !v)}
+                className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {profileVisible
+                  ? <><Eye className="w-3.5 h-3.5" /> Profile visible to others</>
+                  : <><EyeOff className="w-3.5 h-3.5" /> Profile hidden from others</>}
               </button>
             </div>
           </div>
