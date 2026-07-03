@@ -496,17 +496,19 @@ export default function Settings() {
       .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, id_document_number, id_document_type, created_at')
       .order('created_at', { ascending: false });
     if (!error) {
-      // Fetch credit balances for each user
+      // Fetch credit balances for each user via the same RPC the app uses for
+      // a user's own balance (SQL-side SUM — not subject to PostgREST's
+      // default 1000-row cap, unlike pulling all credit_ledger rows client-side).
       const userIds = (data || []).map(u => u.id);
       let creditMap = {};
       if (userIds.length > 0) {
-        const { data: credits } = await supabase
-          .from('credit_ledger')
-          .select('user_id, amount')
-          .in('user_id', userIds);
-        (credits || []).forEach(c => {
-          creditMap[c.user_id] = (creditMap[c.user_id] || 0) + c.amount;
-        });
+        const results = await Promise.all(
+          userIds.map(async (id) => {
+            const { data: bal, error: balErr } = await supabase.rpc('get_credit_balance', { p_user_id: id });
+            return [id, balErr ? 0 : (bal ?? 0)];
+          })
+        );
+        results.forEach(([id, bal]) => { creditMap[id] = bal; });
       }
       setAdminUsers((data || []).map(u => ({ ...u, credit_balance: creditMap[u.id] ?? 0 })));
     } else {
