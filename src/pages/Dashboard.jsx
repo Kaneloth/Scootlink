@@ -1600,8 +1600,8 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                 </Button>
               )}
               {contractEditMode === 'finalise' && (
-                <Button className="flex-1" disabled={!contractAgreed} onClick={handleOwnerFinalise}>
-                  <Check className="w-4 h-4 mr-1" /> Confirm & Activate (200 cr)
+                <Button className="flex-1 text-sm whitespace-nowrap" disabled={!contractAgreed} onClick={handleOwnerFinalise}>
+                  <Check className="w-4 h-4 mr-1 shrink-0" /> Confirm & Activate
                 </Button>
               )}
             </div>
