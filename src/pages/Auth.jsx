@@ -650,10 +650,10 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
 
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 mt-2">
           <img src="/favicon.png" alt="Skootlink" className="w-16 h-16 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-foreground">Skootlink</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -969,16 +969,6 @@ export default function Auth() {
                   )}
                 </>
               )}
-
-              <p className="text-center text-sm text-muted-foreground pt-1">
-                Don't have an account?{' '}
-                <button
-                  onClick={() => { setIsLogin(false); setLoginStage('idle'); setBannerReason(null); }}
-                  className="text-primary hover:underline"
-                >
-                  Create one
-                </button>
-              </p>
             </div>
           ) : (
             <div className="space-y-4">
