@@ -10,7 +10,11 @@
  *   0. email_grants table   — blocks re-registration with same email
  *   1. credit_ledger check  — blocks duplicate grants for active user_id
  *   2. phone_fingerprints   — one grant per unique phone number
- *   3. IP rate limit        — max 2 grants per IP per 30 days
+ *   3. IP rate limit        — max 2 grants per IP, ever
+ *      (lifetime cap, not time-boxed: a rolling window doesn't stop someone
+ *      from waiting it out and re-signing up once their credits run low.
+ *      Kept slightly above 1 for SA mobile carrier-grade NAT, where
+ *      unrelated real users can share one public IP.)
  *
  * POST body: { user_id, email, phone, profile_type }
  */
@@ -21,7 +25,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
 
-const IP_MAX_GRANTS = 1;
+const IP_MAX_GRANTS = 2;
 
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
