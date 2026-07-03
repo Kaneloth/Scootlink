@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ShieldCheck, Loader2, Camera, Users, Image as ImageIcon } from 'lucide-react';
+import { ShieldCheck, Loader2, Camera, Eye, EyeOff, Users } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import StarRating from '@/components/reviews/StarRating';
 import { toast } from 'sonner';
@@ -581,12 +581,23 @@ export default function Profile() {
                   <span className="text-xs text-muted-foreground">({user.total_reviews} reviews)</span>
                 )}
               </div>
+
+              {/* Photo visibility toggle — saves immediately */}
+              <button
+                onClick={() => savingVisibility === null && handleToggleAvatarVisible()}
+                disabled={savingVisibility === 'avatar'}
+                className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-60"
+              >
+                {avatarVisible
+                  ? <><Eye className="w-3.5 h-3.5" /> Photo visible to others</>
+                  : <><EyeOff className="w-3.5 h-3.5" /> Photo hidden from others</>}
+              </button>
             </div>
           </div>
         </Card>
       ) : null}
 
-      {/* Privacy — self-saving toggles, same style as the Settings page switches */}
+      {/* Privacy — self-saving toggle, same style as the Settings page switches */}
       {user && (
         <Card className="p-2 mb-4 border border-border/50">
           <div
@@ -604,24 +615,6 @@ export default function Profile() {
             </div>
             <div className={`h-6 w-10 rounded-full relative transition-colors shrink-0 ${profileVisible ? 'bg-primary' : 'bg-gray-300'}`}>
               <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${profileVisible ? 'right-1' : 'left-1'}`} />
-            </div>
-          </div>
-
-          <div
-            className={`flex items-center justify-between p-4 rounded-xl transition-colors ${savingVisibility === 'avatar' ? 'opacity-60' : 'cursor-pointer hover:bg-accent'}`}
-            onClick={() => savingVisibility === null && handleToggleAvatarVisible()}
-          >
-            <div className="flex items-center gap-3">
-              <ImageIcon className="w-5 h-5 text-muted-foreground" />
-              <div className="text-left">
-                <p className="text-sm font-medium text-foreground">Photo Visibility</p>
-                <p className="text-xs text-muted-foreground">
-                  {avatarVisible ? 'Visible to others' : 'Hidden from others'}
-                </p>
-              </div>
-            </div>
-            <div className={`h-6 w-10 rounded-full relative transition-colors shrink-0 ${avatarVisible ? 'bg-primary' : 'bg-gray-300'}`}>
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${avatarVisible ? 'right-1' : 'left-1'}`} />
             </div>
           </div>
         </Card>
