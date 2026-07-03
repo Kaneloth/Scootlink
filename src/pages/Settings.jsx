@@ -282,7 +282,9 @@ export default function Settings() {
   const [fontSize, setFontSize] = useState('16px');
   const [signInMethod, setSignInMethod] = useState('password');
   const [user, setUser] = useState(null);
-  const [notifications, setNotifications] = useState(true);
+  const [notifications, setNotifications] = useState(() =>
+    localStorage.getItem('scootlink_notifications') !== 'false'
+  );
   const [biometricLoading, setBiometricLoading] = useState(false);
 
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -790,16 +792,6 @@ export default function Settings() {
               </div>
             )}
 
-            <button onClick={() => navigate('/profile')} className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors">
-              <div className="flex items-center gap-3">
-                <UserIcon className="w-5 h-5 text-muted-foreground" />
-                <div className="text-left">
-                  <p className="text-sm font-medium text-foreground">Account Profile</p>
-                  <p className="text-xs text-muted-foreground">Edit personal details</p>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </button>
 
             <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent" onClick={toggleNotifications}>
               <div className="flex items-center gap-3">
@@ -851,13 +843,6 @@ export default function Settings() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer">
-              <div className="flex items-center gap-3">
-                <Globe className="w-5 h-5 text-muted-foreground" />
-                <div className="text-left">
-                  <p className="text-sm font-medium text-foreground">Language</p>
-                  <p className="text-xs text-muted-foreground">English</p>
-                </div>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
@@ -1023,11 +1008,6 @@ export default function Settings() {
               )}
             </div>
 
-            {/* Two-factor placeholder */}
-            <div className="p-4 rounded-xl bg-card border">
-              <h3 className="text-sm font-medium">Two-factor authentication</h3>
-              <p className="text-xs text-muted-foreground">Coming soon</p>
-            </div>
 
             {/* ── Delete account ── */}
             <div className="p-4 rounded-xl bg-card border border-destructive/30">
