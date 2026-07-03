@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ShieldCheck, Loader2, Camera, Eye, EyeOff } from 'lucide-react';
+import { ShieldCheck, Loader2, Camera, Users, Image as ImageIcon } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import StarRating from '@/components/reviews/StarRating';
 import { toast } from 'sonner';
@@ -74,6 +74,7 @@ export default function Profile() {
   const [avatarUrl,     setAvatarUrl]     = useState(null);
   const [avatarVisible, setAvatarVisible] = useState(true);
   const [profileVisible, setProfileVisible] = useState(true);
+  const [savingVisibility, setSavingVisibility] = useState(null); // 'avatar' | 'profile' | null
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   // Non-sensitive fields stored in user metadata
@@ -302,6 +303,52 @@ export default function Profile() {
     }
   };
 
+  // Both visibility toggles save immediately on click — same proven pattern as
+  // avatar upload above (auth.updateMe + a direct profiles upsert). They no
+  // longer depend on the person also finding and pressing the main "Save"
+  // button on the Edit Info tab, which is why the setting wasn't sticking.
+  const handleToggleAvatarVisible = async () => {
+    const next = !avatarVisible;
+    setAvatarVisible(next); // optimistic
+    setSavingVisibility('avatar');
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('Not signed in');
+      await auth.updateMe({ avatar_visible: next });
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({ id: authUser.id, avatar_visible: next }, { onConflict: 'id' });
+      if (error) throw error;
+      toast.success(next ? 'Photo is now visible to others' : 'Photo is now hidden from others');
+    } catch (err) {
+      setAvatarVisible(!next); // roll back
+      toast.error('Could not update photo visibility: ' + err.message);
+    } finally {
+      setSavingVisibility(null);
+    }
+  };
+
+  const handleToggleProfileVisible = async () => {
+    const next = !profileVisible;
+    setProfileVisible(next); // optimistic
+    setSavingVisibility('profile');
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('Not signed in');
+      await auth.updateMe({ profile_visible: next });
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({ id: authUser.id, profile_visible: next }, { onConflict: 'id' });
+      if (error) throw error;
+      toast.success(next ? 'Profile is now visible to others' : 'Profile is now hidden from search');
+    } catch (err) {
+      setProfileVisible(!next); // roll back
+      toast.error('Could not update profile visibility: ' + err.message);
+    } finally {
+      setSavingVisibility(null);
+    }
+  };
+
   const handleSave = async () => {
     if (!form.full_name.trim()) { toast.error('Full name is required'); return; }
     if (!form.phone.trim()) { toast.error('Phone number is required'); return; }
@@ -349,8 +396,6 @@ export default function Profile() {
         license_number: form.license_number,
         license_year: form.license_year ? parseInt(form.license_year) : null,
         citizenship: form.citizenship,
-        avatar_visible: avatarVisible,
-        profile_visible: profileVisible,
       };
 
       await auth.updateMe(metadataUpdates);
@@ -536,30 +581,51 @@ export default function Profile() {
                   <span className="text-xs text-muted-foreground">({user.total_reviews} reviews)</span>
                 )}
               </div>
-
-              {/* Visibility toggle */}
-              <button
-                onClick={() => setAvatarVisible(v => !v)}
-                className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {avatarVisible
-                  ? <><Eye className="w-3.5 h-3.5" /> Photo visible to others</>
-                  : <><EyeOff className="w-3.5 h-3.5" /> Photo hidden from others</>}
-              </button>
-
-              {/* Profile visibility toggle — hides you entirely from driver/vehicle search */}
-              <button
-                onClick={() => setProfileVisible(v => !v)}
-                className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {profileVisible
-                  ? <><Eye className="w-3.5 h-3.5" /> Profile visible to others</>
-                  : <><EyeOff className="w-3.5 h-3.5" /> Profile hidden from others</>}
-              </button>
             </div>
           </div>
         </Card>
       ) : null}
+
+      {/* Privacy — self-saving toggles, same style as the Settings page switches */}
+      {user && (
+        <Card className="p-2 mb-4 border border-border/50">
+          <div
+            className={`flex items-center justify-between p-4 rounded-xl transition-colors ${savingVisibility === 'profile' ? 'opacity-60' : 'cursor-pointer hover:bg-accent'}`}
+            onClick={() => savingVisibility === null && handleToggleProfileVisible()}
+          >
+            <div className="flex items-center gap-3">
+              <Users className="w-5 h-5 text-muted-foreground" />
+              <div className="text-left">
+                <p className="text-sm font-medium text-foreground">Profile Visibility</p>
+                <p className="text-xs text-muted-foreground">
+                  {profileVisible ? 'Visible in driver & vehicle search' : 'Hidden from search'}
+                </p>
+              </div>
+            </div>
+            <div className={`h-6 w-10 rounded-full relative transition-colors shrink-0 ${profileVisible ? 'bg-primary' : 'bg-gray-300'}`}>
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${profileVisible ? 'right-1' : 'left-1'}`} />
+            </div>
+          </div>
+
+          <div
+            className={`flex items-center justify-between p-4 rounded-xl transition-colors ${savingVisibility === 'avatar' ? 'opacity-60' : 'cursor-pointer hover:bg-accent'}`}
+            onClick={() => savingVisibility === null && handleToggleAvatarVisible()}
+          >
+            <div className="flex items-center gap-3">
+              <ImageIcon className="w-5 h-5 text-muted-foreground" />
+              <div className="text-left">
+                <p className="text-sm font-medium text-foreground">Photo Visibility</p>
+                <p className="text-xs text-muted-foreground">
+                  {avatarVisible ? 'Visible to others' : 'Hidden from others'}
+                </p>
+              </div>
+            </div>
+            <div className={`h-6 w-10 rounded-full relative transition-colors shrink-0 ${avatarVisible ? 'bg-primary' : 'bg-gray-300'}`}>
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${avatarVisible ? 'right-1' : 'left-1'}`} />
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Tabs defaultValue={defaultTab}>
         <TabsList className="grid w-full grid-cols-3 mb-4">
