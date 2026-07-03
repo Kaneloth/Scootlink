@@ -185,14 +185,11 @@ export default function FindDrivers() {
     return source.filter(u => {
       if (currentUser?.id && u.id === currentUser.id) return false; // never show yourself
       if (u.blacklisted) return false; // blacklisted users are hidden
-      // Admin account always appears in search results regardless of account_type
-      const isAdminUser = ADMIN_EMAILS_FILTER.includes(u.email);
-      if (!isAdminUser && u.account_type !== 'driver' && u.account_type !== 'both') return false;
+      if (ADMIN_EMAILS_FILTER.includes(u.email)) return false; // admin profile must never appear in search
+      if (u.account_type !== 'driver' && u.account_type !== 'both') return false;
       if (!locationCoords && filters.location && !(u.location || '').toLowerCase().includes(filters.location.toLowerCase())) return false;
-      if (!isAdminUser) {
-        if (filters.minExperience > 0 && u.license_year && (currentYear - u.license_year) < filters.minExperience) return false;
-        if (filters.minRating > 0 && (u.rating || 0) < filters.minRating) return false;
-      }
+      if (filters.minExperience > 0 && u.license_year && (currentYear - u.license_year) < filters.minExperience) return false;
+      if (filters.minRating > 0 && (u.rating || 0) < filters.minRating) return false;
       return true;
     });
   }, [rpcDrivers, users, filters, locationCoords, currentYear, currentUser]);

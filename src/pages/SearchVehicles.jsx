@@ -179,6 +179,17 @@ export default function SearchVehicles() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Admin's own listings must never appear in search results
+  const ADMIN_EMAILS_FILTER = ['kaneloth@skootlink.co.za'];
+  const { data: adminOwnerIds = [] } = useQuery({
+    queryKey:  ['admin-owner-ids'],
+    queryFn:   async () => {
+      const { data } = await supabase.from('profiles').select('id').in('email', ADMIN_EMAILS_FILTER);
+      return (data || []).map(p => p.id);
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Verification status — keyed by owner id for fast lookup
   const [verifiedOwnerIds,      setVerifiedOwnerIds]      = useState(new Set());
   const [fullyVerifiedOwnerIds, setFullyVerifiedOwnerIds] = useState(new Set());
@@ -225,6 +236,7 @@ export default function SearchVehicles() {
   const vehicles    = allVehicles.filter(v => {
     if (!(!user || v.owner_id !== user.id)) return false;
     if (blacklistedOwnerIds.includes(v.owner_id)) return false;
+    if (adminOwnerIds.includes(v.owner_id)) return false;
     if (verifiedOwnerFilter === 'id_verified'    && !verifiedOwnerIds.has(v.owner_id))      return false;
     if (verifiedOwnerFilter === 'fully_verified' && !fullyVerifiedOwnerIds.has(v.owner_id)) return false;
     return true;
