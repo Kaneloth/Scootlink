@@ -16,7 +16,7 @@ import { sendSMS } from '@/lib/sms';
 import { toast } from 'sonner';
 import { useCredits } from '@/hooks/useCredits';
 
-// Text size options stored as root font-size in px.
+// Text size options stored as root font-size in px
 const TEXT_SIZES = [
   { label: 'Normal',   value: '16px' },
   { label: 'Large',    value: '18px' },
