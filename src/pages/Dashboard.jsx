@@ -564,8 +564,11 @@ export default function Dashboard() {
     if (!selectedProposal) return;
 
     // Deduct 200 credits from the owner for accessing the rental agreement
+    // — admins are exempt from all credit gates.
     const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (currentUser) {
+    const isAdminUser = currentUser?.user_metadata?.is_admin === true
+      || ['kaneloth@skootlink.co.za'].includes(currentUser?.email);
+    if (currentUser && !isAdminUser) {
       const { error: creditErr } = await supabase.rpc('deduct_credits', {
         p_user_id:     currentUser.id,
         p_amount:      200,
@@ -1198,7 +1201,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       {availableForMe.length > 0 ? (
         <div className="space-y-3">
           {availableForMe.map(v => {
-            const isAdminUser = user?.user_metadata?.is_admin === true || ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
+            const isAdminUser = user?.user_metadata?.is_admin === true || ['kaneloth@skootlink.co.za'].includes(user?.email);
             const canRent = true; // credits checked at rental request stage
             return canRent ? (
               <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
@@ -1358,7 +1361,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
   const renderActionButtons = () => {
     if (!user) return <ActionButtonsSkeleton />;
 
-    const isAdminUser = user?.user_metadata?.is_admin === true || ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
+    const isAdminUser = user?.user_metadata?.is_admin === true || ['kaneloth@skootlink.co.za'].includes(user?.email);
 
     // Driver — single primary Find Vehicles button
     if (accountType === 'driver') {
