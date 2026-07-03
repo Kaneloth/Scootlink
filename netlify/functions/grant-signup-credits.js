@@ -27,6 +27,24 @@ const supabase = createClient(
 
 const IP_MAX_GRANTS = 2;
 
+// Records every attempt (granted or denied, and why) to a permanent audit
+// table — Netlify's own function logs rotate out too quickly to rely on.
+async function logAttempt({ user_id, email, ip, profile_type, granted, reason }) {
+  try {
+    await supabase.from('signup_grant_attempts').insert({
+      user_id: user_id || null,
+      email:   email ? email.toLowerCase().trim() : null,
+      ip,
+      profile_type: profile_type || null,
+      granted,
+      reason,
+    });
+  } catch (err) {
+    // Never let audit logging break the actual grant flow
+    console.error('[grant-signup-credits] Failed to write audit log:', err);
+  }
+}
+
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
@@ -56,6 +74,7 @@ export const handler = async (event) => {
     .maybeSingle();
   if (profileErr || !profile) {
     console.warn(`[grant-signup-credits] Unknown user_id=${user_id}`);
+    await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'invalid_user' });
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid user' }) };
   }
 
@@ -69,6 +88,7 @@ export const handler = async (event) => {
       .maybeSingle();
     if (emailFp) {
       console.warn(`[grant-signup-credits] Denied ${cleanEmail} — email already received bonus`);
+      await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'email_known' });
       return { statusCode: 200, body: JSON.stringify({ granted: 0, reason: 'email_known' }) };
     }
   }
@@ -81,6 +101,7 @@ export const handler = async (event) => {
     .eq('type', 'signup_bonus')
     .maybeSingle();
   if (existing) {
+    await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'already_granted' });
     return { statusCode: 200, body: JSON.stringify({ granted: 0, reason: 'already_granted' }) };
   }
 
@@ -94,6 +115,7 @@ export const handler = async (event) => {
       .maybeSingle();
     if (phoneFp?.credit_granted) {
       console.warn(`[grant-signup-credits] Denied user=${user_id} — phone already used`);
+      await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'phone_known' });
       return { statusCode: 200, body: JSON.stringify({ granted: 0, reason: 'phone_known' }) };
     }
     await supabase
@@ -110,6 +132,7 @@ export const handler = async (event) => {
     await supabase.from('ip_signups').insert({ ip, user_id });
     if ((count ?? 0) >= IP_MAX_GRANTS) {
       console.warn(`[grant-signup-credits] Denied user=${user_id} — IP limit reached (ip=${ip})`);
+      await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'ip_limit' });
       return { statusCode: 200, body: JSON.stringify({ granted: 0, reason: 'ip_limit' }) };
     }
   }
@@ -134,10 +157,12 @@ export const handler = async (event) => {
   });
   if (creditErr) {
     console.error('[grant-signup-credits] add_credits failed:', creditErr);
+    await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'error' });
     return { statusCode: 500, body: JSON.stringify({ error: creditErr.message }) };
   }
 
   console.log(`[grant-signup-credits] Granted ${freeCredits} credits to user=${user_id} type=${profile_type} ip=${ip}`);
+  await logAttempt({ user_id, email, ip, profile_type, granted: freeCredits, reason: 'clean_identity' });
   return {
     statusCode: 200,
     body: JSON.stringify({ granted: freeCredits, reason: 'clean_identity' }),
