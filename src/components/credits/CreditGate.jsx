@@ -11,8 +11,20 @@ import { useCredits } from '@/hooks/useCredits';
 export default function CreditGate({ required = 1, children, message }) {
   const { balance, loading } = useCredits();
   const [showModal, setShowModal] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  React.useEffect(() => {
+    import('@/api/supabaseClient').then(({ supabase }) => {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user?.user_metadata?.is_admin) setIsAdmin(true);
+      });
+    });
+  }, []);
 
   if (loading) return null;
+
+  // Admins bypass all credit gates
+  if (isAdmin) return children;
 
   if (balance < required) {
     return (

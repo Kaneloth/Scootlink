@@ -134,12 +134,11 @@ async function deleteAccount(accessToken) {
 
 // ── Inline credits widget for Settings tab ────────────────────────────────
 const CREDIT_COSTS = [
-  { icon: '💬', action: 'Start a new chat',        cost: '3 credits'  },
-  { icon: '🚗', action: 'List a vehicle (1st)',     cost: '30 credits' },
-  { icon: '🚗', action: 'List a vehicle (2nd)',     cost: '25 credits' },
-  { icon: '🚗', action: 'List a vehicle (3rd+)',    cost: '20 credits' },
-  { icon: '📝', action: 'Access rental agreement', cost: '15 credits' },
-  { icon: '🛡️', action: 'Verified badge',          cost: 'R50 once-off' },
+  { icon: '💬', action: 'Start a chat',                    cost: '50 credits'  },
+  { icon: '🚗', action: 'List a vehicle (1st)',             cost: '250 credits' },
+  { icon: '🚗', action: 'List a vehicle (2nd)',             cost: '200 credits' },
+  { icon: '🚗', action: 'List a vehicle (3rd+)',            cost: '175 credits' },
+  { icon: '📝', action: 'Sign a rental contract',           cost: '200 credits' },
 ];
 
 function CreditBalanceWidget() {
