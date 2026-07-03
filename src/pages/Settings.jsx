@@ -842,11 +842,6 @@ export default function Settings() {
                 ))}
               </div>
             </div>
-
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </div>
-
             {/* Privacy Policy – open static HTML in new tab */}
             <a
               href="/Privacy%20Policy.html"
