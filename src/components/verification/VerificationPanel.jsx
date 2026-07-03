@@ -121,7 +121,7 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
           </div>
           <div>
             <p className="font-semibold text-foreground">{price.label}</p>
-            <p className="text-xs text-muted-foreground">One-time verification fee</p>
+            <p className="text-xs text-muted-foreground">One-time verification fee — R{price.amount}</p>
           </div>
         </div>
 
@@ -138,7 +138,7 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
         <div className="flex gap-3">
           <Button variant="outline" className="flex-1" onClick={onCancel}>Cancel</Button>
           <Button className="flex-1 gap-2" onClick={handlePayFast}>
-            Pay Securely
+            Pay Securely — R{price.amount}
           </Button>
         </div>
       </div>
