@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { auth, Vehicle, Rental, supabase } from '@/api/supabaseData';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -269,7 +269,9 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
                   ? <span className="text-green-700 font-medium">🛡️ Fully Verified</span>
                   : profile.id_verified
                     ? <span className="text-green-600 font-medium">✅ ID Verified</span>
-                    : null}
+                    : profile.licence_verified
+                      ? <span className="text-green-600 font-medium">🪪 Licence Verified</span>
+                      : null}
               </p>
             </div>
           </div>
@@ -279,7 +281,6 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
             {row('Gender',       profile.gender ? profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1) : null)}
             {row('Citizenship',  profile.citizenship)}
             {row('City / Area',  profile.location)}
-            {row('Address',      profile.residential_address, { wrap: true, right: true })}
             {row('Licence No.',  profile.license_number, { mono: true })}
             {profile.license_year && (
               <div className="flex justify-between px-4 py-2.5">
@@ -315,6 +316,7 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [user, setUser] = useState(null);
   const [freshAccountType, setFreshAccountType] = useState(null);
  
@@ -920,6 +922,24 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     setSelectedProposal(null);
     setContractAgreed(false);
   };
+
+  // Deep-link support: a notification's "View" link can point here with
+  // ?proposalId=<rental_id> to jump straight to that pending proposal.
+  useEffect(() => {
+    const proposalId = searchParams.get('proposalId');
+    if (!proposalId || ownerPendingRentals.length === 0) return;
+    const rental = ownerPendingRentals.find(r => String(r.id) === String(proposalId));
+    if (rental) {
+      openContractModal(rental, 'accept');
+      scrollToSection(ownerAssignmentsRef);
+    }
+    // Clear the param so refreshing/closing doesn't keep re-opening the modal
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('proposalId');
+      return next;
+    }, { replace: true });
+  }, [ownerPendingRentals, searchParams]);
 
   // Owner withdraws the contract they sent — cancelled removes it from both views
   const handleWithdrawContract = async (rental) => {
