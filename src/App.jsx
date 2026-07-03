@@ -10,6 +10,9 @@ import { supabase } from '@/api/supabaseClient';
 
 import Auth from '@/pages/Auth';
 import LandingPage from '@/pages/LandingPage';
+import Blog from '@/pages/Blog';
+import BlogPost from '@/pages/BlogPost';
+import CityLandingPage from '@/pages/CityLandingPage';
 import Credits from '@/pages/Credits';
 import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/Dashboard';
@@ -35,6 +38,13 @@ const AuthenticatedApp = () => {
   React.useEffect(() => {
     const path = window.location.pathname;
     const publicPaths = ['/', '/auth', '/Privacy%20Policy.html', '/Terms%20and%20Conditions.html', '/Privacy Policy.html', '/Terms and Conditions.html', '/delete-account.html'];
+    // Blog and city landing pages are public SEO/marketing content — they must
+    // stay reachable by anonymous visitors and search engine crawlers. The
+    // exact-match check above would otherwise redirect every one of them
+    // straight to /auth before the content ever renders.
+    const isPublicPath = publicPaths.includes(path)
+      || path === '/blog' || path.startsWith('/blog/')
+      || /^\/rent-a-car-for-uber-[a-z-]+$/.test(path);
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     const oauthError = params.get('error');
@@ -83,7 +93,7 @@ const AuthenticatedApp = () => {
         } else {
           window.location.replace('/home');
         }
-      } else if (!session && !publicPaths.includes(path)) {
+      } else if (!session && !isPublicPath) {
         window.location.replace('/auth');
       } else {
         setSupabaseChecked(true);
@@ -111,6 +121,9 @@ const AuthenticatedApp = () => {
     <Routes>
       {/* Public — no auth */}
       <Route path="/" element={<LandingPage />} />
+      <Route path="/blog" element={<Blog />} />
+      <Route path="/blog/:slug" element={<BlogPost />} />
+      <Route path="/rent-a-car-for-uber-:city" element={<CityLandingPage />} />
 
       {/* Auth */}
       <Route path="/auth" element={<Auth />} />

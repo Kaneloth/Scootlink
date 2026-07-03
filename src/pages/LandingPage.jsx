@@ -410,7 +410,7 @@ function Footer() {
                 onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
               >{label}</a>
             ))}
-            <a href="#" style={styles.footerLink} onMouseEnter={e => (e.currentTarget.style.color = "#fff")} onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}>Blog</a>
+            <a href="/blog" style={styles.footerLink} onMouseEnter={e => (e.currentTarget.style.color = "#fff")} onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}>Blog</a>
           </div>
           <div>
             <h4 style={styles.footerH4}>Legal</h4>
