@@ -20,14 +20,23 @@ import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
+// sa_id: R49 covers the R32.89 real cost (1cr said_verification + 10cr Face
+// Match against the Home Affairs photo) with ~49% margin.
+// passport: R35 covers the R20.93 real cost (6cr id-document-verify OCR +
+// 1cr Face Match Standard) with ~67% margin — see verify-identity.js for
+// the passport flow, which now also fixes a previously-undocumented
+// reportType by switching to VerifyNow's documented /id-document-verify
+// endpoint (the same one already used for driver's licence verification).
 const PRICES = {
-  sa_id:    { label: 'RSA ID Verification',       amount: 15 },
+  sa_id:    { label: 'RSA ID Verification',       amount: 49 },
   passport: { label: 'Passport Verification',      amount: 35 },
   licence:  { label: "Driver's Licence Verification", amount: 35 },
 };
 
-// Lowest package: R39 / 15 credits = R2.60/cr → refund = Math.floor(price / 2.60)
-const PRICE_PER_CREDIT = 39 / 15; // ~R2.60
+// Refund-credit conversion rate — was still referencing the old R39/15cr
+// Starter Pack pricing from before the credit packages were repriced.
+// Current Starter Pack: R49 / 240 credits = R0.2042/credit.
+const PRICE_PER_CREDIT = 49 / 240; // ~R0.2042/credit
 const creditsForRefund = (priceZar) => Math.floor(priceZar / PRICE_PER_CREDIT);
 
 // ── Image uploader sub-component ──────────────────────────────────────────────
@@ -187,14 +196,55 @@ function StatusBadge({ status, message, credits, onRequestRefund }) {
   return null;
 }
 
+// ── Selfie capture sub-component ────────────────────────────────────────────
+// Uses capture="user" to prefer the front-facing camera on mobile. Required
+// for SA ID verification — VerifyNow's Face Match check compares this photo
+// against the Home Affairs photo on file for the entered ID number.
+function SelfieCapture({ file, onChange }) {
+  const ref = useRef();
+  return (
+    <div>
+      <Label className="text-xs">Selfie Photo</Label>
+      <p className="text-[10px] text-muted-foreground mb-1">
+        A clear, well-lit photo of your face — used to confirm you are the person on the ID
+      </p>
+      <div
+        className="mt-1 flex flex-col items-center gap-2 cursor-pointer"
+        onClick={() => ref.current?.click()}
+      >
+        <input
+          ref={ref}
+          type="file"
+          accept="image/*"
+          capture="user"
+          className="hidden"
+          onChange={e => onChange(e.target.files[0] || null)}
+        />
+        <div className={`w-24 h-24 rounded-full border-2 border-dashed flex items-center justify-center overflow-hidden transition-colors ${
+          file ? 'border-primary/40 bg-primary/5' : 'border-border hover:border-primary/30'
+        }`}>
+          {file ? (
+            <img src={URL.createObjectURL(file)} alt="selfie preview" className="w-full h-full object-cover" />
+          ) : (
+            <Upload className="w-6 h-6 text-muted-foreground" />
+          )}
+        </div>
+        <p className="text-xs text-primary font-medium">{file ? 'Tap to retake' : 'Tap to take a selfie'}</p>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function VerificationPanel({ user, accountType, onUserUpdated }) {
   // ID verification state
   const [idTab,              setIdTab]              = useState('sa_id');
   const [saId,               setSaId]               = useState('');
+  const [saIdSelfie,         setSaIdSelfie]         = useState(null);
   const [passportNumber,     setPassportNumber]     = useState('');
   const [passportFront,      setPassportFront]      = useState(null);
   const [passportBack,       setPassportBack]       = useState(null);
+  const [passportSelfie,     setPassportSelfie]     = useState(null);
   const [idStatus,           setIdStatus]           = useState('');
   const [idMsg,              setIdMsg]              = useState('');
   const [idRefundCredits,    setIdRefundCredits]    = useState(0);
@@ -275,18 +325,23 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     if (!saId.trim() || saId.replace(/\s/g, '').length !== 13) {
       toast.error('Please enter a valid 13-digit SA ID number'); return;
     }
+    if (!saIdSelfie) {
+      toast.error('Please take a selfie — it\'s required to confirm you are the ID holder'); return;
+    }
     const paid = await hasPaid('sa_id');
     if (!paid) { setPaymentModal('sa_id'); setPendingVerify(() => doVerifySaId); return; }
 
     setIdStatus('verifying'); setIdMsg('');
     try {
+      const selfieB64 = await compressImage(saIdSelfie);
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/.netlify/functions/verify-identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
-          documentType: 'sa_id',
-          idNumber:     saId.trim(),
+          documentType:      'sa_id',
+          idNumber:          saId.trim(),
+          selfieImageBase64: selfieB64,
         }),
       });
       const data = await res.json();
@@ -294,6 +349,9 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
         setIdStatus('verified'); setIdMsg(data.message || 'SA ID verified successfully.');
         toast.success('Identity verified! Your ✅ ID Verified badge has been updated.');
         onUserUpdated?.();
+      } else if (data.alreadyVerified) {
+        // Locked — identity was already successfully verified previously
+        setIdStatus('verified'); setIdMsg(data.message || 'Your identity is already verified.');
       } else {
         // VerifyNow was contacted and returned a negative result — no refund
         setIdStatus('failed'); setIdMsg(data.message || 'Verification failed. Please check your ID number and try again.');
@@ -312,24 +370,26 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   const doVerifyPassport = async () => {
     if (!passportNumber.trim()) { toast.error('Please enter your passport number'); return; }
     if (!passportFront || !passportBack) { toast.error('Please upload both passport photos as required by VerifyNow'); return; }
+    if (!passportSelfie) { toast.error('Please take a selfie — it\'s required to confirm you are the passport holder'); return; }
 
     const paid = await hasPaid('passport');
     if (!paid) { setPaymentModal('passport'); setPendingVerify(() => doVerifyPassport); return; }
 
     setIdStatus('verifying'); setIdMsg('');
     try {
-      const [frontB64, backB64] = await Promise.all([
-        compressImage(passportFront), compressImage(passportBack),
+      const [frontB64, backB64, selfieB64] = await Promise.all([
+        compressImage(passportFront), compressImage(passportBack), compressImage(passportSelfie),
       ]);
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/.netlify/functions/verify-identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
-          documentType:     'passport',
-          idNumber:         passportNumber.trim(), // verify-identity.js uses idNumber for both types
-          frontImageBase64: frontB64,
-          backImageBase64:  backB64,
+          documentType:      'passport',
+          idNumber:          passportNumber.trim(), // verify-identity.js uses idNumber for both types
+          frontImageBase64:  frontB64,
+          backImageBase64:   backB64,
+          selfieImageBase64: selfieB64,
         }),
       });
       const data = await res.json();
@@ -337,6 +397,9 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
         setIdStatus('verified'); setIdMsg(data.message || 'Passport verified successfully.');
         toast.success('Passport verified! Your ✅ ID Verified badge has been updated.');
         onUserUpdated?.();
+      } else if (data.alreadyVerified) {
+        // Locked — identity was already successfully verified previously
+        setIdStatus('verified'); setIdMsg(data.message || 'Your identity is already verified.');
       } else {
         // VerifyNow was contacted and returned a negative result — no refund
         setIdStatus('failed'); setIdMsg(data.message || 'Verification failed. Please check your passport details and photos.');
@@ -439,6 +502,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
                 <p className="text-[10px] text-amber-500 mt-1">{13 - saId.length} more digits needed</p>
               )}
             </div>
+            <SelfieCapture file={saIdSelfie} onChange={setSaIdSelfie} />
             <StatusBadge
               status={idStatus}
               message={idMsg}
@@ -480,6 +544,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
               file={passportBack}
               onChange={setPassportBack}
             />
+            <SelfieCapture file={passportSelfie} onChange={setPassportSelfie} />
             <StatusBadge
               status={idStatus}
               message={idMsg}
