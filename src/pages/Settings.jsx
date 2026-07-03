@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import {
-  Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
+  Moon, Sun, ChevronRight, ChevronDown, ChevronUp, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
   AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins,
 } from 'lucide-react';
@@ -27,10 +27,10 @@ const TEXT_SIZES = [
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 const CREDIT_PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 39,  credits: 15  },
-  { id: 'standard', label: 'Standard Pack', price: 59,  credits: 30, popular: true },
-  { id: 'pro',      label: 'Pro Pack',      price: 99,  credits: 60  },
-  { id: 'business', label: 'Business Pack', price: 199, credits: 200 },
+  { id: 'starter',  credits: 240,  price: 49  },
+  { id: 'standard', credits: 400,  price: 79,  popular: true },
+  { id: 'pro',      credits: 660,  price: 129 },
+  { id: 'business', credits: 1040, price: 199 },
 ];
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
@@ -133,11 +133,25 @@ async function deleteAccount(accessToken) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 // ── Inline credits widget for Settings tab ────────────────────────────────
+const CREDIT_COSTS = [
+  { icon: '💬', action: 'Start a chat',                    cost: '50 credits'  },
+  { icon: '🚗', action: 'List a vehicle (1st)',             cost: '250 credits' },
+  { icon: '🚗', action: 'List a vehicle (2nd)',             cost: '200 credits' },
+  { icon: '🚗', action: 'List a vehicle (3rd+)',            cost: '175 credits' },
+  { icon: '📝', action: 'Sign a rental contract',           cost: '200 credits' },
+];
+
 function CreditBalanceWidget() {
   const { balance, loading, refetch } = useCredits();
-  const [purchasing, setPurchasing] = React.useState(null);
+  const [purchasing,  setPurchasing]  = React.useState(null);
+  const [selectedPkg, setSelectedPkg] = React.useState(
+    CREDIT_PACKAGES.find(p => p.popular)?.id || CREDIT_PACKAGES[1].id
+  );
+  const [showCosts, setShowCosts] = React.useState(false);
 
-  const handlePurchase = async (pkg) => {
+  const handlePurchase = async () => {
+    const pkg = CREDIT_PACKAGES.find(p => p.id === selectedPkg);
+    if (!pkg) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
     setPurchasing(pkg.id);
@@ -165,16 +179,17 @@ function CreditBalanceWidget() {
     }
   };
 
+  const selected = CREDIT_PACKAGES.find(p => p.id === selectedPkg);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Balance */}
       <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20">
         <div>
           <p className="text-xs text-muted-foreground">Your credit balance</p>
           {loading
             ? <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin mt-1" />
-            : <p className="text-3xl font-bold text-primary">{balance}</p>
-          }
+            : <p className="text-3xl font-bold text-primary">{balance}</p>}
           <p className="text-xs text-muted-foreground mt-0.5">credits · never expire</p>
         </div>
         <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
@@ -182,50 +197,85 @@ function CreditBalanceWidget() {
         </div>
       </div>
 
-      {/* What credits cost */}
-      <div className="p-3 rounded-xl bg-muted/50 border border-border/50 space-y-1.5">
-        <p className="text-xs font-semibold text-foreground">Credit costs:</p>
-        {[
-          ['Start or reply to a new chat', 3],
-          ['List a vehicle', 10],
-          ['Access rental agreement', 15],
-          ['ID / licence verification', 30],
-        ].map(([action, cost]) => (
-          <div key={action} className="flex justify-between text-xs">
-            <span className="text-muted-foreground">{action}</span>
-            <span className="font-semibold">{cost} cr</span>
-          </div>
-        ))}
+      {/* Packages */}
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Choose a package</p>
+        <div className="space-y-2.5">
+          {CREDIT_PACKAGES.map(pkg => {
+            const isSelected = selectedPkg === pkg.id;
+            return (
+              <button
+                key={pkg.id}
+                onClick={() => setSelectedPkg(pkg.id)}
+                disabled={purchasing !== null}
+                className={`w-full text-left rounded-2xl border-2 px-4 py-3.5 transition-all disabled:opacity-60 ${
+                  isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-card hover:border-primary/40'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary' : 'border-muted-foreground/40'}`}>
+                      {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className={`text-xl font-extrabold ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                        {pkg.credits.toLocaleString()}
+                      </span>
+                      <span className="text-sm text-muted-foreground font-medium">credits</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {pkg.popular && (
+                      <span className="text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">🔥 POPULAR</span>
+                    )}
+                    <span className={`text-base font-bold ${isSelected ? 'text-primary' : 'text-foreground'}`}>R{pkg.price}</span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Packages */}
-      <p className="text-sm font-semibold text-foreground">Buy credits</p>
-      <div className="space-y-2">
-        {CREDIT_PACKAGES.map(pkg => (
-          <button
-            key={pkg.id}
-            onClick={() => handlePurchase(pkg)}
-            disabled={purchasing !== null}
-            className={`w-full text-left rounded-2xl border p-4 transition-all hover:border-primary disabled:opacity-60 ${pkg.popular ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
-          >
-            <div className="flex items-center justify-between">
-              <div>
+      {/* Pay button */}
+      <Button
+        onClick={handlePurchase}
+        disabled={purchasing !== null}
+        className="w-full h-12 text-base font-bold rounded-2xl gap-2"
+      >
+        {purchasing
+          ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+          : <>Pay R{selected?.price} — Get {selected?.credits.toLocaleString()} credits</>}
+      </Button>
+      <p className="text-center text-[11px] text-muted-foreground -mt-3">
+        Secure payment via card or EFT · Credits added instantly
+      </p>
+
+      {/* How far your credits go — collapsible */}
+      <div className="border border-border rounded-2xl overflow-hidden">
+        <button
+          onClick={() => setShowCosts(v => !v)}
+          className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+        >
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">How far your credits go</p>
+          {showCosts ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+        </button>
+        {showCosts && (
+          <div className="px-4 pb-4 space-y-2 border-t border-border pt-3">
+            {CREDIT_COSTS.map(({ icon, action, cost }) => (
+              <div key={action} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <p className="font-semibold text-sm">{pkg.label}</p>
-                  {pkg.popular && <span className="text-[10px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">POPULAR</span>}
+                  <span className="text-sm">{icon}</span>
+                  <p className="text-xs text-muted-foreground">{action}</p>
                 </div>
-                <p className="text-xs text-muted-foreground">{pkg.credits} credits</p>
+                <span className="text-xs font-semibold text-foreground shrink-0 ml-2">{cost}</span>
               </div>
-              <div className="text-right">
-                <p className="font-bold">R{pkg.price}</p>
-                {purchasing === pkg.id
-                  ? <Loader2 className="w-4 h-4 animate-spin text-primary ml-auto" />
-                  : <p className="text-[10px] text-muted-foreground">R{(pkg.price / pkg.credits).toFixed(2)}/cr</p>
-                }
-              </div>
+            ))}
+            <div className="pt-2 border-t border-border">
+              <p className="text-[11px] text-muted-foreground text-center">Credits never expire · Sign-up bonus included</p>
             </div>
-          </button>
-        ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -271,31 +321,6 @@ export default function Settings() {
   const [adminEditForm, setAdminEditForm] = useState(null);          // edit form state
   const [adminSaving, setAdminSaving] = useState(false);
   const [adminModalTab, setAdminModalTab] = useState('view');        // 'view' | 'edit'
-
-  // ── Plan tab — licence verification ─────────────────────────────────────
-  const [licencePlanStatus, setLicencePlanStatus] = useState('idle');
-  const [licencePlanMsg, setLicencePlanMsg]       = useState('');
-  const [licenceFrontFile, setLicenceFrontFile] = useState(null);
-  const [licenceBackFile,  setLicenceBackFile]  = useState(null);
-  const licenceFrontInputRef = useRef(null);
-  const licenceBackInputRef  = useRef(null);
-
-  // ── Plan tab — SA ID / Passport ──────────────────────────────────────────
-  const [idDocType, setIdDocType] = useState('sa_id');   // 'sa_id' | 'passport'
-  const [idDocNumber, setIdDocNumber] = useState('');
-  const [idDocError, setIdDocError] = useState('');
-
-  // Passport image upload
-  const [frontPassportFile, setFrontPassportFile] = useState(null);
-  const [backPassportFile,  setBackPassportFile]  = useState(null);
-  const frontInputRef = useRef(null);
-  const backInputRef  = useRef(null);
-
-  // ── Plan tab — cancel subscription ──────────────────────────────────────
-
-  // ── Identity verification (VerifyNow) ────────────────────────────────────
-  const [verifyIdStatus, setVerifyIdStatus] = useState('idle'); // idle | verifying | verified | failed
-  const [verifyIdMsg, setVerifyIdMsg] = useState('');
 
   useEffect(() => {
     const isDark = localStorage.getItem('theme') === 'dark';
@@ -449,227 +474,6 @@ export default function Settings() {
       setDeleting(false);
     }
   };
-
-  // ── SA ID DOB extraction ──────────────────────────────────────────────────
-
-  // Returns age from a 13-digit SA ID number, or null if invalid format.
-  function ageFromSAId(idNum) {
-    const clean = idNum.replace(/\s/g, '');
-    if (!/^\d{13}$/.test(clean)) return null;
-    const yy = parseInt(clean.slice(0, 2), 10);
-    const mm = parseInt(clean.slice(2, 4), 10);
-    const dd = parseInt(clean.slice(4, 6), 10);
-    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-    const currentYY = new Date().getFullYear() % 100;
-    const fullYear = yy <= currentYY ? 2000 + yy : 1900 + yy;
-    const dob = new Date(fullYear, mm - 1, dd);
-    const today = new Date();
-    let age = today.getFullYear() - dob.getFullYear();
-    const mo = today.getMonth() - dob.getMonth();
-    if (mo < 0 || (mo === 0 && today.getDate() < dob.getDate())) age--;
-    return age;
-  }
-
-  // Validate SA ID doc number on change and auto-flag under-18
-  const handleIdDocChange = (val) => {
-    setIdDocNumber(val);
-    setIdDocError('');
-    if (idDocType === 'sa_id') {
-      const clean = val.replace(/\s/g, '');
-      if (clean.length === 13) {
-        const age = ageFromSAId(clean);
-        if (age === null) {
-          setIdDocError('ID number format is invalid — please double-check.');
-        } else if (age < 18) {
-          setIdDocError('Your SA ID shows you are under 18. Skootlink is for adults only.');
-        }
-      }
-    }
-  };
-
-  // Pre-fill ID from saved profile when user loads
-  useEffect(() => {
-    if (user?.id_document_number) setIdDocNumber(user.id_document_number);
-    if (user?.id_document_type)   setIdDocType(user.id_document_type);
-    // If already verified, reflect that in the UI immediately
-    if (user?.verified) {
-      setVerifyIdStatus('verified');
-      setVerifyIdMsg('Identity previously verified ✓');
-    }
-  }, [user]);
-
-  const needsLicencePlan = true; // all users can verify licence
-
-  // ── Identity document verification via VerifyNow ─────────────────────────
-
-  const handleVerifyId = async () => {
-    // Validate inputs per document type
-    if (idDocType === 'sa_id') {
-      if (!idDocNumber.trim()) { toast.error('Please enter your SA ID number'); return; }
-      if (idDocNumber.replace(/\s/g, '').length !== 13) {
-        toast.error('SA ID must be exactly 13 digits'); return;
-      }
-      if (idDocError) { toast.error('Please fix the ID error before verifying'); return; }
-    } else {
-      if (!frontPassportFile || !backPassportFile) {
-        toast.error('Please upload both front and back passport images'); return;
-      }
-    }
-
-    // Deduct 30 credits before verifying
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (currentUser) {
-      const { error: creditErr } = await supabase.rpc('deduct_credits', {
-        p_user_id: currentUser.id, p_amount: 30, p_type: 'spend',
-        p_description: 'ID/passport verification', p_ref_id: 'verify-identity',
-      });
-      if (creditErr?.message?.includes('insufficient_credits')) {
-        toast.error('You need 30 credits to verify your identity. Buy more credits in the Credits tab.');
-        return;
-      }
-    }
-    setVerifyIdStatus('verifying');
-    setVerifyIdMsg('');
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
-
-      let requestBody = {};
-      if (idDocType === 'sa_id') {
-        requestBody = {
-          idNumber: idDocNumber.trim().toUpperCase(),
-          documentType: 'sa_id',
-        };
-      } else {
-        // Convert images to base64 for passport submission
-        const toBase64 = file => new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result); // data:image/jpeg;base64,...
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        const frontBase64 = await toBase64(frontPassportFile);
-        const backBase64  = await toBase64(backPassportFile);
-        requestBody = {
-          documentType:    'passport',
-          frontImageBase64: frontBase64,
-          backImageBase64:  backBase64,
-        };
-      }
-
-      const res = await fetch('/.netlify/functions/verify-identity', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(requestBody),
-      });
-      const data = await res.json();
-      if (data.verified) {
-        setVerifyIdStatus('verified');
-        setVerifyIdMsg(data.message || 'Identity verified successfully');
-        toast.success('Identity verified! Your ✅ ID Verified badge will appear on your profile.');
-        setUser(await loadUser());
-      } else {
-        setVerifyIdStatus('failed');
-        setVerifyIdMsg(data.message || 'Verification failed. Check your details and try again.');
-        toast.error(data.message || 'Verification failed. Contact support if this continues.');
-      }
-    } catch (err) {
-      setVerifyIdStatus('failed');
-      setVerifyIdMsg('Verification service unavailable. Please try again later.');
-      toast.error('Verification error: ' + (err.message || 'Unknown error'));
-    }
-  };
-
-  // Pre-fill: licence fields removed (image upload replaces number/year inputs)
-
-  // ── Plan tab — verify licence (image upload) ──────────────────────────────
-
-  const handleVerifyLicencePlan = async () => {
-    if (!licenceFrontFile || !licenceBackFile) {
-      toast.error('Please upload both the front and back of your driving licence');
-      return;
-    }
-    // Deduct 30 credits before verifying
-    const { data: { user: licUser } } = await supabase.auth.getUser();
-    if (licUser) {
-      const { error: licCreditErr } = await supabase.rpc('deduct_credits', {
-        p_user_id: licUser.id, p_amount: 30, p_type: 'spend',
-        p_description: 'Driving licence verification', p_ref_id: 'verify-licence',
-      });
-      if (licCreditErr?.message?.includes('insufficient_credits')) {
-        toast.error('You need 30 credits to verify your licence. Buy more credits in the Credits tab.');
-        return;
-      }
-    }
-    setLicencePlanStatus('verifying');
-    setLicencePlanMsg('');
-    try {
-      // Compress image to JPEG ≤ 1200px wide at 80% quality (~150-300 KB each)
-      // Keeps payload well under Netlify's 6 MB function limit
-      const compressImage = (file, maxPx = 1200, quality = 0.8) =>
-        new Promise((resolve, reject) => {
-          const img = new Image();
-          const url = URL.createObjectURL(file);
-          img.onload = () => {
-            const scale  = Math.min(1, maxPx / Math.max(img.width, img.height));
-            const canvas = document.createElement('canvas');
-            canvas.width  = Math.round(img.width  * scale);
-            canvas.height = Math.round(img.height * scale);
-            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-            URL.revokeObjectURL(url);
-            resolve(canvas.toDataURL('image/jpeg', quality));
-          };
-          img.onerror = reject;
-          img.src = url;
-        });
-
-      const [frontBase64, backBase64] = await Promise.all([
-        compressImage(licenceFrontFile),
-        compressImage(licenceBackFile),
-      ]);
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/.netlify/functions/verify-licence', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({
-          licenceFrontImageBase64: frontBase64,
-          licenceBackImageBase64:  backBase64,
-        }),
-      });
-      const result = await res.json();
-      // result.error = early-exit errors (auth, missing fields, etc.)
-      // result.message = VerifyNow result messages
-      const displayMsg = result.message || result.error || 'Could not verify your licence. Please try again.';
-      if (result.verified || result.pending) {
-        setLicencePlanStatus('verified');
-        setLicencePlanMsg(result.message || 'Driving licence verified successfully.');
-        toast.success(result.pending
-          ? 'Licence submitted — pending admin review. 🛡️'
-          : 'Driving licence verified! 🛡️ Fully Verified badge earned.');
-        setUser(await loadUser());
-      } else {
-        setLicencePlanStatus('failed');
-        setLicencePlanMsg(displayMsg);
-        toast.error(displayMsg);
-        // Log full server response to browser console for debugging
-        console.error('[verify-licence] Server response:', result);
-      }
-    } catch (err) {
-      setLicencePlanStatus('failed');
-      setLicencePlanMsg('Verification service unavailable. Please try again later.');
-      toast.error('Licence verification error. Please try again.');
-      console.error('[verify-licence] Fetch/parse error:', err);
-    }
-  };
-
 
   // ── User loader (merges customer_code which auth.me() may omit) ──────────
 
