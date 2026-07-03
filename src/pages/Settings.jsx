@@ -238,11 +238,7 @@ function CreditBalanceWidget() {
       </div>
 
       {/* Pay button */}
-      <Button
-        onClick={handlePurchase}
-        disabled={purchasing !== null}
-        className="w-full h-12 text-base font-bold rounded-2xl gap-2"
-      >
+      <Button onClick={handlePurchase} disabled={purchasing !== null} className="w-full h-12 text-base font-bold rounded-2xl gap-2">
         {purchasing
           ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
           : <>Pay R{selected?.price} — Get {selected?.credits.toLocaleString()} credits</>}
@@ -253,10 +249,7 @@ function CreditBalanceWidget() {
 
       {/* How far your credits go — collapsible */}
       <div className="border border-border rounded-2xl overflow-hidden">
-        <button
-          onClick={() => setShowCosts(v => !v)}
-          className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-muted/40 transition-colors"
-        >
+        <button onClick={() => setShowCosts(v => !v)} className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-muted/40 transition-colors">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">How far your credits go</p>
           {showCosts ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
         </button>
@@ -589,6 +582,28 @@ export default function Settings() {
     } else {
       toast.error('Failed to add credits: ' + error.message);
     }
+    setTogglingId(null);
+  };
+
+  const toggleAdminRole = async (userId, currentIsAdmin) => {
+    setTogglingId(userId + '_admin');
+    const granting = !currentIsAdmin;
+    try {
+      const { error: profileErr } = await supabase.from('profiles').update({ is_admin: granting }).eq('id', userId);
+      if (profileErr) throw profileErr;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (accessToken) {
+        await fetch('/.netlify/functions/admin-set-role', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ userId, is_admin: granting }),
+        });
+      }
+      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, is_admin: granting } : u));
+      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, is_admin: granting }));
+      toast.success(granting ? '✅ Admin rights granted' : 'Admin rights removed');
+    } catch (err) { toast.error('Failed to update admin role: ' + err.message); }
     setTogglingId(null);
   };
 
@@ -1401,7 +1416,7 @@ export default function Settings() {
                       </div>
                     </div>
                     {/* Quick actions */}
-                    <div className="grid grid-cols-3 gap-2 pt-1">
+                    <div className="grid grid-cols-2 gap-2 pt-1">
                       <Button
                         size="sm"
                         variant={adminSelectedUser.verified ? 'outline' : 'default'}
@@ -1414,22 +1429,22 @@ export default function Settings() {
                       </Button>
                       <Button
                         size="sm"
-                        variant={adminSelectedUser.subscription_active ? 'outline' : 'secondary'}
-                        className="h-8 text-xs gap-1"
-                        disabled={togglingId === adminSelectedUser.id + '_sub'}
-                        onClick={() => toggleSubscription(adminSelectedUser.id, adminSelectedUser.subscription_active, adminSelectedUser.subscription_plan)}
-                      >
-                        <Crown className="w-3 h-3" />
-                        {adminSelectedUser.subscription_active ? 'Deactivate' : 'Activate'}
-                      </Button>
-                      <Button
-                        size="sm"
                         variant={adminSelectedUser.blacklisted ? 'default' : 'outline'}
                         className={`h-8 text-xs gap-1 ${adminSelectedUser.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
                         disabled={blacklistingId === adminSelectedUser.id}
                         onClick={() => blacklistUser(adminSelectedUser.id, adminSelectedUser.blacklisted)}
                       >
                         {adminSelectedUser.blacklisted ? 'Unban' : '⛔ Ban'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={adminSelectedUser.is_admin ? 'default' : 'outline'}
+                        className={`h-8 text-xs gap-1 col-span-2 ${adminSelectedUser.is_admin ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'text-purple-600 border-purple-300 hover:bg-purple-50'}`}
+                        disabled={togglingId === adminSelectedUser.id + '_admin'}
+                        onClick={() => toggleAdminRole(adminSelectedUser.id, adminSelectedUser.is_admin)}
+                      >
+                        {togglingId === adminSelectedUser.id + '_admin' ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                        {adminSelectedUser.is_admin ? '👑 Remove Admin' : '👑 Make Admin'}
                       </Button>
                     </div>
                   </div>
