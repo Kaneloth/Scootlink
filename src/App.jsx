@@ -44,7 +44,7 @@ const AuthenticatedApp = () => {
     // straight to /auth before the content ever renders.
     const isPublicPath = publicPaths.includes(path)
       || path === '/blog' || path.startsWith('/blog/')
-      || /^\/rent-a-car-for-uber-[a-z-]+$/.test(path);
+      || /^\/rent-a-car-for-uber\/[a-z-]+$/.test(path);
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     const oauthError = params.get('error');
@@ -123,7 +123,7 @@ const AuthenticatedApp = () => {
       <Route path="/" element={<LandingPage />} />
       <Route path="/blog" element={<Blog />} />
       <Route path="/blog/:slug" element={<BlogPost />} />
-      <Route path="/rent-a-car-for-uber-:city" element={<CityLandingPage />} />
+      <Route path="/rent-a-car-for-uber/:city" element={<CityLandingPage />} />
 
       {/* Auth */}
       <Route path="/auth" element={<Auth />} />
