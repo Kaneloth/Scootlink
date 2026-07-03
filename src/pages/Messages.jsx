@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   ArrowLeft, Send, MessageCircle, Loader2, Plus,
-  Copy, Trash, Trash2, Check, CheckCheck, UserX, RefreshCw, Flag,
+  Copy, Trash, Trash2, Check, CheckCheck, UserX, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 // ── localStorage helpers ──────────────────────────────────────────────────────
@@ -32,67 +32,6 @@ function fmtThread(iso) {
   const today = new Date();
   if (d.toDateString() === today.toDateString()) return fmtTime(iso);
   return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
-}
-// ── Report & Block modal ──────────────────────────────────────────────────────
-function ReportModal({ userId, reportedId, reportedName, onClose }) {
-  const [reason, setReason] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const reasons = [
-    'Spam or scam',
-    'Harassment or threatening behaviour',
-    'Fake profile or impersonation',
-    'Inappropriate content',
-    'Fraudulent rental activity',
-    'Other',
-  ];
-  const handleSubmit = async () => {
-    if (!reason) { toast.error('Please select a reason'); return; }
-    setSubmitting(true);
-    try {
-      await supabase.from('user_reports').insert({
-        reporter_id: userId,
-        reported_id: reportedId,
-        reason,
-        created_at:  new Date().toISOString(),
-      });
-      toast.success('Report submitted. Thank you for keeping Skootlink safe.');
-      onClose(true);
-    } catch {
-      toast.error('Could not submit report. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-  return createPortal(
-    <div className="fixed inset-0 z-[99999] bg-black/50 flex items-end justify-center p-4" onClick={() => onClose(false)}>
-      <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl border border-border" onClick={e => e.stopPropagation()}>
-        <div className="px-5 pt-5 pb-3 border-b border-border">
-          <div className="flex items-center gap-2 mb-1">
-            <Flag className="w-4 h-4 text-destructive" />
-            <h2 className="font-semibold text-foreground">Report {reportedName}</h2>
-          </div>
-          <p className="text-xs text-muted-foreground">This user will also be blocked and removed from your inbox.</p>
-        </div>
-        <div className="px-5 py-3 space-y-1.5">
-          {reasons.map(r => (
-            <button key={r} onClick={() => setReason(r)}
-              className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-colors ${
-                reason === r ? 'bg-primary text-white font-medium' : 'hover:bg-muted text-foreground'
-              }`}>
-              {r}
-            </button>
-          ))}
-        </div>
-        <div className="px-5 pb-5 pt-2 flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={() => onClose(false)}>Cancel</Button>
-          <Button className="flex-1 bg-destructive hover:bg-destructive/90" disabled={!reason || submitting} onClick={handleSubmit}>
-            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit Report'}
-          </Button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
 }
 // ── Shared ProfileCard modal ──────────────────────────────────────────────────
 // Renders via createPortal so it floats above everything.
@@ -235,18 +174,19 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const [partnerLocation, setPartnerLocation] = useState('');
   const [chatCapReached,    setChatCapReached]    = useState(false);
   const [hasSentInThisConvo, setHasSentInThisConvo] = useState(false);
-  const [showTopUp, setShowTopUp] = useState(false);
   const bottomRef       = useRef(null);
   const menuRef         = useRef(null);
   const longPressRef    = useRef(null);
   const longTriggered   = useRef(false);
   const broadcastRef    = useRef(null);
   const isAdmin   = ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
-  const canSend   = isAdmin || (creditBalance !== null && creditBalance >= 3 && (!chatCapReached || hasSentInThisConvo));
+  const canSend   = isAdmin || (creditBalance !== null && creditBalance >= 50 && (!chatCapReached || hasSentInThisConvo));
+
   useEffect(() => {
     supabase.from('profiles').select('location').eq('id', partner.id).single()
       .then(({ data }) => { if (data?.location) setPartnerLocation(data.location); });
   }, [partner.id]);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -259,18 +199,27 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       setHiddenMsgs(hidden);
       const filtered = (data || []).filter(m => !hidden.has(m.id));
       setMessages(filtered);
+
+      // Track whether user has already sent in this conversation —
+      // the cap only applies to STARTING new conversations, not replying
       const alreadySent = filtered.some(m => m.sender_id === user.id);
       setHasSentInThisConvo(alreadySent);
+
+      // Check free chat cap (15 credits max from sign-up grant)
+      // Only blocks STARTING new conversations, not existing ones
       if (!alreadySent && !isAdmin) {
         const { data: capCheck } = await supabase.rpc('can_start_chat', { p_user_id: user.id });
         if (capCheck && !capCheck.allowed) setChatCapReached(true);
       }
+
       const unread = (data || []).filter(m => m.receiver_id === user.id && !m.read).map(m => m.id);
       if (unread.length) await supabase.from('messages').update({ read: true }).in('id', unread);
       setLoading(false);
     })();
   }, []);
+
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
   useEffect(() => {
     const convKey = [user.id, partner.id].sort().join('_');
     const ch = supabase.channel(`chat-${convKey}`)
@@ -291,6 +240,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     broadcastRef.current = ch;
     return () => supabase.removeChannel(ch);
   }, []);
+
   useEffect(() => {
     const handle = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) setSelectedMsg(null);
@@ -299,12 +249,18 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     document.addEventListener('touchstart', handle);
     return () => { document.removeEventListener('mousedown', handle); document.removeEventListener('touchstart', handle); };
   }, []);
+
+  // Decide whether the context menu should open upward or downward based on
+  // how much space is left below the bubble in the viewport. The menu is
+  // ~140-180px tall (2-3 rows), so if there's less than that below the
+  // bubble, flip it upward so it never gets hidden behind the bottom nav.
   const decideMenuDirection = (target) => {
     if (!target) return;
     const rect = target.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
     setMenuOpenUp(spaceBelow < 180);
   };
+
   const startLongPress = (msg, e) => {
     longTriggered.current = false;
     const target = e?.currentTarget;
@@ -323,20 +279,18 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       return msg;
     });
   };
+
   const handleSend = async (e) => {
     e?.preventDefault();
     if (!text.trim() || sending) return;
+    if (!canSend) { toast.warning('You need at least 3 credits to send messages.'); return; }
     const body = text.trim();
-    const hasSentBefore = messages.some(m => m.sender_id === user.id);
-    if (!isAdmin && !hasSentBefore && (creditBalance === null || creditBalance < 3)) {
-      setShowTopUp(true);
-      return;
-    }
     setText('');
     setSending(true);
     if (!isAdmin) {
       const hasSentBefore = messages.some(m => m.sender_id === user.id);
       if (!hasSentBefore) {
+        // Check free chat cap — max 15 credits from sign-up grant on chats
         const { data: capCheck } = await supabase.rpc('can_start_chat', { p_user_id: user.id });
         if (capCheck && !capCheck.allowed) {
           setText(body); setSending(false);
@@ -344,8 +298,9 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
           toast.error('You\'ve used your free chat credits. Top up to start new conversations.', { duration: 5000 });
           return;
         }
+
         const { error: creditErr } = await supabase.rpc('deduct_credits', {
-          p_user_id: user.id, p_amount: 3, p_type: 'spend',
+          p_user_id: user.id, p_amount: 50, p_type: 'spend',
           p_description: `Message to ${partner.name}`, p_ref_id: partner.id,
         });
         if (creditErr?.message?.includes('insufficient_credits')) {
@@ -353,7 +308,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
           toast.error('Not enough credits.');
           return;
         }
-        setCreditBalance(prev => Math.max(0, (prev ?? 0) - 3));
+        setCreditBalance(prev => Math.max(0, (prev ?? 0) - 50));
       }
     }
     const tempId = `temp-${Date.now()}`;
@@ -372,6 +327,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       setMessages(prev => prev.map(m => m.id === tempId ? inserted : m));
     }
   };
+
   const handleCopy = (msg) => {
     navigator.clipboard?.writeText(msg.body).then(() => toast.success('Copied!')).catch(() => {});
     setSelectedMsg(null);
@@ -391,7 +347,9 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     toast.success('Deleted for everyone.');
     broadcastRef.current?.send({ type: 'broadcast', event: 'msg_deleted', payload: { id: msg.id } });
   };
+
   const initials = partner.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+
   return (
     <div className="fixed inset-0 z-[9999] bg-background flex flex-col" style={{ top: '57px' }}>
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted shrink-0">
@@ -408,6 +366,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
           {partnerLocation && <p className="text-xs text-muted-foreground leading-tight truncate">{partnerLocation}</p>}
         </button>
       </div>
+
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 bg-background">
         {loading ? (
           <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" /></div>
@@ -480,6 +439,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         )}
         <div ref={bottomRef} />
       </div>
+
       {showProfile && (
         <ProfileCard
           partnerId={partner.id}
@@ -488,32 +448,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
           onClose={() => setShowProfile(false)}
         />
       )}
-      {showTopUp && createPortal(
-        <div className="fixed inset-0 z-[99999] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowTopUp(false)}>
-          <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl p-6 border border-border" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <span className="text-xl">💬</span>
-              </div>
-              <div>
-                <p className="font-semibold text-foreground">Credits needed</p>
-                <p className="text-xs text-muted-foreground">Starting a new conversation costs 3 credits</p>
-              </div>
-            </div>
-            <div className="bg-muted rounded-xl p-4 mb-4 flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Your balance</span>
-              <span className="font-bold text-foreground">{creditBalance ?? 0} credits</span>
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setShowTopUp(false)}>Cancel</Button>
-              <Button className="flex-1" onClick={() => { setShowTopUp(false); onClose(); setTimeout(() => window.location.href = '/credits', 100); }}>
-                Top Up Credits
-              </Button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+
       <form onSubmit={handleSend} className="flex items-center gap-2 px-4 py-3 border-t border-border bg-background shrink-0" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
         {chatCapReached && !hasSentInThisConvo ? (
           <div className="flex-1 text-center py-1">
@@ -529,7 +464,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
               disabled={sending}
               className="rounded-full flex-1 bg-muted/40 border-border"
             />
-            <Button type="submit" size="icon" disabled={sending || !text.trim()} className="rounded-full shrink-0 w-10 h-10">
+            <Button type="submit" size="icon" disabled={sending || !text.trim() || !canSend} className="rounded-full shrink-0 w-10 h-10">
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </Button>
           </>
@@ -556,10 +491,10 @@ export default function Messages() {
   const [selectedThread, setSelectedThread] = useState(null);
   const [hiddenChats,   setHiddenChats]   = useState(new Set());
   const [previewProfile, setPreviewProfile] = useState(null);
-  const [reportTarget,  setReportTarget]  = useState(null);
   const menuRef      = useRef(null);
   const longPressRef = useRef(null);
   const longTriggered= useRef(false);
+
   useEffect(() => {
     auth.me().then(u => {
       setUser(u);
@@ -569,6 +504,7 @@ export default function Messages() {
       }
     }).catch(() => {});
   }, []);
+
   const fetchThreads = useCallback(async () => {
     if (!user) return;
     try {
@@ -612,7 +548,9 @@ export default function Messages() {
       setLoading(false);
     }
   }, [user]);
+
   useEffect(() => { if (user) fetchThreads(); }, [user, fetchThreads]);
+
   useEffect(() => {
     if (!user) return;
     const ch = supabase.channel(`threads-${user.id}`)
@@ -621,6 +559,7 @@ export default function Messages() {
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [user, fetchThreads]);
+
   useEffect(() => {
     if (!urlUserId || !user || user.id === urlUserId) return;
     (async () => {
@@ -628,6 +567,7 @@ export default function Messages() {
       setOpenPartner({ id: urlUserId, name: profile?.full_name || 'User', avatar: null });
     })();
   }, [urlUserId, user]);
+
   useEffect(() => {
     const handle = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) setSelectedThread(null);
@@ -636,11 +576,13 @@ export default function Messages() {
     document.addEventListener('touchstart', handle);
     return () => { document.removeEventListener('mousedown', handle); document.removeEventListener('touchstart', handle); };
   }, []);
+
   const startLongPress = (pid) => {
     longTriggered.current = false;
     longPressRef.current = setTimeout(() => { longTriggered.current = true; setSelectedThread(pid); }, 400);
   };
   const cancelLongPress = () => { if (longPressRef.current) clearTimeout(longPressRef.current); };
+
   const openChat = async (pid) => {
     if (longTriggered.current) { longTriggered.current = false; return; }
     if (selectedThread) { setSelectedThread(null); return; }
@@ -649,6 +591,7 @@ export default function Messages() {
     const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', pid).single();
     setOpenPartner({ id: pid, name: profile?.full_name || 'User', avatar: null });
   };
+
   const handleDeleteChat = (pid) => {
     addHiddenChat(user.id, pid);
     setHiddenChats(prev => new Set([...prev, pid]));
@@ -656,6 +599,7 @@ export default function Messages() {
     setSelectedThread(null);
     toast.success('Chat removed from your inbox.');
   };
+
   const handleBlockUser = async (pid, name) => {
     try {
       await supabase.from('blocked_users').upsert({ blocker_id: user.id, blocked_id: pid }, { onConflict: 'blocker_id,blocked_id' });
@@ -663,10 +607,7 @@ export default function Messages() {
     handleDeleteChat(pid);
     toast.success(`${name || 'User'} has been blocked.`);
   };
-  const handleReportAndBlock = (t) => {
-    setSelectedThread(null);
-    setReportTarget({ id: t.id, name: t.name });
-  };
+
   const handleNewChat = async () => {
     if (!newChatEmail.trim()) return;
     const { data, error } = await supabase.from('profiles').select('id, full_name').eq('email', newChatEmail.trim()).single();
@@ -675,11 +616,13 @@ export default function Messages() {
     setShowNewChat(false); setNewChatEmail('');
     setOpenPartner({ id: data.id, name: data.full_name || 'User', avatar: null });
   };
+
   if (!user) return (
     <div className="p-4 max-w-2xl mx-auto">
       <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" /></div>
     </div>
   );
+
   return (
     <>
       {openPartner && createPortal(
@@ -698,17 +641,6 @@ export default function Messages() {
           partnerName={previewProfile.name}
           partnerAvatar={previewProfile.avatar}
           onClose={() => setPreviewProfile(null)}
-        />
-      )}
-      {reportTarget && (
-        <ReportModal
-          userId={user.id}
-          reportedId={reportTarget.id}
-          reportedName={reportTarget.name}
-          onClose={(doBlock) => {
-            if (doBlock) handleBlockUser(reportTarget.id, reportTarget.name);
-            setReportTarget(null);
-          }}
         />
       )}
       <div className="max-w-2xl mx-auto pb-28">
@@ -792,10 +724,6 @@ export default function Messages() {
                       <button onClick={() => handleBlockUser(t.id, t.name)}
                         className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
                         <UserX className="w-4 h-4" /> Block user
-                      </button>
-                      <button onClick={() => handleReportAndBlock(t)}
-                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-destructive hover:bg-muted transition-colors">
-                        <Flag className="w-4 h-4" /> Report and block
                       </button>
                     </div>
                   )}
