@@ -8,13 +8,15 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
-  Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins
+  Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
+  ChevronUp, ChevronDown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
 import { downloadContractPDF } from '@/lib/contractExport';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
+import { useCredits } from '@/hooks/useCredits';
 
 import VehicleCard from '@/components/vehicles/VehicleCard';
 import RentalCard from '@/components/dashboard/RentalCard';
@@ -46,6 +48,179 @@ function ActionButtonsSkeleton() {
       <div className="grid grid-cols-2 gap-2">
         <div className="h-10 rounded-lg bg-muted animate-pulse" />
         <div className="h-10 rounded-lg bg-muted animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+// ─── Top-up modal ───────────────────────────────────────────────────────────
+// Same packages/copy as the Credits tab in Settings — shown when an owner
+// doesn't have enough credits to finalise a rental agreement.
+const TOPUP_PACKAGES = [
+  { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 240  },
+  { id: 'standard', label: 'Standard Pack', price: 79,  credits: 400, popular: true },
+  { id: 'pro',      label: 'Pro Pack',      price: 129, credits: 660  },
+  { id: 'business', label: 'Business Pack', price: 199, credits: 1040 },
+];
+
+const TOPUP_CREDIT_COSTS = [
+  { icon: '💬', action: 'Start a chat',              cost: '50 credits'  },
+  { icon: '🚗', action: 'List a vehicle (1st)',       cost: '250 credits' },
+  { icon: '🚗', action: 'List a vehicle (2nd)',       cost: '200 credits' },
+  { icon: '🚗', action: 'List a vehicle (3rd+)',      cost: '175 credits' },
+  { icon: '📝', action: 'Sign a rental contract',     cost: '200 credits' },
+];
+
+function TopUpModal({ onClose }) {
+  const { balance, loading, refetch } = useCredits();
+  const [purchasing,  setPurchasing]  = useState(null);
+  const [selectedPkg, setSelectedPkg] = useState(
+    TOPUP_PACKAGES.find(p => p.popular)?.id || TOPUP_PACKAGES[1].id
+  );
+  const [showCosts, setShowCosts] = useState(false);
+
+  const handlePurchase = async () => {
+    const pkg = TOPUP_PACKAGES.find(p => p.id === selectedPkg);
+    if (!pkg) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) { toast.error('Please sign in first.'); return; }
+    setPurchasing(pkg.id);
+
+    try {
+      const res = await fetch('/.netlify/functions/payfast-initiate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ package_id: pkg.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not start payment');
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = data.action_url;
+      Object.entries(data.fields).forEach(([key, value]) => {
+        const input = document.createElement('input');
+        input.type  = 'hidden';
+        input.name  = key;
+        input.value = value;
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err) {
+      toast.error(err.message || 'Could not start payment. Please try again.');
+      setPurchasing(null);
+    }
+  };
+
+  const selected = TOPUP_PACKAGES.find(p => p.id === selectedPkg);
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] bg-black/50 flex items-end sm:items-center justify-center p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-background rounded-2xl w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="font-bold text-foreground">Buy Credits</h2>
+          <button onClick={onClose} className="p-3 rounded-lg hover:bg-muted transition-colors -mr-1" style={{ minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <X className="w-5 h-5 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-5">
+          {/* Balance */}
+          <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20">
+            <div>
+              <p className="text-xs text-muted-foreground">Your credit balance</p>
+              {loading
+                ? <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin mt-1" />
+                : <p className="text-3xl font-bold text-primary">{balance}</p>}
+              <p className="text-xs text-muted-foreground mt-0.5">credits · never expire</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <Coins className="w-6 h-6 text-primary" />
+            </div>
+          </div>
+
+          {/* Packages */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Choose a package</p>
+            <div className="space-y-2.5">
+              {TOPUP_PACKAGES.map(pkg => {
+                const isSelected = selectedPkg === pkg.id;
+                return (
+                  <button
+                    key={pkg.id}
+                    onClick={() => setSelectedPkg(pkg.id)}
+                    disabled={purchasing !== null}
+                    className={`w-full text-left rounded-2xl border-2 px-4 py-3.5 transition-all disabled:opacity-60 ${
+                      isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-card hover:border-primary/40'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary' : 'border-muted-foreground/40'}`}>
+                          {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
+                        </div>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className={`text-xl font-extrabold ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                            {pkg.credits.toLocaleString()}
+                          </span>
+                          <span className="text-sm text-muted-foreground font-medium">credits</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {pkg.popular && (
+                          <span className="text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">🔥 POPULAR</span>
+                        )}
+                        <span className={`text-base font-bold ${isSelected ? 'text-primary' : 'text-foreground'}`}>R{pkg.price}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Pay button */}
+          <Button onClick={handlePurchase} disabled={purchasing !== null} className="w-full h-12 text-base font-bold rounded-2xl gap-2">
+            {purchasing
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+              : <>Pay R{selected?.price} — Get {selected?.credits.toLocaleString()} credits</>}
+          </Button>
+          <p className="text-center text-[11px] text-muted-foreground -mt-3">
+            Secure payment via card or EFT · Credits added instantly
+          </p>
+
+          {/* How far your credits go — collapsible */}
+          <div className="border border-border rounded-2xl overflow-hidden">
+            <button onClick={() => setShowCosts(v => !v)} className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-muted/40 transition-colors">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">How far your credits go</p>
+              {showCosts ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+            </button>
+            {showCosts && (
+              <div className="px-4 pb-4 space-y-2 border-t border-border pt-3">
+                {TOPUP_CREDIT_COSTS.map(({ icon, action, cost }) => (
+                  <div key={action} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{icon}</span>
+                      <p className="text-xs text-muted-foreground">{action}</p>
+                    </div>
+                    <span className="text-xs font-semibold text-foreground shrink-0 ml-2">{cost}</span>
+                  </div>
+                ))}
+                <div className="pt-2 border-t border-border">
+                  <p className="text-[11px] text-muted-foreground text-center">Credits never expire · Sign-up bonus included</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -162,6 +337,7 @@ export default function Dashboard() {
 
   // Insufficient-credits modal (shown when owner can't afford to finalise a rental)
   const [showCreditsNeededModal, setShowCreditsNeededModal] = useState(false);
+  const [showTopUpModal, setShowTopUpModal] = useState(false);
 
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
@@ -1465,7 +1641,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                 className="flex-1 gap-1.5"
                 onClick={() => {
                   setShowCreditsNeededModal(false);
-                  window.dispatchEvent(new Event('skootlink:open-topup-modal'));
+                  setShowTopUpModal(true);
                 }}
               >
                 <Coins className="w-4 h-4" /> Top Up Credits
@@ -1473,6 +1649,12 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
             </div>
           </div>
         </div>,
+        document.body
+      )}
+
+      {/* Top-up / buy-credits modal */}
+      {showTopUpModal && createPortal(
+        <TopUpModal onClose={() => setShowTopUpModal(false)} />,
         document.body
       )}
     </div>
