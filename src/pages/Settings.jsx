@@ -587,6 +587,23 @@ export default function Settings() {
     setTogglingId(null);
   };
 
+  const subtractAdminCredits = async (userId, amount) => {
+    setTogglingId(userId + '_subtract');
+    const { error } = await supabase.rpc('add_credits', {
+      p_user_id:     userId,
+      p_amount:      -amount,
+      p_type:        'adjustment',
+      p_description: `Admin credit adjustment`,
+      p_ref_id:      `admin:${userId}`,
+    });
+    if (!error) {
+      toast.success(`Subtracted ${amount} credits from user`);
+    } else {
+      toast.error('Failed to subtract credits: ' + error.message);
+    }
+    setTogglingId(null);
+  };
+
   const toggleAdminRole = async (userId, currentIsAdmin) => {
     setTogglingId(userId + '_admin');
     const granting = !currentIsAdmin;
@@ -1225,7 +1242,7 @@ export default function Settings() {
                         </Button>
                       </div>
                       <div className="flex flex-col gap-1.5 pt-1 border-t border-border/50">
-                        <div className="grid grid-cols-3 gap-1.5">
+                        <div className="grid grid-cols-4 gap-1.5">
                           <Button
                             size="sm"
                             variant={u.verified ? 'outline' : 'default'}
@@ -1262,6 +1279,18 @@ export default function Settings() {
                               : <Coins className="w-3 h-3" />}
                             +10 Cr
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[10px] gap-0.5 px-1"
+                            disabled={togglingId === u.id + '_subtract'}
+                            onClick={() => subtractAdminCredits(u.id, 10)}
+                          >
+                            {togglingId === u.id + '_subtract'
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Coins className="w-3 h-3" />}
+                            -10 Cr
+                          </Button>
                         </div>
                         <Button
                           size="sm"
@@ -1283,7 +1312,7 @@ export default function Settings() {
 
         {/* ── Admin User Detail / Edit Modal ── */}
         {isAdmin && adminSelectedUser && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setAdminSelectedUser(null)}>
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50" onClick={() => setAdminSelectedUser(null)}>
             <div
               className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[90vh]"
               onClick={e => e.stopPropagation()}
