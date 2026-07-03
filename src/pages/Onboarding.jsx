@@ -250,6 +250,39 @@ export default function Onboarding() {
     } catch (err) { console.error('[Onboarding] geocode error:', err); }
   };
 
+  // ── Award sign-up free credits via Netlify function ──────────────────────
+  // Uses grant-signup-credits.js which guards against duplicate grants (same
+  // user_id, email, phone, device, or IP) — so this is always safe to call,
+  // even more than once for the same user; a second call for someone who
+  // already has a grant just returns { granted: 0, reason: 'already_granted' }.
+  // Called as soon as a role is selected (see nextStep), not gated behind
+  // completing the rest of onboarding — someone who picks a role and never
+  // finishes their profile still gets their bonus.
+  const awardSignupCredits = async (role, phone = '') => {
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser?.id) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch('/.netlify/functions/grant-signup-credits', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          user_id:            authUser.id,
+          email:              authUser.email ?? '',
+          phone:              phone ?? '',
+          device_fingerprint: localStorage.getItem('skootlink_device_fp') ?? '',
+          profile_type:       role,
+        }),
+      });
+    } catch (creditErr) {
+      // Non-fatal — credits can be added manually if this ever fails
+      console.warn('[Onboarding] grant-signup-credits call failed:', creditErr);
+    }
+  };
+
   const saveAndNavigate = async (destination) => {
     setSaving(true);
     try {
@@ -309,30 +342,13 @@ export default function Onboarding() {
         }
       }
 
-      // ── Award sign-up free credits via Netlify function ──────────────────
-      // Uses grant-signup-credits.js which guards against duplicate grants
-      // (same email, phone, device, or IP) across account re-registrations.
+      // ── Award sign-up free credits (safety net) ───────────────────────────
+      // Normally already granted from the role-selection step (see nextStep)
+      // — this call is a harmless no-op in that case, since grant-signup-credits.js
+      // guards against duplicate grants. It only matters if that earlier call
+      // failed for some reason (e.g. a network blip).
       if (authUser?.id) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          await fetch('/.netlify/functions/grant-signup-credits', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-            },
-            body: JSON.stringify({
-              user_id:            authUser.id,
-              email:              authUser.email ?? '',
-              phone:              form.phone ?? '',
-              device_fingerprint: localStorage.getItem('skootlink_device_fp') ?? '',
-              profile_type:       form.role,
-            }),
-          });
-        } catch (creditErr) {
-          // Non-fatal — profile saved successfully; credits can be added manually
-          console.warn('[Onboarding] grant-signup-credits call failed:', creditErr);
-        }
+        await awardSignupCredits(form.role, form.phone);
       }
 
       toast.success('Profile saved! Welcome to Skootlink.');
@@ -348,6 +364,12 @@ export default function Onboarding() {
     if (step === 1 && !validatePersonal()) return;
     if (step < STEPS.length - 1) {
       const nextIndex = step + 1;
+      // Leaving the role step — grant sign-up credits now, right after the
+      // user commits to a role, rather than waiting for full onboarding
+      // completion. Fire-and-forget: never blocks navigation to the next step.
+      if (step === 0) {
+        awardSignupCredits(form.role);
+      }
       setStep(nextIndex);
       // Show privacy notice when entering Personal Info step
       if (nextIndex === 1) setShowPrivacyNotice(true);
