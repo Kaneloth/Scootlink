@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 import { Input } from '@/components/ui/input';
@@ -8,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import {
-  Moon, Sun, ChevronRight, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
+  Moon, Sun, ChevronRight, ChevronDown, ChevronUp, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
   AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins,
 } from 'lucide-react';
@@ -28,10 +27,10 @@ const TEXT_SIZES = [
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 const CREDIT_PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 39,  credits: 15  },
-  { id: 'standard', label: 'Standard Pack', price: 59,  credits: 30, popular: true },
-  { id: 'pro',      label: 'Pro Pack',      price: 99,  credits: 60  },
-  { id: 'business', label: 'Business Pack', price: 199, credits: 200 },
+  { id: 'starter',  credits: 240,  price: 49  },
+  { id: 'standard', credits: 400,  price: 79,  popular: true },
+  { id: 'pro',      credits: 660,  price: 129 },
+  { id: 'business', credits: 1040, price: 199 },
 ];
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
@@ -134,11 +133,26 @@ async function deleteAccount(accessToken) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 // ── Inline credits widget for Settings tab ────────────────────────────────
+const CREDIT_COSTS = [
+  { icon: '💬', action: 'Start a new chat',        cost: '3 credits'  },
+  { icon: '🚗', action: 'List a vehicle (1st)',     cost: '30 credits' },
+  { icon: '🚗', action: 'List a vehicle (2nd)',     cost: '25 credits' },
+  { icon: '🚗', action: 'List a vehicle (3rd+)',    cost: '20 credits' },
+  { icon: '📝', action: 'Access rental agreement', cost: '15 credits' },
+  { icon: '🛡️', action: 'Verified badge',          cost: 'R50 once-off' },
+];
+
 function CreditBalanceWidget() {
   const { balance, loading, refetch } = useCredits();
-  const [purchasing, setPurchasing] = React.useState(null);
+  const [purchasing,  setPurchasing]  = React.useState(null);
+  const [selectedPkg, setSelectedPkg] = React.useState(
+    CREDIT_PACKAGES.find(p => p.popular)?.id || CREDIT_PACKAGES[1].id
+  );
+  const [showCosts, setShowCosts] = React.useState(false);
 
-  const handlePurchase = async (pkg) => {
+  const handlePurchase = async () => {
+    const pkg = CREDIT_PACKAGES.find(p => p.id === selectedPkg);
+    if (!pkg) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
     setPurchasing(pkg.id);
@@ -166,16 +180,17 @@ function CreditBalanceWidget() {
     }
   };
 
+  const selected = CREDIT_PACKAGES.find(p => p.id === selectedPkg);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Balance */}
       <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20">
         <div>
           <p className="text-xs text-muted-foreground">Your credit balance</p>
           {loading
             ? <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin mt-1" />
-            : <p className="text-3xl font-bold text-primary">{balance}</p>
-          }
+            : <p className="text-3xl font-bold text-primary">{balance}</p>}
           <p className="text-xs text-muted-foreground mt-0.5">credits · never expire</p>
         </div>
         <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
@@ -183,51 +198,85 @@ function CreditBalanceWidget() {
         </div>
       </div>
 
-      {/* What credits cost */}
-      <div className="p-3 rounded-xl bg-muted/50 border border-border/50 space-y-1.5">
-        <p className="text-xs font-semibold text-foreground">Credit costs:</p>
-        {[
-          ['Start or reply to a new chat', 3],
-          ['List a vehicle (1st)', 30],
-          ['List a vehicle (2nd)', 25],
-          ['List a vehicle (3rd+)', 20],
-          ['Access rental agreement', 15],
-        ].map(([action, cost]) => (
-          <div key={action} className="flex justify-between text-xs">
-            <span className="text-muted-foreground">{action}</span>
-            <span className="font-semibold">{cost} cr</span>
-          </div>
-        ))}
+      {/* Packages */}
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Choose a package</p>
+        <div className="space-y-2.5">
+          {CREDIT_PACKAGES.map(pkg => {
+            const isSelected = selectedPkg === pkg.id;
+            return (
+              <button
+                key={pkg.id}
+                onClick={() => setSelectedPkg(pkg.id)}
+                disabled={purchasing !== null}
+                className={`w-full text-left rounded-2xl border-2 px-4 py-3.5 transition-all disabled:opacity-60 ${
+                  isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-card hover:border-primary/40'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary' : 'border-muted-foreground/40'}`}>
+                      {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className={`text-xl font-extrabold ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                        {pkg.credits.toLocaleString()}
+                      </span>
+                      <span className="text-sm text-muted-foreground font-medium">credits</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {pkg.popular && (
+                      <span className="text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">🔥 POPULAR</span>
+                    )}
+                    <span className={`text-base font-bold ${isSelected ? 'text-primary' : 'text-foreground'}`}>R{pkg.price}</span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Packages */}
-      <p className="text-sm font-semibold text-foreground">Buy credits</p>
-      <div className="space-y-2">
-        {CREDIT_PACKAGES.map(pkg => (
-          <button
-            key={pkg.id}
-            onClick={() => handlePurchase(pkg)}
-            disabled={purchasing !== null}
-            className={`w-full text-left rounded-2xl border p-4 transition-all hover:border-primary disabled:opacity-60 ${pkg.popular ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
-          >
-            <div className="flex items-center justify-between">
-              <div>
+      {/* Pay button */}
+      <Button
+        onClick={handlePurchase}
+        disabled={purchasing !== null}
+        className="w-full h-12 text-base font-bold rounded-2xl gap-2"
+      >
+        {purchasing
+          ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+          : <>Pay R{selected?.price} — Get {selected?.credits.toLocaleString()} credits</>}
+      </Button>
+      <p className="text-center text-[11px] text-muted-foreground -mt-3">
+        Secure payment via card or EFT · Credits added instantly
+      </p>
+
+      {/* How far your credits go — collapsible */}
+      <div className="border border-border rounded-2xl overflow-hidden">
+        <button
+          onClick={() => setShowCosts(v => !v)}
+          className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+        >
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">How far your credits go</p>
+          {showCosts ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+        </button>
+        {showCosts && (
+          <div className="px-4 pb-4 space-y-2 border-t border-border pt-3">
+            {CREDIT_COSTS.map(({ icon, action, cost }) => (
+              <div key={action} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <p className="font-semibold text-sm">{pkg.label}</p>
-                  {pkg.popular && <span className="text-[10px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">POPULAR</span>}
+                  <span className="text-sm">{icon}</span>
+                  <p className="text-xs text-muted-foreground">{action}</p>
                 </div>
-                <p className="text-xs text-muted-foreground">{pkg.credits} credits</p>
+                <span className="text-xs font-semibold text-foreground shrink-0 ml-2">{cost}</span>
               </div>
-              <div className="text-right">
-                <p className="font-bold">R{pkg.price}</p>
-                {purchasing === pkg.id
-                  ? <Loader2 className="w-4 h-4 animate-spin text-primary ml-auto" />
-                  : <p className="text-[10px] text-muted-foreground">R{(pkg.price / pkg.credits).toFixed(2)}/cr</p>
-                }
-              </div>
+            ))}
+            <div className="pt-2 border-t border-border">
+              <p className="text-[11px] text-muted-foreground text-center">Credits never expire · Sign-up bonus included</p>
             </div>
-          </button>
-        ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -241,9 +290,7 @@ export default function Settings() {
   const [fontSize, setFontSize] = useState('16px');
   const [signInMethod, setSignInMethod] = useState('password');
   const [user, setUser] = useState(null);
-  const [notifications, setNotifications] = useState(() =>
-    localStorage.getItem('scootlink_notifications') !== 'false'
-  );
+  const [notifications, setNotifications] = useState(true);
   const [biometricLoading, setBiometricLoading] = useState(false);
 
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -436,32 +483,23 @@ export default function Settings() {
     if (u?.id) {
       const { data } = await supabase
         .from('profiles')
-        .select('customer_code, is_admin')
+        .select('customer_code')
         .eq('id', u.id)
         .single();
-      return {
-        ...u,
-        ...(data?.customer_code ? { customer_code: data.customer_code } : {}),
-        // Read is_admin from profiles so it works immediately without JWT refresh
-        is_admin: data?.is_admin === true,
-      };
+      if (data?.customer_code) return { ...u, customer_code: data.customer_code };
     }
     return u;
   };
 
   // ── Admin helpers ─────────────────────────────────────────────────────────
 
-  const isAdmin = user && (
-    user.is_admin === true ||
-    user?.user_metadata?.is_admin === true ||
-    ADMIN_EMAILS.includes(user.email)
-  );
+  const isAdmin = user && (user?.user_metadata?.is_admin === true || ADMIN_EMAILS.includes(user.email));
 
   const fetchAdminUsers = async () => {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, suspended, is_admin, id_document_number, id_document_type, created_at')
+      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, id_document_number, id_document_type, created_at')
       .order('created_at', { ascending: false });
     if (!error) {
       // Fetch credit balances for each user
@@ -540,144 +578,86 @@ export default function Settings() {
 
   const addAdminCredits = async (userId, amount) => {
     setTogglingId(userId + '_sub');
-    const isDeduct = amount < 0;
-    const rpc = isDeduct ? 'deduct_credits' : 'add_credits';
-    const absAmount = Math.abs(amount);
-    const { error } = await supabase.rpc(rpc, {
+    const { error } = await supabase.rpc('add_credits', {
       p_user_id:     userId,
-      p_amount:      absAmount,
+      p_amount:      amount,
       p_type:        'adjustment',
-      p_description: `Admin credit ${isDeduct ? 'deduction' : 'adjustment'}`,
+      p_description: `Admin credit adjustment`,
       p_ref_id:      `admin:${userId}`,
     });
     if (!error) {
-      toast.success(isDeduct ? `Deducted ${absAmount} credits` : `Added ${absAmount} credits`);
+      toast.success(`Added ${amount} credits to user`);
     } else {
-      toast.error(`Failed to ${isDeduct ? 'deduct' : 'add'} credits: ` + error.message);
+      toast.error('Failed to add credits: ' + error.message);
     }
     setTogglingId(null);
   };
 
-  const [actionModal, setActionModal] = useState(null); // { type: 'suspend'|'ban', userId, currentState, userName }
-  const [actionReason, setActionReason] = useState('');
-
-  const confirmAction = async () => {
-    if (!actionModal) return;
-    const { type, userId, currentState } = actionModal;
-    const reason = actionReason.trim();
-    setActionModal(null);
-    setActionReason('');
-
-    if (type === 'suspend') {
-      const suspending = !currentState;
-      setTogglingId(userId + '_suspend');
-      const { error } = await supabase.from('profiles').update({
-        suspended: suspending,
-        suspension_reason: suspending ? reason || null : null,
-      }).eq('id', userId);
-      if (error) { toast.error('Failed: ' + error.message); }
-      else {
-        setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended: suspending, suspension_reason: reason } : u));
-        if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended: suspending, suspension_reason: reason }));
-        toast.success(suspending ? 'User suspended' : 'Suspension lifted ✓');
-      }
-      setTogglingId(null);
-    } else {
-      await blacklistUserWithReason(userId, currentState, reason);
-    }
-  };
-
-  const suspendUser = (userId, currentSuspended, userName) => {
-    if (!currentSuspended) {
-      setActionModal({ type: 'suspend', userId, currentState: currentSuspended, userName });
-      setActionReason('');
-    } else {
-      // Lifting suspension — no reason needed
-      confirmDirectAction('suspend', userId, currentSuspended, '');
-    }
-  };
-
-  const confirmDirectAction = async (type, userId, currentState, reason) => {
-    if (type === 'suspend') {
-      setTogglingId(userId + '_suspend');
-      const { error } = await supabase.from('profiles').update({
-        suspended: false, suspension_reason: null,
-      }).eq('id', userId);
-      if (!error) {
-        setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended: false } : u));
-        if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended: false }));
-        toast.success('Suspension lifted ✓');
-      }
-      setTogglingId(null);
-    }
-  };
-
-  const blacklistUserWithReason = async (userId, currentBlacklisted, reason) => {
+  const blacklistUser = async (userId, currentBlacklisted) => {
     setBlacklistingId(userId);
     const banning = !currentBlacklisted;
-    const { error } = await supabase.from('profiles').update({
-      blacklisted: banning,
-      ban_reason: banning ? reason || null : null,
-    }).eq('id', userId);
-    if (error) { toast.error('Failed to update ban: ' + error.message); setBlacklistingId(null); return; }
 
-    if (banning) {
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const accessToken = sessionData?.session?.access_token;
-        if (accessToken) {
-          await fetch('/.netlify/functions/admin-ban-user', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-            body: JSON.stringify({ userId, ban: true }),
-          });
-        }
-      } catch { /* non-fatal */ }
+    // 1. Toggle the blacklisted flag on the profile
+    const { error } = await supabase
+      .from('profiles')
+      .update({ blacklisted: banning })
+      .eq('id', userId);
+
+    if (error) {
+      toast.error('Failed to update blacklist: ' + (error.message || 'unknown error'));
+      setBlacklistingId(null);
+      return;
     }
-    setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, blacklisted: banning, ban_reason: reason } : u));
-    if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, blacklisted: banning, ban_reason: reason }));
-    toast.success(currentBlacklisted ? 'User unbanned ✓' : 'User banned ⛔');
-    setBlacklistingId(null);
-  };
 
-  const toggleAdminRole = async (userId, currentIsAdmin) => {
-    setTogglingId(userId + '_admin');
-    const granting = !currentIsAdmin;
+    // 2. Look up the user's SA ID / passport from user_sensitive_info
+    //    (the authoritative source — not profiles.id_document_number)
+    const { data: sensitiveRow } = await supabase
+      .from('user_sensitive_info')
+      .select('sa_id, passport')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const idNum = (sensitiveRow?.sa_id || sensitiveRow?.passport || '').trim().toUpperCase();
+
+    if (idNum) {
+      if (banning) {
+        await supabase
+          .from('blacklisted_id_numbers')
+          .upsert({ id_number: idNum }, { onConflict: 'id_number' });
+      } else {
+        await supabase
+          .from('blacklisted_id_numbers')
+          .delete()
+          .eq('id_number', idNum);
+      }
+    }
+
+    // 3. Ban / unban at the Supabase Auth level and revoke all active sessions.
+    //    This blocks any new sign-in attempt and immediately invalidates existing
+    //    sessions so the user is kicked out of the app without waiting for the
+    //    access token to expire naturally.
     try {
-      // Update profiles table flag
-      const { error: profileErr } = await supabase
-        .from('profiles')
-        .update({ is_admin: granting })
-        .eq('id', userId);
-      if (profileErr) throw profileErr;
-
-      // Update Supabase Auth user_metadata via service-role Netlify function
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       if (accessToken) {
-        await fetch('/.netlify/functions/admin-set-role', {
+        await fetch('/.netlify/functions/admin-ban-user', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-          body: JSON.stringify({ userId, is_admin: granting }),
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ userId, ban: banning }),
         });
       }
-
-      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, is_admin: granting } : u));
-      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, is_admin: granting }));
-      toast.success(granting ? '✅ Admin rights granted' : 'Admin rights removed');
-    } catch (err) {
-      toast.error('Failed to update admin role: ' + err.message);
+    } catch {
+      // Non-fatal — profiles.blacklisted still blocks app access on next load
     }
-    setTogglingId(null);
-  };
 
-  const blacklistUser = (userId, currentBlacklisted, userName) => {
-    if (!currentBlacklisted) {
-      setActionModal({ type: 'ban', userId, currentState: currentBlacklisted, userName });
-      setActionReason('');
-    } else {
-      blacklistUserWithReason(userId, currentBlacklisted, '');
-    }
+    setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, blacklisted: banning } : u));
+    if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, blacklisted: banning }));
+    toast.success(currentBlacklisted ? 'User unblacklisted ✓' : 'User blacklisted ⛔');
+    setBlacklistingId(null);
   };
 
   const openAdminUser = (u) => {
@@ -796,6 +776,17 @@ export default function Settings() {
               </div>
             )}
 
+            <button onClick={() => navigate('/profile')} className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-accent transition-colors">
+              <div className="flex items-center gap-3">
+                <UserIcon className="w-5 h-5 text-muted-foreground" />
+                <div className="text-left">
+                  <p className="text-sm font-medium text-foreground">Account Profile</p>
+                  <p className="text-xs text-muted-foreground">Edit personal details</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+
             <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent" onClick={toggleNotifications}>
               <div className="flex items-center gap-3">
                 <Bell className="w-5 h-5 text-muted-foreground" />
@@ -844,6 +835,17 @@ export default function Settings() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer">
+              <div className="flex items-center gap-3">
+                <Globe className="w-5 h-5 text-muted-foreground" />
+                <div className="text-left">
+                  <p className="text-sm font-medium text-foreground">Language</p>
+                  <p className="text-xs text-muted-foreground">English</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </div>
 
             {/* Privacy Policy – open static HTML in new tab */}
@@ -1005,6 +1007,12 @@ export default function Settings() {
                   </Button>
                 </div>
               )}
+            </div>
+
+            {/* Two-factor placeholder */}
+            <div className="p-4 rounded-xl bg-card border">
+              <h3 className="text-sm font-medium">Two-factor authentication</h3>
+              <p className="text-xs text-muted-foreground">Coming soon</p>
             </div>
 
             {/* ── Delete account ── */}
@@ -1228,7 +1236,7 @@ export default function Settings() {
                         </Button>
                       </div>
                       <div className="flex flex-col gap-1.5 pt-1 border-t border-border/50">
-                        <div className="grid grid-cols-4 gap-1.5">
+                        <div className="grid grid-cols-3 gap-1.5">
                           <Button
                             size="sm"
                             variant={u.verified ? 'outline' : 'default'}
@@ -1236,7 +1244,9 @@ export default function Settings() {
                             disabled={togglingId === u.id}
                             onClick={() => toggleVerified(u.id, u.verified)}
                           >
-                            {togglingId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                            {togglingId === u.id
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <ShieldCheck className="w-3 h-3" />}
                             {u.verified ? 'Un-ID' : '✅ ID'}
                           </Button>
                           <Button
@@ -1246,44 +1256,34 @@ export default function Settings() {
                             disabled={togglingId === u.id + '_lic'}
                             onClick={() => toggleLicenceVerified(u.id, u.licence_verified, u.id_verified)}
                           >
-                            {togglingId === u.id + '_lic' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
-                            {u.licence_verified ? 'Un-Lic' : u.license_pending ? '⏳ Lic' : '🛡️ Lic'}
-                          </Button>
-                          <Button size="sm" variant="outline" className="h-7 text-[10px] gap-0.5 px-1"
-                            disabled={togglingId === u.id + '_sub'}
-                            onClick={() => addAdminCredits(u.id, 3)}>
-                            {togglingId === u.id + '_sub' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />}
-                            +3 Cr
-                          </Button>
-                          <Button size="sm" variant="outline" className="h-7 text-[10px] gap-0.5 px-1 text-amber-600 border-amber-300 hover:bg-amber-50"
-                            disabled={togglingId === u.id + '_sub'}
-                            onClick={() => addAdminCredits(u.id, -3)}>
-                            {togglingId === u.id + '_sub' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />}
-                            -3 Cr
-                          </Button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <Button
-                            size="sm"
-                            variant={u.suspended ? 'default' : 'outline'}
-                            className={`h-7 text-[10px] gap-0.5 px-1 ${u.suspended ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500' : 'text-amber-600 border-amber-300 hover:bg-amber-50'}`}
-                            disabled={togglingId === u.id + '_suspend'}
-                            onClick={() => suspendUser(u.id, u.suspended)}
-                          >
-                            {togglingId === u.id + '_suspend' ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                            {u.suspended ? '▶ Unsuspend' : '⏸ Suspend'}
+                            {togglingId === u.id + '_lic'
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <FileText className="w-3 h-3" />}
+                            {u.licence_verified ? 'Un-Lic' : u.license_pending ? '⏳ Approve' : '🛡️ Lic'}
                           </Button>
                           <Button
                             size="sm"
-                            variant={u.blacklisted ? 'default' : 'outline'}
-                            className={`h-7 text-[10px] gap-0.5 px-1 ${u.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
-                            disabled={blacklistingId === u.id}
-                            onClick={() => blacklistUser(u.id, u.blacklisted)}
+                            variant="outline"
+                            className="h-7 text-[10px] gap-0.5 px-1"
+                            disabled={togglingId === u.id + '_sub'}
+                            onClick={() => addAdminCredits(u.id, 10)}
                           >
-                            {blacklistingId === u.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
-                            {u.blacklisted ? '✓ Unban' : '⛔ Ban'}
+                            {togglingId === u.id + '_sub'
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Coins className="w-3 h-3" />}
+                            +10 Cr
                           </Button>
                         </div>
+                        <Button
+                          size="sm"
+                          variant={u.blacklisted ? 'default' : 'outline'}
+                          className={`h-7 text-[10px] gap-0.5 px-1 w-full ${u.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
+                          disabled={blacklistingId === u.id}
+                          onClick={() => blacklistUser(u.id, u.blacklisted)}
+                        >
+                          {blacklistingId === u.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                          {u.blacklisted ? 'Remove Blacklist' : '⛔ Blacklist User'}
+                        </Button>
                       </div>
                     </Card>
                   ))}
@@ -1292,44 +1292,9 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {/* ── Suspend / Ban reason modal ── */}
-        {actionModal && createPortal(
-          <div className="fixed inset-0 z-[99999] bg-black/50 flex items-center justify-center p-4" onClick={() => { setActionModal(null); setActionReason(''); }}>
-            <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl p-6 border border-border" onClick={e => e.stopPropagation()}>
-              <h2 className="text-base font-bold text-foreground mb-1">
-                {actionModal.type === 'ban' ? '⛔ Ban User' : '⏸ Suspend User'}
-              </h2>
-              <p className="text-xs text-muted-foreground mb-4">
-                {actionModal.userName && <span className="font-medium text-foreground">{actionModal.userName} — </span>}
-                {actionModal.type === 'ban'
-                  ? 'This will permanently block the user from accessing Skootlink.'
-                  : 'The user will be locked out until you lift the suspension.'}
-              </p>
-              <textarea
-                value={actionReason}
-                onChange={e => setActionReason(e.target.value)}
-                placeholder={`Reason for ${actionModal.type === 'ban' ? 'ban' : 'suspension'} (required)…`}
-                rows={3}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary mb-4"
-              />
-              <div className="flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={() => { setActionModal(null); setActionReason(''); }}>Cancel</Button>
-                <Button
-                  className={`flex-1 ${actionModal.type === 'ban' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-500 hover:bg-amber-600'}`}
-                  disabled={!actionReason.trim()}
-                  onClick={confirmAction}
-                >
-                  Confirm {actionModal.type === 'ban' ? 'Ban' : 'Suspend'}
-                </Button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-
         {/* ── Admin User Detail / Edit Modal ── */}
         {isAdmin && adminSelectedUser && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50" onClick={() => setAdminSelectedUser(null)}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setAdminSelectedUser(null)}>
             <div
               className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[90vh]"
               onClick={e => e.stopPropagation()}
@@ -1425,7 +1390,7 @@ export default function Settings() {
                       <div className="rounded-xl border border-border/50 divide-y divide-border/50">
                         {[
                           ['Verified', adminSelectedUser.verified ? '✓ Yes' : '✗ No'],
-                          ['Suspended', adminSelectedUser.suspended ? '⏸ Yes' : '✓ No'],
+                          ['Subscription', adminSelectedUser.subscription_active ? `Active — ${adminSelectedUser.subscription_plan || '?'}` : 'Inactive'],
                           ['Blacklisted', adminSelectedUser.blacklisted ? '⛔ Yes' : '✓ No'],
                           ['Member Since', adminSelectedUser.created_at ? new Date(adminSelectedUser.created_at).toLocaleDateString() : '—'],
                         ].map(([label, value]) => (
@@ -1437,44 +1402,35 @@ export default function Settings() {
                       </div>
                     </div>
                     {/* Quick actions */}
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <Button size="sm" variant={adminSelectedUser.verified ? 'outline' : 'default'}
-                        className="h-8 text-xs gap-1" disabled={togglingId === adminSelectedUser.id}
-                        onClick={() => toggleVerified(adminSelectedUser.id, adminSelectedUser.verified)}>
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        variant={adminSelectedUser.verified ? 'outline' : 'default'}
+                        className="h-8 text-xs gap-1"
+                        disabled={togglingId === adminSelectedUser.id}
+                        onClick={() => toggleVerified(adminSelectedUser.id, adminSelectedUser.verified)}
+                      >
                         <ShieldCheck className="w-3 h-3" />
                         {adminSelectedUser.verified ? 'Unverify' : 'Verify'}
                       </Button>
-                      <Button size="sm"
-                        variant={adminSelectedUser.suspended ? 'default' : 'outline'}
-                        className={`h-8 text-xs gap-1 ${adminSelectedUser.suspended ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'text-amber-600 border-amber-300 hover:bg-amber-50'}`}
-                        disabled={togglingId === adminSelectedUser.id + '_suspend'}
-                        onClick={() => suspendUser(adminSelectedUser.id, adminSelectedUser.suspended)}>
-                        {adminSelectedUser.suspended ? '▶ Unsuspend' : '⏸ Suspend'}
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1"
+                      <Button
+                        size="sm"
+                        variant={adminSelectedUser.subscription_active ? 'outline' : 'secondary'}
+                        className="h-8 text-xs gap-1"
                         disabled={togglingId === adminSelectedUser.id + '_sub'}
-                        onClick={() => addAdminCredits(adminSelectedUser.id, 3)}>
-                        <Coins className="w-3 h-3" /> +3 Credits
+                        onClick={() => toggleSubscription(adminSelectedUser.id, adminSelectedUser.subscription_active, adminSelectedUser.subscription_plan)}
+                      >
+                        <Crown className="w-3 h-3" />
+                        {adminSelectedUser.subscription_active ? 'Deactivate' : 'Activate'}
                       </Button>
-                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1 text-amber-600 border-amber-300 hover:bg-amber-50"
-                        disabled={togglingId === adminSelectedUser.id + '_sub'}
-                        onClick={() => addAdminCredits(adminSelectedUser.id, -3)}>
-                        <Coins className="w-3 h-3" /> -3 Credits
-                      </Button>
-                      <Button size="sm"
-                        variant={adminSelectedUser.is_admin ? 'default' : 'outline'}
-                        className={`h-8 text-xs gap-1 col-span-2 ${adminSelectedUser.is_admin ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'text-purple-600 border-purple-300 hover:bg-purple-50'}`}
-                        disabled={togglingId === adminSelectedUser.id + '_admin'}
-                        onClick={() => toggleAdminRole(adminSelectedUser.id, adminSelectedUser.is_admin)}>
-                        {togglingId === adminSelectedUser.id + '_admin' ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
-                        {adminSelectedUser.is_admin ? '👑 Remove Admin' : '👑 Make Admin'}
-                      </Button>
-                      <Button size="sm"
+                      <Button
+                        size="sm"
                         variant={adminSelectedUser.blacklisted ? 'default' : 'outline'}
-                        className={`h-8 text-xs gap-1 col-span-2 ${adminSelectedUser.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
+                        className={`h-8 text-xs gap-1 ${adminSelectedUser.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
                         disabled={blacklistingId === adminSelectedUser.id}
-                        onClick={() => blacklistUser(adminSelectedUser.id, adminSelectedUser.blacklisted)}>
-                        {adminSelectedUser.blacklisted ? '✓ Unban User' : '⛔ Ban User'}
+                        onClick={() => blacklistUser(adminSelectedUser.id, adminSelectedUser.blacklisted)}
+                      >
+                        {adminSelectedUser.blacklisted ? 'Unban' : '⛔ Ban'}
                       </Button>
                     </div>
                   </div>
