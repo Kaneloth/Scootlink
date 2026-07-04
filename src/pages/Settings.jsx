@@ -285,6 +285,7 @@ function PlatformVerificationQueue() {
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
   const [signedUrls, setSignedUrls] = useState({});
+  const [evidenceIssues, setEvidenceIssues] = useState({}); // entry.id -> reason string
 
   const fetchPending = async () => {
     setLoading(true);
@@ -297,14 +298,24 @@ function PlatformVerificationQueue() {
       setPending(data || []);
       // Generate signed URLs for each evidence screenshot (private bucket)
       const urls = {};
+      const issues = {};
       await Promise.all((data || []).map(async (entry) => {
-        if (!entry.evidence_url) return;
-        const { data: signed } = await supabase.storage
+        if (!entry.evidence_url) {
+          issues[entry.id] = 'No screenshot was attached to this request.';
+          return;
+        }
+        const { data: signed, error: signErr } = await supabase.storage
           .from('platform-evidence')
           .createSignedUrl(entry.evidence_url, 600); // 10 min
-        if (signed?.signedUrl) urls[entry.id] = signed.signedUrl;
+        if (signed?.signedUrl) {
+          urls[entry.id] = signed.signedUrl;
+        } else {
+          console.warn('[PlatformVerificationQueue] createSignedUrl failed:', entry.id, signErr);
+          issues[entry.id] = 'Could not load the screenshot (' + (signErr?.message || 'unknown error') + ').';
+        }
       }));
       setSignedUrls(urls);
+      setEvidenceIssues(issues);
     } else {
       toast.error('Could not load verification queue: ' + error.message);
     }
@@ -373,12 +384,17 @@ function PlatformVerificationQueue() {
               </div>
             </div>
 
-            {signedUrls[entry.id] && (
+            {signedUrls[entry.id] ? (
               <img
                 src={signedUrls[entry.id]}
                 alt="Evidence screenshot"
                 className="w-full max-h-64 object-contain rounded-lg border border-border mb-3 bg-muted"
               />
+            ) : (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 text-amber-700 text-xs mb-3 border border-amber-200">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                {evidenceIssues[entry.id] || 'No screenshot available for this request.'}
+              </div>
             )}
 
             <div className="flex gap-2">
