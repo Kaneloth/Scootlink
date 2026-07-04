@@ -14,6 +14,7 @@ import PageHeader from '@/components/layout/PageHeader';
 import StarRating from '@/components/reviews/StarRating';
 import { toast } from 'sonner';
 import VerificationPanel from '@/components/verification/VerificationPanel';
+import PlatformHistoryPanel from '@/components/profile/PlatformHistoryPanel';
 
 // ─── Skeleton components ──────────────────────────────────────────────────────
 
@@ -621,9 +622,10 @@ export default function Profile() {
       )}
 
       <Tabs defaultValue={defaultTab}>
-        <TabsList className="grid w-full grid-cols-3 mb-4">
+        <TabsList className={`grid w-full mb-4 ${accountType === 'owner' ? 'grid-cols-3' : 'grid-cols-4'}`}>
           <TabsTrigger value="edit">Edit Info</TabsTrigger>
           <TabsTrigger value="verification">Verification</TabsTrigger>
+          {accountType !== 'owner' && <TabsTrigger value="platform-history">Platforms</TabsTrigger>}
           <TabsTrigger value="reviews-received">Reviews</TabsTrigger>
         </TabsList>
 
@@ -779,6 +781,12 @@ export default function Profile() {
             }}
           />
         </TabsContent>
+
+        {accountType !== 'owner' && (
+          <TabsContent value="platform-history">
+            <PlatformHistoryPanel user={user} />
+          </TabsContent>
+        )}
 
         <TabsContent value="reviews-received">
           {reviewsLoading ? (

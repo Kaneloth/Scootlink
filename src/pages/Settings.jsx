@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import {
   Moon, Sun, ChevronRight, ChevronDown, ChevronUp, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
-  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins,
+  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins, Star,
 } from 'lucide-react';
 import { sendSMS } from '@/lib/sms';
 
@@ -269,6 +269,140 @@ function CreditBalanceWidget() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Platform Verification Queue (admin) ──────────────────────────────────────
+// Reviews driver-submitted platform-rating verification requests (free,
+// manual review). Approving/rejecting writes directly via the client's own
+// session — RLS on platform_history should allow admins to update any row
+// (add an admin-checking RLS policy, or route this through a service-role
+// Netlify function if you'd rather not grant that via RLS).
+function PlatformVerificationQueue() {
+  const [pending, setPending] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState(null);
+  const [signedUrls, setSignedUrls] = useState({});
+
+  const fetchPending = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('platform_history')
+      .select('*, profiles(full_name, email)')
+      .eq('verification_status', 'pending')
+      .order('created_at', { ascending: true });
+    if (!error) {
+      setPending(data || []);
+      // Generate signed URLs for each evidence screenshot (private bucket)
+      const urls = {};
+      await Promise.all((data || []).map(async (entry) => {
+        if (!entry.evidence_url) return;
+        const { data: signed } = await supabase.storage
+          .from('platform-evidence')
+          .createSignedUrl(entry.evidence_url, 600); // 10 min
+        if (signed?.signedUrl) urls[entry.id] = signed.signedUrl;
+      }));
+      setSignedUrls(urls);
+    } else {
+      toast.error('Could not load verification queue: ' + error.message);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchPending(); }, []);
+
+  const handleReview = async (entry, approve) => {
+    setProcessingId(entry.id);
+    const { data: { user: adminUser } } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from('platform_history')
+      .update({
+        verification_status: approve ? 'verified' : 'rejected',
+        reviewed_by: adminUser?.id || null,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq('id', entry.id);
+    if (error) {
+      toast.error('Failed to update: ' + error.message);
+    } else {
+      toast.success(approve ? 'Platform history approved' : 'Platform history rejected');
+      setPending(prev => prev.filter(p => p.id !== entry.id));
+    }
+    setProcessingId(null);
+  };
+
+  return (
+    <div className="space-y-3 mb-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Platform Verification Queue</h3>
+          <p className="text-xs text-muted-foreground">{pending.length > 0 ? `${pending.length} pending request${pending.length !== 1 ? 's' : ''}` : 'Free, manual review of driver platform ratings'}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={fetchPending} disabled={loading} className="gap-1.5">
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : '↻'} Refresh
+        </Button>
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-6 text-muted-foreground gap-2 text-sm">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+        </div>
+      )}
+
+      {!loading && pending.length === 0 && (
+        <p className="text-center text-sm text-muted-foreground py-6 border border-dashed border-border rounded-xl">
+          No pending platform verification requests.
+        </p>
+      )}
+
+      <div className="space-y-3">
+        {pending.map(entry => (
+          <Card key={entry.id} className="p-4 border border-border/50">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <p className="font-semibold text-sm">{entry.profiles?.full_name || 'Unknown user'}</p>
+                <p className="text-xs text-muted-foreground">{entry.profiles?.email}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="font-semibold text-sm">{entry.platform}</span>
+                <span className="flex items-center gap-0.5 text-amber-500 text-xs font-semibold">
+                  <Star className="w-3.5 h-3.5 fill-current" /> {Number(entry.rating).toFixed(1)}
+                </span>
+              </div>
+            </div>
+
+            {signedUrls[entry.id] && (
+              <img
+                src={signedUrls[entry.id]}
+                alt="Evidence screenshot"
+                className="w-full max-h-64 object-contain rounded-lg border border-border mb-3 bg-muted"
+              />
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="flex-1 gap-1.5"
+                disabled={processingId === entry.id}
+                onClick={() => handleReview(entry, true)}
+              >
+                {processingId === entry.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 gap-1.5"
+                disabled={processingId === entry.id}
+                onClick={() => handleReview(entry, false)}
+              >
+                <XCircle className="w-3.5 h-3.5" /> Reject
+              </Button>
+            </div>
+          </Card>
+        ))}
       </div>
     </div>
   );
@@ -1166,6 +1300,7 @@ export default function Settings() {
         {/* ── Admin tab ── */}
         {isAdmin && (
           <TabsContent value="admin">
+            <PlatformVerificationQueue />
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>

@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
-  ChevronUp, ChevronDown
+  ChevronUp, ChevronDown, Star
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
@@ -231,6 +231,19 @@ function TopUpModal({ onClose }) {
 // without the broken .map() pattern.
 function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, canMessage, onMessageBlocked }) {
   const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [platformHistory, setPlatformHistory] = useState([]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    supabase
+      .from('platform_history')
+      .select('*')
+      .eq('user_id', profile.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setPlatformHistory(data || []))
+      .catch(() => {});
+  }, [profile?.id]);
+
   const row = (label, value, extra = {}) => value ? (
     <div className={`flex justify-between px-4 py-2.5 ${extra.wrap ? 'gap-4' : ''}`}>
       <span className="text-muted-foreground shrink-0">{label}</span>
@@ -295,6 +308,38 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
               <span><StarRating value={Math.round(profile.rating || 0)} size="sm" showValue /></span>
             </div>
           </div>
+
+          {/* Platform History — self-reported gig-platform work history, hidden entirely if none */}
+          {platformHistory.length > 0 && (
+            <div className="mb-5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-1">Platform History</p>
+              <div className="divide-y divide-border rounded-xl border border-border overflow-hidden text-sm">
+                {platformHistory.map(entry => (
+                  <div key={entry.id} className="flex items-center justify-between px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{entry.platform}</span>
+                      {entry.role && <span className="text-xs text-muted-foreground">· {entry.role}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="flex items-center gap-0.5 text-amber-500 text-xs font-semibold">
+                        <Star className="w-3.5 h-3.5 fill-current" /> {Number(entry.rating).toFixed(1)}
+                      </span>
+                      {entry.verification_status === 'verified' ? (
+                        <span className="text-[10px] text-green-600 font-medium">✅ Verified</span>
+                      ) : entry.verification_status === 'pending' ? (
+                        <span className="text-[10px] text-amber-600 font-medium">⏳ Pending</span>
+                      ) : (
+                        // 'unverified' or 'rejected' both fall back to the same
+                        // trust level — a rejected screenshot doesn't necessarily
+                        // mean the claim is false, just unconfirmed.
+                        <span className="text-[10px] text-muted-foreground">Self-reported</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Message button */}
           <Button
