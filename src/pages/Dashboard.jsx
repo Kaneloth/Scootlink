@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
-  ChevronUp, ChevronDown, Star
+  ChevronUp, ChevronDown, Star, RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
@@ -1451,9 +1451,30 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
 
   const currentYear = new Date().getFullYear();
 
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['my-vehicles'] }),
+      queryClient.invalidateQueries({ queryKey: ['all-vehicles'] }),
+      queryClient.invalidateQueries({ queryKey: ['all-vehicles-lookup'] }),
+      queryClient.invalidateQueries({ queryKey: ['my-rentals'] }),
+      queryClient.invalidateQueries({ queryKey: ['my-reviews'] }),
+    ]);
+    setRefreshing(false);
+  };
+
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      <PageHeader title={`Welcome${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`} subtitle="Manage your vehicles and rentals" />
+      <PageHeader
+        title={`Welcome${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`}
+        subtitle="Manage your vehicles and rentals"
+        action={
+          <button onClick={handleRefresh} className="p-1.5 rounded-full hover:bg-muted transition-colors" aria-label="Refresh">
+            <RefreshCw className={`w-4 h-4 text-primary ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+        }
+      />
 
       {/* Banner 1 — profile incomplete */}
       {user && (() => {
