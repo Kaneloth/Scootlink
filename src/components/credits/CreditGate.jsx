@@ -1,17 +1,24 @@
 /**
  * CreditGate — wraps content that requires a minimum credit balance.
- * Shows a buy-credits prompt when the user has insufficient credits.
+ *
+ * By design, this never shows the person their balance, the required
+ * amount, or the word "credits" — the internal currency stays invisible
+ * during normal usage. If a feature is gated, we just say it needs
+ * unlocking and route straight to the (fully transparent, real-price)
+ * purchase page. The only place someone learns they're "running low" is
+ * the 70%-usage notification, which is a deliberate, separate signal.
  */
 import React, { useState } from 'react';
-import { Coins } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useCredits } from '@/hooks/useCredits';
 
 export default function CreditGate({ required = 1, children, message }) {
   const { balance, loading } = useCredits();
-  const [showModal, setShowModal] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const navigate = useNavigate();
 
   React.useEffect(() => {
     import('@/api/supabaseClient').then(({ supabase }) => {
@@ -23,45 +30,26 @@ export default function CreditGate({ required = 1, children, message }) {
 
   if (loading) return null;
 
-  // Admins bypass all credit gates
+  // Admins bypass all gates
   if (isAdmin) return children;
 
   if (balance < required) {
     return (
       <Card className="p-6 border border-primary/20 bg-primary/5 flex flex-col items-center text-center gap-4 mt-6">
         <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-          <Coins className="w-6 h-6 text-primary" />
+          <Sparkles className="w-6 h-6 text-primary" />
         </div>
         <div>
           <p className="font-semibold text-foreground">
-            {message || `You need ${required} credits to access this feature`}
+            {message || 'Unlock this feature to continue'}
           </p>
           <p className="text-sm text-muted-foreground mt-1">
-            Your balance: <span className="font-semibold">{balance} credits</span>.
-            Top up to continue.
+            You'll need to upgrade your account to keep using this.
           </p>
         </div>
-        <Button onClick={() => setShowModal(true)} className="gap-2">
-          <Coins className="w-4 h-4" /> Buy Credits
+        <Button onClick={() => navigate('/credits')} className="gap-2">
+          <Sparkles className="w-4 h-4" /> Continue
         </Button>
-
-        {showModal && (
-          <div
-            className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
-            onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}
-          >
-            <div className="bg-background rounded-2xl w-full max-w-sm shadow-xl p-6 text-center space-y-3">
-              <Coins className="w-10 h-10 text-primary mx-auto" />
-              <p className="font-semibold">Purchase credits</p>
-              <p className="text-sm text-muted-foreground">
-                Tap the credit balance in the top bar to buy credits and continue.
-              </p>
-              <Button variant="outline" onClick={() => setShowModal(false)} className="w-full">
-                Close
-              </Button>
-            </div>
-          </div>
-        )}
       </Card>
     );
   }

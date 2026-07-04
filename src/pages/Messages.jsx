@@ -179,7 +179,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const longPressRef    = useRef(null);
   const longTriggered   = useRef(false);
   const broadcastRef    = useRef(null);
-  const isAdmin   = ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
+  const isAdmin   = ['kaneloth@skootlink.co.za'].includes(user?.email);
   const canSend   = isAdmin || (creditBalance !== null && creditBalance >= 50 && (!chatCapReached || hasSentInThisConvo));
 
   useEffect(() => {
@@ -205,7 +205,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       const alreadySent = filtered.some(m => m.sender_id === user.id);
       setHasSentInThisConvo(alreadySent);
 
-      // Check free chat cap (15 credits max from sign-up grant)
+      // Check free chat cap (fixed at 350 credits, regardless of signup grant size)
       // Only blocks STARTING new conversations, not existing ones
       if (!alreadySent && !isAdmin) {
         const { data: capCheck } = await supabase.rpc('can_start_chat', { p_user_id: user.id });
@@ -283,19 +283,19 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const handleSend = async (e) => {
     e?.preventDefault();
     if (!text.trim() || sending) return;
-    if (!canSend) { toast.warning('You need at least 3 credits to send messages.'); return; }
+    if (!canSend) { toast.warning('You need to upgrade your account to send messages.'); return; }
     const body = text.trim();
     setText('');
     setSending(true);
     if (!isAdmin) {
       const hasSentBefore = messages.some(m => m.sender_id === user.id);
       if (!hasSentBefore) {
-        // Check free chat cap — max 15 credits from sign-up grant on chats
+        // Check free chat cap — fixed at 350 credits, regardless of signup grant size
         const { data: capCheck } = await supabase.rpc('can_start_chat', { p_user_id: user.id });
         if (capCheck && !capCheck.allowed) {
           setText(body); setSending(false);
           setChatCapReached(true);
-          toast.error('You\'ve used your free chat credits. Top up to start new conversations.', { duration: 5000 });
+          toast.error('You\'ve reached your messaging limit for now. Upgrade your account to start new conversations.', { duration: 5000 });
           return;
         }
 
@@ -305,7 +305,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         });
         if (creditErr?.message?.includes('insufficient_credits')) {
           setText(body); setSending(false);
-          toast.error('Not enough credits.');
+          toast.error('Please upgrade your account to continue.');
           return;
         }
         setCreditBalance(prev => Math.max(0, (prev ?? 0) - 50));
@@ -452,8 +452,8 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       <form onSubmit={handleSend} className="flex items-center gap-2 px-4 py-3 border-t border-border bg-background shrink-0" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
         {chatCapReached && !hasSentInThisConvo ? (
           <div className="flex-1 text-center py-1">
-            <p className="text-xs font-medium text-destructive">Free chat credits used up</p>
-            <p className="text-[11px] text-muted-foreground">Top up credits to start new conversations</p>
+            <p className="text-xs font-medium text-destructive">Messaging limit reached</p>
+            <p className="text-[11px] text-muted-foreground">Upgrade your account to start new conversations</p>
           </div>
         ) : (
           <>

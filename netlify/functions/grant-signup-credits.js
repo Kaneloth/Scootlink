@@ -3,8 +3,8 @@
  * Awards free sign-up credits to new users after onboarding.
  *
  * Credits awarded:
- *   Driver              → 250 credits
- *   Owner or Both       → 500 credits
+ *   Driver              → 350 credits
+ *   Owner or Both       → 1250 credits
  *
  * Fraud guards (layered):
  *   0. email_grants table   — blocks re-registration with same email
@@ -63,8 +63,8 @@ export const handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'user_id required' }) };
   }
 
-  // Driver → 250 credits, Owner or Both → 500 credits
-  const freeCredits = (profile_type === 'owner' || profile_type === 'both') ? 500 : 250;
+  // Driver → 350 credits, Owner or Both → 1250 credits
+  const freeCredits = (profile_type === 'owner' || profile_type === 'both') ? 1250 : 350;
 
   // ── Verify user_id actually exists in profiles ────────────────────────────
   const { data: profile, error: profileErr } = await supabase

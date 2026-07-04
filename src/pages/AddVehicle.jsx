@@ -210,7 +210,7 @@ export default function AddVehicle() {
     onError: (err) => {
       console.error('Vehicle save error:', err);
       if (err?.message === 'insufficient_credits') {
-        toast.error(`Not enough credits${listingPrice ? ` (need ${listingPrice})` : ''}. Top up in Settings → Credits.`);
+        toast.error('You need to upgrade your account to list this vehicle.');
         navigate('/credits');
         return;
       }
@@ -292,14 +292,6 @@ export default function AddVehicle() {
         <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
           <p className="text-xs text-amber-700 dark:text-amber-300">
             🔄 Re-listing resets your listing's 6-month expiry from today.
-          </p>
-        </div>
-      )}
-      {!isEditMode && listingPrice && (
-        <div className="mb-4 p-3 rounded-xl bg-primary/5 border border-primary/20">
-          <p className="text-xs text-primary">
-            💳 Listing this vehicle costs <strong>{listingPrice} credits</strong>
-            {listingPrice < 250 && ' (discounted rate for additional vehicles)'}.
           </p>
         </div>
       )}
@@ -428,7 +420,7 @@ export default function AddVehicle() {
           <Button onClick={handleSubmit} className="w-full mt-2" disabled={mutation.isPending}>
             {mutation.isPending
               ? (isRelist ? 'Re-listing…' : isEditMode ? 'Saving…' : 'Listing…')
-              : (isRelist ? 'Re-list Vehicle' : isEditMode ? 'Save Changes' : listingPrice ? `List Vehicle (${listingPrice} cr)` : 'List Vehicle')}
+              : (isRelist ? 'Re-list Vehicle' : isEditMode ? 'Save Changes' : 'List Vehicle')}
           </Button>
         </div>
       </Card>

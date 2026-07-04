@@ -493,6 +493,10 @@ export default function Settings() {
   const [fontSize, setFontSize] = useState('16px');
   const [signInMethod, setSignInMethod] = useState('password');
   const [user, setUser] = useState(null);
+  // Credits tab stays hidden until the user's first real purchase — part of
+  // the "app feels free" strategy: don't surface the credit/payment system
+  // before someone has actually engaged with it.
+  const [hasPurchasedCredits, setHasPurchasedCredits] = useState(false);
   const [notifications, setNotifications] = useState(() =>
     localStorage.getItem('scootlink_notifications') !== 'false'
   );
@@ -538,6 +542,20 @@ export default function Settings() {
     setSignInMethod(localStorage.getItem('scootlink_signin_method') || 'password');
     setNotifications(localStorage.getItem('scootlink_notifications') !== 'false');
     loadUser().then(setUser).catch(() => {});
+    // Check for at least one real purchase (not the signup bonus) to decide
+    // whether the Credits tab should be visible at all.
+    supabase.auth.getUser().then(async ({ data: { user: authUser } }) => {
+      if (!authUser) return;
+      const { data } = await supabase
+        .from('credit_ledger')
+        .select('id')
+        .eq('user_id', authUser.id)
+        .eq('type', 'purchase')
+        .limit(1)
+        .maybeSingle();
+      setHasPurchasedCredits(!!data);
+      if (!data && activeTab === 'credits') setActiveTab('general');
+    });
     // Detect Google OAuth users — they have no password so we show "Create" instead of "Change"
     supabase.auth.getUser().then(({ data: { user: authUser } }) => {
       const identities = authUser?.identities ?? [];
@@ -992,9 +1010,9 @@ export default function Settings() {
       <h2 className="text-2xl font-bold text-foreground mb-8">Settings</h2>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-4' : 'grid-cols-3'} mb-6`}>
+        <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: `repeat(${2 + (hasPurchasedCredits ? 1 : 0) + (isAdmin ? 1 : 0)}, minmax(0, 1fr))` }}>
           <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="credits">Credits</TabsTrigger>
+          {hasPurchasedCredits && <TabsTrigger value="credits">Credits</TabsTrigger>}
           <TabsTrigger value="security">Security</TabsTrigger>
           {isAdmin && <TabsTrigger value="admin" onClick={fetchAdminUsers}>Admin</TabsTrigger>}
         </TabsList>

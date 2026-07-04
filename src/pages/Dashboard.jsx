@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
-  ChevronUp, ChevronDown, Star
+  ChevronUp, ChevronDown, Star, Sparkles
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
@@ -1167,7 +1167,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                     <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                   </div>
                   <p className="text-xs text-emerald-700 dark:text-emerald-300 mb-3">
-                    ✅ Driver has accepted the contract. Review it and confirm to activate the rental (costs 200 credits).
+                    ✅ Driver has accepted the contract. Review it and confirm to activate the rental.
                   </p>
                   <div className="flex gap-2">
                     <Button size="sm" className="flex-1 gap-1" onClick={() => openContractModal(r, 'finalise')}>
@@ -1585,7 +1585,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           onClose={() => setSelectedDriver(null)}
           onMessage={(id) => { setSelectedDriver(null); navigate(`/messages?userId=${id}`); }}
           canMessage={true}
-          onMessageBlocked={() => toast.warning('You need credits to send messages')}
+          onMessageBlocked={() => toast.warning('Please upgrade your account to send messages')}
         />,
         document.body
       )}
@@ -1597,7 +1597,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           onClose={() => setSelectedOwner(null)}
           onMessage={(id) => { setSelectedOwner(null); navigate(`/messages?userId=${id}`); }}
           canMessage={true}
-          onMessageBlocked={() => toast.warning('You need credits to send messages')}
+          onMessageBlocked={() => toast.warning('Please upgrade your account to send messages')}
         />,
         document.body
       )}
@@ -1622,7 +1622,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                 : contractEditMode === 'edit'
                   ? 'Edit the contract to reflect changes agreed via Messages, then save. The driver will see the updated version.'
                   : contractEditMode === 'finalise'
-                    ? 'The driver has accepted this contract. Review it one final time, then confirm to activate the rental (200 credits will be deducted).'
+                    ? 'The driver has accepted this contract. Review it one final time, then confirm to activate the rental.'
                     : 'Edit the contract below — fill in all details, dates and terms. When ready, send it to the driver to review and accept.'}
             </p>
 
@@ -1690,12 +1690,12 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
             onClick={e => e.stopPropagation()}
           >
             <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-              <Coins className="w-6 h-6 text-primary" />
+              <Sparkles className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <h2 className="font-bold text-foreground">You need more credits</h2>
+              <h2 className="font-bold text-foreground">Unlock this rental to continue</h2>
               <p className="text-sm text-muted-foreground mt-1">
-                Finalising a rental agreement costs 200 credits. Top up your balance to continue.
+                You'll need to upgrade your account to finalise this rental agreement.
               </p>
             </div>
             <div className="flex gap-3">
@@ -1713,7 +1713,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                   setShowTopUpModal(true);
                 }}
               >
-                <Coins className="w-4 h-4" /> Top Up Credits
+                <Sparkles className="w-4 h-4" /> Continue
               </Button>
             </div>
           </div>

@@ -27,6 +27,15 @@ const CREDIT_COSTS = [
 ];
 
 export default function CreditBalance() {
+  // Disabled: part of the "app feels free" strategy — no ambient credit
+  // balance display during normal usage. NotificationBell.jsx already
+  // occupies this header position. Kept in the codebase (rather than
+  // deleted) in case this ever needs to come back for a specific
+  // audience/flag, but this component is currently always a no-op.
+  return null;
+}
+
+function _DisabledCreditBalance() {
   const { balance, loading, refetch } = useCredits();
   const [showModal, setShowModal]     = useState(false);
 
