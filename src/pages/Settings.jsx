@@ -290,7 +290,7 @@ function PlatformVerificationQueue() {
     setLoading(true);
     const { data, error } = await supabase
       .from('platform_history')
-      .select('*, profiles(full_name, email)')
+      .select('*, profiles!user_id(full_name, email)')
       .eq('verification_status', 'pending')
       .order('created_at', { ascending: true });
     if (!error) {
