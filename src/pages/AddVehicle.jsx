@@ -12,6 +12,7 @@ import { ImagePlus, X } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
 import { geocodeLocation } from '@/lib/geocode';
+import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
 
 export default function AddVehicle() {
   const navigate = useNavigate();
@@ -23,6 +24,7 @@ export default function AddVehicle() {
   const isEditMode = !!editingId;
   const [loadingExisting, setLoadingExisting] = useState(isEditMode);
   const [listingPrice, setListingPrice] = useState(null);
+  const [showTopUpPrompt, setShowTopUpPrompt] = useState(false);
 
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
@@ -210,8 +212,7 @@ export default function AddVehicle() {
     onError: (err) => {
       console.error('Vehicle save error:', err);
       if (err?.message === 'insufficient_credits') {
-        toast.error('You need to upgrade your account to list this vehicle.');
-        navigate('/credits');
+        setShowTopUpPrompt(true);
         return;
       }
       toast.error('Failed to save vehicle: ' + (err?.message || 'Unknown error'));
@@ -283,6 +284,12 @@ export default function AddVehicle() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
+      <InsufficientCreditsModal
+        open={showTopUpPrompt}
+        onClose={() => setShowTopUpPrompt(false)}
+        requiredAmount={listingPrice}
+        actionLabel={isRelist ? 're-list this vehicle' : 'list this vehicle'}
+      />
       <PageHeader
         title={isRelist ? 'Re-list Vehicle' : isEditMode ? 'Edit Vehicle' : 'Add Vehicle'}
         subtitle={isRelist ? 'Confirm or update details, then re-list for another 6 months' : isEditMode ? 'Update your vehicle details' : 'List your vehicle for drivers to rent'}

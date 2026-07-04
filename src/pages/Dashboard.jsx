@@ -9,13 +9,14 @@ import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
-  ChevronUp, ChevronDown, Star, Sparkles
+  ChevronUp, ChevronDown, Star
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
 import { downloadContractPDF } from '@/lib/contractExport';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
+import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
 import { useCredits } from '@/hooks/useCredits';
 
 import VehicleCard from '@/components/vehicles/VehicleCard';
@@ -1680,46 +1681,13 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       )}
 
       {/* Insufficient-credits prompt — shown when owner can't afford to finalise a rental */}
-      {showCreditsNeededModal && createPortal(
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40"
-          onClick={() => setShowCreditsNeededModal(false)}
-        >
-          <div
-            className="bg-card rounded-2xl shadow-xl max-w-sm w-full border border-border p-6 text-center space-y-4"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-              <Sparkles className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <h2 className="font-bold text-foreground">Unlock this rental to continue</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                You'll need to upgrade your account to finalise this rental agreement.
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setShowCreditsNeededModal(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                className="flex-1 gap-1.5"
-                onClick={() => {
-                  setShowCreditsNeededModal(false);
-                  setShowTopUpModal(true);
-                }}
-              >
-                <Sparkles className="w-4 h-4" /> Continue
-              </Button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <InsufficientCreditsModal
+        open={showCreditsNeededModal}
+        onClose={() => setShowCreditsNeededModal(false)}
+        requiredAmount={200}
+        actionLabel="finalise this rental agreement"
+        onViewPackages={() => setShowTopUpModal(true)}
+      />
 
       {/* Top-up / buy-credits modal */}
       {showTopUpModal && createPortal(
