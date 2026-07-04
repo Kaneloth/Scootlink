@@ -171,6 +171,7 @@ export default function PlatformHistoryPanel({ user }) {
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => handleDelete(entry)}
                   disabled={deletingId === entry.id}
                   className="p-2 text-muted-foreground hover:text-destructive disabled:opacity-50"
@@ -184,7 +185,7 @@ export default function PlatformHistoryPanel({ user }) {
                   <p className="text-xs text-destructive">
                     <span className="font-semibold">Rejected:</span> {entry.rejection_reason || 'No reason given.'}
                   </p>
-                  <Button size="sm" variant="outline" onClick={() => openResubmitForm(entry)} className="w-full gap-1.5">
+                  <Button type="button" size="sm" variant="outline" onClick={() => openResubmitForm(entry)} className="w-full gap-1.5">
                     <Plus className="w-3.5 h-3.5" /> Correct & Resubmit
                   </Button>
                 </div>
@@ -195,14 +196,14 @@ export default function PlatformHistoryPanel({ user }) {
       )}
 
       {!showForm ? (
-        <Button variant="outline" onClick={() => setShowForm(true)} className="w-full gap-2">
+        <Button type="button" variant="outline" onClick={() => setShowForm(true)} className="w-full gap-2">
           <Plus className="w-4 h-4" /> Add a Platform
         </Button>
       ) : (
         <Card className="p-4 border border-border/50 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold">Add Platform</p>
-            <button onClick={() => { setShowForm(false); setForm(emptyForm); }} className="text-muted-foreground hover:text-foreground">
+            <button type="button" onClick={() => { setShowForm(false); setForm(emptyForm); }} className="text-muted-foreground hover:text-foreground">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -267,7 +268,7 @@ export default function PlatformHistoryPanel({ user }) {
             </div>
           )}
 
-          <Button onClick={handleSave} disabled={saving} className="w-full gap-2">
+          <Button type="button" onClick={handleSave} disabled={saving} className="w-full gap-2">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
             {saving ? 'Saving…' : 'Save Platform'}
           </Button>
