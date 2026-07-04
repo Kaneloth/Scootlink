@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Bike, LogIn, ArrowRight, ArrowLeft, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Bike, LogIn, ArrowRight, ArrowLeft, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
 
@@ -175,6 +175,20 @@ export default function Auth() {
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [passwordError, setPasswordError] = useState(null);
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [contactMsg, setContactMsg] = useState('');
+  const [contactSending, setContactSending] = useState(false);
+
+  // Password rules — lowercase, uppercase, and digits required, matching Crosssa
+  const pwRules = [
+    { label: 'At least 8 characters',     met: regPassword.length >= 8 },
+    { label: 'One uppercase letter (A–Z)', met: /[A-Z]/.test(regPassword) },
+    { label: 'One lowercase letter (a–z)', met: /[a-z]/.test(regPassword) },
+    { label: 'One number (0–9)',           met: /[0-9]/.test(regPassword) },
+  ];
+  const pwValid = pwRules.every(r => r.met);
+  const showPwChecklist = regPassword.length > 0 && !pwValid;
 
   // Password recovery state
   const [recoveryMode, setRecoveryMode] = useState(false);
@@ -448,6 +462,28 @@ export default function Auth() {
     }
   };
 
+  // ── Contact support fallback (stuck email verification) ──────────────────
+  const handleContactSupport = async () => {
+    if (!contactMsg.trim()) return;
+    setContactSending(true);
+    try {
+      await fetch('/.netlify/functions/contact-support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: signupEmail, name: regName || 'New User', message: contactMsg }),
+      });
+      toast.success("Message sent! We'll verify your account manually within 24 hours.");
+      setShowContactForm(false);
+      setContactMsg('');
+    } catch {
+      // Fallback to mailto if the function isn't deployed yet
+      window.location.href =
+        `mailto:help@skootlink.co.za?subject=Email+Verification+Issue&body=` +
+        encodeURIComponent(`Name: ${regName}\nEmail: ${signupEmail}\n\nIssue: ${contactMsg}`);
+    }
+    setContactSending(false);
+  };
+
   // ── Password login ────────────────────────────────────────────────────────
   const handleLogin = async () => {
     if (loading) return;
@@ -521,6 +557,8 @@ export default function Auth() {
   // ── Register ──────────────────────────────────────────────────────────────
   const handleRegister = async () => {
     if (!regName || !regEmail || !regPassword) { toast.error('Please fill in all required fields'); return; }
+    setPasswordError(null);
+    if (!pwValid) { setPasswordError('password_requirements'); return; }
     if (regPassword !== regConfirmPassword) { toast.error('Passwords do not match'); return; }
     if (!agreedToTerms) { toast.error('You must agree to the Terms and Conditions'); return; }
     setLoading(true);
@@ -543,7 +581,11 @@ export default function Auth() {
       setSignupEmail(regEmail);
       setSignupDone(true);
     } catch (err) {
-      toast.error(err.message || 'Registration failed');
+      if (err.message?.toLowerCase().includes('password')) {
+        setPasswordError('supabase');
+      } else {
+        toast.error(err.message || 'Registration failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -709,14 +751,46 @@ export default function Auth() {
                 <p className="text-xs text-muted-foreground">
                   Still not receiving the code? Some work and government email addresses block automated emails.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => navigate('/contact', { state: { backTo: '/auth' } })}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  Contact Support
-                </button>
+                {!showContactForm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowContactForm(true)}
+                    className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 font-semibold hover:underline w-full justify-center"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    Still stuck? Contact support to verify manually
+                  </button>
+                ) : (
+                  <div className="space-y-2 text-left">
+                    <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">
+                      Describe your issue and we'll manually verify your account within 24 hours.
+                    </p>
+                    <textarea
+                      value={contactMsg}
+                      onChange={e => setContactMsg(e.target.value)}
+                      placeholder="e.g. My Gmail inbox is full and I can't receive the OTP code..."
+                      rows={3}
+                      className="w-full rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-amber-950/30 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 resize-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setShowContactForm(false); setContactMsg(''); }}
+                        className="flex-1 text-xs py-1.5 rounded-xl border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleContactSupport}
+                        disabled={contactSending || !contactMsg.trim()}
+                        className="flex-1 text-xs py-1.5 rounded-xl bg-amber-600 text-white font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                      >
+                        {contactSending ? 'Sending…' : 'Send to Support'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -984,22 +1058,65 @@ export default function Auth() {
               <div>
                 <Label>Password</Label>
                 <div className="relative">
-                  <Input type={showRegPw ? 'text' : 'password'} placeholder="Create a password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} className="pr-10" autoComplete="new-password" />
+                  <Input
+                    type={showRegPw ? 'text' : 'password'}
+                    placeholder="Min 8 chars, upper, lower & number"
+                    value={regPassword}
+                    onChange={(e) => { setRegPassword(e.target.value); setPasswordError(null); }}
+                    className={`pr-10 ${passwordError === 'password_requirements' ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                    autoComplete="new-password"
+                  />
                   <button type="button" tabIndex={-1} onClick={() => setShowRegPw(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showRegPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+
+                {/* Password requirements checklist — shown while typing, hidden once all met */}
+                {showPwChecklist && (
+                  <div className="mt-2 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3.5 py-3 space-y-1.5">
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">
+                      Password must include:
+                    </p>
+                    {pwRules.map(rule => (
+                      <div key={rule.label} className="flex items-center gap-2">
+                        {rule.met
+                          ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                          : <XCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                        <span className={`text-xs ${rule.met ? 'text-green-700 dark:text-green-400 line-through opacity-60' : 'text-amber-800 dark:text-amber-300'}`}>
+                          {rule.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* All requirements met — subtle confirmation */}
+                {regPassword.length > 0 && pwValid && (
+                  <p className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 mt-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> Strong password ✓
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Confirm Password</Label>
                 <div className="relative">
-                  <Input type={showRegConfirmPw ? 'text' : 'password'} placeholder="Confirm your password" value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} className="pr-10" autoComplete="new-password" />
+                  <Input
+                    type={showRegConfirmPw ? 'text' : 'password'}
+                    placeholder="Confirm your password"
+                    value={regConfirmPassword}
+                    onChange={(e) => setRegConfirmPassword(e.target.value)}
+                    className={`pr-10 ${regConfirmPassword && regConfirmPassword !== regPassword ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                    autoComplete="new-password"
+                  />
                   <button type="button" tabIndex={-1} onClick={() => setShowRegConfirmPw(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showRegConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {regConfirmPassword && regConfirmPassword !== regPassword && (
+                  <p className="text-xs text-destructive mt-1">Passwords do not match</p>
+                )}
               </div>
               <div className="flex items-start gap-2">
                 <Checkbox
