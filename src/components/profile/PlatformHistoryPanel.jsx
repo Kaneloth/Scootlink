@@ -63,6 +63,9 @@ export default function PlatformHistoryPanel({ user }) {
           role: form.role || null,
           rating: form.rating,
           verification_status: form.requestVerification ? 'pending' : 'unverified',
+          rejection_reason: null,
+          reviewed_by: null,
+          reviewed_at: null,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id,platform' })
         .select()
@@ -117,7 +120,23 @@ export default function PlatformHistoryPanel({ user }) {
   const statusBadge = (status) => {
     if (status === 'verified') return <span className="text-[10px] text-green-600 font-medium">✅ Verified</span>;
     if (status === 'pending')  return <span className="text-[10px] text-amber-600 font-medium">⏳ Pending review</span>;
+    if (status === 'rejected') return <span className="text-[10px] text-destructive font-medium">❌ Rejected</span>;
     return <span className="text-[10px] text-muted-foreground">Self-reported</span>;
+  };
+
+  // Pre-fills the add/edit form from a rejected entry so the driver can
+  // correct and resubmit rather than starting from scratch.
+  const openResubmitForm = (entry) => {
+    const isKnownPlatform = PLATFORM_OPTIONS.includes(entry.platform);
+    setForm({
+      platform: isKnownPlatform ? entry.platform : 'Other',
+      otherPlatform: isKnownPlatform ? '' : entry.platform,
+      role: entry.role || '',
+      rating: Number(entry.rating) || 0,
+      evidenceFile: null,
+      requestVerification: true,
+    });
+    setShowForm(true);
   };
 
   if (loading) {
@@ -137,26 +156,39 @@ export default function PlatformHistoryPanel({ user }) {
       {entries.length > 0 && (
         <div className="space-y-2">
           {entries.map(entry => (
-            <Card key={entry.id} className="p-4 border border-border/50 flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-sm">{entry.platform}</span>
-                  {entry.role && <span className="text-xs text-muted-foreground">· {entry.role}</span>}
+            <Card key={entry.id} className="p-4 border border-border/50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-sm">{entry.platform}</span>
+                    {entry.role && <span className="text-xs text-muted-foreground">· {entry.role}</span>}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="flex items-center gap-0.5 text-amber-500 text-xs font-semibold">
+                      <Star className="w-3.5 h-3.5 fill-current" /> {Number(entry.rating).toFixed(1)}
+                    </span>
+                    {statusBadge(entry.verification_status)}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="flex items-center gap-0.5 text-amber-500 text-xs font-semibold">
-                    <Star className="w-3.5 h-3.5 fill-current" /> {Number(entry.rating).toFixed(1)}
-                  </span>
-                  {statusBadge(entry.verification_status)}
-                </div>
+                <button
+                  onClick={() => handleDelete(entry)}
+                  disabled={deletingId === entry.id}
+                  className="p-2 text-muted-foreground hover:text-destructive disabled:opacity-50"
+                >
+                  {deletingId === entry.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                </button>
               </div>
-              <button
-                onClick={() => handleDelete(entry)}
-                disabled={deletingId === entry.id}
-                className="p-2 text-muted-foreground hover:text-destructive disabled:opacity-50"
-              >
-                {deletingId === entry.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              </button>
+
+              {entry.verification_status === 'rejected' && (
+                <div className="mt-3 pt-3 border-t border-border space-y-2">
+                  <p className="text-xs text-destructive">
+                    <span className="font-semibold">Rejected:</span> {entry.rejection_reason || 'No reason given.'}
+                  </p>
+                  <Button size="sm" variant="outline" onClick={() => openResubmitForm(entry)} className="w-full gap-1.5">
+                    <Plus className="w-3.5 h-3.5" /> Correct & Resubmit
+                  </Button>
+                </div>
+              )}
             </Card>
           ))}
         </div>

@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Moon, Sun, ChevronRight, ChevronDown, ChevronUp, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
@@ -286,6 +287,17 @@ function PlatformVerificationQueue() {
   const [processingId, setProcessingId] = useState(null);
   const [signedUrls, setSignedUrls] = useState({});
   const [evidenceIssues, setEvidenceIssues] = useState({}); // entry.id -> reason string
+  const [rejectingId, setRejectingId] = useState(null); // entry.id currently showing the reason picker
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectReasonOther, setRejectReasonOther] = useState('');
+
+  const REJECTION_REASONS = [
+    'Rating does not match evidence',
+    'Screenshot is not from this platform',
+    'Screenshot is blurry or unreadable',
+    'Platform name does not match screenshot',
+    'Other',
+  ];
 
   const fetchPending = async () => {
     setLoading(true);
@@ -324,13 +336,14 @@ function PlatformVerificationQueue() {
 
   useEffect(() => { fetchPending(); }, []);
 
-  const handleReview = async (entry, approve) => {
+  const handleReview = async (entry, approve, reason = null) => {
     setProcessingId(entry.id);
     const { data: { user: adminUser } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from('platform_history')
       .update({
         verification_status: approve ? 'verified' : 'rejected',
+        rejection_reason: approve ? null : reason,
         reviewed_by: adminUser?.id || null,
         reviewed_at: new Date().toISOString(),
       })
@@ -340,8 +353,17 @@ function PlatformVerificationQueue() {
     } else {
       toast.success(approve ? 'Platform history approved' : 'Platform history rejected');
       setPending(prev => prev.filter(p => p.id !== entry.id));
+      setRejectingId(null);
+      setRejectReason('');
+      setRejectReasonOther('');
     }
     setProcessingId(null);
+  };
+
+  const confirmReject = (entry) => {
+    const finalReason = rejectReason === 'Other' ? rejectReasonOther.trim() : rejectReason;
+    if (!finalReason) { toast.error('Please select or enter a rejection reason'); return; }
+    handleReview(entry, false, finalReason);
   };
 
   return (
@@ -397,26 +419,65 @@ function PlatformVerificationQueue() {
               </div>
             )}
 
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                className="flex-1 gap-1.5"
-                disabled={processingId === entry.id}
-                onClick={() => handleReview(entry, true)}
-              >
-                {processingId === entry.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                Approve
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1 gap-1.5"
-                disabled={processingId === entry.id}
-                onClick={() => handleReview(entry, false)}
-              >
-                <XCircle className="w-3.5 h-3.5" /> Reject
-              </Button>
-            </div>
+            {rejectingId === entry.id ? (
+              <div className="space-y-2 border border-border rounded-xl p-3">
+                <p className="text-xs font-semibold">Reason for rejection</p>
+                <Select value={rejectReason} onValueChange={setRejectReason}>
+                  <SelectTrigger className="text-sm"><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                  <SelectContent>
+                    {REJECTION_REASONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                {rejectReason === 'Other' && (
+                  <Input
+                    placeholder="Type the reason…"
+                    value={rejectReasonOther}
+                    onChange={e => setRejectReasonOther(e.target.value)}
+                    className="text-sm"
+                  />
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="flex-1 gap-1.5"
+                    disabled={processingId === entry.id}
+                    onClick={() => confirmReject(entry)}
+                  >
+                    {processingId === entry.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                    Confirm Rejection
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setRejectingId(null); setRejectReason(''); setRejectReasonOther(''); }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="flex-1 gap-1.5"
+                  disabled={processingId === entry.id}
+                  onClick={() => handleReview(entry, true)}
+                >
+                  {processingId === entry.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  Approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 gap-1.5"
+                  disabled={processingId === entry.id}
+                  onClick={() => setRejectingId(entry.id)}
+                >
+                  <XCircle className="w-3.5 h-3.5" /> Reject
+                </Button>
+              </div>
+            )}
           </Card>
         ))}
       </div>
