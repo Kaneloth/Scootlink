@@ -309,7 +309,7 @@ export default function AddVehicle() {
             <Label>Vehicle Type</Label>
             <Select value={form.vehicle_type} onValueChange={v => update('vehicle_type', v)}>
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-              <SelectContent>
+              <SelectContent className="max-h-72 overflow-y-auto">
                 <SelectItem value="scooter">🛵 Scooter</SelectItem>
                 <SelectItem value="motorcycle">🏍️ Motorcycle</SelectItem>
                 <SelectItem value="bicycle">🚲 Bicycle</SelectItem>

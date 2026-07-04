@@ -325,7 +325,7 @@ export default function SearchVehicles() {
               <Label className="text-xs">Vehicle Type</Label>
               <Select value={filters.type} onValueChange={(v) => setFilters(prev => ({ ...prev, type: v }))}>
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-72 overflow-y-auto">
                   <SelectItem value="all">All Types</SelectItem>
                   <SelectItem value="scooter">🛵 Scooter</SelectItem>
                   <SelectItem value="motorcycle">🏍️ Motorcycle</SelectItem>
