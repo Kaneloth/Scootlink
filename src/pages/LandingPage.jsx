@@ -473,7 +473,7 @@ function FAQ() {
       items: [
         { q: "How do I change my password?", a: <>Go to <strong>Settings</strong> → <strong>Security</strong> → <strong>Change Password</strong>. Enter your current password and a new one.</> },
         { q: "How do I delete my account?", a: <>Go to <strong>Settings</strong> → <strong>Security</strong> → <strong>Delete Account</strong>. You'll need to confirm your identity and type "DELETE" to finalise. This permanently removes your profile, listings, and rental history.</> },
-        { q: "Can I switch between Driver and Owner?", a: <>Yes. You can change your account type in <strong>Settings</strong> → <strong>Plan</strong> by selecting the Fleet Pro plan, which gives you access to both driver and owner features.</> },
+        { q: "Can I switch between Driver and Owner?", a: <>Yes. You can switch your role at any time from your <strong>Profile</strong> page.</> },
       ],
     },
     {
@@ -519,8 +519,14 @@ function FAQ() {
           <div style={styles.faqStillNeedHelp}>
             <h3 style={styles.faqCategoryTitle}>Still need help?</h3>
             <p style={{ color: "#71717a", fontSize: 15 }}>
-              📧 Email us at <a href="mailto:help@skootlink.co.za" style={{ color: PRIMARY }}>help@skootlink.co.za</a><br />
-              We aim to respond within 24 hours on business days.
+              Can't find what you're looking for?{" "}
+              <a
+                href="#contact"
+                style={{ color: PRIMARY, cursor: "pointer" }}
+                onClick={e => { e.preventDefault(); document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" }); }}
+              >
+                Contact us below
+              </a>.
             </p>
           </div>
         </div>
@@ -554,8 +560,8 @@ function Contact() {
           </form>
         )}
         <p style={{ textAlign: "center", marginTop: 24, color: "#71717a" }}>
-          📧 help@skootlink.co.za<br />
-          📱 Available on Google Play and App Store
+          📧 <a href="mailto:help@skootlink.co.za" style={{ color: PRIMARY }}>help@skootlink.co.za</a><br />
+          We aim to respond within 24 hours on business days.
         </p>
       </div>
     </section>
