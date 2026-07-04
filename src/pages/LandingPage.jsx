@@ -251,7 +251,7 @@ function DemoSection() {
           <div className="sl-demo-features">
             <h3>What you'll see in the demo:</h3>
             <ul>
-              <li>🔍 Finding a scooter near you</li>
+              <li>🔍 Finding a vehicle near you</li>
               <li>📝 Submitting a rental request</li>
               <li>✍️ Signing a digital contract</li>
               <li>💬 Messaging the owner directly</li>
@@ -264,7 +264,6 @@ function DemoSection() {
             >
               🚀 Get Started — It's Free
             </button>
-            <p style={{ fontSize: 13, color: "#71717a", textAlign: "center", marginTop: 12 }}>*Full demo also available inside the app</p>
           </div>
         </div>
 
