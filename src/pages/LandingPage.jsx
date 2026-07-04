@@ -46,7 +46,7 @@ const styles = {
   trustP: { color: "#71717a", fontSize: 14 },
   galleryGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 24 },
   galleryCard: { borderRadius: 20, overflow: "hidden", border: "1px solid #e4e4e7", background: "#fff", transition: "transform .2s, box-shadow .2s" },
-  galleryImg: { height: 160, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 56 },
+  galleryImg: { height: 220, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 56 },
   galleryLabel: { padding: "16px 18px" },
   galleryH4: { fontSize: 16, marginBottom: 2 },
   galleryP: { color: "#71717a", fontSize: 13 },
@@ -288,32 +288,55 @@ function TrustSafety() {
 }
 
 // NOTE: these are placeholder icon cards, not real photos — sourcing random
-// web images for a live commercial site risks using content you don't have
-// the rights to. Swap `emoji`/`gradient` below for real photos of vehicles
-// or drivers on your platform (e.g. from Supabase Storage) when ready.
+// NOTE: this expects real app screenshots at /public/gallery/*.png (see the
+// six paths below). Each <img> falls back to a labelled placeholder if the
+// file doesn't exist yet — so the section still looks intentional rather
+// than broken until you've captured and uploaded the real screenshots.
+// To create them: open the app screen on your phone (or Chrome DevTools at
+// 412×915px), screenshot it, optionally frame it with Google's Device Art
+// Generator, and save to public/gallery/<name>.png.
+function GalleryImage({ src, emoji }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div style={{ ...styles.galleryImg, background: "linear-gradient(135deg,#eff6ff,#dbeafe)" }}>
+        <span style={{ opacity: 0.5 }}>{emoji}</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      style={{ width: "100%", height: 220, objectFit: "cover", display: "block", background: "#eff6ff" }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function Gallery() {
   const items = [
-    { emoji: "🛵", label: "Scooters", desc: "Perfect for city delivery work", gradient: "linear-gradient(135deg,#dbeafe,#bfdbfe)" },
-    { emoji: "🚗", label: "Cars", desc: "Ideal for Uber & Bolt driving", gradient: "linear-gradient(135deg,#fef3c7,#fde68a)" },
-    { emoji: "🏍️", label: "Motorcycles", desc: "Fast and fuel-efficient", gradient: "linear-gradient(135deg,#fee2e2,#fecaca)" },
-    { emoji: "🚙", label: "SUVs", desc: "Extra space, extra comfort", gradient: "linear-gradient(135deg,#dcfce7,#bbf7d0)" },
-    { emoji: "🛻", label: "Bakkies", desc: "For hauling and heavy loads", gradient: "linear-gradient(135deg,#e0e7ff,#c7d2fe)" },
-    { emoji: "🚐", label: "Vans", desc: "Bulk deliveries made easy", gradient: "linear-gradient(135deg,#fae8ff,#f5d0fe)" },
+    { src: "/gallery/dashboard.png", emoji: "🏠", label: "Your Command Centre", desc: "See active rentals, vehicle stats, and quick actions at a glance." },
+    { src: "/gallery/search.png",    emoji: "🔍", label: "Find the Right Vehicle", desc: "Filter by type, price, and location. Browse cars, scooters, vans, and more." },
+    { src: "/gallery/contract.png",  emoji: "📄", label: "Sign Digital Contracts", desc: "Legally binding agreements signed inside the app. No paperwork needed." },
+    { src: "/gallery/verified.png",  emoji: "🛡️", label: "Build Trust with Verification", desc: "Optional ID and licence checks give you a verified badge. Stand out from the crowd." },
+    { src: "/gallery/chat.png",      emoji: "💬", label: "Chat Securely", desc: "Message owners and drivers inside the app. Contact details stay hidden until a contract is signed." },
+    { src: "/gallery/briefcase.png", emoji: "💼", label: "Your Digital Briefcase", desc: "All your contracts and rental history stored safely. Download PDFs anytime." },
   ];
   return (
     <section style={styles.sectionAlt} id="gallery">
       <div style={styles.container}>
-        <h2 style={styles.sectionTitle}>Vehicles on Skootlink</h2>
-        <p style={styles.sectionSub}>A growing range of vehicles listed by owners across South Africa</p>
+        <h2 style={styles.sectionTitle}>See Skootlink in Action</h2>
+        <p style={styles.sectionSub}>From finding a vehicle to signing a contract — everything happens right inside the app</p>
         <div style={styles.galleryGrid}>
-          {items.map(({ emoji, label, desc, gradient }) => (
+          {items.map(({ src, emoji, label, desc }) => (
             <div
               key={label}
               style={styles.galleryCard}
               onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 12px 24px -8px rgba(37,99,235,.2)"; }}
               onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
             >
-              <div style={{ ...styles.galleryImg, background: gradient }}>{emoji}</div>
+              <GalleryImage src={src} emoji={emoji} />
               <div style={styles.galleryLabel}>
                 <h4 style={styles.galleryH4}>{label}</h4>
                 <p style={styles.galleryP}>{desc}</p>
