@@ -217,6 +217,16 @@ function HowItWorks() {
 }
 
 function DemoSection() {
+  const galleryItems = [
+    { src: "/gallery/dashboard.png", emoji: "🏠", label: "Your Command Centre", desc: "See active rentals, vehicle stats, and quick actions at a glance." },
+    { src: "/gallery/search.png",    emoji: "🔍", label: "Find the Right Vehicle", desc: "Filter by type, price, and location. Browse cars, scooters, vans, and more." },
+    { src: "/gallery/find-drivers.png", emoji: "🧑‍✈️", label: "Find the Right Driver", desc: "Owners can browse verified drivers, check ratings and platform history, and send a rental offer directly." },
+    { src: "/gallery/contract.png",  emoji: "📄", label: "Sign Digital Contracts", desc: "Legally binding agreements signed inside the app. No paperwork needed." },
+    { src: "/gallery/verified.png",  emoji: "🛡️", label: "Build Trust with Verification", desc: "Optional ID and licence checks give you a verified badge. Stand out from the crowd." },
+    { src: "/gallery/chat.png",      emoji: "💬", label: "Chat Securely", desc: "Message owners and drivers inside the app. Contact details stay hidden until a contract is signed." },
+    { src: "/gallery/briefcase.png", emoji: "💼", label: "Your Digital Briefcase", desc: "All your contracts and rental history stored safely. Download PDFs anytime." },
+  ];
+
   return (
     <section style={styles.section} id="demo">
       <div style={styles.container}>
@@ -255,6 +265,26 @@ function DemoSection() {
               🚀 Get Started — It's Free
             </button>
             <p style={{ fontSize: 13, color: "#71717a", textAlign: "center", marginTop: 12 }}>*Full demo also available inside the app</p>
+          </div>
+        </div>
+
+        {/* Screenshot gallery — merged into this same section, not a separate one, to avoid a duplicate "See Skootlink in Action" heading */}
+        <div id="gallery" style={{ marginTop: 80 }}>
+          <div style={styles.galleryGrid}>
+            {galleryItems.map(({ src, emoji, label, desc }) => (
+              <div
+                key={label}
+                style={styles.galleryCard}
+                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 12px 24px -8px rgba(37,99,235,.2)"; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
+              >
+                <GalleryImage src={src} emoji={emoji} />
+                <div style={styles.galleryLabel}>
+                  <h4 style={styles.galleryH4}>{label}</h4>
+                  <p style={styles.galleryP}>{desc}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -311,42 +341,6 @@ function GalleryImage({ src, emoji }) {
       style={{ width: "100%", height: 220, objectFit: "cover", display: "block", background: "#eff6ff" }}
       onError={() => setFailed(true)}
     />
-  );
-}
-
-function Gallery() {
-  const items = [
-    { src: "/gallery/dashboard.png", emoji: "🏠", label: "Your Command Centre", desc: "See active rentals, vehicle stats, and quick actions at a glance." },
-    { src: "/gallery/search.png",    emoji: "🔍", label: "Find the Right Vehicle", desc: "Filter by type, price, and location. Browse cars, scooters, vans, and more." },
-    { src: "/gallery/find-drivers.png", emoji: "🧑‍✈️", label: "Find the Right Driver", desc: "Owners can browse verified drivers, check ratings and platform history, and send a rental offer directly." },
-    { src: "/gallery/contract.png",  emoji: "📄", label: "Sign Digital Contracts", desc: "Legally binding agreements signed inside the app. No paperwork needed." },
-    { src: "/gallery/verified.png",  emoji: "🛡️", label: "Build Trust with Verification", desc: "Optional ID and licence checks give you a verified badge. Stand out from the crowd." },
-    { src: "/gallery/chat.png",      emoji: "💬", label: "Chat Securely", desc: "Message owners and drivers inside the app. Contact details stay hidden until a contract is signed." },
-    { src: "/gallery/briefcase.png", emoji: "💼", label: "Your Digital Briefcase", desc: "All your contracts and rental history stored safely. Download PDFs anytime." },
-  ];
-  return (
-    <section style={styles.sectionAlt} id="gallery">
-      <div style={styles.container}>
-        <h2 style={styles.sectionTitle}>See Skootlink in Action</h2>
-        <p style={styles.sectionSub}>From finding a vehicle to signing a contract — everything happens right inside the app</p>
-        <div style={styles.galleryGrid}>
-          {items.map(({ src, emoji, label, desc }) => (
-            <div
-              key={label}
-              style={styles.galleryCard}
-              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 12px 24px -8px rgba(37,99,235,.2)"; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
-            >
-              <GalleryImage src={src} emoji={emoji} />
-              <div style={styles.galleryLabel}>
-                <h4 style={styles.galleryH4}>{label}</h4>
-                <p style={styles.galleryP}>{desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -640,7 +634,6 @@ export default function LandingPage() {
       <HowItWorks />
       <DemoSection />
       <TrustSafety />
-      <Gallery />
       <Audiences />
       <About />
       <DownloadCTA />
