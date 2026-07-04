@@ -9,7 +9,7 @@
  *
  * Place at: src/components/profile/PlatformHistoryPanel.jsx
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/api/supabaseData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,19 @@ export default function PlatformHistoryPanel({ user }) {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const formRef = useRef(null);
+
+  // Whenever the form opens (either "Add a Platform" or "Correct & Resubmit"),
+  // scroll it into view — it renders at the bottom of the entries list, which
+  // can be well below the fold, making it look like the button did nothing.
+  useEffect(() => {
+    if (showForm) {
+      // Wait a tick for the form to actually render before scrolling to it
+      requestAnimationFrame(() => {
+        formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }, [showForm]);
 
   const fetchEntries = async () => {
     if (!user?.id) return;
@@ -200,6 +213,7 @@ export default function PlatformHistoryPanel({ user }) {
           <Plus className="w-4 h-4" /> Add a Platform
         </Button>
       ) : (
+        <div ref={formRef}>
         <Card className="p-4 border border-border/50 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold">Add Platform</p>
@@ -273,6 +287,7 @@ export default function PlatformHistoryPanel({ user }) {
             {saving ? 'Saving…' : 'Save Platform'}
           </Button>
         </Card>
+        </div>
       )}
     </div>
   );
