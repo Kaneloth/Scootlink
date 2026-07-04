@@ -76,11 +76,18 @@ export default function PlatformHistoryPanel({ user }) {
         const { error: uploadErr } = await supabase.storage
           .from('platform-evidence')
           .upload(filePath, form.evidenceFile, { contentType: form.evidenceFile.type, upsert: true });
-        if (!uploadErr) {
-          await supabase.from('platform_history').update({ evidence_url: filePath }).eq('id', row.id);
-        } else {
+        if (uploadErr) {
           console.warn('[PlatformHistoryPanel] evidence upload failed:', uploadErr);
-          toast.error('Entry saved, but the screenshot upload failed — try re-requesting verification.');
+          toast.error('Entry saved, but the screenshot upload failed: ' + uploadErr.message);
+        } else {
+          const { error: linkErr } = await supabase
+            .from('platform_history')
+            .update({ evidence_url: filePath })
+            .eq('id', row.id);
+          if (linkErr) {
+            console.warn('[PlatformHistoryPanel] failed to link evidence_url:', linkErr);
+            toast.error('Screenshot uploaded, but could not be linked to your entry: ' + linkErr.message);
+          }
         }
       }
 

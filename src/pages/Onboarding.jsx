@@ -230,10 +230,14 @@ export default function Onboarding() {
           const { error: uploadErr } = await supabase.storage
             .from('platform-evidence')
             .upload(filePath, entry.evidenceFile, { contentType: entry.evidenceFile.type });
-          if (!uploadErr) {
-            await supabase.from('platform_history').update({ evidence_url: filePath }).eq('id', row.id);
-          } else {
+          if (uploadErr) {
             console.warn('[Onboarding] evidence upload failed:', uploadErr);
+          } else {
+            const { error: linkErr } = await supabase
+              .from('platform_history')
+              .update({ evidence_url: filePath })
+              .eq('id', row.id);
+            if (linkErr) console.warn('[Onboarding] failed to link evidence_url:', linkErr);
           }
         }
       }
