@@ -305,7 +305,7 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
               </div>
             )}
             <div className="flex justify-between px-4 py-2.5">
-              <span className="text-muted-foreground">Rating</span>
+              <span className="text-muted-foreground">Skootlink Rating</span>
               <span><StarRating value={Math.round(profile.rating || 0)} size="sm" showValue /></span>
             </div>
           </div>
