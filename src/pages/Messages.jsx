@@ -464,7 +464,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
               disabled={sending}
               className="rounded-full flex-1 bg-muted/40 border-border"
             />
-            <Button type="submit" size="icon" disabled={sending || !text.trim() || !canSend} className="rounded-full shrink-0 w-10 h-10">
+            <Button type="submit" size="icon" disabled={sending || !text.trim()} className="rounded-full shrink-0 w-10 h-10">
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </Button>
           </>
