@@ -318,6 +318,7 @@ function Gallery() {
   const items = [
     { src: "/gallery/dashboard.png", emoji: "🏠", label: "Your Command Centre", desc: "See active rentals, vehicle stats, and quick actions at a glance." },
     { src: "/gallery/search.png",    emoji: "🔍", label: "Find the Right Vehicle", desc: "Filter by type, price, and location. Browse cars, scooters, vans, and more." },
+    { src: "/gallery/find-drivers.png", emoji: "🧑‍✈️", label: "Find the Right Driver", desc: "Owners can browse verified drivers, check ratings and platform history, and send a rental offer directly." },
     { src: "/gallery/contract.png",  emoji: "📄", label: "Sign Digital Contracts", desc: "Legally binding agreements signed inside the app. No paperwork needed." },
     { src: "/gallery/verified.png",  emoji: "🛡️", label: "Build Trust with Verification", desc: "Optional ID and licence checks give you a verified badge. Stand out from the crowd." },
     { src: "/gallery/chat.png",      emoji: "💬", label: "Chat Securely", desc: "Message owners and drivers inside the app. Contact details stay hidden until a contract is signed." },
