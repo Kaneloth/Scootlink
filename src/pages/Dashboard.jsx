@@ -294,6 +294,7 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
             {row('Gender',       profile.gender ? profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1) : null)}
             {row('Citizenship',  profile.citizenship)}
             {row('City / Area',  profile.location)}
+            {row('Driving Experience', { '1-2': '1 – 2 years', '3-5': '3 – 5 years', '6+': '6+ years' }[profile.driving_experience] || null)}
             {row('Licence No.',  profile.license_number, { mono: true })}
             {profile.license_year && (
               <div className="flex justify-between px-4 py-2.5">

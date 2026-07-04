@@ -84,6 +84,7 @@ export default function Profile() {
     email: '',
     phone: '',
     gender: '',
+    driving_experience: '',
     location: '',
     residential_address: '',
     license_number: '',
@@ -221,6 +222,7 @@ export default function Profile() {
           email: u.email || '',
           phone: u.phone || '',
           gender: u.gender || '',
+          driving_experience: u.driving_experience || '',
           location: u.location || '',
           residential_address: u.residential_address || '',
           license_number: u.license_number || '',
@@ -392,6 +394,7 @@ export default function Profile() {
         full_name: form.full_name,
         phone: form.phone,
         gender: form.gender,
+        driving_experience: accountType !== 'owner' ? (form.driving_experience || null) : null,
         location: locationStr,
         residential_address: form.residential_address,
         license_number: form.license_number,
@@ -505,6 +508,7 @@ export default function Profile() {
           email:                freshUser.email || '',
           phone:                freshUser.phone || '',
           gender:               freshUser.gender || '',
+          driving_experience:   freshUser.driving_experience || '',
           location:             freshUser.location || '',
           residential_address:  freshUser.residential_address || '',
           license_number:       freshUser.license_number || '',
@@ -683,6 +687,19 @@ export default function Profile() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {accountType !== 'owner' && (
+                    <div>
+                      <Label>Driving Experience</Label>
+                      <Select value={form.driving_experience} onValueChange={(v) => update('driving_experience', v)}>
+                        <SelectTrigger className="mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1-2">1 – 2 years</SelectItem>
+                          <SelectItem value="3-5">3 – 5 years</SelectItem>
+                          <SelectItem value="6+">6+ years</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
 
                 {/* Location — province + city dropdowns matching Onboarding */}

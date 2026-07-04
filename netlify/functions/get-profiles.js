@@ -8,7 +8,7 @@
  * POST body: { ids: string[] }
  * Returns:   Profile[] with id, full_name, email, phone, verified, wallet_balance,
  *            location, id_verified, licence_verified, license_number, license_year,
- *            rating, gender
+ *            rating, gender, driving_experience
  */
 
 exports.handler = async (event) => {
@@ -62,7 +62,7 @@ exports.handler = async (event) => {
   // break every field returned here, not just the new ones. If those columns
   // are confirmed to exist, they can be safely added to this list.
   const inList = ids.join(',');
-  const select = 'id,full_name,email,phone,verified,wallet_balance,location,id_verified,licence_verified,license_number,license_year,rating,gender';
+  const select = 'id,full_name,email,phone,verified,wallet_balance,location,id_verified,licence_verified,license_number,license_year,rating,gender,driving_experience';
   const url    = `${supabaseUrl}/rest/v1/profiles?id=in.(${inList})&select=${select}`;
 
   try {

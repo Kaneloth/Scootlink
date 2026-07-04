@@ -154,6 +154,7 @@ export default function Onboarding() {
     phone:               '',
     gender:              '',
     date_of_birth:       '',
+    driving_experience:  '',
     country_type:        'South Africa',
     sa_province:         '',
     sa_city:             '',
@@ -315,6 +316,7 @@ export default function Onboarding() {
     phone:                normalisePhone(form.phone),
     gender:               form.gender,
     date_of_birth:        form.date_of_birth || null,
+    driving_experience:   form.role !== 'owner' ? (form.driving_experience || null) : null,
     location:             buildLocation(),
     residential_address:  form.residential_address,
     onboarding_completed: true,
@@ -597,6 +599,21 @@ export default function Onboarding() {
                   </Label>
                   <Input className="mt-1" type="date" value={form.date_of_birth} onChange={e => update('date_of_birth', e.target.value)} max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]} />
                 </div>
+
+                {/* Driving Experience — driver/both only */}
+                {form.role !== 'owner' && (
+                  <div className="col-span-2">
+                    <Label className="text-xs font-medium">Driving Experience</Label>
+                    <Select value={form.driving_experience} onValueChange={v => update('driving_experience', v)}>
+                      <SelectTrigger className="mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1-2">1 – 2 years</SelectItem>
+                        <SelectItem value="3-5">3 – 5 years</SelectItem>
+                        <SelectItem value="6+">6+ years</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
               </div>
 
