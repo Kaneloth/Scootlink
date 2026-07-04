@@ -410,6 +410,7 @@ export default function Profile() {
           full_name:            form.full_name           || null,
           email:                form.email               || user.email || null,
           phone:                form.phone               || null,
+          driving_experience:   accountType !== 'owner' ? (form.driving_experience || null) : null,
           location:             locationStr              || null,
           residential_address:  form.residential_address || null,
           license_year:         form.license_year        ? parseInt(form.license_year) : null,
