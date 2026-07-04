@@ -44,6 +44,8 @@ export default function AddVehicle() {
     make:                   '',
     model:                  '',
     year:                   '',
+    color:                  '',
+    transmission:           '',
     plate:                  '',
     location:               '',
     price_per_week:         '',
@@ -70,6 +72,8 @@ export default function AddVehicle() {
           make:                   data.make || '',
           model:                  data.model || '',
           year:                   data.year ? String(data.year) : '',
+          color:                  data.color || '',
+          transmission:           data.transmission || '',
           plate:                  data.plate || '',
           location:               data.location || '',
           price_per_week:         data.price ? String(data.price) : '',
@@ -260,7 +264,11 @@ export default function AddVehicle() {
     mutation.mutate(payload);
   };
 
-  const update = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+  const update = (field, value) => setForm(prev => {
+    const next = { ...prev, [field]: value };
+    if (field === 'vehicle_type' && value === 'bicycle') next.transmission = '';
+    return next;
+  });
 
   if (loadingExisting) {
     return (
@@ -304,7 +312,13 @@ export default function AddVehicle() {
               <SelectContent>
                 <SelectItem value="scooter">🛵 Scooter</SelectItem>
                 <SelectItem value="motorcycle">🏍️ Motorcycle</SelectItem>
+                <SelectItem value="bicycle">🚲 Bicycle</SelectItem>
                 <SelectItem value="car">🚗 Car</SelectItem>
+                <SelectItem value="suv">🚙 SUV</SelectItem>
+                <SelectItem value="bakkie">🛻 Bakkie / Pickup</SelectItem>
+                <SelectItem value="van">🚐 Van</SelectItem>
+                <SelectItem value="minibus_taxi">🚌 Minibus / Taxi</SelectItem>
+                <SelectItem value="truck">🚚 Truck</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -327,6 +341,24 @@ export default function AddVehicle() {
               <Label>License Plate *</Label>
               <Input className="mt-1" placeholder="ABC 123 GP" value={form.plate} onChange={e => update('plate', e.target.value)} />
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Color</Label>
+              <Input className="mt-1" placeholder="White" value={form.color} onChange={e => update('color', e.target.value)} />
+            </div>
+            {form.vehicle_type !== 'bicycle' && (
+              <div>
+                <Label>Transmission</Label>
+                <Select value={form.transmission} onValueChange={v => update('transmission', v)}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="automatic">Automatic</SelectItem>
+                    <SelectItem value="manual">Manual</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <div>
             <Label>Location *</Label>

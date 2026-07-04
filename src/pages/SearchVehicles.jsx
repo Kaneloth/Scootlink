@@ -327,9 +327,15 @@ export default function SearchVehicles() {
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="scooter">Scooter</SelectItem>
-                  <SelectItem value="motorcycle">Motorcycle</SelectItem>
-                  <SelectItem value="car">Car</SelectItem>
+                  <SelectItem value="scooter">🛵 Scooter</SelectItem>
+                  <SelectItem value="motorcycle">🏍️ Motorcycle</SelectItem>
+                  <SelectItem value="bicycle">🚲 Bicycle</SelectItem>
+                  <SelectItem value="car">🚗 Car</SelectItem>
+                  <SelectItem value="suv">🚙 SUV</SelectItem>
+                  <SelectItem value="bakkie">🛻 Bakkie / Pickup</SelectItem>
+                  <SelectItem value="van">🚐 Van</SelectItem>
+                  <SelectItem value="minibus_taxi">🚌 Minibus / Taxi</SelectItem>
+                  <SelectItem value="truck">🚚 Truck</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -4,7 +4,10 @@ import { Card } from '@/components/ui/card';
 import { MapPin, Star, Calendar, X } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 
-const typeIcons = { scooter: '🛵', motorcycle: '🏍️', car: '🚗' };
+const typeIcons = {
+  scooter: '🛵', motorcycle: '🏍️', bicycle: '🚲', car: '🚗',
+  suv: '🚙', bakkie: '🛻', van: '🚐', minibus_taxi: '🚌', truck: '🚚',
+};
 
 const statusStyles = {
   available: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -50,6 +53,10 @@ export default function VehicleCard({ vehicle, onClick, showPrice = true }) {
                   <Calendar className="w-3 h-3" />
                   {vehicle.year}
                 </span>
+                {vehicle.color && <span>{vehicle.color}</span>}
+                {vehicle.transmission && (
+                  <span className="capitalize">{vehicle.transmission}</span>
+                )}
                 <span className="flex items-center gap-1">
                   <MapPin className="w-3 h-3" />
                   {vehicle.location}
