@@ -44,6 +44,17 @@ const styles = {
   trustIcon: { fontSize: 48, marginBottom: 16 },
   trustH4: { fontSize: 18, marginBottom: 8 },
   trustP: { color: "#71717a", fontSize: 14 },
+  galleryGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 24 },
+  galleryCard: { borderRadius: 20, overflow: "hidden", border: "1px solid #e4e4e7", background: "#fff", transition: "transform .2s, box-shadow .2s" },
+  galleryImg: { height: 160, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 56 },
+  galleryLabel: { padding: "16px 18px" },
+  galleryH4: { fontSize: 16, marginBottom: 2 },
+  galleryP: { color: "#71717a", fontSize: 13 },
+  faqList: { maxWidth: 760, margin: "0 auto" },
+  faqItem: { borderBottom: "1px solid #e4e4e7" },
+  faqQuestion: { width: "100%", textAlign: "left", background: "none", border: "none", padding: "22px 4px", fontSize: 17, fontWeight: 600, color: "#09090b", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, fontFamily: "inherit" },
+  faqAnswer: { padding: "0 4px 22px", color: "#71717a", fontSize: 15, lineHeight: 1.7 },
+  faqIcon: { fontSize: 20, color: PRIMARY, flexShrink: 0, transition: "transform .2s" },
   contentGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 },
   contentCard: { background: "#eff6ff", borderRadius: 16, padding: "40px 32px" },
   contentH3: { fontSize: 24, marginBottom: 16 },
@@ -104,7 +115,7 @@ function Navbar() {
           <img src="/logo.png" alt="Skootlink" style={{ height: 52, width: "auto" }} />
         </a>
         <ul style={styles.navList} className="sl-nav-links">
-          {[["How It Works", "how-it-works"], ["Trust & Safety", "trust"], ["About", "about"], ["Contact", "contact"]].map(([label, id]) => (
+          {[["How It Works", "how-it-works"], ["Gallery", "gallery"], ["Trust & Safety", "trust"], ["FAQ", "faq"], ["About", "about"], ["Contact", "contact"]].map(([label, id]) => (
             <li key={id}>
               <a href={`#${id}`} style={styles.navLink}
                 onClick={e => { e.preventDefault(); scroll(id); }}
@@ -273,6 +284,45 @@ function TrustSafety() {
   );
 }
 
+// NOTE: these are placeholder icon cards, not real photos — sourcing random
+// web images for a live commercial site risks using content you don't have
+// the rights to. Swap `emoji`/`gradient` below for real photos of vehicles
+// or drivers on your platform (e.g. from Supabase Storage) when ready.
+function Gallery() {
+  const items = [
+    { emoji: "🛵", label: "Scooters", desc: "Perfect for city delivery work", gradient: "linear-gradient(135deg,#dbeafe,#bfdbfe)" },
+    { emoji: "🚗", label: "Cars", desc: "Ideal for Uber & Bolt driving", gradient: "linear-gradient(135deg,#fef3c7,#fde68a)" },
+    { emoji: "🏍️", label: "Motorcycles", desc: "Fast and fuel-efficient", gradient: "linear-gradient(135deg,#fee2e2,#fecaca)" },
+    { emoji: "🚙", label: "SUVs", desc: "Extra space, extra comfort", gradient: "linear-gradient(135deg,#dcfce7,#bbf7d0)" },
+    { emoji: "🛻", label: "Bakkies", desc: "For hauling and heavy loads", gradient: "linear-gradient(135deg,#e0e7ff,#c7d2fe)" },
+    { emoji: "🚐", label: "Vans", desc: "Bulk deliveries made easy", gradient: "linear-gradient(135deg,#fae8ff,#f5d0fe)" },
+  ];
+  return (
+    <section style={styles.sectionAlt} id="gallery">
+      <div style={styles.container}>
+        <h2 style={styles.sectionTitle}>Vehicles on Skootlink</h2>
+        <p style={styles.sectionSub}>A growing range of vehicles listed by owners across South Africa</p>
+        <div style={styles.galleryGrid}>
+          {items.map(({ emoji, label, desc, gradient }) => (
+            <div
+              key={label}
+              style={styles.galleryCard}
+              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 12px 24px -8px rgba(37,99,235,.2)"; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
+            >
+              <div style={{ ...styles.galleryImg, background: gradient }}>{emoji}</div>
+              <div style={styles.galleryLabel}>
+                <h4 style={styles.galleryH4}>{label}</h4>
+                <p style={styles.galleryP}>{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Audiences() {
   const scroll = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   return (
@@ -337,6 +387,45 @@ function DownloadCTA() {
             onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
           >🔑 Sign In</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FAQ() {
+  const faqs = [
+    { q: "How do I list my vehicle on Skootlink?", a: "Sign up as an owner, add your vehicle's details (type, make, model, price), and it goes live for drivers to find in search once your listing fee is paid using credits." },
+    { q: "Do I need to own a vehicle to drive for Uber or Bolt?", a: "No — you can rent a car, bike, or scooter from an owner on Skootlink and use it to drive for Uber, Bolt, or delivery apps like Uber Eats and Mr D Food." },
+    { q: "How does payment work?", a: "Rental terms (weekly price and deposit) are agreed directly between the driver and owner in the app, formalised in a digital rental agreement before the rental begins." },
+    { q: "What is identity verification, and is it required?", a: "Verification confirms a user's ID or driver's licence against Home Affairs records and a live selfie. It's optional but strongly recommended — verified users are trusted more by other users on the platform." },
+    { q: "What are Skootlink credits?", a: "Credits are used to pay for platform actions like starting a chat, listing a vehicle, or verifying your identity. New accounts receive free sign-up credits, and more can be purchased at any time." },
+    { q: "What happens if something goes wrong during a rental?", a: "Every rental is backed by a digital contract signed by both parties before it begins, and our support team is available to help resolve any disputes." },
+  ];
+  const [openIndex, setOpenIndex] = useState(null);
+
+  return (
+    <section style={styles.section} id="faq">
+      <div style={styles.container}>
+        <h2 style={styles.sectionTitle}>Frequently Asked Questions</h2>
+        <p style={styles.sectionSub}>Everything you need to know about renting and listing on Skootlink</p>
+        <div style={styles.faqList}>
+          {faqs.map(({ q, a }, i) => {
+            const isOpen = openIndex === i;
+            return (
+              <div key={q} style={styles.faqItem}>
+                <button
+                  style={styles.faqQuestion}
+                  onClick={() => setOpenIndex(isOpen ? null : i)}
+                  aria-expanded={isOpen}
+                >
+                  {q}
+                  <span style={{ ...styles.faqIcon, transform: isOpen ? "rotate(45deg)" : "none" }}>+</span>
+                </button>
+                {isOpen && <p style={styles.faqAnswer}>{a}</p>}
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -447,9 +536,11 @@ export default function LandingPage() {
       <HowItWorks />
       <DemoSection />
       <TrustSafety />
+      <Gallery />
       <Audiences />
       <About />
       <DownloadCTA />
+      <FAQ />
       <Contact />
       <Footer />
     </div>
