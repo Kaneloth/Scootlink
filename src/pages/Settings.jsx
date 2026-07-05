@@ -529,6 +529,21 @@ export default function Settings() {
   const [banningId, setBanningId] = useState(null);
   const [suspendingId, setSuspendingId] = useState(null);
   const [suspendPickerId, setSuspendPickerId] = useState(null); // user id currently showing the duration picker
+  const [banPickerId, setBanPickerId] = useState(null); // user id currently showing the ban-reason picker
+  const [banReason, setBanReason] = useState('');
+  const [banReasonOther, setBanReasonOther] = useState('');
+  const [suspendReason, setSuspendReason] = useState('');
+  const [suspendReasonOther, setSuspendReasonOther] = useState('');
+
+  const MODERATION_REASONS = [
+    'Fraudulent activity',
+    'Fake or duplicate account',
+    'Harassment or abusive behaviour',
+    'Violation of Terms of Service',
+    'Payment or chargeback dispute',
+    'Safety concern reported by another user',
+    'Other',
+  ];
   const [adminSelectedUser, setAdminSelectedUser] = useState(null); // user open in detail/edit modal
   const [adminEditForm, setAdminEditForm] = useState(null);          // edit form state
   const [adminSaving, setAdminSaving] = useState(false);
@@ -724,7 +739,7 @@ export default function Settings() {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, banned, suspended_until, id_document_number, id_document_type, created_at')
+      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, banned, suspended_until, ban_reason, suspension_reason, id_document_number, id_document_type, created_at')
       .order('created_at', { ascending: false });
     if (!error) {
       // Fetch credit balances for each user via the same RPC the app uses for
@@ -863,13 +878,13 @@ export default function Settings() {
   };
 
   // ── Ban (permanent, until an admin reverses it) ───────────────────────────
-  const banUser = async (userId, currentlyBanned) => {
+  const banUser = async (userId, currentlyBanned, reason = null) => {
     setBanningId(userId);
     const banning = !currentlyBanned;
 
     const { error } = await supabase
       .from('profiles')
-      .update({ banned: banning })
+      .update({ banned: banning, ban_reason: banning ? reason : null })
       .eq('id', userId);
 
     if (error) {
@@ -913,10 +928,11 @@ export default function Settings() {
       // Non-fatal — profiles.banned still blocks app access on next login attempt
     }
 
-    setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: banning } : u));
-    if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, banned: banning }));
+    setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: banning, ban_reason: banning ? reason : null } : u));
+    if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, banned: banning, ban_reason: banning ? reason : null }));
     toast.success(banning ? 'User banned ⛔' : 'User unbanned ✓');
     setBanningId(null);
+    setBanPickerId(null);
   };
 
   // ── Suspend (temporary, self-expiring) ────────────────────────────────────
@@ -929,30 +945,32 @@ export default function Settings() {
   // user being suspended won't be forcibly kicked out immediately — they'll
   // be blocked on their next sign-in, not mid-session. Flagging this as a
   // known limitation rather than a silent gap.
-  const suspendUser = async (userId, days) => {
+  const suspendUser = async (userId, days, reason) => {
     setSuspendingId(userId);
     const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 
-    const { error } = await supabase.from('profiles').update({ suspended_until: until }).eq('id', userId);
+    const { error } = await supabase.from('profiles').update({ suspended_until: until, suspension_reason: reason }).eq('id', userId);
     if (error) {
       toast.error('Failed to suspend: ' + (error.message || 'unknown error'));
     } else {
-      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended_until: until } : u));
-      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended_until: until }));
+      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended_until: until, suspension_reason: reason } : u));
+      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended_until: until, suspension_reason: reason }));
       toast.success(`User suspended for ${days} day${days !== 1 ? 's' : ''} ⏳`);
     }
     setSuspendingId(null);
     setSuspendPickerId(null);
+    setSuspendReason('');
+    setSuspendReasonOther('');
   };
 
   const unsuspendUser = async (userId) => {
     setSuspendingId(userId);
-    const { error } = await supabase.from('profiles').update({ suspended_until: null }).eq('id', userId);
+    const { error } = await supabase.from('profiles').update({ suspended_until: null, suspension_reason: null }).eq('id', userId);
     if (error) {
       toast.error('Failed to unsuspend: ' + (error.message || 'unknown error'));
     } else {
-      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended_until: null } : u));
-      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended_until: null }));
+      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended_until: null, suspension_reason: null } : u));
+      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended_until: null, suspension_reason: null }));
       toast.success('User unsuspended ✓');
     }
     setSuspendingId(null);
@@ -1567,7 +1585,7 @@ export default function Settings() {
                             variant={u.banned ? 'default' : 'outline'}
                             className={`h-7 text-[10px] gap-0.5 px-1 flex-1 ${u.banned ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
                             disabled={banningId === u.id}
-                            onClick={() => banUser(u.id, u.banned)}
+                            onClick={() => u.banned ? banUser(u.id, u.banned) : setBanPickerId(banPickerId === u.id ? null : u.id)}
                           >
                             {banningId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                             {u.banned ? 'Unban' : '⛔ Ban'}
@@ -1594,26 +1612,103 @@ export default function Settings() {
                             </Button>
                           )}
                         </div>
-                        {suspendPickerId === u.id && (
-                          <div className="flex gap-1">
-                            {[1, 3, 7, 30].map(days => (
+
+                        {/* Ban reason picker */}
+                        {banPickerId === u.id && (
+                          <div className="space-y-1.5 border border-red-200 rounded-lg p-2 bg-red-50/50">
+                            <Select value={banReason} onValueChange={setBanReason}>
+                              <SelectTrigger className="h-7 text-[10px]"><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                              <SelectContent>
+                                {MODERATION_REASONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            {banReason === 'Other' && (
+                              <Input
+                                placeholder="Type the reason…"
+                                value={banReasonOther}
+                                onChange={e => setBanReasonOther(e.target.value)}
+                                className="h-7 text-[10px]"
+                              />
+                            )}
+                            <div className="flex gap-1">
                               <Button
-                                key={days}
                                 size="sm"
-                                variant="outline"
-                                className="h-6 text-[9px] flex-1 px-0.5"
-                                disabled={suspendingId === u.id}
-                                onClick={() => suspendUser(u.id, days)}
+                                className="h-6 text-[9px] flex-1 bg-red-600 hover:bg-red-700 text-white"
+                                disabled={banningId === u.id}
+                                onClick={() => {
+                                  const finalReason = banReason === 'Other' ? banReasonOther.trim() : banReason;
+                                  if (!finalReason) { toast.error('Please select or enter a reason'); return; }
+                                  banUser(u.id, u.banned, finalReason);
+                                }}
                               >
-                                {days}d
+                                Confirm Ban
                               </Button>
-                            ))}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 text-[9px] flex-1"
+                                onClick={() => { setBanPickerId(null); setBanReason(''); setBanReasonOther(''); }}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Suspend reason + duration picker */}
+                        {suspendPickerId === u.id && (
+                          <div className="space-y-1.5 border border-amber-200 rounded-lg p-2 bg-amber-50/50">
+                            <Select value={suspendReason} onValueChange={setSuspendReason}>
+                              <SelectTrigger className="h-7 text-[10px]"><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                              <SelectContent>
+                                {MODERATION_REASONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            {suspendReason === 'Other' && (
+                              <Input
+                                placeholder="Type the reason…"
+                                value={suspendReasonOther}
+                                onChange={e => setSuspendReasonOther(e.target.value)}
+                                className="h-7 text-[10px]"
+                              />
+                            )}
+                            <p className="text-[9px] font-semibold text-amber-700">Duration:</p>
+                            <div className="flex gap-1">
+                              {[1, 3, 7, 30].map(days => (
+                                <Button
+                                  key={days}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-[9px] flex-1 px-0.5"
+                                  disabled={suspendingId === u.id}
+                                  onClick={() => {
+                                    const finalReason = suspendReason === 'Other' ? suspendReasonOther.trim() : suspendReason;
+                                    if (!finalReason) { toast.error('Please select or enter a reason'); return; }
+                                    suspendUser(u.id, days, finalReason);
+                                  }}
+                                >
+                                  {days}d
+                                </Button>
+                              ))}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-[9px] w-full"
+                              onClick={() => { setSuspendPickerId(null); setSuspendReason(''); setSuspendReasonOther(''); }}
+                            >
+                              Cancel
+                            </Button>
                           </div>
                         )}
                         {u.suspended_until && new Date(u.suspended_until) > new Date() && (
                           <p className="text-[9px] text-amber-600 text-center">
                             Suspended until {new Date(u.suspended_until).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
+                            {u.suspension_reason && ` · ${u.suspension_reason}`}
                           </p>
+                        )}
+                        {u.banned && u.ban_reason && (
+                          <p className="text-[9px] text-red-600 text-center">Reason: {u.ban_reason}</p>
                         )}
                       </div>
                     </Card>
@@ -1726,9 +1821,11 @@ export default function Settings() {
                           ['Verified', adminSelectedUser.verified ? '✓ Yes' : '✗ No'],
                           ['Subscription', adminSelectedUser.subscription_active ? `Active — ${adminSelectedUser.subscription_plan || '?'}` : 'Inactive'],
                           ['Banned', adminSelectedUser.banned ? '⛔ Yes' : '✓ No'],
+                          ...(adminSelectedUser.banned && adminSelectedUser.ban_reason ? [['Ban Reason', adminSelectedUser.ban_reason]] : []),
                           ['Suspended', (adminSelectedUser.suspended_until && new Date(adminSelectedUser.suspended_until) > new Date())
                             ? `⏳ Until ${new Date(adminSelectedUser.suspended_until).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}`
                             : '✓ No'],
+                          ...((adminSelectedUser.suspended_until && new Date(adminSelectedUser.suspended_until) > new Date() && adminSelectedUser.suspension_reason) ? [['Suspend Reason', adminSelectedUser.suspension_reason]] : []),
                           ['Member Since', adminSelectedUser.created_at ? new Date(adminSelectedUser.created_at).toLocaleDateString() : '—'],
                         ].map(([label, value]) => (
                           <div key={label} className="flex justify-between items-center px-3 py-2">
@@ -1755,7 +1852,7 @@ export default function Settings() {
                         variant={adminSelectedUser.banned ? 'default' : 'outline'}
                         className={`h-8 text-xs gap-1 ${adminSelectedUser.banned ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
                         disabled={banningId === adminSelectedUser.id}
-                        onClick={() => banUser(adminSelectedUser.id, adminSelectedUser.banned)}
+                        onClick={() => adminSelectedUser.banned ? banUser(adminSelectedUser.id, adminSelectedUser.banned) : setBanPickerId(banPickerId === adminSelectedUser.id ? null : adminSelectedUser.id)}
                       >
                         {adminSelectedUser.banned ? 'Unban' : '⛔ Ban'}
                       </Button>
@@ -1779,20 +1876,73 @@ export default function Settings() {
                           ⏳ Suspend
                         </Button>
                       )}
-                      {suspendPickerId === adminSelectedUser.id && (
-                        <div className="col-span-2 flex gap-1">
-                          {[1, 3, 7, 30].map(days => (
+
+                      {/* Ban reason picker */}
+                      {banPickerId === adminSelectedUser.id && (
+                        <div className="col-span-2 space-y-1.5 border border-red-200 rounded-lg p-2 bg-red-50/50">
+                          <Select value={banReason} onValueChange={setBanReason}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                            <SelectContent>
+                              {MODERATION_REASONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          {banReason === 'Other' && (
+                            <Input placeholder="Type the reason…" value={banReasonOther} onChange={e => setBanReasonOther(e.target.value)} className="h-8 text-xs" />
+                          )}
+                          <div className="flex gap-1">
                             <Button
-                              key={days}
                               size="sm"
-                              variant="outline"
-                              className="h-7 text-[10px] flex-1"
-                              disabled={suspendingId === adminSelectedUser.id}
-                              onClick={() => suspendUser(adminSelectedUser.id, days)}
+                              className="h-7 text-xs flex-1 bg-red-600 hover:bg-red-700 text-white"
+                              disabled={banningId === adminSelectedUser.id}
+                              onClick={() => {
+                                const finalReason = banReason === 'Other' ? banReasonOther.trim() : banReason;
+                                if (!finalReason) { toast.error('Please select or enter a reason'); return; }
+                                banUser(adminSelectedUser.id, adminSelectedUser.banned, finalReason);
+                              }}
                             >
-                              {days} day{days !== 1 ? 's' : ''}
+                              Confirm Ban
                             </Button>
-                          ))}
+                            <Button size="sm" variant="ghost" className="h-7 text-xs flex-1" onClick={() => { setBanPickerId(null); setBanReason(''); setBanReasonOther(''); }}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Suspend reason + duration picker */}
+                      {suspendPickerId === adminSelectedUser.id && (
+                        <div className="col-span-2 space-y-1.5 border border-amber-200 rounded-lg p-2 bg-amber-50/50">
+                          <Select value={suspendReason} onValueChange={setSuspendReason}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                            <SelectContent>
+                              {MODERATION_REASONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          {suspendReason === 'Other' && (
+                            <Input placeholder="Type the reason…" value={suspendReasonOther} onChange={e => setSuspendReasonOther(e.target.value)} className="h-8 text-xs" />
+                          )}
+                          <p className="text-[10px] font-semibold text-amber-700">Duration:</p>
+                          <div className="flex gap-1">
+                            {[1, 3, 7, 30].map(days => (
+                              <Button
+                                key={days}
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[10px] flex-1"
+                                disabled={suspendingId === adminSelectedUser.id}
+                                onClick={() => {
+                                  const finalReason = suspendReason === 'Other' ? suspendReasonOther.trim() : suspendReason;
+                                  if (!finalReason) { toast.error('Please select or enter a reason'); return; }
+                                  suspendUser(adminSelectedUser.id, days, finalReason);
+                                }}
+                              >
+                                {days} day{days !== 1 ? 's' : ''}
+                              </Button>
+                            ))}
+                          </div>
+                          <Button size="sm" variant="ghost" className="h-6 text-[10px] w-full" onClick={() => { setSuspendPickerId(null); setSuspendReason(''); setSuspendReasonOther(''); }}>
+                            Cancel
+                          </Button>
                         </div>
                       )}
                       <Button

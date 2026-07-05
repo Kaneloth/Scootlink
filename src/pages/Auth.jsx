@@ -166,6 +166,10 @@ export default function Auth() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [bannerReason, setBannerReason] = useState(null);
   const [blockInfo, setBlockInfo] = useState(null); // null = not blocked, else { reason: 'banned'|'suspended', until? }
+  const [blockedEmail, setBlockedEmail] = useState('');
+  const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const [disputeMsg, setDisputeMsg] = useState('');
+  const [disputeSending, setDisputeSending] = useState(false);
 
   // Post-signup confirmation screen
   const [signupDone, setSignupDone] = useState(false);
@@ -380,6 +384,7 @@ export default function Auth() {
       const bioBlock = await checkUserBlocked(session.user.id);
       if (bioBlock) {
         await supabase.auth.signOut();
+        setBlockedEmail(session.user.email || '');
         setBlockInfo(bioBlock);
         return;
       }
@@ -398,6 +403,7 @@ export default function Auth() {
           .maybeSingle();
         if (bioBannedRow) {
           await supabase.auth.signOut();
+          setBlockedEmail(session.user.email || '');
           setBlockInfo({ reason: 'id_blacklisted' });
           return;
         }
@@ -470,6 +476,33 @@ export default function Auth() {
     }
   };
 
+  // ── Dispute a ban/suspension ───────────────────────────────────────────────
+  const handleDisputeSubmit = async () => {
+    if (!disputeMsg.trim()) return;
+    setDisputeSending(true);
+    try {
+      await fetch('/.netlify/functions/contact-support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: blockedEmail,
+          name: blockedEmail,
+          subject: 'Account Ban/Suspension Dispute',
+          message: disputeMsg,
+        }),
+      });
+      toast.success("Dispute submitted — we'll review your account and respond by email.");
+      setShowDisputeForm(false);
+      setDisputeMsg('');
+    } catch {
+      window.location.href =
+        `mailto:help@skootlink.co.za?subject=Account+Ban%2FSuspension+Dispute&body=` +
+        encodeURIComponent(`Account email: ${blockedEmail}\n\nReason for dispute: ${disputeMsg}`);
+    }
+    setDisputeSending(false);
+  };
+
+
   // ── Contact support fallback (stuck email verification) ──────────────────
   const handleContactSupport = async () => {
     if (!contactMsg.trim()) return;
@@ -522,6 +555,7 @@ export default function Auth() {
       const block = await checkUserBlocked(data.user.id);
       if (block) {
         await supabase.auth.signOut();
+        setBlockedEmail(data.user.email || loginEmail || '');
         setBlockInfo(block);
         return;
       }
@@ -541,6 +575,7 @@ export default function Auth() {
           .maybeSingle();
         if (bannedIdRow) {
           await supabase.auth.signOut();
+          setBlockedEmail(data.user.email || loginEmail || '');
           setBlockInfo({ reason: 'id_blacklisted' });
           return;
         }
@@ -666,9 +701,58 @@ export default function Auth() {
                   ? `Your Skootlink account has been temporarily suspended and you cannot access the platform at this time.${untilText ? ` Your account will automatically be reinstated on ${untilText}.` : ''}`
                   : 'Your Skootlink account has been suspended and you cannot access the platform at this time.'}
             </p>
+            {blockInfo.detail && (
+              <p className="text-sm text-left bg-red-100/60 dark:bg-red-900/20 rounded-lg px-3 py-2">
+                <span className="font-semibold text-red-700">Reason:</span>{' '}
+                <span className="text-foreground">{blockInfo.detail}</span>
+              </p>
+            )}
             <p className="text-sm text-muted-foreground leading-relaxed">
               If you believe this is a mistake, please contact our support team and we will review your account.
             </p>
+          </div>
+
+          <div className="text-left space-y-2 border-t border-border/50 pt-3">
+            {!showDisputeForm ? (
+              <button
+                type="button"
+                onClick={() => setShowDisputeForm(true)}
+                className="flex items-center justify-center gap-1.5 text-xs font-medium text-primary hover:underline w-full"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Dispute this decision
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Tell us why you believe this decision should be reviewed. We'll respond by email.
+                </p>
+                <textarea
+                  value={disputeMsg}
+                  onChange={e => setDisputeMsg(e.target.value)}
+                  placeholder="Explain why you believe your account should be reinstated..."
+                  rows={3}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary resize-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowDisputeForm(false); setDisputeMsg(''); }}
+                    className="flex-1 text-xs py-2 rounded-xl border border-border hover:bg-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisputeSubmit}
+                    disabled={disputeSending || !disputeMsg.trim()}
+                    className="flex-1 text-xs py-2 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 transition-colors"
+                  >
+                    {disputeSending ? 'Sending…' : 'Submit Dispute'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           <div className="space-y-3 pt-2">
             <p className="text-sm text-muted-foreground leading-relaxed">
@@ -689,7 +773,7 @@ export default function Auth() {
           </div>
           <button
             type="button"
-            onClick={() => setBlockInfo(null)}
+            onClick={() => { setBlockInfo(null); setShowDisputeForm(false); setDisputeMsg(''); }}
             className="text-xs text-muted-foreground hover:text-foreground underline"
           >
             ← Back to sign in
