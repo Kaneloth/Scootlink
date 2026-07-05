@@ -277,6 +277,18 @@ export default function Auth() {
           const { data: { session: s } } = await supabase.auth.getSession();
           if (s?.user) {
             clearInterval(poll);
+            // Ban/suspend check — this listener fires independently of
+            // handleLogin's own check, so without this it would race ahead
+            // and navigate to /home before handleLogin's signOut() takes
+            // effect, causing the block screen to flash and then bounce
+            // back to /auth once /home discovers there's no valid session.
+            const block = await checkUserBlocked(s.user.id);
+            if (block) {
+              await supabase.auth.signOut();
+              setBlockedEmail(s.user.email || '');
+              setBlockInfo(block);
+              return;
+            }
             window.location.replace('/home');
           } else if (attempts > 10) {
             clearInterval(poll);
