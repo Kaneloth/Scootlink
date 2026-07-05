@@ -741,7 +741,10 @@ export default function Settings() {
         );
         results.forEach(([id, bal]) => { creditMap[id] = bal; });
       }
-      setAdminUsers((data || []).map(u => ({ ...u, credit_balance: creditMap[u.id] ?? 0 })));
+      // Exclude the currently logged-in admin's own row — an admin should
+      // never be able to accidentally ban/suspend themselves from this list.
+      const filtered = (data || []).filter(u => u.id !== user?.id);
+      setAdminUsers(filtered.map(u => ({ ...u, credit_balance: creditMap[u.id] ?? 0 })));
     } else {
       toast.error('Could not load users: ' + (error.message || 'unknown error'));
     }
