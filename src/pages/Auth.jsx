@@ -767,11 +767,6 @@ export default function Auth() {
             )}
           </div>
           <div className="space-y-3 pt-2">
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Any remaining funds in your Skootlink wallet will be returned to you.
-              Email <span className="font-semibold text-foreground">help@skootlink.co.za</span> from
-              your registered email address to request a withdrawal of your balance.
-            </p>
             <a
               href="mailto:help@skootlink.co.za"
               className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors"
@@ -779,9 +774,6 @@ export default function Auth() {
               <Mail className="w-4 h-4" />
               Contact Support — help@skootlink.co.za
             </a>
-            <p className="text-xs text-muted-foreground">
-              Wallet withdrawal requests are processed within 5–7 business days.
-            </p>
           </div>
           <button
             type="button"
