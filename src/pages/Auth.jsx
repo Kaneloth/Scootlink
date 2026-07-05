@@ -148,12 +148,24 @@ async function fetchUserPhone(userId) {
 export default function Auth() {
   const navigate = useNavigate();
 
+  // Checks whether a user is currently banned or suspended, via the
+  // is_user_blocked RPC — a single source of truth shared by both the
+  // biometric and password login paths, plus the ID/passport blacklist
+  // check that runs alongside it.
+  const checkUserBlocked = async (userId) => {
+    const { data } = await supabase.rpc('is_user_blocked', { p_user_id: userId });
+    if (data?.blocked) {
+      return { reason: data.reason, until: data.until || null };
+    }
+    return null;
+  };
+
   const [loginStage, setLoginStage] = useState('idle');
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [bannerReason, setBannerReason] = useState(null);
-  const [isBlacklisted, setIsBlacklisted] = useState(false);
+  const [blockInfo, setBlockInfo] = useState(null); // null = not blocked, else { reason: 'banned'|'suspended', until? }
 
   // Post-signup confirmation screen
   const [signupDone, setSignupDone] = useState(false);
@@ -364,18 +376,14 @@ export default function Auth() {
     setLoading(true);
     try {
       const session = await triggerBiometricLogin();
-      // Blacklist check layer 1 — profiles.blacklisted flag
-      const { data: bioProfile } = await supabase
-        .from('profiles')
-        .select('blacklisted')
-        .eq('id', session.user.id)
-        .single();
-      if (bioProfile?.blacklisted) {
+      // Ban / suspend check
+      const bioBlock = await checkUserBlocked(session.user.id);
+      if (bioBlock) {
         await supabase.auth.signOut();
-        setIsBlacklisted(true);
+        setBlockInfo(bioBlock);
         return;
       }
-      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers
+      // ID/passport blacklist check — a brand-new account using an already-banned identity document
       const { data: bioSensitive } = await supabase
         .from('user_sensitive_info')
         .select('sa_id, passport')
@@ -390,7 +398,7 @@ export default function Auth() {
           .maybeSingle();
         if (bioBannedRow) {
           await supabase.auth.signOut();
-          setIsBlacklisted(true);
+          setBlockInfo({ reason: 'id_blacklisted' });
           return;
         }
       }
@@ -510,20 +518,15 @@ export default function Auth() {
         setUnconfirmedEmail(loginEmail);
         return;
       }
-      // Blacklist check layer 1 — profiles.blacklisted flag
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('blacklisted')
-        .eq('id', data.user.id)
-        .single();
-      if (profile?.blacklisted) {
+      // Ban / suspend check
+      const block = await checkUserBlocked(data.user.id);
+      if (block) {
         await supabase.auth.signOut();
-        setIsBlacklisted(true);
+        setBlockInfo(block);
         return;
       }
-      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers.
-      // Catches cases where the profile flag wasn't set, or the user created
-      // a brand-new account using an already-banned identity document.
+      // ID/passport blacklist check — catches cases where a brand-new account
+      // was created using an already-banned identity document.
       const { data: sensitive } = await supabase
         .from('user_sensitive_info')
         .select('sa_id, passport')
@@ -538,7 +541,7 @@ export default function Auth() {
           .maybeSingle();
         if (bannedIdRow) {
           await supabase.auth.signOut();
-          setIsBlacklisted(true);
+          setBlockInfo({ reason: 'id_blacklisted' });
           return;
         }
       }
@@ -636,8 +639,14 @@ export default function Auth() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // Suspended account — sign in was blocked; show full-page message
-  if (isBlacklisted) {
+  // Blocked account — sign in was refused; show full-page message
+  if (blockInfo) {
+    const isBanned = blockInfo.reason === 'banned';
+    const isSuspended = blockInfo.reason === 'suspended';
+    const untilText = blockInfo.until
+      ? new Date(blockInfo.until).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : null;
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
         <div className="w-full max-w-sm text-center space-y-6">
@@ -647,9 +656,15 @@ export default function Auth() {
             </svg>
           </div>
           <div className="space-y-3">
-            <h2 className="text-2xl font-bold text-red-700">Account Suspended</h2>
+            <h2 className="text-2xl font-bold text-red-700">
+              {isBanned ? 'Account Banned' : 'Account Suspended'}
+            </h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Your Skootlink account has been suspended and you cannot access the platform at this time.
+              {isBanned
+                ? 'Your Skootlink account has been permanently banned and you cannot access the platform.'
+                : isSuspended
+                  ? `Your Skootlink account has been temporarily suspended and you cannot access the platform at this time.${untilText ? ` Your account will automatically be reinstated on ${untilText}.` : ''}`
+                  : 'Your Skootlink account has been suspended and you cannot access the platform at this time.'}
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
               If you believe this is a mistake, please contact our support team and we will review your account.
@@ -674,7 +689,7 @@ export default function Auth() {
           </div>
           <button
             type="button"
-            onClick={() => setIsBlacklisted(false)}
+            onClick={() => setBlockInfo(null)}
             className="text-xs text-muted-foreground hover:text-foreground underline"
           >
             ← Back to sign in

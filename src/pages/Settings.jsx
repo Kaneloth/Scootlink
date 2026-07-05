@@ -526,7 +526,9 @@ export default function Settings() {
   const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
   const [adminFilter, setAdminFilter] = useState('');
   const [togglingId, setTogglingId] = useState(null);
-  const [blacklistingId, setBlacklistingId] = useState(null);
+  const [banningId, setBanningId] = useState(null);
+  const [suspendingId, setSuspendingId] = useState(null);
+  const [suspendPickerId, setSuspendPickerId] = useState(null); // user id currently showing the duration picker
   const [adminSelectedUser, setAdminSelectedUser] = useState(null); // user open in detail/edit modal
   const [adminEditForm, setAdminEditForm] = useState(null);          // edit form state
   const [adminSaving, setAdminSaving] = useState(false);
@@ -722,7 +724,7 @@ export default function Settings() {
     setLoadingAdminUsers(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, id_document_number, id_document_type, created_at')
+      .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, banned, suspended_until, id_document_number, id_document_type, created_at')
       .order('created_at', { ascending: false });
     if (!error) {
       // Fetch credit balances for each user via the same RPC the app uses for
@@ -857,49 +859,42 @@ export default function Settings() {
     setTogglingId(null);
   };
 
-  const blacklistUser = async (userId, currentBlacklisted) => {
-    setBlacklistingId(userId);
-    const banning = !currentBlacklisted;
+  // ── Ban (permanent, until an admin reverses it) ───────────────────────────
+  const banUser = async (userId, currentlyBanned) => {
+    setBanningId(userId);
+    const banning = !currentlyBanned;
 
-    // 1. Toggle the blacklisted flag on the profile
     const { error } = await supabase
       .from('profiles')
-      .update({ blacklisted: banning })
+      .update({ banned: banning })
       .eq('id', userId);
 
     if (error) {
-      toast.error('Failed to update blacklist: ' + (error.message || 'unknown error'));
-      setBlacklistingId(null);
+      toast.error('Failed to update ban status: ' + (error.message || 'unknown error'));
+      setBanningId(null);
       return;
     }
 
-    // 2. Look up the user's SA ID / passport from user_sensitive_info
-    //    (the authoritative source — not profiles.id_document_number)
+    // Permanent ID/passport blacklist stays tied to Ban specifically — a
+    // suspension is meant to expire, so it never touches this table.
     const { data: sensitiveRow } = await supabase
       .from('user_sensitive_info')
       .select('sa_id, passport')
       .eq('user_id', userId)
       .maybeSingle();
-
     const idNum = (sensitiveRow?.sa_id || sensitiveRow?.passport || '').trim().toUpperCase();
-
     if (idNum) {
       if (banning) {
-        await supabase
-          .from('blacklisted_id_numbers')
-          .upsert({ id_number: idNum }, { onConflict: 'id_number' });
+        await supabase.from('blacklisted_id_numbers').upsert({ id_number: idNum }, { onConflict: 'id_number' });
       } else {
-        await supabase
-          .from('blacklisted_id_numbers')
-          .delete()
-          .eq('id_number', idNum);
+        await supabase.from('blacklisted_id_numbers').delete().eq('id_number', idNum);
       }
     }
 
-    // 3. Ban / unban at the Supabase Auth level and revoke all active sessions.
-    //    This blocks any new sign-in attempt and immediately invalidates existing
-    //    sessions so the user is kicked out of the app without waiting for the
-    //    access token to expire naturally.
+    // Ban/unban at the Supabase Auth level too, for immediate session
+    // revocation. Safe to do unconditionally here since a ban is meant to be
+    // permanent anyway (unlike suspend, where we deliberately avoid this —
+    // see suspendUser below).
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
@@ -907,21 +902,57 @@ export default function Settings() {
         await fetch('/.netlify/functions/admin-ban-user', {
           method: 'POST',
           credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
           body: JSON.stringify({ userId, ban: banning }),
         });
       }
     } catch {
-      // Non-fatal — profiles.blacklisted still blocks app access on next load
+      // Non-fatal — profiles.banned still blocks app access on next login attempt
     }
 
-    setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, blacklisted: banning } : u));
-    if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, blacklisted: banning }));
-    toast.success(currentBlacklisted ? 'User unblacklisted ✓' : 'User blacklisted ⛔');
-    setBlacklistingId(null);
+    setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: banning } : u));
+    if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, banned: banning }));
+    toast.success(banning ? 'User banned ⛔' : 'User unbanned ✓');
+    setBanningId(null);
+  };
+
+  // ── Suspend (temporary, self-expiring) ────────────────────────────────────
+  // Deliberately does NOT call admin-ban-user or touch blacklisted_id_numbers —
+  // both of those are effectively permanent locks, which would defeat a
+  // suspension's whole point of automatically expiring. Enforcement instead
+  // relies entirely on the is_user_blocked() check at login time (Auth.jsx),
+  // which compares suspended_until against now() on every attempt.
+  // NOTE: because we skip admin-ban-user, an already-open session for the
+  // user being suspended won't be forcibly kicked out immediately — they'll
+  // be blocked on their next sign-in, not mid-session. Flagging this as a
+  // known limitation rather than a silent gap.
+  const suspendUser = async (userId, days) => {
+    setSuspendingId(userId);
+    const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
+    const { error } = await supabase.from('profiles').update({ suspended_until: until }).eq('id', userId);
+    if (error) {
+      toast.error('Failed to suspend: ' + (error.message || 'unknown error'));
+    } else {
+      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended_until: until } : u));
+      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended_until: until }));
+      toast.success(`User suspended for ${days} day${days !== 1 ? 's' : ''} ⏳`);
+    }
+    setSuspendingId(null);
+    setSuspendPickerId(null);
+  };
+
+  const unsuspendUser = async (userId) => {
+    setSuspendingId(userId);
+    const { error } = await supabase.from('profiles').update({ suspended_until: null }).eq('id', userId);
+    if (error) {
+      toast.error('Failed to unsuspend: ' + (error.message || 'unknown error'));
+    } else {
+      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended_until: null } : u));
+      if (adminSelectedUser?.id === userId) setAdminSelectedUser(p => ({ ...p, suspended_until: null }));
+      toast.success('User unsuspended ✓');
+    }
+    setSuspendingId(null);
   };
 
   const openAdminUser = (u) => {
@@ -1436,13 +1467,16 @@ export default function Settings() {
                       || (u.customer_code || '').toLowerCase().includes(q);
                   })
                   .map(u => (
-                    <Card key={u.id} className={`p-3 space-y-2 ${u.blacklisted ? 'border-red-300 bg-red-50/40 dark:bg-red-900/10' : ''}`}>
+                    <Card key={u.id} className={`p-3 space-y-2 ${u.banned ? 'border-red-300 bg-red-50/40 dark:bg-red-900/10' : (u.suspended_until && new Date(u.suspended_until) > new Date()) ? 'border-amber-300 bg-amber-50/40 dark:bg-amber-900/10' : ''}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-sm font-medium truncate">{u.full_name || '—'}</p>
-                            {u.blacklisted && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400">⛔ BLACKLISTED</span>
+                            {u.banned && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400">⛔ BANNED</span>
+                            )}
+                            {!u.banned && u.suspended_until && new Date(u.suspended_until) > new Date() && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">⏳ SUSPENDED</span>
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground truncate">{u.email}</p>
@@ -1504,36 +1538,80 @@ export default function Settings() {
                             variant="outline"
                             className="h-7 text-[10px] gap-0.5 px-1"
                             disabled={togglingId === u.id + '_sub'}
-                            onClick={() => addAdminCredits(u.id, 10)}
+                            onClick={() => addAdminCredits(u.id, 50)}
                           >
                             {togglingId === u.id + '_sub'
                               ? <Loader2 className="w-3 h-3 animate-spin" />
                               : <Coins className="w-3 h-3" />}
-                            +10 Cr
+                            +50 Cr
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-7 text-[10px] gap-0.5 px-1"
                             disabled={togglingId === u.id + '_subtract'}
-                            onClick={() => subtractAdminCredits(u.id, 10)}
+                            onClick={() => subtractAdminCredits(u.id, 50)}
                           >
                             {togglingId === u.id + '_subtract'
                               ? <Loader2 className="w-3 h-3 animate-spin" />
                               : <Coins className="w-3 h-3" />}
-                            -10 Cr
+                            -50 Cr
                           </Button>
                         </div>
-                        <Button
-                          size="sm"
-                          variant={u.blacklisted ? 'default' : 'outline'}
-                          className={`h-7 text-[10px] gap-0.5 px-1 w-full ${u.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
-                          disabled={blacklistingId === u.id}
-                          onClick={() => blacklistUser(u.id, u.blacklisted)}
-                        >
-                          {blacklistingId === u.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
-                          {u.blacklisted ? 'Remove Blacklist' : '⛔ Blacklist User'}
-                        </Button>
+                        <div className="flex gap-1.5">
+                          <Button
+                            size="sm"
+                            variant={u.banned ? 'default' : 'outline'}
+                            className={`h-7 text-[10px] gap-0.5 px-1 flex-1 ${u.banned ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
+                            disabled={banningId === u.id}
+                            onClick={() => banUser(u.id, u.banned)}
+                          >
+                            {banningId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                            {u.banned ? 'Unban' : '⛔ Ban'}
+                          </Button>
+                          {u.suspended_until && new Date(u.suspended_until) > new Date() ? (
+                            <Button
+                              size="sm"
+                              className="h-7 text-[10px] gap-0.5 px-1 flex-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+                              disabled={suspendingId === u.id}
+                              onClick={() => unsuspendUser(u.id)}
+                            >
+                              {suspendingId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                              Unsuspend
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-[10px] gap-0.5 px-1 flex-1 text-amber-600 border-amber-300 hover:bg-amber-50"
+                              disabled={suspendingId === u.id}
+                              onClick={() => setSuspendPickerId(suspendPickerId === u.id ? null : u.id)}
+                            >
+                              ⏳ Suspend
+                            </Button>
+                          )}
+                        </div>
+                        {suspendPickerId === u.id && (
+                          <div className="flex gap-1">
+                            {[1, 3, 7, 30].map(days => (
+                              <Button
+                                key={days}
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[9px] flex-1 px-0.5"
+                                disabled={suspendingId === u.id}
+                                onClick={() => suspendUser(u.id, days)}
+                              >
+                                {days}d
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                        {u.suspended_until && new Date(u.suspended_until) > new Date() && (
+                          <p className="text-[9px] text-amber-600 text-center">
+                            Suspended until {new Date(u.suspended_until).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
+                          </p>
+                        )}
                       </div>
                     </Card>
                   ))}
@@ -1556,8 +1634,11 @@ export default function Settings() {
                   <h3 className="font-semibold text-sm">
                     {adminModalTab === 'edit' ? 'Edit Profile' : 'User Profile'}
                   </h3>
-                  {adminSelectedUser.blacklisted && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-bold">⛔ BLACKLISTED</span>
+                  {adminSelectedUser.banned && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-bold">⛔ BANNED</span>
+                  )}
+                  {!adminSelectedUser.banned && adminSelectedUser.suspended_until && new Date(adminSelectedUser.suspended_until) > new Date() && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">⏳ SUSPENDED</span>
                   )}
                 </div>
                 <button onClick={() => setAdminSelectedUser(null)} className="text-muted-foreground hover:text-foreground">
@@ -1641,7 +1722,10 @@ export default function Settings() {
                         {[
                           ['Verified', adminSelectedUser.verified ? '✓ Yes' : '✗ No'],
                           ['Subscription', adminSelectedUser.subscription_active ? `Active — ${adminSelectedUser.subscription_plan || '?'}` : 'Inactive'],
-                          ['Blacklisted', adminSelectedUser.blacklisted ? '⛔ Yes' : '✓ No'],
+                          ['Banned', adminSelectedUser.banned ? '⛔ Yes' : '✓ No'],
+                          ['Suspended', (adminSelectedUser.suspended_until && new Date(adminSelectedUser.suspended_until) > new Date())
+                            ? `⏳ Until ${new Date(adminSelectedUser.suspended_until).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                            : '✓ No'],
                           ['Member Since', adminSelectedUser.created_at ? new Date(adminSelectedUser.created_at).toLocaleDateString() : '—'],
                         ].map(([label, value]) => (
                           <div key={label} className="flex justify-between items-center px-3 py-2">
@@ -1665,13 +1749,49 @@ export default function Settings() {
                       </Button>
                       <Button
                         size="sm"
-                        variant={adminSelectedUser.blacklisted ? 'default' : 'outline'}
-                        className={`h-8 text-xs gap-1 ${adminSelectedUser.blacklisted ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
-                        disabled={blacklistingId === adminSelectedUser.id}
-                        onClick={() => blacklistUser(adminSelectedUser.id, adminSelectedUser.blacklisted)}
+                        variant={adminSelectedUser.banned ? 'default' : 'outline'}
+                        className={`h-8 text-xs gap-1 ${adminSelectedUser.banned ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 'text-red-600 border-red-300 hover:bg-red-50'}`}
+                        disabled={banningId === adminSelectedUser.id}
+                        onClick={() => banUser(adminSelectedUser.id, adminSelectedUser.banned)}
                       >
-                        {adminSelectedUser.blacklisted ? 'Unban' : '⛔ Ban'}
+                        {adminSelectedUser.banned ? 'Unban' : '⛔ Ban'}
                       </Button>
+                      {adminSelectedUser.suspended_until && new Date(adminSelectedUser.suspended_until) > new Date() ? (
+                        <Button
+                          size="sm"
+                          className="h-8 text-xs gap-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+                          disabled={suspendingId === adminSelectedUser.id}
+                          onClick={() => unsuspendUser(adminSelectedUser.id)}
+                        >
+                          Unsuspend
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs gap-1 text-amber-600 border-amber-300 hover:bg-amber-50"
+                          disabled={suspendingId === adminSelectedUser.id}
+                          onClick={() => setSuspendPickerId(suspendPickerId === adminSelectedUser.id ? null : adminSelectedUser.id)}
+                        >
+                          ⏳ Suspend
+                        </Button>
+                      )}
+                      {suspendPickerId === adminSelectedUser.id && (
+                        <div className="col-span-2 flex gap-1">
+                          {[1, 3, 7, 30].map(days => (
+                            <Button
+                              key={days}
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-[10px] flex-1"
+                              disabled={suspendingId === adminSelectedUser.id}
+                              onClick={() => suspendUser(adminSelectedUser.id, days)}
+                            >
+                              {days} day{days !== 1 ? 's' : ''}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
                       <Button
                         size="sm"
                         variant={adminSelectedUser.is_admin ? 'default' : 'outline'}
