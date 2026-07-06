@@ -216,27 +216,6 @@ function HowItWorks() {
   );
 }
 
-function GalleryImage({ src, emoji }) {
-  const [failed, setFailed] = useState(false);
-  if (failed) {
-    return (
-      <div style={{ ...styles.galleryImg, background: "linear-gradient(135deg,#eff6ff,#dbeafe)" }}>
-        <span style={{ opacity: 0.5 }}>{emoji}</span>
-      </div>
-    );
-  }
-  return (
-    <div style={{ width: "100%", aspectRatio: "9 / 16", background: "#f4f4f5", overflow: "hidden" }}>
-      <img
-        src={src}
-        alt=""
-        style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
-        onError={() => setFailed(true)}
-      />
-    </div>
-  );
-}
-
 function DemoSection() {
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const touchStartX = useRef(null);
@@ -401,6 +380,35 @@ function TrustSafety() {
         </div>
       </div>
     </section>
+  );
+}
+
+// NOTE: these are placeholder icon cards, not real photos — sourcing random
+// NOTE: this expects real app screenshots at /public/gallery/*.png (see the
+// six paths below). Each <img> falls back to a labelled placeholder if the
+// file doesn't exist yet — so the section still looks intentional rather
+// than broken until you've captured and uploaded the real screenshots.
+// To create them: open the app screen on your phone (or Chrome DevTools at
+// 412×915px), screenshot it, optionally frame it with Google's Device Art
+// Generator, and save to public/gallery/<name>.png.
+function GalleryImage({ src, emoji }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div style={{ ...styles.galleryImg, background: "linear-gradient(135deg,#eff6ff,#dbeafe)" }}>
+        <span style={{ opacity: 0.5 }}>{emoji}</span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ width: "100%", aspectRatio: "9 / 16", background: "#f4f4f5", overflow: "hidden" }}>
+      <img
+        src={src}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+        onError={() => setFailed(true)}
+      />
+    </div>
   );
 }
 
@@ -667,9 +675,8 @@ function Footer() {
           </div>
           <div>
             <h4 style={styles.footerH4}>Legal</h4>
-            {["Privacy Policy", "Terms of Service", "POPIA Compliance"].map(label => (
-              <a key={label} href="#" style={styles.footerLink} onMouseEnter={e => (e.currentTarget.style.color = "#fff")} onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}>{label}</a>
-            ))}
+            <a href="/Privacy%20Policy.html" target="_blank" rel="noopener noreferrer" style={styles.footerLink} onMouseEnter={e => (e.currentTarget.style.color = "#fff")} onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}>Privacy Policy</a>
+            <a href="/Terms%20and%20Conditions.html" target="_blank" rel="noopener noreferrer" style={styles.footerLink} onMouseEnter={e => (e.currentTarget.style.color = "#fff")} onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}>Terms of Service</a>
           </div>
         </div>
         <div style={styles.footerBottom}>© 2026 Skootlink (Pty) Ltd. All rights reserved. Built in South Africa 🇿🇦</div>
