@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from '@/api/supabaseClient';
 
 const openAuth = () => window.open("/auth", "_blank", "noopener,noreferrer");
@@ -46,7 +46,7 @@ const styles = {
   trustP: { color: "#71717a", fontSize: 14 },
   galleryGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 24 },
   galleryCard: { borderRadius: 20, overflow: "hidden", border: "1px solid #e4e4e7", background: "#fff", transition: "transform .2s, box-shadow .2s" },
-  galleryImg: { height: 220, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 56 },
+  galleryImg: { aspectRatio: "9 / 16", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 56 },
   galleryLabel: { padding: "16px 18px" },
   galleryH4: { fontSize: 16, marginBottom: 2 },
   galleryP: { color: "#71717a", fontSize: 13 },
@@ -217,6 +217,9 @@ function HowItWorks() {
 }
 
 function DemoSection() {
+  const [lightboxIndex, setLightboxIndex] = useState(null);
+  const touchStartX = useRef(null);
+
   const galleryItems = [
     { src: "/gallery/dashboard.png", emoji: "🏠", label: "Your Command Centre", desc: "See active rentals, vehicle stats, and quick actions at a glance." },
     { src: "/gallery/search.png",    emoji: "🔍", label: "Find the Right Vehicle", desc: "Filter by type, price, and location. Browse cars, scooters, vans, and more." },
@@ -226,6 +229,16 @@ function DemoSection() {
     { src: "/gallery/chat.png",      emoji: "💬", label: "Chat Securely", desc: "Message owners and drivers inside the app. Contact details stay hidden until a contract is signed." },
     { src: "/gallery/briefcase.png", emoji: "💼", label: "Your Digital Briefcase", desc: "All your contracts and rental history stored safely. Download PDFs anytime." },
   ];
+
+  const showNext = () => setLightboxIndex(i => (i === null ? null : (i + 1) % galleryItems.length));
+  const showPrev = () => setLightboxIndex(i => (i === null ? null : (i - 1 + galleryItems.length) % galleryItems.length));
+  const handleTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; };
+  const handleTouchEnd = (e) => {
+    if (touchStartX.current === null) return;
+    const delta = e.changedTouches[0].clientX - touchStartX.current;
+    if (Math.abs(delta) > 50) { delta < 0 ? showNext() : showPrev(); }
+    touchStartX.current = null;
+  };
 
   return (
     <section style={styles.section} id="demo">
@@ -270,10 +283,11 @@ function DemoSection() {
         {/* Screenshot gallery — merged into this same section, not a separate one, to avoid a duplicate "See Skootlink in Action" heading */}
         <div id="gallery" style={{ marginTop: 80 }}>
           <div style={styles.galleryGrid}>
-            {galleryItems.map(({ src, emoji, label, desc }) => (
+            {galleryItems.map(({ src, emoji, label, desc }, i) => (
               <div
                 key={label}
-                style={styles.galleryCard}
+                style={{ ...styles.galleryCard, cursor: "pointer" }}
+                onClick={() => setLightboxIndex(i)}
                 onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 12px 24px -8px rgba(37,99,235,.2)"; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
               >
@@ -287,6 +301,59 @@ function DemoSection() {
           </div>
         </div>
       </div>
+
+      {lightboxIndex !== null && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,0.92)",
+            display: "flex", flexDirection: "column",
+          }}
+          onClick={() => setLightboxIndex(null)}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", color: "#fff", flexShrink: 0 }}>
+            <div>
+              <p style={{ fontWeight: 700, fontSize: 15 }}>{galleryItems[lightboxIndex].label}</p>
+              <p style={{ fontSize: 12, opacity: 0.7 }}>{lightboxIndex + 1} of {galleryItems.length}</p>
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setLightboxIndex(null); }}
+              style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: 20, cursor: "pointer" }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div
+            style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", padding: "0 16px 16px" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={showPrev}
+              style={{ position: "absolute", left: 12, width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: 22, cursor: "pointer" }}
+            >
+              ‹
+            </button>
+            <img
+              src={galleryItems[lightboxIndex].src}
+              alt=""
+              style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 12, userSelect: "none" }}
+              onError={e => { e.currentTarget.style.display = "none"; }}
+            />
+            <button
+              onClick={showNext}
+              style={{ position: "absolute", right: 12, width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: 22, cursor: "pointer" }}
+            >
+              ›
+            </button>
+          </div>
+
+          <p style={{ textAlign: "center", color: "rgba(255,255,255,0.5)", fontSize: 12, paddingBottom: 12 }}>
+            Swipe or use the arrows to browse other screens
+          </p>
+        </div>
+      )}
     </section>
   );
 }
@@ -334,12 +401,14 @@ function GalleryImage({ src, emoji }) {
     );
   }
   return (
-    <img
-      src={src}
-      alt=""
-      style={{ width: "100%", height: 220, objectFit: "cover", display: "block", background: "#eff6ff" }}
-      onError={() => setFailed(true)}
-    />
+    <div style={{ width: "100%", aspectRatio: "9 / 16", background: "#f4f4f5", overflow: "hidden" }}>
+      <img
+        src={src}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+        onError={() => setFailed(true)}
+      />
+    </div>
   );
 }
 
