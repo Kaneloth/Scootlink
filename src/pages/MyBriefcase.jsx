@@ -579,7 +579,7 @@ export default function MyBriefcase() {
       </div>
 
       <Tabs defaultValue={tabs[0].value}>
-        <TabsList className={`w-full mb-4 grid ${gridCols} bg-muted p-1 rounded-lg`}>
+        <TabsList className={`w-full mb-4 h-auto grid ${gridCols} gap-1 bg-muted p-1 rounded-lg`}>
           {tabs.map(({ value, label, icon: Icon }) => (
             <TabsTrigger key={value} value={value} className="text-xs gap-1.5 py-2">
               <Icon className="w-3.5 h-3.5" />
