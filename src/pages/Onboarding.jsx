@@ -97,7 +97,6 @@ const BASE_STEPS = [
   { id: 'personal', label: 'Personal Info', icon: User  },
 ];
 const PLATFORM_STEP = { id: 'platform_history', label: 'Your Experience', icon: Star };
-
 const PLATFORM_OPTIONS = ['Uber', 'Bolt', 'Uber Eats', 'Mr D Food', 'Bolt Food', 'InDriver', 'Other'];
 
 // ── Role options ──────────────────────────────────────────────────────────────
@@ -205,11 +204,17 @@ export default function Onboarding() {
   // evidence screenshots for any marked for verification. Called once, right
   // before finishing onboarding — never blocks navigation if it fails, since
   // this is optional, supplementary information.
-  const savePlatformHistoryEntries = async (userId) => {
-    if (platformEntries.length === 0 || !userId) return;
+  //
+  // Accepts an explicit `entries` list (defaulting to the current state)
+  // rather than always reading platformEntries directly — this lets the
+  // caller pass in a list that also includes a not-yet-"Added" pending
+  // entry still sitting in the form, without waiting on an async state
+  // update to land first.
+  const savePlatformHistoryEntries = async (userId, entries = platformEntries) => {
+    if (entries.length === 0 || !userId) return;
     setSavingPlatformHistory(true);
     try {
-      for (const entry of platformEntries) {
+      for (const entry of entries) {
         const { data: row, error: insertErr } = await supabase
           .from('platform_history')
           .upsert({
@@ -389,6 +394,7 @@ export default function Onboarding() {
           return;
         }
       }
+
       // Fetch fresh auth metadata right before saving — guarantees full_name
       // is current even if the earlier auth.me() call hadn't resolved yet
       // when this step was reached.
@@ -432,7 +438,20 @@ export default function Onboarding() {
 
       // ── Save platform history (optional, self-reported) ───────────────────
       if (authUser?.id) {
-        await savePlatformHistoryEntries(authUser.id);
+        // If the user filled in a platform entry but never explicitly clicked
+        // "Add Platform" before finishing onboarding, don't silently discard
+        // it — auto-include it, since this is the last step and it's easy to
+        // assume filling the form was enough. This is the actual bug fix:
+        // previously, anything left in the form-in-progress was lost here.
+        let entriesToSave = platformEntries;
+        const pendingPlatformName = newEntry.platform === 'Other' ? newEntry.otherPlatform.trim() : newEntry.platform;
+        if (pendingPlatformName && newEntry.rating) {
+          const alreadyAdded = platformEntries.some(e => e.platform.toLowerCase() === pendingPlatformName.toLowerCase());
+          if (!alreadyAdded) {
+            entriesToSave = [...platformEntries, { ...newEntry, platform: pendingPlatformName }];
+          }
+        }
+        await savePlatformHistoryEntries(authUser.id, entriesToSave);
       }
 
       // ── Award sign-up free credits (safety net) ───────────────────────────
@@ -480,7 +499,6 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
       <div className="w-full max-w-xl">
-
         {/* Logo */}
         <div className="flex justify-center mb-6">
           <a href="/home" className="flex items-center gap-2">
@@ -509,7 +527,6 @@ export default function Onboarding() {
         </div>
 
         <Card className="p-6 shadow-lg border border-border/50">
-
           {/* ── Step 0: Role Selection ────────────────────────────────────── */}
           {step === 0 && (
             <div className="space-y-4">
@@ -519,7 +536,6 @@ export default function Onboarding() {
                   Pick your role — you can update it any time in Settings.
                 </p>
               </div>
-
               <div className="space-y-3">
                 {ROLES.map((role) => {
                   const Icon = role.icon;
@@ -548,7 +564,6 @@ export default function Onboarding() {
                   );
                 })}
               </div>
-
               <div className="flex items-start gap-2.5 bg-muted/50 rounded-xl p-3.5">
                 <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                 <p className="text-xs text-muted-foreground leading-relaxed">
@@ -563,9 +578,7 @@ export default function Onboarding() {
           {step === 1 && (
             <div className="space-y-4">
               <h2 className="font-semibold text-lg">Personal Information</h2>
-
               <div className="grid grid-cols-2 gap-4">
-
                 {/* Phone */}
                 <div>
                   <Label className="text-xs font-medium">Phone Number *</Label>
@@ -614,7 +627,6 @@ export default function Onboarding() {
                     </Select>
                   </div>
                 )}
-
               </div>
 
               {/* Location */}
@@ -839,7 +851,6 @@ export default function Onboarding() {
               </Button>
             )}
           </div>
-
         </Card>
       </div>
 
@@ -847,7 +858,6 @@ export default function Onboarding() {
       {showPrivacyNotice && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50">
           <div className="bg-card rounded-2xl shadow-xl max-w-sm w-full p-6 border border-border">
-
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
                 <span className="text-2xl">🔒</span>
@@ -857,7 +867,6 @@ export default function Onboarding() {
                 <p className="text-xs text-muted-foreground">About the information we collect</p>
               </div>
             </div>
-
             <div className="space-y-3 mb-5">
               <p className="text-sm text-foreground leading-relaxed">
                 The personal details you provide on this screen — such as your date of birth and residential address — are collected <strong>for verification and platform control purposes only</strong>.
@@ -871,7 +880,6 @@ export default function Onboarding() {
                 </p>
               </div>
             </div>
-
             <Button
               className="w-full"
               onClick={() => setShowPrivacyNotice(false)}
