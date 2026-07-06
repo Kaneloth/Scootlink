@@ -562,7 +562,7 @@ export default function MyBriefcase() {
         { value: 'contracts', label: 'Contracts', icon: FileText, section: 'Contracts',       sub: 'Rentals with a signed contract' },
       ];
 
-  const gridCols = tabs.length === 4 ? 'grid-cols-4' : tabs.length === 3 ? 'grid-cols-3' : 'grid-cols-2';
+  const gridCols = tabs.length === 4 ? 'grid-cols-2' : tabs.length === 3 ? 'grid-cols-3' : 'grid-cols-2';
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
@@ -579,7 +579,7 @@ export default function MyBriefcase() {
       </div>
 
       <Tabs defaultValue={tabs[0].value}>
-        <TabsList className={`w-full mb-4 grid ${gridCols} bg-muted p-1 rounded-lg`}>
+        <TabsList className={`w-full mb-4 grid ${gridCols} gap-1 bg-muted p-1 rounded-lg`}>
           {tabs.map(({ value, label, icon: Icon }) => (
             <TabsTrigger key={value} value={value} className="text-xs gap-1.5 py-2">
               <Icon className="w-3.5 h-3.5" />
