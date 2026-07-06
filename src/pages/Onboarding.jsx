@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card } from '@/components/ui/card';
 import {
   User, Users, Crown, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Bike, Info,
+  Star, Upload, X, Plus, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -91,10 +92,13 @@ function normalisePhone(raw) {
 }
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
-const STEPS = [
+const BASE_STEPS = [
   { id: 'role',     label: 'Your Role',    icon: Users },
   { id: 'personal', label: 'Personal Info', icon: User  },
 ];
+const PLATFORM_STEP = { id: 'platform_history', label: 'Your Experience', icon: Star };
+
+const PLATFORM_OPTIONS = ['Uber', 'Bolt', 'Uber Eats', 'Mr D Food', 'Bolt Food', 'InDriver', 'Other'];
 
 // ── Role options ──────────────────────────────────────────────────────────────
 const ROLES = [
@@ -102,7 +106,7 @@ const ROLES = [
     id: 'driver',
     name: 'Driver',
     description: 'Search for and rent vehicles listed by owners on Skootlink.',
-    freeCredits: 15,
+    freeCredits: 350,
     icon: Bike,
     bg:   'bg-blue-50',
     border: 'border-blue-200',
@@ -112,7 +116,7 @@ const ROLES = [
     id: 'owner',
     name: 'Owner',
     description: 'List your vehicles and connect with verified drivers.',
-    freeCredits: 45,
+    freeCredits: 1250,
     icon: Crown,
     bg:   'bg-amber-50',
     border: 'border-amber-200',
@@ -122,7 +126,7 @@ const ROLES = [
     id: 'both',
     name: 'Driver & Owner',
     description: 'Drive other vehicles and list your own — full platform access.',
-    freeCredits: 45,
+    freeCredits: 1250,
     icon: Users,
     bg:   'bg-primary/5',
     border: 'border-primary/30',
@@ -150,6 +154,7 @@ export default function Onboarding() {
     phone:               '',
     gender:              '',
     date_of_birth:       '',
+    driving_experience:  '',
     country_type:        'South Africa',
     sa_province:         '',
     sa_city:             '',
@@ -161,6 +166,88 @@ export default function Onboarding() {
   });
 
   const update = (field, val) => setForm(p => ({ ...p, [field]: val }));
+
+  // Owners-only accounts skip the platform history step — it's specific to
+  // gig driving/delivery work, not vehicle listing.
+  const STEPS = form.role === 'owner' ? BASE_STEPS : [...BASE_STEPS, PLATFORM_STEP];
+
+  // ── Platform history (self-reported, optional) ────────────────────────────
+  const [platformEntries, setPlatformEntries] = useState([]); // { platform, role, rating, evidenceFile, requestVerification }
+  const [newEntry, setNewEntry] = useState({ platform: '', otherPlatform: '', role: '', rating: 0, evidenceFile: null, requestVerification: false });
+  const [savingPlatformHistory, setSavingPlatformHistory] = useState(false);
+
+  const resetNewEntry = () => setNewEntry({ platform: '', otherPlatform: '', role: '', rating: 0, evidenceFile: null, requestVerification: false });
+
+  const addPlatformEntry = () => {
+    const platformName = newEntry.platform === 'Other' ? newEntry.otherPlatform.trim() : newEntry.platform;
+    if (!platformName) { toast.error('Please select or enter a platform name'); return; }
+    if (!newEntry.rating) { toast.error('Please select a rating'); return; }
+    if (newEntry.requestVerification && !newEntry.evidenceFile) {
+      toast.error('Please upload a screenshot to request verification'); return;
+    }
+    setPlatformEntries(prev => {
+      const existingIndex = prev.findIndex(e => e.platform.toLowerCase() === platformName.toLowerCase());
+      const updatedEntry = { ...newEntry, platform: platformName };
+      if (existingIndex !== -1) {
+        toast.info(`Updated your existing ${platformName} entry`);
+        return prev.map((e, i) => i === existingIndex ? updatedEntry : e);
+      }
+      return [...prev, updatedEntry];
+    });
+    resetNewEntry();
+  };
+
+  const removePlatformEntry = (index) => {
+    setPlatformEntries(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Persists all locally-added platform entries to the database, uploading
+  // evidence screenshots for any marked for verification. Called once, right
+  // before finishing onboarding — never blocks navigation if it fails, since
+  // this is optional, supplementary information.
+  const savePlatformHistoryEntries = async (userId) => {
+    if (platformEntries.length === 0 || !userId) return;
+    setSavingPlatformHistory(true);
+    try {
+      for (const entry of platformEntries) {
+        const { data: row, error: insertErr } = await supabase
+          .from('platform_history')
+          .upsert({
+            user_id: userId,
+            platform: entry.platform,
+            role: entry.role || null,
+            rating: entry.rating,
+            verification_status: entry.requestVerification ? 'pending' : 'unverified',
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'user_id,platform' })
+          .select()
+          .single();
+
+        if (insertErr) { console.warn('[Onboarding] platform_history insert failed:', insertErr); continue; }
+
+        if (entry.requestVerification && entry.evidenceFile && row) {
+          const ext = entry.evidenceFile.name.split('.').pop() || 'png';
+          const filePath = `${userId}/${row.id}.${ext}`;
+          const { error: uploadErr } = await supabase.storage
+            .from('platform-evidence')
+            .upload(filePath, entry.evidenceFile, { contentType: entry.evidenceFile.type });
+          if (uploadErr) {
+            console.warn('[Onboarding] evidence upload failed:', uploadErr);
+          } else {
+            const { error: linkErr } = await supabase
+              .from('platform_history')
+              .update({ evidence_url: filePath })
+              .eq('id', row.id);
+            if (linkErr) console.warn('[Onboarding] failed to link evidence_url:', linkErr);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Onboarding] savePlatformHistoryEntries failed:', err);
+    } finally {
+      setSavingPlatformHistory(false);
+    }
+  };
 
   const updateProvince = (val) => {
     setForm(p => ({ ...p, sa_province: val, sa_city: '', sa_city_other: '' }));
@@ -229,6 +316,7 @@ export default function Onboarding() {
     phone:                normalisePhone(form.phone),
     gender:               form.gender,
     date_of_birth:        form.date_of_birth || null,
+    driving_experience:   form.role !== 'owner' ? (form.driving_experience || null) : null,
     location:             buildLocation(),
     residential_address:  form.residential_address,
     onboarding_completed: true,
@@ -248,6 +336,39 @@ export default function Onboarding() {
         if (error) console.error('[Onboarding] set_user_geo_location error:', error);
       }
     } catch (err) { console.error('[Onboarding] geocode error:', err); }
+  };
+
+  // ── Award sign-up free credits via Netlify function ──────────────────────
+  // Uses grant-signup-credits.js which guards against duplicate grants (same
+  // user_id, email, phone, device, or IP) — so this is always safe to call,
+  // even more than once for the same user; a second call for someone who
+  // already has a grant just returns { granted: 0, reason: 'already_granted' }.
+  // Called as soon as a role is selected (see nextStep), not gated behind
+  // completing the rest of onboarding — someone who picks a role and never
+  // finishes their profile still gets their bonus.
+  const awardSignupCredits = async (role, phone = '') => {
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser?.id) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch('/.netlify/functions/grant-signup-credits', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          user_id:            authUser.id,
+          email:              authUser.email ?? '',
+          phone:              phone ?? '',
+          device_fingerprint: localStorage.getItem('skootlink_device_fp') ?? '',
+          profile_type:       role,
+        }),
+      });
+    } catch (creditErr) {
+      // Non-fatal — credits can be added manually if this ever fails
+      console.warn('[Onboarding] grant-signup-credits call failed:', creditErr);
+    }
   };
 
   const saveAndNavigate = async (destination) => {
@@ -309,30 +430,18 @@ export default function Onboarding() {
         }
       }
 
-      // ── Award sign-up free credits via Netlify function ──────────────────
-      // Uses grant-signup-credits.js which guards against duplicate grants
-      // (same email, phone, device, or IP) across account re-registrations.
+      // ── Save platform history (optional, self-reported) ───────────────────
       if (authUser?.id) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          await fetch('/.netlify/functions/grant-signup-credits', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-            },
-            body: JSON.stringify({
-              user_id:            authUser.id,
-              email:              authUser.email ?? '',
-              phone:              form.phone ?? '',
-              device_fingerprint: localStorage.getItem('skootlink_device_fp') ?? '',
-              profile_type:       form.role,
-            }),
-          });
-        } catch (creditErr) {
-          // Non-fatal — profile saved successfully; credits can be added manually
-          console.warn('[Onboarding] grant-signup-credits call failed:', creditErr);
-        }
+        await savePlatformHistoryEntries(authUser.id);
+      }
+
+      // ── Award sign-up free credits (safety net) ───────────────────────────
+      // Normally already granted from the role-selection step (see nextStep)
+      // — this call is a harmless no-op in that case, since grant-signup-credits.js
+      // guards against duplicate grants. It only matters if that earlier call
+      // failed for some reason (e.g. a network blip).
+      if (authUser?.id) {
+        await awardSignupCredits(form.role, form.phone);
       }
 
       toast.success('Profile saved! Welcome to Skootlink.');
@@ -348,6 +457,12 @@ export default function Onboarding() {
     if (step === 1 && !validatePersonal()) return;
     if (step < STEPS.length - 1) {
       const nextIndex = step + 1;
+      // Leaving the role step — grant sign-up credits now, right after the
+      // user commits to a role, rather than waiting for full onboarding
+      // completion. Fire-and-forget: never blocks navigation to the next step.
+      if (step === 0) {
+        awardSignupCredits(form.role);
+      }
       setStep(nextIndex);
       // Show privacy notice when entering Personal Info step
       if (nextIndex === 1) setShowPrivacyNotice(true);
@@ -485,6 +600,21 @@ export default function Onboarding() {
                   <Input className="mt-1" type="date" value={form.date_of_birth} onChange={e => update('date_of_birth', e.target.value)} max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]} />
                 </div>
 
+                {/* Driving Experience — driver/both only */}
+                {form.role !== 'owner' && (
+                  <div className="col-span-2">
+                    <Label className="text-xs font-medium">Driving Experience</Label>
+                    <Select value={form.driving_experience} onValueChange={v => update('driving_experience', v)}>
+                      <SelectTrigger className="mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1-2">1 – 2 years</SelectItem>
+                        <SelectItem value="3-5">3 – 5 years</SelectItem>
+                        <SelectItem value="6+">6+ years</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
               </div>
 
               {/* Location */}
@@ -575,6 +705,103 @@ export default function Onboarding() {
             </div>
           )}
 
+          {step === 2 && (
+            <div className="space-y-5">
+              <p className="text-sm text-muted-foreground -mt-2">
+                Worked with Uber, Bolt, or a delivery app before? Adding your rating history helps owners trust you faster. This is completely optional — you can skip it or add it later in Settings.
+              </p>
+
+              {/* Already-added entries */}
+              {platformEntries.length > 0 && (
+                <div className="space-y-2">
+                  {platformEntries.map((entry, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-muted">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm">{entry.platform}</span>
+                        <span className="flex items-center gap-0.5 text-amber-500 text-xs">
+                          <Star className="w-3.5 h-3.5 fill-current" /> {entry.rating.toFixed(1)}
+                        </span>
+                        {entry.requestVerification && (
+                          <span className="text-[10px] text-primary font-medium">Verification requested</span>
+                        )}
+                      </div>
+                      <button onClick={() => removePlatformEntry(i)} className="p-1 text-muted-foreground hover:text-destructive">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add-entry form */}
+              <div className="border border-border rounded-xl p-4 space-y-3">
+                <div>
+                  <Label className="text-xs font-medium">Platform</Label>
+                  <Select value={newEntry.platform} onValueChange={v => setNewEntry(p => ({ ...p, platform: v }))}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select a platform" /></SelectTrigger>
+                    <SelectContent>
+                      {PLATFORM_OPTIONS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {newEntry.platform === 'Other' && (
+                  <div>
+                    <Label className="text-xs font-medium">Platform Name</Label>
+                    <Input className="mt-1" placeholder="e.g. DiDi" value={newEntry.otherPlatform} onChange={e => setNewEntry(p => ({ ...p, otherPlatform: e.target.value }))} />
+                  </div>
+                )}
+
+                <div>
+                  <Label className="text-xs font-medium">Your Rating</Label>
+                  <div className="flex gap-1 mt-1">
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <button key={n} type="button" onClick={() => setNewEntry(p => ({ ...p, rating: n }))}>
+                        <Star className={`w-7 h-7 ${n <= newEntry.rating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30'}`} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium">Role (optional)</Label>
+                  <Input className="mt-1" placeholder="e.g. Driver, Courier" value={newEntry.role} onChange={e => setNewEntry(p => ({ ...p, role: e.target.value }))} />
+                </div>
+
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newEntry.requestVerification}
+                    onChange={e => setNewEntry(p => ({ ...p, requestVerification: e.target.checked }))}
+                  />
+                  Request verification (free — reviewed manually by our team)
+                </label>
+
+                {newEntry.requestVerification && (
+                  <div>
+                    <Label className="text-xs font-medium">Upload a screenshot of your rating</Label>
+                    <label className="mt-1 flex items-center gap-2 border border-dashed border-border rounded-xl p-3 cursor-pointer hover:border-primary/40 transition-colors">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => setNewEntry(p => ({ ...p, evidenceFile: e.target.files[0] || null }))}
+                      />
+                      <Upload className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="text-xs text-muted-foreground truncate">
+                        {newEntry.evidenceFile ? newEntry.evidenceFile.name : 'Tap to choose an image'}
+                      </span>
+                    </label>
+                  </div>
+                )}
+
+                <Button type="button" variant="outline" onClick={addPlatformEntry} className="w-full gap-2">
+                  <Plus className="w-4 h-4" /> Add Platform
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* ── Navigation ────────────────────────────────────────────────── */}
           <div className="mt-6 pt-4 border-t border-border space-y-3">
             <div className="flex justify-between items-center">
@@ -592,9 +819,9 @@ export default function Onboarding() {
                   Continue <ArrowRight className="w-4 h-4" />
                 </Button>
               ) : (
-                <Button onClick={() => saveAndNavigate('home')} className="gap-2" disabled={saving}>
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                  {saving ? 'Saving...' : 'Get Started'}
+                <Button onClick={() => saveAndNavigate('home')} className="gap-2" disabled={saving || savingPlatformHistory}>
+                  {(saving || savingPlatformHistory) ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  {(saving || savingPlatformHistory) ? 'Saving...' : 'Get Started'}
                 </Button>
               )}
             </div>

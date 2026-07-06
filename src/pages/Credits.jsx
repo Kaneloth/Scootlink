@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Coins, ArrowUpRight, ArrowDownLeft, Loader2 } from 'lucide-react';
+import { Coins, ArrowUpRight, ArrowDownLeft, Loader2, ChevronUp, ChevronDown } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import PageHeader from '@/components/layout/PageHeader';
@@ -9,18 +9,19 @@ import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
 
 const PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 39,  credits: 15  },
-  { id: 'standard', label: 'Standard Pack', price: 59,  credits: 30, popular: true },
-  { id: 'pro',      label: 'Pro Pack',       price: 99,  credits: 60  },
-  { id: 'business', label: 'Business Pack', price: 199, credits: 200 },
+  { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 240  },
+  { id: 'standard', label: 'Standard Pack', price: 79,  credits: 400, popular: true },
+  { id: 'pro',      label: 'Pro Pack',      price: 129, credits: 660  },
+  { id: 'business', label: 'Business Pack', price: 199, credits: 1040 },
 ];
 
+// ── How far your credits go ─────────────────────────────────────────────────
 const CREDIT_COSTS = [
-  { action: 'Start or reply to a new chat', cost: 3  },
-  { action: 'List a vehicle (1st)',         cost: 30 },
-  { action: 'List a vehicle (2nd)',         cost: 25 },
-  { action: 'List a vehicle (3rd+)',        cost: 20 },
-  { action: 'Access rental agreement',      cost: 15 },
+  { icon: '💬', action: 'Start a chat',              cost: '50 credits'  },
+  { icon: '🚗', action: 'List a vehicle (1st)',       cost: '250 credits' },
+  { icon: '🚗', action: 'List a vehicle (2nd)',       cost: '200 credits' },
+  { icon: '🚗', action: 'List a vehicle (3rd+)',      cost: '175 credits' },
+  { icon: '📝', action: 'Sign a rental contract',     cost: '200 credits' },
 ];
 
 export default function Credits() {
@@ -29,6 +30,10 @@ export default function Credits() {
   const [ledger, setLedger]   = useState([]);
   const [ledgerLoading, setLedgerLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(null);
+  const [selectedPkg, setSelectedPkg] = useState(
+    PACKAGES.find(p => p.popular)?.id || PACKAGES[1].id
+  );
+  const [showCosts, setShowCosts] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -44,7 +49,9 @@ export default function Credits() {
     });
   }, []);
 
-  const handlePurchase = async (pkg) => {
+  const handlePurchase = async () => {
+    const pkg = PACKAGES.find(p => p.id === selectedPkg);
+    if (!pkg) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
     setPurchasing(pkg.id);
@@ -79,6 +86,8 @@ export default function Credits() {
     }
   };
 
+  const selected = PACKAGES.find(p => p.id === selectedPkg);
+
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto pb-24">
       <PageHeader title="Credits" subtitle="Buy and manage your Skootlink credits" backTo="/home" />
@@ -98,55 +107,76 @@ export default function Credits() {
         </div>
       </Card>
 
-      {/* What credits cost */}
-      <Card className="p-4 border border-border/50 mb-6">
-        <p className="text-sm font-semibold text-foreground mb-3">Credit costs</p>
-        <div className="space-y-2">
-          {CREDIT_COSTS.map(({ action, cost }) => (
-            <div key={action} className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{action}</span>
-              <span className="font-semibold text-foreground">{cost} cr</span>
-            </div>
-          ))}
-        </div>
-      </Card>
-
       {/* Packages */}
-      <p className="text-sm font-semibold text-foreground mb-3">Buy credits</p>
-      <div className="space-y-3 mb-8">
-        {PACKAGES.map(pkg => (
-          <button
-            key={pkg.id}
-            onClick={() => handlePurchase(pkg)}
-            disabled={purchasing !== null}
-            className={`w-full text-left rounded-2xl border p-4 transition-all hover:border-primary hover:shadow-sm disabled:opacity-60 ${
-              pkg.popular ? 'border-primary bg-primary/5' : 'border-border bg-card'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-sm text-foreground">{pkg.label}</p>
-                  {pkg.popular && (
-                    <span className="text-[10px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">
-                      POPULAR
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Choose a package</p>
+      <div className="space-y-2.5 mb-5">
+        {PACKAGES.map(pkg => {
+          const isSelected = selectedPkg === pkg.id;
+          return (
+            <button
+              key={pkg.id}
+              onClick={() => setSelectedPkg(pkg.id)}
+              disabled={purchasing !== null}
+              className={`w-full text-left rounded-2xl border-2 px-4 py-3.5 transition-all disabled:opacity-60 ${
+                isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-card hover:border-primary/40'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary' : 'border-muted-foreground/40'}`}>
+                    {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
+                  </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className={`text-xl font-extrabold ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                      {pkg.credits.toLocaleString()}
                     </span>
-                  )}
+                    <span className="text-sm text-muted-foreground font-medium">credits</span>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">{pkg.credits} credits</p>
+                <div className="flex items-center gap-2 shrink-0">
+                  {pkg.popular && (
+                    <span className="text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">🔥 POPULAR</span>
+                  )}
+                  <span className={`text-base font-bold ${isSelected ? 'text-primary' : 'text-foreground'}`}>R{pkg.price}</span>
+                </div>
               </div>
-              <div className="text-right shrink-0 ml-3">
-                <p className="font-bold text-foreground">R{pkg.price}</p>
-                {purchasing === pkg.id
-                  ? <Loader2 className="w-4 h-4 animate-spin text-primary ml-auto mt-1" />
-                  : <p className="text-[10px] text-muted-foreground">
-                      R{(pkg.price / pkg.credits).toFixed(2)}/cr
-                    </p>
-                }
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Pay button */}
+      <Button onClick={handlePurchase} disabled={purchasing !== null} className="w-full h-12 text-base font-bold rounded-2xl gap-2 mb-2">
+        {purchasing
+          ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+          : <>Pay R{selected?.price} — Get {selected?.credits.toLocaleString()} credits</>}
+      </Button>
+      <p className="text-center text-[11px] text-muted-foreground mb-6">
+        Secure payment via card or EFT · Credits added instantly
+      </p>
+
+      {/* How far your credits go — collapsible */}
+      <div className="border border-border rounded-2xl overflow-hidden mb-8">
+        <button onClick={() => setShowCosts(v => !v)} className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-muted/40 transition-colors">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">How far your credits go</p>
+          {showCosts ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+        </button>
+        {showCosts && (
+          <div className="px-4 pb-4 space-y-2 border-t border-border pt-3">
+            {CREDIT_COSTS.map(({ icon, action, cost }) => (
+              <div key={action} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">{icon}</span>
+                  <p className="text-xs text-muted-foreground">{action}</p>
+                </div>
+                <span className="text-xs font-semibold text-foreground shrink-0 ml-2">{cost}</span>
               </div>
+            ))}
+            <div className="pt-2 border-t border-border">
+              <p className="text-[11px] text-muted-foreground text-center">Credits never expire · Sign-up bonus included</p>
             </div>
-          </button>
-        ))}
+          </div>
+        )}
       </div>
 
       {/* Transaction history */}

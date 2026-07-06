@@ -6,7 +6,9 @@
  * returned — even for profiles that are not the calling user's own.
  *
  * POST body: { ids: string[] }
- * Returns:   Profile[] with id, full_name, email, phone, verified, wallet_balance
+ * Returns:   Profile[] with id, full_name, email, phone, verified, wallet_balance,
+ *            location, id_verified, licence_verified, license_number, license_year,
+ *            rating, gender, driving_experience
  */
 
 exports.handler = async (event) => {
@@ -48,9 +50,19 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: '`ids` must be a non-empty array' }) };
   }
 
-  // Only select columns confirmed to exist in the profiles table
+  // Select every column confirmed to exist in `profiles` that the frontend
+  // profile panels need. (Previously this only returned a handful of
+  // columns, which silently made location/verification/etc. look "empty"
+  // in the UI even when the data existed in the database.)
+  //
+  // NOTE: citizenship/avatar_url/avatar_visible/id_number/passport_number
+  // are deliberately left out — Dashboard.jsx fetches those via a separate
+  // query specifically because an unknown/nonexistent column in a single
+  // PostgREST `select` fails the *entire* request, which would silently
+  // break every field returned here, not just the new ones. If those columns
+  // are confirmed to exist, they can be safely added to this list.
   const inList = ids.join(',');
-  const select = 'id,full_name,email,phone,verified,wallet_balance';
+  const select = 'id,full_name,email,phone,verified,wallet_balance,location,id_verified,licence_verified,license_number,license_year,rating,gender,driving_experience';
   const url    = `${supabaseUrl}/rest/v1/profiles?id=in.(${inList})&select=${select}`;
 
   try {

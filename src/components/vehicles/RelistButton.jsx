@@ -28,14 +28,14 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('Please sign in again.'); return; }
 
-      // Count OTHER vehicles (excluding this one) to determine correct tier
+      // Count OTHER vehicles (excluding this one) to determine correct tier:
+      // 0 others = 250cr (1st vehicle), 1 other = 200cr (2nd), 2+ others = 175cr (3rd+)
       const [{ data: bal }, { data: otherVehicles }] = await Promise.all([
         supabase.rpc('get_credit_balance', { p_user_id: user.id }),
         supabase.from('vehicles').select('id', { count: 'exact' }).eq('owner_id', user.id).neq('id', vehicle.id),
       ]);
-
       const otherCount = otherVehicles?.length ?? 0;
-      const tierPrice  = otherCount === 0 ? 30 : otherCount === 1 ? 25 : 20;
+      const tierPrice  = otherCount === 0 ? 250 : otherCount === 1 ? 200 : 175;
 
       setBalance(bal ?? 0);
       setPrice(tierPrice);
@@ -44,7 +44,6 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
         setShowTopUp(true);
         return;
       }
-
       navigate(`/edit-vehicle?id=${vehicle.id}&relist=1`);
     } finally {
       setChecking(false);
@@ -62,7 +61,6 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
       >
         <RefreshCw className="w-3.5 h-3.5" /> Re-list{price ? ` (${price} cr)` : ''}
       </Button>
-
       {showTopUp && (
         <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowTopUp(false)}>
           <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl p-6" onClick={e => e.stopPropagation()}>
@@ -72,17 +70,15 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
               </div>
               <div>
                 <p className="font-semibold text-foreground">Not enough credits</p>
-                <p className="text-xs text-muted-foreground">You need {price ?? 30} credits to re-list this vehicle</p>
+                <p className="text-xs text-muted-foreground">You need {price ?? 250} credits to re-list this vehicle</p>
               </div>
             </div>
-
             <div className="bg-muted rounded-xl p-4 mb-4 flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Your balance</span>
               <span className="font-bold text-foreground flex items-center gap-1">
                 <Coins className="w-4 h-4 text-primary" /> {balance ?? 0} credits
               </span>
             </div>
-
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setShowTopUp(false)}>Cancel</Button>
               <Button className="flex-1" onClick={() => { setShowTopUp(false); navigate('/credits'); }}>

@@ -9,6 +9,7 @@ import {
   Copy, Trash, Trash2, Check, CheckCheck, UserX, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
 // ── localStorage helpers ──────────────────────────────────────────────────────
 const hiddenKey      = (uid) => `skootlink_hidden_msgs_${uid}`;
 const hiddenChatsKey = (uid) => `skootlink_hidden_chats_${uid}`;
@@ -174,14 +175,14 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const [partnerLocation, setPartnerLocation] = useState('');
   const [chatCapReached,    setChatCapReached]    = useState(false);
   const [hasSentInThisConvo, setHasSentInThisConvo] = useState(false);
-  const [showTopUp, setShowTopUp] = useState(false);
+  const [showTopUpPrompt, setShowTopUpPrompt] = useState(false);
   const bottomRef       = useRef(null);
   const menuRef         = useRef(null);
   const longPressRef    = useRef(null);
   const longTriggered   = useRef(false);
   const broadcastRef    = useRef(null);
-  const isAdmin   = ['kanelothelejane@gmail.com', 'kaneloth@skootlink.co.za'].includes(user?.email);
-  const canSend   = isAdmin || (creditBalance !== null && creditBalance >= 3 && (!chatCapReached || hasSentInThisConvo));
+  const isAdmin   = ['kaneloth@skootlink.co.za'].includes(user?.email);
+  const canSend   = isAdmin || (creditBalance !== null && creditBalance >= 50 && (!chatCapReached || hasSentInThisConvo));
 
   useEffect(() => {
     supabase.from('profiles').select('location').eq('id', partner.id).single()
@@ -206,7 +207,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       const alreadySent = filtered.some(m => m.sender_id === user.id);
       setHasSentInThisConvo(alreadySent);
 
-      // Check free chat cap (15 credits max from sign-up grant)
+      // Check free chat cap (fixed at 350 credits, regardless of signup grant size)
       // Only blocks STARTING new conversations, not existing ones
       if (!alreadySent && !isAdmin) {
         const { data: capCheck } = await supabase.rpc('can_start_chat', { p_user_id: user.id });
@@ -284,38 +285,32 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const handleSend = async (e) => {
     e?.preventDefault();
     if (!text.trim() || sending) return;
+    if (!canSend) { setShowTopUpPrompt(true); return; }
     const body = text.trim();
-
-    // If starting a new conversation and not enough credits — show top-up prompt
-    const hasSentBefore = messages.some(m => m.sender_id === user.id);
-    if (!isAdmin && !hasSentBefore && (creditBalance === null || creditBalance < 3)) {
-      setShowTopUp(true);
-      return;
-    }
     setText('');
     setSending(true);
     if (!isAdmin) {
       const hasSentBefore = messages.some(m => m.sender_id === user.id);
       if (!hasSentBefore) {
-        // Check free chat cap — max 15 credits from sign-up grant on chats
+        // Check free chat cap — fixed at 350 credits, regardless of signup grant size
         const { data: capCheck } = await supabase.rpc('can_start_chat', { p_user_id: user.id });
         if (capCheck && !capCheck.allowed) {
           setText(body); setSending(false);
           setChatCapReached(true);
-          toast.error('You\'ve used your free chat credits. Top up to start new conversations.', { duration: 5000 });
+          setShowTopUpPrompt(true);
           return;
         }
 
         const { error: creditErr } = await supabase.rpc('deduct_credits', {
-          p_user_id: user.id, p_amount: 3, p_type: 'spend',
+          p_user_id: user.id, p_amount: 50, p_type: 'spend',
           p_description: `Message to ${partner.name}`, p_ref_id: partner.id,
         });
         if (creditErr?.message?.includes('insufficient_credits')) {
           setText(body); setSending(false);
-          toast.error('Not enough credits.');
+          setShowTopUpPrompt(true);
           return;
         }
-        setCreditBalance(prev => Math.max(0, (prev ?? 0) - 3));
+        setCreditBalance(prev => Math.max(0, (prev ?? 0) - 50));
       }
     }
     const tempId = `temp-${Date.now()}`;
@@ -456,38 +451,18 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         />
       )}
 
-      {showTopUp && createPortal(
-        <div className="fixed inset-0 z-[99999] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowTopUp(false)}>
-          <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl p-6 border border-border" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <span className="text-xl">💬</span>
-              </div>
-              <div>
-                <p className="font-semibold text-foreground">Credits needed</p>
-                <p className="text-xs text-muted-foreground">Starting a new conversation costs 3 credits</p>
-              </div>
-            </div>
-            <div className="bg-muted rounded-xl p-4 mb-4 flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Your balance</span>
-              <span className="font-bold text-foreground">{creditBalance ?? 0} credits</span>
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setShowTopUp(false)}>Cancel</Button>
-              <Button className="flex-1" onClick={() => { setShowTopUp(false); onClose(); setTimeout(() => window.location.href = '/credits', 100); }}>
-                Top Up Credits
-              </Button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <InsufficientCreditsModal
+        open={showTopUpPrompt}
+        onClose={() => setShowTopUpPrompt(false)}
+        requiredAmount={50}
+        actionLabel="start this conversation"
+      />
 
       <form onSubmit={handleSend} className="flex items-center gap-2 px-4 py-3 border-t border-border bg-background shrink-0" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
         {chatCapReached && !hasSentInThisConvo ? (
           <div className="flex-1 text-center py-1">
-            <p className="text-xs font-medium text-destructive">Free chat credits used up</p>
-            <p className="text-[11px] text-muted-foreground">Top up credits to start new conversations</p>
+            <p className="text-xs font-medium text-destructive">Messaging limit reached</p>
+            <p className="text-[11px] text-muted-foreground">Top up your credits to start new conversations</p>
           </div>
         ) : (
           <>
