@@ -148,7 +148,7 @@ export default function Subscription() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
-      const res = await fetch('/.netlify/functions/verify-identity', {
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/verify-identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({
@@ -193,7 +193,7 @@ export default function Subscription() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
-      const res = await fetch('/.netlify/functions/verify-licence', {
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/verify-licence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({ licenceNumber: licenceClean, yearIssued: year }),

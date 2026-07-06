@@ -85,7 +85,7 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
 
     try {
-      const res = await fetch('/.netlify/functions/payfast-initiate-verification', {
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate-verification', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -341,7 +341,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     try {
       const selfieB64 = await compressImage(saIdSelfie);
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/.netlify/functions/verify-identity', {
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/verify-identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
@@ -387,7 +387,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
         compressImage(passportFront), compressImage(passportBack), compressImage(passportSelfie),
       ]);
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/.netlify/functions/verify-identity', {
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/verify-identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
@@ -434,7 +434,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
         compressImage(licenceFront), compressImage(licenceBack),
       ]);
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/.netlify/functions/verify-licence', {
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/verify-licence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({

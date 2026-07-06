@@ -352,7 +352,7 @@ supabase.auth.onAuthStateChange((event, session) => {
 export const fetchProfilesByIds = async (ids) => {
   if (!ids || ids.length === 0) return [];
   try {
-    const res = await fetch('/.netlify/functions/get-profiles', {
+    const res = await fetch('https://skootlink.co.za/.netlify/functions/get-profiles', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),

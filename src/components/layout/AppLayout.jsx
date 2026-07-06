@@ -411,7 +411,7 @@ export default function AppLayout() {
         session?.refresh_token &&
         localStorage.getItem('scootlink_signin_method') === 'biometric'
       ) {
-        fetch('/.netlify/functions/auth-set-token', {
+        fetch('https://skootlink.co.za/.netlify/functions/auth-set-token', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },

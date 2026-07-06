@@ -20,7 +20,6 @@ import AddVehicle from '@/pages/AddVehicle';
 import RentalRequest from '@/pages/RentalRequest';
 import Activity from '@/pages/Activity';
 import MyBriefcase from '@/pages/MyBriefcase';
-import Wallet from '@/pages/Wallet';
 import Settings from '@/pages/Settings';
 import Profile from '@/pages/Profile';
 import Onboarding from '@/pages/Onboarding';
@@ -94,7 +93,6 @@ const AuthenticatedApp = () => {
         <Route path="/rental-request" element={<RentalRequest />} />
         <Route path="/activity" element={<Activity />} />
         <Route path="/briefcase" element={<MyBriefcase />} />
-        <Route path="/wallet" element={<Wallet />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/mysearch" element={<SearchPage />} />
