@@ -562,7 +562,7 @@ export default function MyBriefcase() {
         { value: 'contracts', label: 'Contracts', icon: FileText, section: 'Contracts',       sub: 'Rentals with a signed contract' },
       ];
 
-  const gridCols = tabs.length === 4 ? 'grid-cols-4' : tabs.length === 3 ? 'grid-cols-3' : 'grid-cols-2';
+  const gridCols = tabs.length === 4 ? 'grid-cols-2' : tabs.length === 3 ? 'grid-cols-3' : 'grid-cols-2';
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
