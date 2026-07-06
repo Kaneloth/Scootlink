@@ -179,27 +179,6 @@ export default function SearchVehicles() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Owners who've toggled their profile hidden should not have their vehicles surfaced either
-  const { data: hiddenOwnerIds = [] } = useQuery({
-    queryKey:  ['hidden-profile-owners'],
-    queryFn:   async () => {
-      const { data } = await supabase.from('profiles').select('id').eq('profile_visible', false);
-      return (data || []).map(p => p.id);
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-
-  // Admin's own listings must never appear in search results
-  const ADMIN_EMAILS_FILTER = ['kaneloth@skootlink.co.za'];
-  const { data: adminOwnerIds = [] } = useQuery({
-    queryKey:  ['admin-owner-ids'],
-    queryFn:   async () => {
-      const { data } = await supabase.from('profiles').select('id').in('email', ADMIN_EMAILS_FILTER);
-      return (data || []).map(p => p.id);
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-
   // Verification status — keyed by owner id for fast lookup
   const [verifiedOwnerIds,      setVerifiedOwnerIds]      = useState(new Set());
   const [fullyVerifiedOwnerIds, setFullyVerifiedOwnerIds] = useState(new Set());
@@ -246,8 +225,6 @@ export default function SearchVehicles() {
   const vehicles    = allVehicles.filter(v => {
     if (!(!user || v.owner_id !== user.id)) return false;
     if (blacklistedOwnerIds.includes(v.owner_id)) return false;
-    if (adminOwnerIds.includes(v.owner_id)) return false;
-    if (hiddenOwnerIds.includes(v.owner_id)) return false;
     if (verifiedOwnerFilter === 'id_verified'    && !verifiedOwnerIds.has(v.owner_id))      return false;
     if (verifiedOwnerFilter === 'fully_verified' && !fullyVerifiedOwnerIds.has(v.owner_id)) return false;
     return true;
@@ -325,17 +302,11 @@ export default function SearchVehicles() {
               <Label className="text-xs">Vehicle Type</Label>
               <Select value={filters.type} onValueChange={(v) => setFilters(prev => ({ ...prev, type: v }))}>
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent className="max-h-72 overflow-y-auto">
+                <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="scooter">🛵 Scooter</SelectItem>
-                  <SelectItem value="motorcycle">🏍️ Motorcycle</SelectItem>
-                  <SelectItem value="bicycle">🚲 Bicycle</SelectItem>
-                  <SelectItem value="car">🚗 Car</SelectItem>
-                  <SelectItem value="suv">🚙 SUV</SelectItem>
-                  <SelectItem value="bakkie">🛻 Bakkie / Pickup</SelectItem>
-                  <SelectItem value="van">🚐 Van</SelectItem>
-                  <SelectItem value="minibus_taxi">🚌 Minibus / Taxi</SelectItem>
-                  <SelectItem value="truck">🚚 Truck</SelectItem>
+                  <SelectItem value="scooter">Scooter</SelectItem>
+                  <SelectItem value="motorcycle">Motorcycle</SelectItem>
+                  <SelectItem value="car">Car</SelectItem>
                 </SelectContent>
               </Select>
             </div>
