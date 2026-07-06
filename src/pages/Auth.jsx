@@ -148,12 +148,28 @@ async function fetchUserPhone(userId) {
 export default function Auth() {
   const navigate = useNavigate();
 
+  // Checks whether a user is currently banned or suspended, via the
+  // is_user_blocked RPC — a single source of truth shared by both the
+  // biometric and password login paths, plus the ID/passport blacklist
+  // check that runs alongside it.
+  const checkUserBlocked = async (userId) => {
+    const { data } = await supabase.rpc('is_user_blocked', { p_user_id: userId });
+    if (data?.blocked) {
+      return { reason: data.reason, until: data.until || null };
+    }
+    return null;
+  };
+
   const [loginStage, setLoginStage] = useState('idle');
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [bannerReason, setBannerReason] = useState(null);
-  const [isBlacklisted, setIsBlacklisted] = useState(false);
+  const [blockInfo, setBlockInfo] = useState(null); // null = not blocked, else { reason: 'banned'|'suspended', until? }
+  const [blockedEmail, setBlockedEmail] = useState('');
+  const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const [disputeMsg, setDisputeMsg] = useState('');
+  const [disputeSending, setDisputeSending] = useState(false);
 
   // Post-signup confirmation screen
   const [signupDone, setSignupDone] = useState(false);
@@ -261,6 +277,18 @@ export default function Auth() {
           const { data: { session: s } } = await supabase.auth.getSession();
           if (s?.user) {
             clearInterval(poll);
+            // Ban/suspend check — this listener fires independently of
+            // handleLogin's own check, so without this it would race ahead
+            // and navigate to /home before handleLogin's signOut() takes
+            // effect, causing the block screen to flash and then bounce
+            // back to /auth once /home discovers there's no valid session.
+            const block = await checkUserBlocked(s.user.id);
+            if (block) {
+              await supabase.auth.signOut();
+              setBlockedEmail(s.user.email || '');
+              setBlockInfo(block);
+              return;
+            }
             window.location.replace('/home');
           } else if (attempts > 10) {
             clearInterval(poll);
@@ -364,18 +392,15 @@ export default function Auth() {
     setLoading(true);
     try {
       const session = await triggerBiometricLogin();
-      // Blacklist check layer 1 — profiles.blacklisted flag
-      const { data: bioProfile } = await supabase
-        .from('profiles')
-        .select('blacklisted')
-        .eq('id', session.user.id)
-        .single();
-      if (bioProfile?.blacklisted) {
+      // Ban / suspend check
+      const bioBlock = await checkUserBlocked(session.user.id);
+      if (bioBlock) {
         await supabase.auth.signOut();
-        setIsBlacklisted(true);
+        setBlockedEmail(session.user.email || '');
+        setBlockInfo(bioBlock);
         return;
       }
-      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers
+      // ID/passport blacklist check — a brand-new account using an already-banned identity document
       const { data: bioSensitive } = await supabase
         .from('user_sensitive_info')
         .select('sa_id, passport')
@@ -390,7 +415,8 @@ export default function Auth() {
           .maybeSingle();
         if (bioBannedRow) {
           await supabase.auth.signOut();
-          setIsBlacklisted(true);
+          setBlockedEmail(session.user.email || '');
+          setBlockInfo({ reason: 'id_blacklisted' });
           return;
         }
       }
@@ -462,6 +488,33 @@ export default function Auth() {
     }
   };
 
+  // ── Dispute a ban/suspension ───────────────────────────────────────────────
+  const handleDisputeSubmit = async () => {
+    if (!disputeMsg.trim()) return;
+    setDisputeSending(true);
+    try {
+      await fetch('/.netlify/functions/contact-support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: blockedEmail,
+          name: blockedEmail,
+          subject: 'Account Ban/Suspension Dispute',
+          message: disputeMsg,
+        }),
+      });
+      toast.success("Dispute submitted — we'll review your account and respond by email.");
+      setShowDisputeForm(false);
+      setDisputeMsg('');
+    } catch {
+      window.location.href =
+        `mailto:help@skootlink.co.za?subject=Account+Ban%2FSuspension+Dispute&body=` +
+        encodeURIComponent(`Account email: ${blockedEmail}\n\nReason for dispute: ${disputeMsg}`);
+    }
+    setDisputeSending(false);
+  };
+
+
   // ── Contact support fallback (stuck email verification) ──────────────────
   const handleContactSupport = async () => {
     if (!contactMsg.trim()) return;
@@ -510,20 +563,16 @@ export default function Auth() {
         setUnconfirmedEmail(loginEmail);
         return;
       }
-      // Blacklist check layer 1 — profiles.blacklisted flag
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('blacklisted')
-        .eq('id', data.user.id)
-        .single();
-      if (profile?.blacklisted) {
+      // Ban / suspend check
+      const block = await checkUserBlocked(data.user.id);
+      if (block) {
         await supabase.auth.signOut();
-        setIsBlacklisted(true);
+        setBlockedEmail(data.user.email || loginEmail || '');
+        setBlockInfo(block);
         return;
       }
-      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers.
-      // Catches cases where the profile flag wasn't set, or the user created
-      // a brand-new account using an already-banned identity document.
+      // ID/passport blacklist check — catches cases where a brand-new account
+      // was created using an already-banned identity document.
       const { data: sensitive } = await supabase
         .from('user_sensitive_info')
         .select('sa_id, passport')
@@ -538,7 +587,8 @@ export default function Auth() {
           .maybeSingle();
         if (bannedIdRow) {
           await supabase.auth.signOut();
-          setIsBlacklisted(true);
+          setBlockedEmail(data.user.email || loginEmail || '');
+          setBlockInfo({ reason: 'id_blacklisted' });
           return;
         }
       }
@@ -636,8 +686,14 @@ export default function Auth() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // Suspended account — sign in was blocked; show full-page message
-  if (isBlacklisted) {
+  // Blocked account — sign in was refused; show full-page message
+  if (blockInfo) {
+    const isBanned = blockInfo.reason === 'banned';
+    const isSuspended = blockInfo.reason === 'suspended';
+    const untilText = blockInfo.until
+      ? new Date(blockInfo.until).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : null;
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
         <div className="w-full max-w-sm text-center space-y-6">
@@ -647,20 +703,70 @@ export default function Auth() {
             </svg>
           </div>
           <div className="space-y-3">
-            <h2 className="text-2xl font-bold text-red-700">Account Suspended</h2>
+            <h2 className="text-2xl font-bold text-red-700">
+              {isBanned ? 'Account Banned' : 'Account Suspended'}
+            </h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Your Skootlink account has been suspended and you cannot access the platform at this time.
+              {isBanned
+                ? 'Your Skootlink account has been permanently banned and you cannot access the platform.'
+                : isSuspended
+                  ? `Your Skootlink account has been temporarily suspended and you cannot access the platform at this time.${untilText ? ` Your account will automatically be reinstated on ${untilText}.` : ''}`
+                  : 'Your Skootlink account has been suspended and you cannot access the platform at this time.'}
             </p>
+            {blockInfo.detail && (
+              <p className="text-sm text-left bg-red-100/60 dark:bg-red-900/20 rounded-lg px-3 py-2">
+                <span className="font-semibold text-red-700">Reason:</span>{' '}
+                <span className="text-foreground">{blockInfo.detail}</span>
+              </p>
+            )}
             <p className="text-sm text-muted-foreground leading-relaxed">
               If you believe this is a mistake, please contact our support team and we will review your account.
             </p>
           </div>
+
+          <div className="text-left space-y-2 border-t border-border/50 pt-3">
+            {!showDisputeForm ? (
+              <button
+                type="button"
+                onClick={() => setShowDisputeForm(true)}
+                className="flex items-center justify-center gap-1.5 text-xs font-medium text-primary hover:underline w-full"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Dispute this decision
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Tell us why you believe this decision should be reviewed. We'll respond by email.
+                </p>
+                <textarea
+                  value={disputeMsg}
+                  onChange={e => setDisputeMsg(e.target.value)}
+                  placeholder="Explain why you believe your account should be reinstated..."
+                  rows={3}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary resize-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowDisputeForm(false); setDisputeMsg(''); }}
+                    className="flex-1 text-xs py-2 rounded-xl border border-border hover:bg-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisputeSubmit}
+                    disabled={disputeSending || !disputeMsg.trim()}
+                    className="flex-1 text-xs py-2 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 transition-colors"
+                  >
+                    {disputeSending ? 'Sending…' : 'Submit Dispute'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="space-y-3 pt-2">
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Any remaining funds in your Skootlink wallet will be returned to you.
-              Email <span className="font-semibold text-foreground">help@skootlink.co.za</span> from
-              your registered email address to request a withdrawal of your balance.
-            </p>
             <a
               href="mailto:help@skootlink.co.za"
               className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors"
@@ -668,13 +774,10 @@ export default function Auth() {
               <Mail className="w-4 h-4" />
               Contact Support — help@skootlink.co.za
             </a>
-            <p className="text-xs text-muted-foreground">
-              Wallet withdrawal requests are processed within 5–7 business days.
-            </p>
           </div>
           <button
             type="button"
-            onClick={() => setIsBlacklisted(false)}
+            onClick={() => { setBlockInfo(null); setShowDisputeForm(false); setDisputeMsg(''); }}
             className="text-xs text-muted-foreground hover:text-foreground underline"
           >
             ← Back to sign in
