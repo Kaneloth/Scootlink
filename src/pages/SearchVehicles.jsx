@@ -268,7 +268,7 @@ export default function SearchVehicles() {
               ? 'Locating…'
               : isLoading
                 ? 'Loading…'
-                : `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} within ${filters.radiusKm} km of ${filters.location || 'your area'}`
+                : `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} within ${filters.radiusKm} km of ${selectedProvince?.locationLabel || (selectedProvince?.isUserLocation ? 'your location' : (selectedProvince?.city || filters.location))}`
         }
         action={
           hasSearched && (

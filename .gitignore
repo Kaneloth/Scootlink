@@ -1,0 +1,5 @@
+node_modules/
+android/app/skootlink-release.jks
+android/keystore.properties
+android-sdk/
+cmdtools.zip

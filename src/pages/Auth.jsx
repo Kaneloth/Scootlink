@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Bike, LogIn, ArrowRight, ArrowLeft, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react';
+import { Bike, LogIn, ArrowRight, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
 
@@ -148,28 +148,12 @@ async function fetchUserPhone(userId) {
 export default function Auth() {
   const navigate = useNavigate();
 
-  // Checks whether a user is currently banned or suspended, via the
-  // is_user_blocked RPC — a single source of truth shared by both the
-  // biometric and password login paths, plus the ID/passport blacklist
-  // check that runs alongside it.
-  const checkUserBlocked = async (userId) => {
-    const { data } = await supabase.rpc('is_user_blocked', { p_user_id: userId });
-    if (data?.blocked) {
-      return { reason: data.reason, until: data.until || null };
-    }
-    return null;
-  };
-
   const [loginStage, setLoginStage] = useState('idle');
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [bannerReason, setBannerReason] = useState(null);
-  const [blockInfo, setBlockInfo] = useState(null); // null = not blocked, else { reason: 'banned'|'suspended', until? }
-  const [blockedEmail, setBlockedEmail] = useState('');
-  const [showDisputeForm, setShowDisputeForm] = useState(false);
-  const [disputeMsg, setDisputeMsg] = useState('');
-  const [disputeSending, setDisputeSending] = useState(false);
+  const [isBlacklisted, setIsBlacklisted] = useState(false);
 
   // Post-signup confirmation screen
   const [signupDone, setSignupDone] = useState(false);
@@ -191,20 +175,6 @@ export default function Auth() {
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [passwordError, setPasswordError] = useState(null);
-  const [showContactForm, setShowContactForm] = useState(false);
-  const [contactMsg, setContactMsg] = useState('');
-  const [contactSending, setContactSending] = useState(false);
-
-  // Password rules — lowercase, uppercase, and digits required, matching Crosssa
-  const pwRules = [
-    { label: 'At least 8 characters',     met: regPassword.length >= 8 },
-    { label: 'One uppercase letter (A–Z)', met: /[A-Z]/.test(regPassword) },
-    { label: 'One lowercase letter (a–z)', met: /[a-z]/.test(regPassword) },
-    { label: 'One number (0–9)',           met: /[0-9]/.test(regPassword) },
-  ];
-  const pwValid = pwRules.every(r => r.met);
-  const showPwChecklist = regPassword.length > 0 && !pwValid;
 
   // Password recovery state
   const [recoveryMode, setRecoveryMode] = useState(false);
@@ -229,13 +199,42 @@ export default function Auth() {
   //   3. onAuthStateChange event (PKCE flow: code exchanged async)
   useEffect(() => {
     const hash = window.location.hash;
+    const params = new URLSearchParams(window.location.search);
 
-    const isRecoveryUrl = hash.includes('type=recovery');
+    const isRecoveryUrl =
+      hash.includes('type=recovery') ||
+      params.get('type') === 'recovery';
+
     const isRecoveryStored = sessionStorage.getItem('skootlink_recovery') === '1';
 
     if (isRecoveryUrl || isRecoveryStored) {
       sessionStorage.setItem('skootlink_recovery', '1');
       setRecoveryMode(true);
+    }
+
+    // ── Handle OAuth code in URL (web browser PKCE flow) ────────────────────
+    // When Google redirects back to /auth?code=xxx in a plain browser
+    // (not Capacitor), we must manually exchange the code since we used
+    // skipBrowserRedirect: true. Capacitor handles this via appUrlOpen instead.
+    const code = params.get('code');
+    const oauthError = params.get('error');
+
+    if (code && !oauthError) {
+      // Exchange the code — onAuthStateChange will fire SIGNED_IN on success
+      supabase.auth.exchangeCodeForSession(code).catch(() => {});
+      // Clean the code from the URL immediately
+      window.history.replaceState({}, '', '/auth');
+    }
+
+    // Google sends ?error=access_denied when the user cancels the account picker
+    if (oauthError) {
+      setGoogleLoading(false);
+      if (oauthError === 'access_denied') {
+        toast.info('Sign-in cancelled. You can try again whenever you\'re ready.');
+      } else {
+        toast.error('Sign-in failed: ' + (params.get('error_description') || oauthError));
+      }
+      window.history.replaceState({}, '', '/auth');
     }
 
     // ── Capacitor deep link handler ──────────────────────────────────────────
@@ -277,18 +276,6 @@ export default function Auth() {
           const { data: { session: s } } = await supabase.auth.getSession();
           if (s?.user) {
             clearInterval(poll);
-            // Ban/suspend check — this listener fires independently of
-            // handleLogin's own check, so without this it would race ahead
-            // and navigate to /home before handleLogin's signOut() takes
-            // effect, causing the block screen to flash and then bounce
-            // back to /auth once /home discovers there's no valid session.
-            const block = await checkUserBlocked(s.user.id);
-            if (block) {
-              await supabase.auth.signOut();
-              setBlockedEmail(s.user.email || '');
-              setBlockInfo(block);
-              return;
-            }
             window.location.replace('/home');
           } else if (attempts > 10) {
             clearInterval(poll);
@@ -392,15 +379,18 @@ export default function Auth() {
     setLoading(true);
     try {
       const session = await triggerBiometricLogin();
-      // Ban / suspend check
-      const bioBlock = await checkUserBlocked(session.user.id);
-      if (bioBlock) {
+      // Blacklist check layer 1 — profiles.blacklisted flag
+      const { data: bioProfile } = await supabase
+        .from('profiles')
+        .select('blacklisted')
+        .eq('id', session.user.id)
+        .single();
+      if (bioProfile?.blacklisted) {
         await supabase.auth.signOut();
-        setBlockedEmail(session.user.email || '');
-        setBlockInfo(bioBlock);
+        setIsBlacklisted(true);
         return;
       }
-      // ID/passport blacklist check — a brand-new account using an already-banned identity document
+      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers
       const { data: bioSensitive } = await supabase
         .from('user_sensitive_info')
         .select('sa_id, passport')
@@ -415,8 +405,7 @@ export default function Auth() {
           .maybeSingle();
         if (bioBannedRow) {
           await supabase.auth.signOut();
-          setBlockedEmail(session.user.email || '');
-          setBlockInfo({ reason: 'id_blacklisted' });
+          setIsBlacklisted(true);
           return;
         }
       }
@@ -488,55 +477,6 @@ export default function Auth() {
     }
   };
 
-  // ── Dispute a ban/suspension ───────────────────────────────────────────────
-  const handleDisputeSubmit = async () => {
-    if (!disputeMsg.trim()) return;
-    setDisputeSending(true);
-    try {
-      await fetch('/.netlify/functions/contact-support', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: blockedEmail,
-          name: blockedEmail,
-          subject: 'Account Ban/Suspension Dispute',
-          message: disputeMsg,
-        }),
-      });
-      toast.success("Dispute submitted — we'll review your account and respond by email.");
-      setShowDisputeForm(false);
-      setDisputeMsg('');
-    } catch {
-      window.location.href =
-        `mailto:help@skootlink.co.za?subject=Account+Ban%2FSuspension+Dispute&body=` +
-        encodeURIComponent(`Account email: ${blockedEmail}\n\nReason for dispute: ${disputeMsg}`);
-    }
-    setDisputeSending(false);
-  };
-
-
-  // ── Contact support fallback (stuck email verification) ──────────────────
-  const handleContactSupport = async () => {
-    if (!contactMsg.trim()) return;
-    setContactSending(true);
-    try {
-      await fetch('/.netlify/functions/contact-support', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: signupEmail, name: regName || 'New User', message: contactMsg }),
-      });
-      toast.success("Message sent! We'll verify your account manually within 24 hours.");
-      setShowContactForm(false);
-      setContactMsg('');
-    } catch {
-      // Fallback to mailto if the function isn't deployed yet
-      window.location.href =
-        `mailto:help@skootlink.co.za?subject=Email+Verification+Issue&body=` +
-        encodeURIComponent(`Name: ${regName}\nEmail: ${signupEmail}\n\nIssue: ${contactMsg}`);
-    }
-    setContactSending(false);
-  };
-
   // ── Password login ────────────────────────────────────────────────────────
   const handleLogin = async () => {
     if (loading) return;
@@ -563,16 +503,20 @@ export default function Auth() {
         setUnconfirmedEmail(loginEmail);
         return;
       }
-      // Ban / suspend check
-      const block = await checkUserBlocked(data.user.id);
-      if (block) {
+      // Blacklist check layer 1 — profiles.blacklisted flag
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('blacklisted')
+        .eq('id', data.user.id)
+        .single();
+      if (profile?.blacklisted) {
         await supabase.auth.signOut();
-        setBlockedEmail(data.user.email || loginEmail || '');
-        setBlockInfo(block);
+        setIsBlacklisted(true);
         return;
       }
-      // ID/passport blacklist check — catches cases where a brand-new account
-      // was created using an already-banned identity document.
+      // Blacklist check layer 2 — ID/passport number in blacklisted_id_numbers.
+      // Catches cases where the profile flag wasn't set, or the user created
+      // a brand-new account using an already-banned identity document.
       const { data: sensitive } = await supabase
         .from('user_sensitive_info')
         .select('sa_id, passport')
@@ -587,8 +531,7 @@ export default function Auth() {
           .maybeSingle();
         if (bannedIdRow) {
           await supabase.auth.signOut();
-          setBlockedEmail(data.user.email || loginEmail || '');
-          setBlockInfo({ reason: 'id_blacklisted' });
+          setIsBlacklisted(true);
           return;
         }
       }
@@ -607,8 +550,6 @@ export default function Auth() {
   // ── Register ──────────────────────────────────────────────────────────────
   const handleRegister = async () => {
     if (!regName || !regEmail || !regPassword) { toast.error('Please fill in all required fields'); return; }
-    setPasswordError(null);
-    if (!pwValid) { setPasswordError('password_requirements'); return; }
     if (regPassword !== regConfirmPassword) { toast.error('Passwords do not match'); return; }
     if (!agreedToTerms) { toast.error('You must agree to the Terms and Conditions'); return; }
     setLoading(true);
@@ -619,23 +560,16 @@ export default function Auth() {
         options: { data: { full_name: regName, account_type: 'driver' } },
       });
       if (error) throw error;
-
-      // If Supabase returns a session immediately (email confirmation disabled),
-      // go straight into the app → onboarding
+      // Supabase may return an active session before the email is confirmed.
+      // Sign it out immediately so the user cannot enter the app without clicking the link.
       if (signupData?.session) {
-        window.location.replace('/onboarding');
-        return;
+        await supabase.auth.signOut();
       }
-
-      // Email confirmation is enabled — show confirmation screen
+      // Show the dedicated confirmation screen instead of a disappearing toast
       setSignupEmail(regEmail);
       setSignupDone(true);
     } catch (err) {
-      if (err.message?.toLowerCase().includes('password')) {
-        setPasswordError('supabase');
-      } else {
-        toast.error(err.message || 'Registration failed');
-      }
+      toast.error(err.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
@@ -686,14 +620,8 @@ export default function Auth() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // Blocked account — sign in was refused; show full-page message
-  if (blockInfo) {
-    const isBanned = blockInfo.reason === 'banned';
-    const isSuspended = blockInfo.reason === 'suspended';
-    const untilText = blockInfo.until
-      ? new Date(blockInfo.until).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-      : null;
-
+  // Suspended account — sign in was blocked; show full-page message
+  if (isBlacklisted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-background to-red-50/30 flex items-center justify-center p-6">
         <div className="w-full max-w-sm text-center space-y-6">
@@ -703,70 +631,20 @@ export default function Auth() {
             </svg>
           </div>
           <div className="space-y-3">
-            <h2 className="text-2xl font-bold text-red-700">
-              {isBanned ? 'Account Banned' : 'Account Suspended'}
-            </h2>
+            <h2 className="text-2xl font-bold text-red-700">Account Suspended</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {isBanned
-                ? 'Your Skootlink account has been permanently banned and you cannot access the platform.'
-                : isSuspended
-                  ? `Your Skootlink account has been temporarily suspended and you cannot access the platform at this time.${untilText ? ` Your account will automatically be reinstated on ${untilText}.` : ''}`
-                  : 'Your Skootlink account has been suspended and you cannot access the platform at this time.'}
+              Your Skootlink account has been suspended and you cannot access the platform at this time.
             </p>
-            {blockInfo.detail && (
-              <p className="text-sm text-left bg-red-100/60 dark:bg-red-900/20 rounded-lg px-3 py-2">
-                <span className="font-semibold text-red-700">Reason:</span>{' '}
-                <span className="text-foreground">{blockInfo.detail}</span>
-              </p>
-            )}
             <p className="text-sm text-muted-foreground leading-relaxed">
               If you believe this is a mistake, please contact our support team and we will review your account.
             </p>
           </div>
-
-          <div className="text-left space-y-2 border-t border-border/50 pt-3">
-            {!showDisputeForm ? (
-              <button
-                type="button"
-                onClick={() => setShowDisputeForm(true)}
-                className="flex items-center justify-center gap-1.5 text-xs font-medium text-primary hover:underline w-full"
-              >
-                <Mail className="w-3.5 h-3.5" />
-                Dispute this decision
-              </button>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  Tell us why you believe this decision should be reviewed. We'll respond by email.
-                </p>
-                <textarea
-                  value={disputeMsg}
-                  onChange={e => setDisputeMsg(e.target.value)}
-                  placeholder="Explain why you believe your account should be reinstated..."
-                  rows={3}
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary resize-none"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setShowDisputeForm(false); setDisputeMsg(''); }}
-                    className="flex-1 text-xs py-2 rounded-xl border border-border hover:bg-muted transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDisputeSubmit}
-                    disabled={disputeSending || !disputeMsg.trim()}
-                    className="flex-1 text-xs py-2 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 transition-colors"
-                  >
-                    {disputeSending ? 'Sending…' : 'Submit Dispute'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
           <div className="space-y-3 pt-2">
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Any remaining funds in your Skootlink wallet will be returned to you.
+              Email <span className="font-semibold text-foreground">help@skootlink.co.za</span> from
+              your registered email address to request a withdrawal of your balance.
+            </p>
             <a
               href="mailto:help@skootlink.co.za"
               className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors"
@@ -774,10 +652,13 @@ export default function Auth() {
               <Mail className="w-4 h-4" />
               Contact Support — help@skootlink.co.za
             </a>
+            <p className="text-xs text-muted-foreground">
+              Wallet withdrawal requests are processed within 5–7 business days.
+            </p>
           </div>
           <button
             type="button"
-            onClick={() => { setBlockInfo(null); setShowDisputeForm(false); setDisputeMsg(''); }}
+            onClick={() => setIsBlacklisted(false)}
             className="text-xs text-muted-foreground hover:text-foreground underline"
           >
             ← Back to sign in
@@ -795,14 +676,14 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center px-4 py-10">
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
 
-        <div className="text-center mb-8 mt-2">
+        <div className="text-center mb-8">
           <img src="/favicon.png" alt="Skootlink" className="w-16 h-16 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-foreground">Skootlink</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            The formal way to rent vehicles for gig work in South Africa.
+            The formal way to connect owners and drivers in the delivery space.
           </p>
         </div>
 
@@ -854,46 +735,14 @@ export default function Auth() {
                 <p className="text-xs text-muted-foreground">
                   Still not receiving the code? Some work and government email addresses block automated emails.
                 </p>
-                {!showContactForm ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowContactForm(true)}
-                    className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 font-semibold hover:underline w-full justify-center"
-                  >
-                    <Mail className="w-3.5 h-3.5" />
-                    Still stuck? Contact support to verify manually
-                  </button>
-                ) : (
-                  <div className="space-y-2 text-left">
-                    <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">
-                      Describe your issue and we'll manually verify your account within 24 hours.
-                    </p>
-                    <textarea
-                      value={contactMsg}
-                      onChange={e => setContactMsg(e.target.value)}
-                      placeholder="e.g. My Gmail inbox is full and I can't receive the OTP code..."
-                      rows={3}
-                      className="w-full rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-amber-950/30 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 resize-none"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => { setShowContactForm(false); setContactMsg(''); }}
-                        className="flex-1 text-xs py-1.5 rounded-xl border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleContactSupport}
-                        disabled={contactSending || !contactMsg.trim()}
-                        className="flex-1 text-xs py-1.5 rounded-xl bg-amber-600 text-white font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors"
-                      >
-                        {contactSending ? 'Sending…' : 'Send to Support'}
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={() => navigate('/contact', { state: { backTo: '/auth' } })}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  Contact Support
+                </button>
               </div>
             </div>
 
@@ -949,15 +798,16 @@ export default function Auth() {
 
           ) : isLogin ? (
             <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-foreground">
+                {loginStage === 'idle' ? 'Welcome back' : loginStage === 'forgot-password' ? 'Reset Password' : 'Sign in'}
+              </h2>
 
-              {/* ── Biometric screen ─────────────────────────────────────────── */}
-              {(loginStage === 'idle' || loginStage === 'biometric-loading' || loginStage === 'biometric-error') && savedMethod === 'biometric' ? (
-                <div className="space-y-4">
-                  <h2 className="text-lg font-semibold text-foreground text-center">Welcome back</h2>
-
-                  <Button variant="outline" className="w-full gap-2 h-11" onClick={handleGoogleSignIn} disabled={googleLoading}>
+              {/* Idle: Google + Sign In buttons */}
+              {loginStage === 'idle' && (
+                <>
+                  <Button variant="outline" className="w-full gap-2 h-12 text-base" onClick={handleGoogleSignIn} disabled={googleLoading}>
                     {googleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5" viewBox="0 0 24 24">
                         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
                         <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
                         <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -966,134 +816,164 @@ export default function Auth() {
                     )}
                     Continue with Google
                   </Button>
-
                   <div className="flex items-center gap-3">
                     <div className="flex-1 h-px bg-border" />
                     <span className="text-xs text-muted-foreground">or</span>
                     <div className="flex-1 h-px bg-border" />
                   </div>
-
-                  {bannerReason && bannerContent[bannerReason] && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-800 dark:text-amber-200">{bannerContent[bannerReason]}</p>
-                    </div>
-                  )}
-
-                  <div className="flex flex-col items-center gap-3 py-4">
-                    <button
-                      onClick={handleSignInTap}
-                      disabled={loginStage === 'biometric-loading'}
-                      className="w-28 h-28 rounded-full bg-primary/10 flex items-center justify-center transition-all hover:bg-primary/20 active:scale-95 disabled:opacity-60 focus:outline-none focus:ring-4 focus:ring-primary/30"
-                    >
-                      {loginStage === 'biometric-loading'
-                        ? <Loader2 className="w-12 h-12 text-primary animate-spin" />
-                        : <Fingerprint className="w-12 h-12 text-primary" />}
-                    </button>
-                    <div className="text-center space-y-0.5">
-                      <p className="text-sm font-semibold text-foreground">
-                        {loginStage === 'biometric-loading' ? 'Verifying…' : loginStage === 'biometric-error' ? 'Not recognised — tap to try again' : 'Tap to sign in with Biometric'}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Use your fingerprint or Face ID</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => { setBannerReason(null); setLoginStage('password'); }}
-                      className="text-sm text-primary font-medium hover:underline"
-                    >
-                      Use password instead
-                    </button>
-                  </div>
-                </div>
-
-              ) : loginStage !== 'forgot-password' ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    {loginStage === 'password' && savedMethod === 'biometric' && (
-                      <button type="button" onClick={() => { setBannerReason(null); setLoginStage('idle'); }} className="text-muted-foreground hover:text-foreground">
-                        <ArrowLeft className="w-5 h-5" />
-                      </button>
+                  <Button
+                    onClick={handleSignInTap}
+                    className="w-full gap-2 h-12 text-base"
+                    disabled={loading}
+                  >
+                    {savedMethod === 'biometric'
+                      ? <Fingerprint className="w-5 h-5" />
+                      : <LogIn className="w-5 h-5" />}
+                    Sign In with Email
+                    {savedMethod === 'biometric' && (
+                      <span className="ml-1 text-xs opacity-70">(Fingerprint)</span>
                     )}
-                    <h2 className="text-lg font-semibold text-foreground">
-                      {loginStage === 'idle' ? 'Welcome back' : 'Sign in'}
-                    </h2>
+                  </Button>
+                </>
+              )}
+
+              {/* Biometric: scanning */}
+              {loginStage === 'biometric-loading' && (
+                <div className="flex flex-col items-center gap-4 py-6">
+                  <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Loader2 className="w-10 h-10 text-primary animate-spin" />
                   </div>
+                  <p className="text-sm text-muted-foreground text-center">
+                    Waiting for fingerprint…
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { setBannerReason(null); setLoginStage('password'); }}
+                    className="text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Use password instead
+                  </button>
+                </div>
+              )}
 
-                  {loginStage === 'idle' && (
-                    <>
-                      <Button variant="outline" className="w-full gap-2 h-11" onClick={handleGoogleSignIn} disabled={googleLoading}>
-                        {googleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                          <svg className="w-4 h-4" viewBox="0 0 24 24">
-                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                          </svg>
-                        )}
-                        Continue with Google
-                      </Button>
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 h-px bg-border" />
-                        <span className="text-xs text-muted-foreground">or sign in with email</span>
-                        <div className="flex-1 h-px bg-border" />
-                      </div>
-                    </>
-                  )}
+              {/* Biometric: hardware error */}
+              {loginStage === 'biometric-error' && (
+                <div className="flex flex-col items-center gap-4 py-6">
+                  <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
+                    <Fingerprint className="w-10 h-10 text-destructive" />
+                  </div>
+                  <p className="text-sm text-muted-foreground text-center">
+                    Fingerprint not recognised. Try again.
+                  </p>
+                  <Button onClick={handleSignInTap} className="w-full gap-2" disabled={loading}>
+                    <Fingerprint className="w-4 h-4" /> Try Again
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => { setBannerReason(null); setLoginStage('password'); }}
+                    className="text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Use password instead
+                  </button>
+                </div>
+              )}
 
-                  {bannerReason && bannerContent[bannerReason] && (
+              {/* Password form */}
+              {loginStage === 'password' && (
+                <>
+                  {bannerReason && (
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-800 dark:text-amber-200">{bannerContent[bannerReason]}</p>
+                      <p className="text-xs text-amber-700 dark:text-amber-400">
+                        {bannerContent[bannerReason]}
+                      </p>
                     </div>
                   )}
 
+                  {/* Email not confirmed banner */}
+                  {unconfirmedEmail && (
+                    <div className="flex flex-col gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-start gap-2">
+                        <Mail className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                        <p className="text-xs text-blue-700 dark:text-blue-400">
+                          Your email hasn't been confirmed yet. We sent a 6-digit code to{' '}
+                          <span className="font-medium">{unconfirmedEmail}</span> — enter it to activate your account.
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="w-full gap-2"
+                        onClick={() => {
+                          setSignupEmail(unconfirmedEmail);
+                          setSignupOtp('');
+                          setSignupDone(true);
+                        }}
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" /> Enter my confirmation code
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await handleResendConfirmation(unconfirmedEmail);
+                          setSignupEmail(unconfirmedEmail);
+                          setSignupDone(true);
+                        }}
+                        disabled={resendLoading}
+                        className="text-xs text-blue-700 dark:text-blue-400 underline hover:no-underline self-start disabled:opacity-50"
+                      >
+                        {resendLoading ? 'Sending…' : 'Send a new code instead'}
+                      </button>
+                    </div>
+                  )}
                   <div>
                     <Label>Email</Label>
-                    <Input type="email" placeholder="your@email.com" value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)} autoComplete="email"
-                      onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
+                    <Input
+                      type="email"
+                      placeholder="your@email.com"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      autoFocus
+                    />
                   </div>
-
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <Label>Password</Label>
-                      <button type="button" onClick={handleShowForgotPassword} className="text-xs text-primary hover:underline">
-                        Forgot password?
-                      </button>
-                    </div>
+                    <Label>Password</Label>
                     <div className="relative">
-                      <Input type={showLoginPw ? 'text' : 'password'} placeholder="••••••••"
-                        value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
-                        autoComplete="current-password" className="pr-10"
-                        onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
+                      <Input
+                        type={showLoginPw ? 'text' : 'password'}
+                        placeholder="Enter your password"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                        className="pr-10"
+                      />
                       <button type="button" tabIndex={-1} onClick={() => setShowLoginPw(v => !v)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                         {showLoginPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
-
+                  <div className="text-left">
+                    <button
+                      type="button"
+                      onClick={handleShowForgotPassword}
+                      className="text-sm text-primary hover:underline"
+                    >
+                      Forgot your password?
+                    </button>
+                  </div>
                   <Button onClick={handleLogin} className="w-full gap-2" disabled={loading}>
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
                     Sign In
                   </Button>
-
-                  <div className="text-center space-y-2 text-sm text-muted-foreground">
-                    {savedMethod === 'biometric' && (loginStage === 'password' || loginStage === 'idle') && (
-                      <button onClick={() => { setBannerReason(null); setLoginStage('idle'); }}
-                        className="flex items-center gap-1.5 mx-auto text-primary font-medium hover:underline">
-                        <Fingerprint className="w-4 h-4" /> Use biometric instead
-                      </button>
-                    )}
-                    <p>
-                      Don't have an account?{' '}
-                      <button onClick={() => { setIsLogin(false); setLoginStage('idle'); setBannerReason(null); }}
-                        className="text-primary font-semibold hover:underline">Create one</button>
-                    </p>
-                  </div>
-                </div>
-
-              ) : null}
+                  <button
+                    type="button"
+                    onClick={() => { setBannerReason(null); setLoginStage('idle'); }}
+                    className="w-full text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    ← Back
+                  </button>
+                </>
+              )}
 
               {/* Forgot-password inline form */}
               {loginStage === 'forgot-password' && (
@@ -1146,6 +1026,16 @@ export default function Auth() {
                   )}
                 </>
               )}
+
+              <p className="text-center text-sm text-muted-foreground pt-1">
+                Don't have an account?{' '}
+                <button
+                  onClick={() => { setIsLogin(false); setLoginStage('idle'); setBannerReason(null); }}
+                  className="text-primary hover:underline"
+                >
+                  Create one
+                </button>
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -1161,65 +1051,22 @@ export default function Auth() {
               <div>
                 <Label>Password</Label>
                 <div className="relative">
-                  <Input
-                    type={showRegPw ? 'text' : 'password'}
-                    placeholder="Min 8 chars, upper, lower & number"
-                    value={regPassword}
-                    onChange={(e) => { setRegPassword(e.target.value); setPasswordError(null); }}
-                    className={`pr-10 ${passwordError === 'password_requirements' ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                    autoComplete="new-password"
-                  />
+                  <Input type={showRegPw ? 'text' : 'password'} placeholder="Create a password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} className="pr-10" autoComplete="new-password" />
                   <button type="button" tabIndex={-1} onClick={() => setShowRegPw(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showRegPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-
-                {/* Password requirements checklist — shown while typing, hidden once all met */}
-                {showPwChecklist && (
-                  <div className="mt-2 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3.5 py-3 space-y-1.5">
-                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">
-                      Password must include:
-                    </p>
-                    {pwRules.map(rule => (
-                      <div key={rule.label} className="flex items-center gap-2">
-                        {rule.met
-                          ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
-                          : <XCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-                        <span className={`text-xs ${rule.met ? 'text-green-700 dark:text-green-400 line-through opacity-60' : 'text-amber-800 dark:text-amber-300'}`}>
-                          {rule.label}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* All requirements met — subtle confirmation */}
-                {regPassword.length > 0 && pwValid && (
-                  <p className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 mt-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> Strong password ✓
-                  </p>
-                )}
               </div>
               <div>
                 <Label>Confirm Password</Label>
                 <div className="relative">
-                  <Input
-                    type={showRegConfirmPw ? 'text' : 'password'}
-                    placeholder="Confirm your password"
-                    value={regConfirmPassword}
-                    onChange={(e) => setRegConfirmPassword(e.target.value)}
-                    className={`pr-10 ${regConfirmPassword && regConfirmPassword !== regPassword ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                    autoComplete="new-password"
-                  />
+                  <Input type={showRegConfirmPw ? 'text' : 'password'} placeholder="Confirm your password" value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} className="pr-10" autoComplete="new-password" />
                   <button type="button" tabIndex={-1} onClick={() => setShowRegConfirmPw(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showRegConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {regConfirmPassword && regConfirmPassword !== regPassword && (
-                  <p className="text-xs text-destructive mt-1">Passwords do not match</p>
-                )}
               </div>
               <div className="flex items-start gap-2">
                 <Checkbox
@@ -1231,21 +1078,11 @@ export default function Auth() {
                 <label htmlFor="terms" className="text-sm text-muted-foreground">
                   I agree to the{' '}
                   <a
-                    href="/Terms%20and%20Conditions.html"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); alert('Terms and Conditions will be available soon.'); }}
                     className="text-primary hover:underline"
                   >
                     Terms and Conditions
-                  </a>
-                  {' '}and{' '}
-                  <a
-                    href="/Privacy%20Policy.html"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    Privacy Policy
                   </a>
                 </label>
               </div>

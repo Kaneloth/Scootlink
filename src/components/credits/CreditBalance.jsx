@@ -3,7 +3,7 @@
  * Clicking it opens the purchase modal.
  */
 import React, { useState, useEffect } from 'react';
-import { Coins, X, Loader2, ChevronUp, ChevronDown } from 'lucide-react';
+import { Coins, X, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCredits } from '@/hooks/useCredits';
 import { supabase } from '@/api/supabaseClient';
@@ -11,31 +11,22 @@ import { toast } from 'sonner';
 
 // ── Credit packages (Skootlink pricing) ─────────────────────────────────────
 const PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 240  },
-  { id: 'standard', label: 'Standard Pack', price: 79,  credits: 400, popular: true },
-  { id: 'pro',      label: 'Pro Pack',      price: 129, credits: 660  },
-  { id: 'business', label: 'Business Pack', price: 199, credits: 1040 },
+  { id: 'starter',  label: 'Starter Pack',  price: 39,  credits: 15  },
+  { id: 'standard', label: 'Standard Pack', price: 59,  credits: 30, popular: true },
+  { id: 'pro',      label: 'Pro Pack',      price: 99,  credits: 60  },
+  { id: 'business', label: 'Business Pack', price: 199, credits: 200 },
 ];
 
-// ── How far your credits go ─────────────────────────────────────────────────
+// ── Credit costs reference ────────────────────────────────────────────────────
 const CREDIT_COSTS = [
-  { icon: '💬', action: 'Start a chat',              cost: '50 credits'  },
-  { icon: '🚗', action: 'List a vehicle (1st)',       cost: '250 credits' },
-  { icon: '🚗', action: 'List a vehicle (2nd)',       cost: '200 credits' },
-  { icon: '🚗', action: 'List a vehicle (3rd+)',      cost: '175 credits' },
-  { icon: '📝', action: 'Sign a rental contract',     cost: '200 credits' },
+  { action: 'Start or reply to a new chat', cost: 3 },
+  { action: 'List a vehicle (1st)',         cost: 30 },
+  { action: 'List a vehicle (2nd)',         cost: 25 },
+  { action: 'List a vehicle (3rd+)',        cost: 20 },
+  { action: 'Access rental agreement',      cost: 15 },
 ];
 
 export default function CreditBalance() {
-  // Disabled: part of the "app feels free" strategy — no ambient credit
-  // balance display during normal usage. NotificationBell.jsx already
-  // occupies this header position. Kept in the codebase (rather than
-  // deleted) in case this ever needs to come back for a specific
-  // audience/flag, but this component is currently always a no-op.
-  return null;
-}
-
-function _DisabledCreditBalance() {
   const { balance, loading, refetch } = useCredits();
   const [showModal, setShowModal]     = useState(false);
 
@@ -77,7 +68,6 @@ function _DisabledCreditBalance() {
       {showModal && (
         <PurchaseModal
           balance={balance}
-          loading={loading}
           onClose={() => {
             setShowModal(false);
             refetch();
@@ -90,16 +80,10 @@ function _DisabledCreditBalance() {
 }
 
 // ── Purchase modal ────────────────────────────────────────────────────────────
-function PurchaseModal({ balance, loading, onClose }) {
-  const [purchasing,  setPurchasing]  = useState(null);
-  const [selectedPkg, setSelectedPkg] = useState(
-    PACKAGES.find(p => p.popular)?.id || PACKAGES[1].id
-  );
-  const [showCosts, setShowCosts] = useState(false);
+function PurchaseModal({ balance, onClose }) {
+  const [purchasing, setPurchasing] = useState(null);
 
-  const handlePurchase = async () => {
-    const pkg = PACKAGES.find(p => p.id === selectedPkg);
-    if (!pkg) return;
+  const handlePurchase = async (pkg) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
     setPurchasing(pkg.id);
@@ -135,8 +119,6 @@ function PurchaseModal({ balance, loading, onClose }) {
     }
   };
 
-  const selected = PACKAGES.find(p => p.id === selectedPkg);
-
   return (
     <div
       className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
@@ -146,99 +128,68 @@ function PurchaseModal({ balance, loading, onClose }) {
       <div className="bg-background rounded-2xl w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="font-bold text-foreground">Buy Credits</h2>
+          <div>
+            <h2 className="font-bold text-foreground">Buy Credits</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Balance: <span className="font-semibold text-primary">{balance} credits</span>
+            </p>
+          </div>
           <button onClick={onClose} className="p-3 rounded-lg hover:bg-muted transition-colors -mr-1" style={{ minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation' }}>
             <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
 
-        <div className="p-4 space-y-5">
-          {/* Balance */}
-          <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20">
-            <div>
-              <p className="text-xs text-muted-foreground">Your credit balance</p>
-              {loading
-                ? <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin mt-1" />
-                : <p className="text-3xl font-bold text-primary">{balance}</p>}
-              <p className="text-xs text-muted-foreground mt-0.5">credits · never expire</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <Coins className="w-6 h-6 text-primary" />
-            </div>
-          </div>
-
-          {/* Packages */}
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Choose a package</p>
-            <div className="space-y-2.5">
-              {PACKAGES.map(pkg => {
-                const isSelected = selectedPkg === pkg.id;
-                return (
-                  <button
-                    key={pkg.id}
-                    onClick={() => setSelectedPkg(pkg.id)}
-                    disabled={purchasing !== null}
-                    className={`w-full text-left rounded-2xl border-2 px-4 py-3.5 transition-all disabled:opacity-60 ${
-                      isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-card hover:border-primary/40'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary' : 'border-muted-foreground/40'}`}>
-                          {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
-                        </div>
-                        <div className="flex items-baseline gap-1.5">
-                          <span className={`text-xl font-extrabold ${isSelected ? 'text-primary' : 'text-foreground'}`}>
-                            {pkg.credits.toLocaleString()}
-                          </span>
-                          <span className="text-sm text-muted-foreground font-medium">credits</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {pkg.popular && (
-                          <span className="text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">🔥 POPULAR</span>
-                        )}
-                        <span className={`text-base font-bold ${isSelected ? 'text-primary' : 'text-foreground'}`}>R{pkg.price}</span>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Pay button */}
-          <Button onClick={handlePurchase} disabled={purchasing !== null} className="w-full h-12 text-base font-bold rounded-2xl gap-2">
-            {purchasing
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
-              : <>Pay R{selected?.price} — Get {selected?.credits.toLocaleString()} credits</>}
-          </Button>
-          <p className="text-center text-[11px] text-muted-foreground -mt-3">
-            Secure payment via card or EFT · Credits added instantly
-          </p>
-
-          {/* How far your credits go — collapsible */}
-          <div className="border border-border rounded-2xl overflow-hidden">
-            <button onClick={() => setShowCosts(v => !v)} className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-muted/40 transition-colors">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">How far your credits go</p>
-              {showCosts ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-            </button>
-            {showCosts && (
-              <div className="px-4 pb-4 space-y-2 border-t border-border pt-3">
-                {CREDIT_COSTS.map(({ icon, action, cost }) => (
-                  <div key={action} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{icon}</span>
-                      <p className="text-xs text-muted-foreground">{action}</p>
-                    </div>
-                    <span className="text-xs font-semibold text-foreground shrink-0 ml-2">{cost}</span>
+        {/* Packages */}
+        <div className="p-4 space-y-3">
+          {PACKAGES.map(pkg => (
+            <button
+              key={pkg.id}
+              onClick={() => handlePurchase(pkg)}
+              disabled={purchasing !== null}
+              className={`w-full text-left rounded-2xl border p-4 transition-all hover:border-primary hover:shadow-sm disabled:opacity-60 ${
+                pkg.popular ? 'border-primary bg-primary/5' : 'border-border bg-card'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-sm text-foreground">{pkg.label}</p>
+                    {pkg.popular && (
+                      <span className="text-[10px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">
+                        POPULAR
+                      </span>
+                    )}
                   </div>
-                ))}
-                <div className="pt-2 border-t border-border">
-                  <p className="text-[11px] text-muted-foreground text-center">Credits never expire · Sign-up bonus included</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{pkg.credits} credits</p>
+                </div>
+                <div className="text-right shrink-0 ml-3">
+                  <p className="font-bold text-foreground">R{pkg.price}</p>
+                  {purchasing === pkg.id
+                    ? <Loader2 className="w-4 h-4 animate-spin text-primary ml-auto mt-1" />
+                    : <p className="text-[10px] text-muted-foreground">
+                        R{(pkg.price / pkg.credits).toFixed(2)}/cr
+                      </p>
+                  }
                 </div>
               </div>
-            )}
+            </button>
+          ))}
+        </div>
+
+        {/* Credit costs reference */}
+        <div className="px-4 pb-4">
+          <div className="bg-muted rounded-xl px-3 py-2 space-y-1.5">
+            <p className="text-xs font-semibold text-foreground mb-2">What credits cost:</p>
+            {CREDIT_COSTS.map(({ action, cost }) => (
+              <p key={action} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                <Check className="w-3 h-3 text-primary shrink-0 mt-0.5" />
+                {action} = <span className="font-semibold text-foreground">{cost} cr</span>
+              </p>
+            ))}
+            <p className="text-xs text-muted-foreground flex items-start gap-1.5 pt-1 border-t border-border mt-1">
+              <Check className="w-3 h-3 text-primary shrink-0 mt-0.5" />
+              Credits never expire
+            </p>
           </div>
         </div>
       </div>

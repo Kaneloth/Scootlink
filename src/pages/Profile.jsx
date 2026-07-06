@@ -9,12 +9,11 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ShieldCheck, Loader2, Camera, Eye, EyeOff, Users } from 'lucide-react';
+import { ShieldCheck, Loader2, Camera, Eye, EyeOff } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import StarRating from '@/components/reviews/StarRating';
 import { toast } from 'sonner';
 import VerificationPanel from '@/components/verification/VerificationPanel';
-import PlatformHistoryPanel from '@/components/profile/PlatformHistoryPanel';
 
 // ─── Skeleton components ──────────────────────────────────────────────────────
 
@@ -74,8 +73,6 @@ export default function Profile() {
   const [userLoading,   setUserLoading]   = useState(true);
   const [avatarUrl,     setAvatarUrl]     = useState(null);
   const [avatarVisible, setAvatarVisible] = useState(true);
-  const [profileVisible, setProfileVisible] = useState(true);
-  const [savingVisibility, setSavingVisibility] = useState(null); // 'avatar' | 'profile' | null
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   // Non-sensitive fields stored in user metadata
@@ -84,7 +81,6 @@ export default function Profile() {
     email: '',
     phone: '',
     gender: '',
-    driving_experience: '',
     location: '',
     residential_address: '',
     license_number: '',
@@ -214,7 +210,6 @@ export default function Profile() {
         setAvatarUrl(u.avatar_url || null);
         fetchMyReviews(u.id);
         setAvatarVisible(u.avatar_visible !== false);
-        setProfileVisible(u.profile_visible !== false);
         setAccountType(u.account_type || 'driver');
         parseLocationIntoDropdowns(u.location || '');
         setForm({
@@ -222,7 +217,6 @@ export default function Profile() {
           email: u.email || '',
           phone: u.phone || '',
           gender: u.gender || '',
-          driving_experience: u.driving_experience || '',
           location: u.location || '',
           residential_address: u.residential_address || '',
           license_number: u.license_number || '',
@@ -306,52 +300,6 @@ export default function Profile() {
     }
   };
 
-  // Both visibility toggles save immediately on click — same proven pattern as
-  // avatar upload above (auth.updateMe + a direct profiles upsert). They no
-  // longer depend on the person also finding and pressing the main "Save"
-  // button on the Edit Info tab, which is why the setting wasn't sticking.
-  const handleToggleAvatarVisible = async () => {
-    const next = !avatarVisible;
-    setAvatarVisible(next); // optimistic
-    setSavingVisibility('avatar');
-    try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) throw new Error('Not signed in');
-      await auth.updateMe({ avatar_visible: next });
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({ id: authUser.id, avatar_visible: next }, { onConflict: 'id' });
-      if (error) throw error;
-      toast.success(next ? 'Photo is now visible to others' : 'Photo is now hidden from others');
-    } catch (err) {
-      setAvatarVisible(!next); // roll back
-      toast.error('Could not update photo visibility: ' + err.message);
-    } finally {
-      setSavingVisibility(null);
-    }
-  };
-
-  const handleToggleProfileVisible = async () => {
-    const next = !profileVisible;
-    setProfileVisible(next); // optimistic
-    setSavingVisibility('profile');
-    try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) throw new Error('Not signed in');
-      await auth.updateMe({ profile_visible: next });
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({ id: authUser.id, profile_visible: next }, { onConflict: 'id' });
-      if (error) throw error;
-      toast.success(next ? 'Profile is now visible to others' : 'Profile is now hidden from search');
-    } catch (err) {
-      setProfileVisible(!next); // roll back
-      toast.error('Could not update profile visibility: ' + err.message);
-    } finally {
-      setSavingVisibility(null);
-    }
-  };
-
   const handleSave = async () => {
     if (!form.full_name.trim()) { toast.error('Full name is required'); return; }
     if (!form.phone.trim()) { toast.error('Phone number is required'); return; }
@@ -394,12 +342,12 @@ export default function Profile() {
         full_name: form.full_name,
         phone: form.phone,
         gender: form.gender,
-        driving_experience: accountType !== 'owner' ? (form.driving_experience || null) : null,
         location: locationStr,
         residential_address: form.residential_address,
         license_number: form.license_number,
         license_year: form.license_year ? parseInt(form.license_year) : null,
         citizenship: form.citizenship,
+        avatar_visible: avatarVisible,
       };
 
       await auth.updateMe(metadataUpdates);
@@ -410,7 +358,6 @@ export default function Profile() {
           full_name:            form.full_name           || null,
           email:                form.email               || user.email || null,
           phone:                form.phone               || null,
-          driving_experience:   accountType !== 'owner' ? (form.driving_experience || null) : null,
           location:             locationStr              || null,
           residential_address:  form.residential_address || null,
           license_year:         form.license_year        ? parseInt(form.license_year) : null,
@@ -503,13 +450,11 @@ export default function Profile() {
         setUser(freshUser);
         setAvatarUrl(freshUser.avatar_url || null);
         setAvatarVisible(freshUser.avatar_visible !== false);
-        setProfileVisible(freshUser.profile_visible !== false);
         setForm({
           full_name:            freshUser.full_name || '',
           email:                freshUser.email || '',
           phone:                freshUser.phone || '',
           gender:               freshUser.gender || '',
-          driving_experience:   freshUser.driving_experience || '',
           location:             freshUser.location || '',
           residential_address:  freshUser.residential_address || '',
           license_number:       freshUser.license_number || '',
@@ -588,11 +533,10 @@ export default function Profile() {
                 )}
               </div>
 
-              {/* Photo visibility toggle — saves immediately */}
+              {/* Visibility toggle */}
               <button
-                onClick={() => savingVisibility === null && handleToggleAvatarVisible()}
-                disabled={savingVisibility === 'avatar'}
-                className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-60"
+                onClick={() => setAvatarVisible(v => !v)}
+                className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 {avatarVisible
                   ? <><Eye className="w-3.5 h-3.5" /> Photo visible to others</>
@@ -603,34 +547,10 @@ export default function Profile() {
         </Card>
       ) : null}
 
-      {/* Privacy — self-saving toggle, same style as the Settings page switches */}
-      {user && (
-        <Card className="p-2 mb-4 border border-border/50">
-          <div
-            className={`flex items-center justify-between p-4 rounded-xl transition-colors ${savingVisibility === 'profile' ? 'opacity-60' : 'cursor-pointer hover:bg-accent'}`}
-            onClick={() => savingVisibility === null && handleToggleProfileVisible()}
-          >
-            <div className="flex items-center gap-3">
-              <Users className="w-5 h-5 text-muted-foreground" />
-              <div className="text-left">
-                <p className="text-sm font-medium text-foreground">Profile Visibility</p>
-                <p className="text-xs text-muted-foreground">
-                  {profileVisible ? 'Visible in driver & vehicle search' : 'Hidden from search'}
-                </p>
-              </div>
-            </div>
-            <div className={`h-6 w-10 rounded-full relative transition-colors shrink-0 ${profileVisible ? 'bg-primary' : 'bg-gray-300'}`}>
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${profileVisible ? 'right-1' : 'left-1'}`} />
-            </div>
-          </div>
-        </Card>
-      )}
-
       <Tabs defaultValue={defaultTab}>
-        <TabsList className={`grid w-full mb-4 ${accountType === 'owner' ? 'grid-cols-3' : 'grid-cols-4'}`}>
+        <TabsList className="grid w-full grid-cols-3 mb-4">
           <TabsTrigger value="edit">Edit Info</TabsTrigger>
           <TabsTrigger value="verification">Verification</TabsTrigger>
-          {accountType !== 'owner' && <TabsTrigger value="platform-history">Platforms</TabsTrigger>}
           <TabsTrigger value="reviews-received">Reviews</TabsTrigger>
         </TabsList>
 
@@ -688,19 +608,6 @@ export default function Profile() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {accountType !== 'owner' && (
-                    <div>
-                      <Label>Driving Experience</Label>
-                      <Select value={form.driving_experience} onValueChange={(v) => update('driving_experience', v)}>
-                        <SelectTrigger className="mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1-2">1 – 2 years</SelectItem>
-                          <SelectItem value="3-5">3 – 5 years</SelectItem>
-                          <SelectItem value="6+">6+ years</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
                 </div>
 
                 {/* Location — province + city dropdowns matching Onboarding */}
@@ -799,12 +706,6 @@ export default function Profile() {
             }}
           />
         </TabsContent>
-
-        {accountType !== 'owner' && (
-          <TabsContent value="platform-history">
-            <PlatformHistoryPanel user={user} />
-          </TabsContent>
-        )}
 
         <TabsContent value="reviews-received">
           {reviewsLoading ? (

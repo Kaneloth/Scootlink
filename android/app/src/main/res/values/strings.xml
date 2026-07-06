@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Skootlink</string>
+    <string name="title_activity_main">Skootlink</string>
+    <string name="package_name">co.za.skootlink.app</string>
+    <string name="custom_url_scheme">co.za.skootlink.app</string>
+</resources>

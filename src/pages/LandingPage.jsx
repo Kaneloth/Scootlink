@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from "react";
-import { supabase } from '@/api/supabaseClient';
+import { useState, useEffect } from "react";
 
 const openAuth = () => window.open("/auth", "_blank", "noopener,noreferrer");
 
@@ -44,20 +43,6 @@ const styles = {
   trustIcon: { fontSize: 48, marginBottom: 16 },
   trustH4: { fontSize: 18, marginBottom: 8 },
   trustP: { color: "#71717a", fontSize: 14 },
-  galleryGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 24 },
-  galleryCard: { borderRadius: 20, overflow: "hidden", border: "1px solid #e4e4e7", background: "#fff", transition: "transform .2s, box-shadow .2s" },
-  galleryImg: { aspectRatio: "9 / 16", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 56 },
-  galleryLabel: { padding: "16px 18px" },
-  galleryH4: { fontSize: 16, marginBottom: 2 },
-  galleryP: { color: "#71717a", fontSize: 13 },
-  faqList: { maxWidth: 760, margin: "0 auto" },
-  faqCategoryTitle: { fontSize: 20, fontWeight: 700, color: PRIMARY, margin: "40px 0 12px" },
-  faqItem: { borderBottom: "1px solid #e4e4e7" },
-  faqQuestion: { width: "100%", textAlign: "left", background: "none", border: "none", padding: "22px 4px", fontSize: 17, fontWeight: 600, color: "#09090b", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, fontFamily: "inherit" },
-  faqAnswer: { padding: "0 4px 22px", color: "#71717a", fontSize: 15, lineHeight: 1.7 },
-  faqList2: { paddingLeft: 22, marginTop: 8 },
-  faqIcon: { fontSize: 20, color: PRIMARY, flexShrink: 0, transition: "transform .2s" },
-  faqStillNeedHelp: { textAlign: "center", marginTop: 20 },
   contentGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 },
   contentCard: { background: "#eff6ff", borderRadius: 16, padding: "40px 32px" },
   contentH3: { fontSize: 24, marginBottom: 16 },
@@ -118,7 +103,7 @@ function Navbar() {
           <img src="/logo.png" alt="Skootlink" style={{ height: 52, width: "auto" }} />
         </a>
         <ul style={styles.navList} className="sl-nav-links">
-          {[["How It Works", "how-it-works"], ["Gallery", "gallery"], ["Trust & Safety", "trust"], ["FAQ", "faq"], ["About", "about"], ["Contact", "contact"]].map(([label, id]) => (
+          {[["How It Works", "how-it-works"], ["Trust & Safety", "trust"], ["About", "about"], ["Contact", "contact"]].map(([label, id]) => (
             <li key={id}>
               <a href={`#${id}`} style={styles.navLink}
                 onClick={e => { e.preventDefault(); scroll(id); }}
@@ -217,29 +202,6 @@ function HowItWorks() {
 }
 
 function DemoSection() {
-  const [lightboxIndex, setLightboxIndex] = useState(null);
-  const touchStartX = useRef(null);
-
-  const galleryItems = [
-    { src: "/gallery/dashboard.png", emoji: "🏠", label: "Your Command Centre", desc: "See active rentals, vehicle stats, and quick actions at a glance." },
-    { src: "/gallery/search.png",    emoji: "🔍", label: "Find the Right Vehicle", desc: "Filter by type, price, and location. Browse cars, scooters, vans, and more." },
-    { src: "/gallery/find-drivers.png", emoji: "🧑‍✈️", label: "Find the Right Driver", desc: "Owners can browse verified drivers, check ratings and platform history, and send a rental offer directly." },
-    { src: "/gallery/contract.png",  emoji: "📄", label: "Sign Digital Contracts", desc: "Legally binding agreements signed inside the app. No paperwork needed." },
-    { src: "/gallery/verified.png",  emoji: "🛡️", label: "Build Trust with Verification", desc: "Optional ID and licence checks give you a verified badge. Stand out from the crowd." },
-    { src: "/gallery/chat.png",      emoji: "💬", label: "Chat Securely", desc: "Message owners and drivers inside the app. Contact details stay hidden until a contract is signed." },
-    { src: "/gallery/briefcase.png", emoji: "💼", label: "Your Digital Briefcase", desc: "All your contracts and rental history stored safely. Download PDFs anytime." },
-  ];
-
-  const showNext = () => setLightboxIndex(i => (i === null ? null : (i + 1) % galleryItems.length));
-  const showPrev = () => setLightboxIndex(i => (i === null ? null : (i - 1 + galleryItems.length) % galleryItems.length));
-  const handleTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; };
-  const handleTouchEnd = (e) => {
-    if (touchStartX.current === null) return;
-    const delta = e.changedTouches[0].clientX - touchStartX.current;
-    if (Math.abs(delta) > 50) { delta < 0 ? showNext() : showPrev(); }
-    touchStartX.current = null;
-  };
-
   return (
     <section style={styles.section} id="demo">
       <div style={styles.container}>
@@ -264,7 +226,7 @@ function DemoSection() {
           <div className="sl-demo-features">
             <h3>What you'll see in the demo:</h3>
             <ul>
-              <li>🔍 Finding a vehicle near you</li>
+              <li>🔍 Finding a scooter near you</li>
               <li>📝 Submitting a rental request</li>
               <li>✍️ Signing a digital contract</li>
               <li>💬 Messaging the owner directly</li>
@@ -277,83 +239,10 @@ function DemoSection() {
             >
               🚀 Get Started — It's Free
             </button>
-          </div>
-        </div>
-
-        {/* Screenshot gallery — merged into this same section, not a separate one, to avoid a duplicate "See Skootlink in Action" heading */}
-        <div id="gallery" style={{ marginTop: 80 }}>
-          <div style={styles.galleryGrid}>
-            {galleryItems.map(({ src, emoji, label, desc }, i) => (
-              <div
-                key={label}
-                style={{ ...styles.galleryCard, cursor: "pointer" }}
-                onClick={() => setLightboxIndex(i)}
-                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 12px 24px -8px rgba(37,99,235,.2)"; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
-              >
-                <GalleryImage src={src} emoji={emoji} />
-                <div style={styles.galleryLabel}>
-                  <h4 style={styles.galleryH4}>{label}</h4>
-                  <p style={styles.galleryP}>{desc}</p>
-                </div>
-              </div>
-            ))}
+            <p style={{ fontSize: 13, color: "#71717a", textAlign: "center", marginTop: 12 }}>*Full demo also available inside the app</p>
           </div>
         </div>
       </div>
-
-      {lightboxIndex !== null && (
-        <div
-          style={{
-            position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,0.92)",
-            display: "flex", flexDirection: "column",
-          }}
-          onClick={() => setLightboxIndex(null)}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", color: "#fff", flexShrink: 0 }}>
-            <div>
-              <p style={{ fontWeight: 700, fontSize: 15 }}>{galleryItems[lightboxIndex].label}</p>
-              <p style={{ fontSize: 12, opacity: 0.7 }}>{lightboxIndex + 1} of {galleryItems.length}</p>
-            </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); setLightboxIndex(null); }}
-              style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: 20, cursor: "pointer" }}
-            >
-              ✕
-            </button>
-          </div>
-
-          <div
-            style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", padding: "0 16px 16px" }}
-            onClick={e => e.stopPropagation()}
-          >
-            <button
-              onClick={showPrev}
-              style={{ position: "absolute", left: 12, width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: 22, cursor: "pointer" }}
-            >
-              ‹
-            </button>
-            <img
-              src={galleryItems[lightboxIndex].src}
-              alt=""
-              style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 12, userSelect: "none" }}
-              onError={e => { e.currentTarget.style.display = "none"; }}
-            />
-            <button
-              onClick={showNext}
-              style={{ position: "absolute", right: 12, width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: 22, cursor: "pointer" }}
-            >
-              ›
-            </button>
-          </div>
-
-          <p style={{ textAlign: "center", color: "rgba(255,255,255,0.5)", fontSize: 12, paddingBottom: 12 }}>
-            Swipe or use the arrows to browse other screens
-          </p>
-        </div>
-      )}
     </section>
   );
 }
@@ -482,128 +371,6 @@ function DownloadCTA() {
   );
 }
 
-function FAQ() {
-  const categories = [
-    {
-      title: "General",
-      items: [
-        { q: "What is Skootlink?", a: "Skootlink is a digital platform that connects independent vehicle owners with gig-economy drivers who need temporary access to cars, scooters, vans, and motorbikes. We provide a safe, formal way to rent vehicles with digital contracts, optional identity verification, and communication tools built into the app." },
-        { q: "Is Skootlink free to use?", a: "Yes. Registering an account on Skootlink is completely free. All new users receive a generous amount of free sign-up credits so they can start browsing, chatting, listing vehicles, and signing rental contracts straight away. There are no monthly subscriptions or hidden fees to get started." },
-        { q: "Who can use Skootlink?", a: <>Anyone over 18 with a valid email address or phone number can register. You can join as a <strong>Driver</strong> (looking to rent a vehicle for delivery or transport work) or an <strong>Owner</strong> (listing your vehicle to earn extra income).</> },
-        { q: "Do I need a South African ID to use Skootlink?", a: "No. You can register and use the platform with just an email address. Identity verification is completely optional and gives you a verified badge on your profile." },
-        { q: "Is Skootlink available on Android and iPhone?", a: "Yes. Skootlink works on any modern web browser on your phone, tablet, or computer. We are also available on the Google Play Store as an Android app, and an iOS version is coming soon." },
-      ],
-    },
-    {
-      title: "For Drivers",
-      items: [
-        { q: "How do I find a vehicle to rent?", a: <>Tap the <strong>Search</strong> tab at the bottom of the app. You'll see vehicles available near you. You can filter by type (car, scooter, motorbike, van), location, and price. When you find one you like, send a message to the owner to start the rental process.</> },
-        { q: "How does the rental process work?", a: (
-          <ol style={styles.faqList2}>
-            <li>Find a vehicle and send a rental proposal to the owner.</li>
-            <li>The owner reviews your profile and accepts or declines.</li>
-            <li>Both parties sign a digital rental contract through the app.</li>
-            <li>You pick up the vehicle and start delivering.</li>
-            <li>Return the vehicle at the agreed time.</li>
-          </ol>
-        ) },
-        { q: "What happens if I damage the vehicle?", a: "The rental contract you sign with the owner specifies liability and deposit terms. Skootlink provides a formal contract that protects both parties, but damage disputes are resolved between the driver and owner. We encourage owners to have insurance and to photograph the vehicle before and after each rental." },
-      ],
-    },
-    {
-      title: "For Owners",
-      items: [
-        { q: "How do I list my vehicle?", a: <>Tap <strong>Add Vehicle</strong> from the Dashboard or Briefcase tab. Upload photos, enter the make, model, year, registration number, location, and your weekly price. Once published, drivers can find it in the search results.</> },
-        { q: "How do I approve a driver?", a: <>When a driver sends a rental proposal, you'll see it in your Dashboard under <strong>Pending Proposals</strong>. You can view the driver's profile, including any verification badges, and choose to accept or decline. If accepted, a digital contract is generated for both parties to sign.</> },
-        { q: "What if a driver doesn't return my vehicle on time?", a: "The digital contract includes start and end dates. If a driver is late, the contract terms apply. We recommend discussing any delays directly with the driver via in-app messaging. For repeated issues, you can block the driver from renting your vehicles in the future." },
-        { q: "Do I need insurance?", a: "Yes. You must have valid motor insurance appropriate for rental use. Skootlink does not provide insurance; it is your responsibility to ensure your vehicle is covered while rented out." },
-      ],
-    },
-    {
-      title: "Trust & Safety",
-      items: [
-        { q: "How does Skootlink keep me safe?", a: (
-          <>
-            We've built several safety features:
-            <ul style={styles.faqList2}>
-              <li><strong>Digital contracts</strong> — Legally binding agreements signed in the app.</li>
-              <li><strong>Optional verification badges</strong> — Identity and licence checks for users who want to build trust.</li>
-              <li><strong>In-app messaging</strong> — No need to share your phone number until a contract is signed.</li>
-              <li><strong>Ratings &amp; reviews</strong> — Honest feedback helps everyone make informed decisions.</li>
-            </ul>
-          </>
-        ) },
-        { q: "What is a Verified badge?", a: "Users who choose to verify their identity or driving licence through our third-party provider get a badge on their profile (✅ ID Verified or 🛡️ Fully Verified). This lets others know their details have been checked. Verification is optional and does not guarantee a person's trustworthiness, but it's a strong signal of good faith." },
-        { q: "Can I block or report another user?", a: "Yes. You can report inappropriate behaviour through the app, and you can block a user from contacting you or renting your vehicle. Skootlink can also suspend or ban users who violate our Terms of Service." },
-      ],
-    },
-    {
-      title: "Account & Profile",
-      items: [
-        { q: "How do I change my password?", a: <>Go to <strong>Settings</strong> → <strong>Security</strong> → <strong>Change Password</strong>. Enter your current password and a new one.</> },
-        { q: "How do I delete my account?", a: <>Go to <strong>Settings</strong> → <strong>Security</strong> → <strong>Delete Account</strong>. You'll need to confirm your identity and type "DELETE" to finalise. This permanently removes your profile, listings, and rental history.</> },
-        { q: "Can I switch between Driver and Owner?", a: <>Yes. You can switch your role at any time from your <strong>Profile</strong> page.</> },
-      ],
-    },
-    {
-      title: "Contracts & Briefcase",
-      items: [
-        { q: "What is a digital contract?", a: "It's a legally binding rental agreement between you and the other party, generated and signed inside the Skootlink app. It outlines the vehicle, rental dates, weekly rate, deposit, and responsibilities of both parties." },
-        { q: "Can I download my contracts?", a: <>Yes. All signed contracts are stored in your <strong>Briefcase</strong> tab. You can download them as PDF files at any time.</> },
-        { q: "What happens if I lose a signed contract?", a: "Your contracts are stored securely in your Briefcase and can be re-downloaded at any time. You'll never lose access to them while your account is active." },
-      ],
-    },
-  ];
-  const [openKey, setOpenKey] = useState(null);
-
-  return (
-    <section style={styles.section} id="faq">
-      <div style={styles.container}>
-        <h2 style={styles.sectionTitle}>Frequently Asked Questions</h2>
-        <p style={styles.sectionSub}>Everything you need to know about Skootlink — the formal way to rent vehicles for gig work</p>
-        <div style={styles.faqList}>
-          {categories.map(({ title, items }) => (
-            <div key={title}>
-              <h3 style={styles.faqCategoryTitle}>{title}</h3>
-              {items.map(({ q, a }) => {
-                const key = `${title}-${q}`;
-                const isOpen = openKey === key;
-                return (
-                  <div key={key} style={styles.faqItem}>
-                    <button
-                      style={styles.faqQuestion}
-                      onClick={() => setOpenKey(isOpen ? null : key)}
-                      aria-expanded={isOpen}
-                    >
-                      {q}
-                      <span style={{ ...styles.faqIcon, transform: isOpen ? "rotate(45deg)" : "none" }}>+</span>
-                    </button>
-                    {isOpen && <div style={styles.faqAnswer}>{a}</div>}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-
-          <div style={styles.faqStillNeedHelp}>
-            <h3 style={styles.faqCategoryTitle}>Still need help?</h3>
-            <p style={{ color: "#71717a", fontSize: 15 }}>
-              Can't find what you're looking for?{" "}
-              <a
-                href="#contact"
-                style={{ color: PRIMARY, cursor: "pointer" }}
-                onClick={e => { e.preventDefault(); document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" }); }}
-              >
-                Contact us below
-              </a>.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function Contact() {
   const [form, setForm] = useState({ name: "", email: "", message: "" });
   const [sent, setSent] = useState(false);
@@ -629,8 +396,8 @@ function Contact() {
           </form>
         )}
         <p style={{ textAlign: "center", marginTop: 24, color: "#71717a" }}>
-          📧 <a href="mailto:help@skootlink.co.za" style={{ color: PRIMARY }}>help@skootlink.co.za</a><br />
-          We aim to respond within 24 hours on business days.
+          📧 help@skootlink.co.za<br />
+          📱 Available on Google Play and App Store
         </p>
       </div>
     </section>
@@ -671,7 +438,7 @@ function Footer() {
                 onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
               >{label}</a>
             ))}
-            <a href="/blog" style={styles.footerLink} onMouseEnter={e => (e.currentTarget.style.color = "#fff")} onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}>Blog</a>
+            <a href="#" style={styles.footerLink} onMouseEnter={e => (e.currentTarget.style.color = "#fff")} onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}>Blog</a>
           </div>
           <div>
             <h4 style={styles.footerH4}>Legal</h4>
@@ -686,20 +453,6 @@ function Footer() {
 }
 
 export default function LandingPage() {
-  // Redirect authenticated users straight to the app —
-  // handles the case where Google OAuth sends them back to /
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) window.location.replace('/home');
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
-        window.location.replace('/home');
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
   return (
     <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: "#09090b", lineHeight: 1.6, overflowX: "hidden", background: "#fff" }}>
       <style>{demoCSS}</style>
@@ -711,7 +464,6 @@ export default function LandingPage() {
       <Audiences />
       <About />
       <DownloadCTA />
-      <FAQ />
       <Contact />
       <Footer />
     </div>

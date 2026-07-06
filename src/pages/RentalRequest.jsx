@@ -12,7 +12,6 @@ import { Send, AlertTriangle } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import VehicleCard from '@/components/vehicles/VehicleCard';
 import { toast } from 'sonner';
-import { notify } from '@/lib/notify';
 
 export default function RentalRequest() {
   const navigate = useNavigate();
@@ -54,7 +53,7 @@ export default function RentalRequest() {
     setError(null);
 
     try {
-      const { data: rental, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from('rentals')
         .insert([{
           vehicle_id: vehicle.id,
@@ -66,22 +65,9 @@ export default function RentalRequest() {
           price_per_week: vehicle.price_per_week,
           deposit: vehicle.deposit || 0,
           message: form.message,
-        }])
-        .select()
-        .single();
+        }]);
 
       if (insertError) throw insertError;
-
-      // Notify the owner in-app
-      try {
-        await notify(
-          vehicle.owner_id,
-          'new_proposal',
-          'New Rental Proposal',
-          `${user?.full_name?.split(' ')[0] || 'A driver'} sent you a rental proposal for your ${vehicle.make} ${vehicle.model}.`,
-          { rental_id: rental.id }
-        );
-      } catch { /* notification failure must never block the main flow */ }
 
       toast.success('Proposal sent to the owner!');
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });

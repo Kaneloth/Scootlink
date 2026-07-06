@@ -10,9 +10,6 @@ import { supabase } from '@/api/supabaseClient';
 
 import Auth from '@/pages/Auth';
 import LandingPage from '@/pages/LandingPage';
-import Blog from '@/pages/Blog';
-import BlogPost from '@/pages/BlogPost';
-import CityLandingPage from '@/pages/CityLandingPage';
 import Credits from '@/pages/Credits';
 import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/Dashboard';
@@ -37,41 +34,7 @@ const AuthenticatedApp = () => {
 
   React.useEffect(() => {
     const path = window.location.pathname;
-    const publicPaths = ['/', '/auth', '/Privacy%20Policy.html', '/Terms%20and%20Conditions.html', '/Privacy Policy.html', '/Terms and Conditions.html', '/delete-account.html'];
-    // Blog and city landing pages are public SEO/marketing content — they must
-    // stay reachable by anonymous visitors and search engine crawlers. The
-    // exact-match check above would otherwise redirect every one of them
-    // straight to /auth before the content ever renders.
-    const isPublicPath = publicPaths.includes(path)
-      || path === '/blog' || path.startsWith('/blog/')
-      || /^\/rent-a-car-for-uber\/[a-z-]+$/.test(path);
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const oauthError = params.get('error');
-
-    // ── Handle OAuth code on ANY page ────────────────────────────────────────
-    // Google may redirect to / or /auth with ?code=xxx depending on the
-    // redirectTo setting. Exchange it here regardless of which page we're on.
-    if (code && !oauthError) {
-      window.history.replaceState({}, '', path); // clean URL first
-      supabase.auth.exchangeCodeForSession(code)
-        .then(({ data: { session } }) => {
-          if (session) {
-            window.location.replace('/home');
-          } else {
-            window.location.replace('/auth');
-          }
-        })
-        .catch(() => window.location.replace('/auth'));
-      return; // don't run the session check below while exchanging
-    }
-
-    // ── Handle OAuth cancellation ─────────────────────────────────────────────
-    if (oauthError) {
-      window.history.replaceState({}, '', '/auth');
-      window.location.replace('/auth');
-      return;
-    }
+    const publicPaths = ['/', '/auth'];
 
     // Safety net — never stay stuck beyond 5 seconds
     const timer = setTimeout(() => setSupabaseChecked(true), 5000);
@@ -83,17 +46,9 @@ const AuthenticatedApp = () => {
       if (isRecovery) {
         if (path !== '/auth') { window.location.replace('/auth'); }
         else { setSupabaseChecked(true); }
-      } else if (session && (path === '/auth' || path === '/')) {
-        // If the user has biometric as their sign-in method and lands on /auth,
-        // sign them out so they must re-verify their fingerprint.
-        // Without this, refreshing /auth would skip biometric and go straight to /home.
-        const savedMethod = localStorage.getItem('scootlink_signin_method');
-        if (path === '/auth' && savedMethod === 'biometric') {
-          supabase.auth.signOut().finally(() => setSupabaseChecked(true));
-        } else {
-          window.location.replace('/home');
-        }
-      } else if (!session && !isPublicPath) {
+      } else if (session && path === '/auth') {
+        window.location.replace('/home');
+      } else if (!session && !publicPaths.includes(path)) {
         window.location.replace('/auth');
       } else {
         setSupabaseChecked(true);
@@ -121,9 +76,6 @@ const AuthenticatedApp = () => {
     <Routes>
       {/* Public — no auth */}
       <Route path="/" element={<LandingPage />} />
-      <Route path="/blog" element={<Blog />} />
-      <Route path="/blog/:slug" element={<BlogPost />} />
-      <Route path="/rent-a-car-for-uber/:city" element={<CityLandingPage />} />
 
       {/* Auth */}
       <Route path="/auth" element={<Auth />} />

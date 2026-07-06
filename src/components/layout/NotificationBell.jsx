@@ -104,8 +104,6 @@ export default function NotificationBell() {
 
   const iconForType = (type) => {
     switch (type) {
-      case 'new_proposal':    return '📥';
-      case 'credit_usage_warning': return '💳';
       case 'rental_contract': return '📄';
       case 'rental_accepted': return '✅';
       case 'rental_active':   return '🚀';
@@ -182,18 +180,6 @@ export default function NotificationBell() {
                         className="mt-2 text-[11px] font-semibold text-primary hover:underline"
                       >
                         Re-list now →
-                      </button>
-                    )}
-                    {/* Action button for new proposal notifications — jumps straight to it on the dashboard */}
-                    {n.type === 'new_proposal' && n.data?.rental_id && (
-                      <button
-                        onClick={() => {
-                          setOpen(false);
-                          navigate(`/home?proposalId=${n.data.rental_id}`);
-                        }}
-                        className="mt-2 text-[11px] font-semibold text-primary hover:underline"
-                      >
-                        View proposal →
                       </button>
                     )}
                   </div>

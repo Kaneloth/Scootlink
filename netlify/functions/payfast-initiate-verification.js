@@ -17,12 +17,8 @@ const MERCHANT_ID  = process.env.PAYFAST_MERCHANT_ID;
 const MERCHANT_KEY = process.env.PAYFAST_MERCHANT_KEY;
 const PASSPHRASE   = process.env.PAYFAST_PASSPHRASE || '';
 
-// Keep in sync with PRICES in VerificationPanel.jsx — this is the server-side
-// source of truth for what PayFast actually charges, so a mismatch here means
-// the payment modal shows one price while PayFast (and verification_payments.amount)
-// silently charges another.
 const SERVICES = {
-  sa_id:    { label: 'RSA ID Verification',          price: 49 },
+  sa_id:    { label: 'RSA ID Verification',          price: 15 },
   passport: { label: 'Passport Verification',         price: 35 },
   licence:  { label: "Driver's Licence Verification", price: 35 },
 };

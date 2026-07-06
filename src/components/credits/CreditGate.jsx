@@ -1,12 +1,8 @@
 /**
  * CreditGate — wraps content that requires a minimum credit balance.
- * Unlike a click-triggered action (which uses InsufficientCreditsModal),
- * this gates a whole page section, so it renders an inline card rather
- * than a popup — but states the exact amount needed, same as everywhere
- * else in the app.
+ * Shows a buy-credits prompt when the user has insufficient credits.
  */
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -14,21 +10,9 @@ import { useCredits } from '@/hooks/useCredits';
 
 export default function CreditGate({ required = 1, children, message }) {
   const { balance, loading } = useCredits();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const navigate = useNavigate();
-
-  React.useEffect(() => {
-    import('@/api/supabaseClient').then(({ supabase }) => {
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user?.user_metadata?.is_admin) setIsAdmin(true);
-      });
-    });
-  }, []);
+  const [showModal, setShowModal] = useState(false);
 
   if (loading) return null;
-
-  // Admins bypass all gates
-  if (isAdmin) return children;
 
   if (balance < required) {
     return (
@@ -41,12 +25,31 @@ export default function CreditGate({ required = 1, children, message }) {
             {message || `You need ${required} credits to access this feature`}
           </p>
           <p className="text-sm text-muted-foreground mt-1">
-            Top up your credits to continue.
+            Your balance: <span className="font-semibold">{balance} credits</span>.
+            Top up to continue.
           </p>
         </div>
-        <Button onClick={() => navigate('/credits')} className="gap-2">
-          <Coins className="w-4 h-4" /> View Credit Packages
+        <Button onClick={() => setShowModal(true)} className="gap-2">
+          <Coins className="w-4 h-4" /> Buy Credits
         </Button>
+
+        {showModal && (
+          <div
+            className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
+            onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}
+          >
+            <div className="bg-background rounded-2xl w-full max-w-sm shadow-xl p-6 text-center space-y-3">
+              <Coins className="w-10 h-10 text-primary mx-auto" />
+              <p className="font-semibold">Purchase credits</p>
+              <p className="text-sm text-muted-foreground">
+                Tap the credit balance in the top bar to buy credits and continue.
+              </p>
+              <Button variant="outline" onClick={() => setShowModal(false)} className="w-full">
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
     );
   }

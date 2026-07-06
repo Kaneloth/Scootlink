@@ -12,19 +12,19 @@ import { ImagePlus, X } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
 import { geocodeLocation } from '@/lib/geocode';
-import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
 
 export default function AddVehicle() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
   const [searchParams] = useSearchParams();
+
   const editingId  = searchParams.get('id');
   const isRelist   = searchParams.get('relist') === '1';
   const isEditMode = !!editingId;
+
   const [loadingExisting, setLoadingExisting] = useState(isEditMode);
   const [listingPrice, setListingPrice] = useState(null);
-  const [showTopUpPrompt, setShowTopUpPrompt] = useState(false);
 
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
@@ -37,7 +37,7 @@ export default function AddVehicle() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data } = await supabase.rpc('get_listing_price', { p_owner_id: user.id });
-      setListingPrice(data ?? 250);
+      setListingPrice(data ?? 30);
     })();
   }, [isEditMode]);
 
@@ -46,8 +46,6 @@ export default function AddVehicle() {
     make:                   '',
     model:                  '',
     year:                   '',
-    color:                  '',
-    transmission:           '',
     plate:                  '',
     location:               '',
     price_per_week:         '',
@@ -55,6 +53,7 @@ export default function AddVehicle() {
     storage_type:           'owner_address',
     pickup_return_location: '',
   });
+
   const [images,    setImages]    = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -69,13 +68,12 @@ export default function AddVehicle() {
           .eq('id', editingId)
           .single();
         if (error) throw error;
+
         setForm({
           vehicle_type:           data.type || 'scooter',
           make:                   data.make || '',
           model:                  data.model || '',
           year:                   data.year ? String(data.year) : '',
-          color:                  data.color || '',
-          transmission:           data.transmission || '',
           plate:                  data.plate || '',
           location:               data.location || '',
           price_per_week:         data.price ? String(data.price) : '',
@@ -127,14 +125,15 @@ export default function AddVehicle() {
         // Relist = pay credits and reset the 6-month expiry clock
         if (isRelist) {
           // Count OTHER active vehicles (excluding this one) to determine tier:
-          // 0 others = 250cr (1st vehicle), 1 other = 200cr (2nd), 2+ others = 175cr (3rd+)
+          // 0 others = 30cr (only vehicle), 1 other = 25cr, 2+ others = 20cr
           const { data: otherVehicles } = await supabase
             .from('vehicles')
             .select('id', { count: 'exact' })
             .eq('owner_id', user.id)
             .neq('id', editingId);
+
           const otherCount = otherVehicles?.length ?? 0;
-          const relistCost = otherCount === 0 ? 250 : otherCount === 1 ? 200 : 175;
+          const relistCost = otherCount === 0 ? 30 : otherCount === 1 ? 25 : 20;
 
           const { error: deductErr } = await supabase.rpc('deduct_credits', {
             p_user_id:     user.id,
@@ -159,6 +158,7 @@ export default function AddVehicle() {
             reminder_1d_sent: false,
           }).eq('id', editingId);
         }
+
         return result;
       }
 
@@ -166,7 +166,7 @@ export default function AddVehicle() {
       // Check credits BEFORE inserting to avoid orphan rows if payment fails.
       // get_listing_price tells us the tier cost without charging yet.
       const { data: tierPrice } = await supabase.rpc('get_listing_price', { p_owner_id: user.id });
-      const creditCost = tierPrice ?? 250;
+      const creditCost = tierPrice ?? 30;
 
       // Check balance
       const { data: balance } = await supabase.rpc('get_credit_balance', { p_user_id: user.id });
@@ -179,6 +179,7 @@ export default function AddVehicle() {
         .insert(dbRow)
         .select('*')
         .single();
+
       if (error) throw new Error(error.message);
 
       // Charge tiered listing fee directly using the already-calculated creditCost
@@ -189,6 +190,7 @@ export default function AddVehicle() {
         p_description: 'Vehicle listing',
         p_ref_id:     String(result.id),
       });
+
       if (deductErr) {
         await supabase.from('vehicles').delete().eq('id', result.id);
         if (deductErr.message?.includes('insufficient_credits')) {
@@ -212,7 +214,8 @@ export default function AddVehicle() {
     onError: (err) => {
       console.error('Vehicle save error:', err);
       if (err?.message === 'insufficient_credits') {
-        setShowTopUpPrompt(true);
+        toast.error(`Not enough credits${listingPrice ? ` (need ${listingPrice})` : ''}. Top up in Settings → Credits.`);
+        navigate('/credits');
         return;
       }
       toast.error('Failed to save vehicle: ' + (err?.message || 'Unknown error'));
@@ -262,14 +265,11 @@ export default function AddVehicle() {
     // Only set status to 'available' for brand new listings —
     // editing/relisting must not override 'rented' or other states
     if (!isEditMode) payload.status = 'available';
+
     mutation.mutate(payload);
   };
 
-  const update = (field, value) => setForm(prev => {
-    const next = { ...prev, [field]: value };
-    if (field === 'vehicle_type' && value === 'bicycle') next.transmission = '';
-    return next;
-  });
+  const update = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
   if (loadingExisting) {
     return (
@@ -284,12 +284,6 @@ export default function AddVehicle() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <InsufficientCreditsModal
-        open={showTopUpPrompt}
-        onClose={() => setShowTopUpPrompt(false)}
-        requiredAmount={listingPrice}
-        actionLabel={isRelist ? 're-list this vehicle' : 'list this vehicle'}
-      />
       <PageHeader
         title={isRelist ? 'Re-list Vehicle' : isEditMode ? 'Edit Vehicle' : 'Add Vehicle'}
         subtitle={isRelist ? 'Confirm or update details, then re-list for another 6 months' : isEditMode ? 'Update your vehicle details' : 'List your vehicle for drivers to rent'}
@@ -302,25 +296,28 @@ export default function AddVehicle() {
           </p>
         </div>
       )}
+      {!isEditMode && listingPrice && (
+        <div className="mb-4 p-3 rounded-xl bg-primary/5 border border-primary/20">
+          <p className="text-xs text-primary">
+            💳 Listing this vehicle costs <strong>{listingPrice} credits</strong>
+            {listingPrice < 30 && ' (discounted rate for additional vehicles)'}.
+          </p>
+        </div>
+      )}
       <Card className="p-6 border border-border/50">
         <div className="space-y-4">
           <div>
             <Label>Vehicle Type</Label>
             <Select value={form.vehicle_type} onValueChange={v => update('vehicle_type', v)}>
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-              <SelectContent className="max-h-72 overflow-y-auto">
+              <SelectContent>
                 <SelectItem value="scooter">🛵 Scooter</SelectItem>
                 <SelectItem value="motorcycle">🏍️ Motorcycle</SelectItem>
-                <SelectItem value="bicycle">🚲 Bicycle</SelectItem>
                 <SelectItem value="car">🚗 Car</SelectItem>
-                <SelectItem value="suv">🚙 SUV</SelectItem>
-                <SelectItem value="bakkie">🛻 Bakkie / Pickup</SelectItem>
-                <SelectItem value="van">🚐 Van</SelectItem>
-                <SelectItem value="minibus_taxi">🚌 Minibus / Taxi</SelectItem>
-                <SelectItem value="truck">🚚 Truck</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Make *</Label>
@@ -331,6 +328,7 @@ export default function AddVehicle() {
               <Input className="mt-1" placeholder="PCX 150" value={form.model} onChange={e => update('model', e.target.value)} />
             </div>
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Year</Label>
@@ -341,29 +339,13 @@ export default function AddVehicle() {
               <Input className="mt-1" placeholder="ABC 123 GP" value={form.plate} onChange={e => update('plate', e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Color</Label>
-              <Input className="mt-1" placeholder="White" value={form.color} onChange={e => update('color', e.target.value)} />
-            </div>
-            {form.vehicle_type !== 'bicycle' && (
-              <div>
-                <Label>Transmission</Label>
-                <Select value={form.transmission} onValueChange={v => update('transmission', v)}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="automatic">Automatic</SelectItem>
-                    <SelectItem value="manual">Manual</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
+
           <div>
             <Label>Location *</Label>
             <Input className="mt-1" placeholder="Johannesburg CBD" value={form.location} onChange={e => update('location', e.target.value)} />
             <p className="text-[11px] text-muted-foreground mt-1">This will be geocoded so drivers can find you in proximity searches.</p>
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Storage Type</Label>
@@ -385,6 +367,7 @@ export default function AddVehicle() {
               />
             </div>
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Weekly Price (ZAR) *</Label>
@@ -395,6 +378,7 @@ export default function AddVehicle() {
               <Input className="mt-1" type="number" placeholder="1000" value={form.deposit} onChange={e => update('deposit', e.target.value)} />
             </div>
           </div>
+
           <div>
             <Label>Photos (up to 3)</Label>
             <div className="mt-2 flex gap-3 flex-wrap">
@@ -424,10 +408,11 @@ export default function AddVehicle() {
               )}
             </div>
           </div>
+
           <Button onClick={handleSubmit} className="w-full mt-2" disabled={mutation.isPending}>
             {mutation.isPending
               ? (isRelist ? 'Re-listing…' : isEditMode ? 'Saving…' : 'Listing…')
-              : (isRelist ? 'Re-list Vehicle' : isEditMode ? 'Save Changes' : 'List Vehicle')}
+              : (isRelist ? 'Re-list Vehicle' : isEditMode ? 'Save Changes' : listingPrice ? `List Vehicle (${listingPrice} cr)` : 'List Vehicle')}
           </Button>
         </div>
       </Card>
