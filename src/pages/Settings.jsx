@@ -13,18 +13,15 @@ import {
   AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins, Star,
 } from 'lucide-react';
 import { sendSMS } from '@/lib/sms';
-
 import { toast } from 'sonner';
 import { useCredits } from '@/hooks/useCredits';
 
-// Text size options stored as root font-size in px
 const TEXT_SIZES = [
   { label: 'Normal',   value: '16px' },
   { label: 'Large',    value: '18px' },
   { label: 'X-Large', value: '20px' },
 ];
 
-// ── Put your admin email(s) here ────────────────────────────────────────────
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 const CREDIT_PACKAGES = [
@@ -33,8 +30,6 @@ const CREDIT_PACKAGES = [
   { id: 'pro',      credits: 660,  price: 129 },
   { id: 'business', credits: 1040, price: 199 },
 ];
-
-// ── WebAuthn helpers ──────────────────────────────────────────────────────────
 
 function bufferToBase64(buffer) {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)));
@@ -64,8 +59,6 @@ async function registerBiometric(user) {
       authenticatorSelection: {
         authenticatorAttachment: 'platform',
         userVerification: 'required',
-        // residentKey intentionally omitted — Crosssa pattern.
-        // residentKey:'preferred' triggers the OS passkey/iCloud Keychain prompt.
       },
       timeout: 60000,
     },
@@ -73,9 +66,6 @@ async function registerBiometric(user) {
   localStorage.setItem('scootlink_biometric_credential_id', bufferToBase64(credential.rawId));
 }
 
-// Returns true if the fingerprint scan passed.
-// Throws with err.code = 'no-passkey-on-domain' when the stored credential
-// doesn't exist on this domain (e.g. registered on localhost, used on Netlify).
 async function verifyBiometric() {
   const storedId = localStorage.getItem('scootlink_biometric_credential_id');
   if (!storedId) {
@@ -94,8 +84,6 @@ async function verifyBiometric() {
     });
     if (!assertion) throw new Error('Biometric verification failed.');
   } catch (err) {
-    // NotAllowedError = user cancelled OR no matching passkey on this domain.
-    // Either way the stored credential is unusable here — signal the caller.
     if (err.name === 'NotAllowedError' || err.name === 'InvalidStateError') {
       const e = new Error('no-passkey-on-domain');
       e.code = 'no-passkey-on-domain';
@@ -105,16 +93,12 @@ async function verifyBiometric() {
   }
 }
 
-// ── Cookie helpers ────────────────────────────────────────────────────────────
-
 async function clearTokenCookie() {
   await fetch('/.netlify/functions/auth-clear-token', {
     method: 'POST',
     credentials: 'include',
   }).catch(() => {});
 }
-
-// ── Account deletion ──────────────────────────────────────────────────────────
 
 async function deleteAccount(accessToken) {
   const res = await fetch('/.netlify/functions/auth-delete-account', {
@@ -124,16 +108,12 @@ async function deleteAccount(accessToken) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    // Include server detail (e.g. "Failed to delete account" + raw Supabase reason)
     const reason = body.error || `Request failed (${res.status})`;
     const detail = body.detail ? ` — ${body.detail}` : '';
     throw new Error(reason + detail);
   }
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
-
-// ── Inline credits widget for Settings tab ────────────────────────────────
 const CREDIT_COSTS = [
   { icon: '💬', action: 'Start a chat',                    cost: '50 credits'  },
   { icon: '🚗', action: 'List a vehicle (1st)',             cost: '250 credits' },
@@ -184,7 +164,6 @@ function CreditBalanceWidget() {
 
   return (
     <div className="space-y-5">
-      {/* Balance */}
       <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20">
         <div>
           <p className="text-xs text-muted-foreground">Your credit balance</p>
@@ -198,7 +177,6 @@ function CreditBalanceWidget() {
         </div>
       </div>
 
-      {/* Packages */}
       <div>
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Choose a package</p>
         <div className="space-y-2.5">
@@ -238,7 +216,6 @@ function CreditBalanceWidget() {
         </div>
       </div>
 
-      {/* Pay button */}
       <Button onClick={handlePurchase} disabled={purchasing !== null} className="w-full h-12 text-base font-bold rounded-2xl gap-2">
         {purchasing
           ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
@@ -248,7 +225,6 @@ function CreditBalanceWidget() {
         Secure payment via card or EFT · Credits added instantly
       </p>
 
-      {/* How far your credits go — collapsible */}
       <div className="border border-border rounded-2xl overflow-hidden">
         <button onClick={() => setShowCosts(v => !v)} className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-muted/40 transition-colors">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">How far your credits go</p>
@@ -275,19 +251,13 @@ function CreditBalanceWidget() {
   );
 }
 
-// ── Platform Verification Queue (admin) ──────────────────────────────────────
-// Reviews driver-submitted platform-rating verification requests (free,
-// manual review). Approving/rejecting writes directly via the client's own
-// session — RLS on platform_history should allow admins to update any row
-// (add an admin-checking RLS policy, or route this through a service-role
-// Netlify function if you'd rather not grant that via RLS).
 function PlatformVerificationQueue() {
   const [pending, setPending] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
   const [signedUrls, setSignedUrls] = useState({});
-  const [evidenceIssues, setEvidenceIssues] = useState({}); // entry.id -> reason string
-  const [rejectingId, setRejectingId] = useState(null); // entry.id currently showing the reason picker
+  const [evidenceIssues, setEvidenceIssues] = useState({});
+  const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectReasonOther, setRejectReasonOther] = useState('');
 
@@ -308,7 +278,6 @@ function PlatformVerificationQueue() {
       .order('created_at', { ascending: true });
     if (!error) {
       setPending(data || []);
-      // Generate signed URLs for each evidence screenshot (private bucket)
       const urls = {};
       const issues = {};
       await Promise.all((data || []).map(async (entry) => {
@@ -318,7 +287,7 @@ function PlatformVerificationQueue() {
         }
         const { data: signed, error: signErr } = await supabase.storage
           .from('platform-evidence')
-          .createSignedUrl(entry.evidence_url, 600); // 10 min
+          .createSignedUrl(entry.evidence_url, 600);
         if (signed?.signedUrl) {
           urls[entry.id] = signed.signedUrl;
         } else {
@@ -493,9 +462,6 @@ export default function Settings() {
   const [fontSize, setFontSize] = useState('16px');
   const [signInMethod, setSignInMethod] = useState('password');
   const [user, setUser] = useState(null);
-  // Credits tab stays hidden until the user's first real purchase — part of
-  // the "app feels free" strategy: don't surface the credit/payment system
-  // before someone has actually engaged with it.
   const [hasPurchasedCredits, setHasPurchasedCredits] = useState(false);
   const [notifications, setNotifications] = useState(() =>
     localStorage.getItem('scootlink_notifications') !== 'false'
@@ -508,28 +474,24 @@ export default function Settings() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState('');
-  // true when the account was created via Google OAuth (no existing password)
   const [isGoogleUser, setIsGoogleUser] = useState(false);
 
-  // Delete account state
   const [showDeleteSection, setShowDeleteSection] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteVerified, setDeleteVerified] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  // true = biometric failed on this domain, show password fallback
   const [biometricFallback, setBiometricFallback] = useState(false);
 
-  // ── Admin panel state ────────────────────────────────────────────────────
   const [adminUsers, setAdminUsers] = useState([]);
   const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
   const [adminFilter, setAdminFilter] = useState('');
   const [togglingId, setTogglingId] = useState(null);
   const [banningId, setBanningId] = useState(null);
   const [suspendingId, setSuspendingId] = useState(null);
-  const [suspendPickerId, setSuspendPickerId] = useState(null); // user id currently showing the duration picker
-  const [banPickerId, setBanPickerId] = useState(null); // user id currently showing the ban-reason picker
+  const [suspendPickerId, setSuspendPickerId] = useState(null);
+  const [banPickerId, setBanPickerId] = useState(null);
   const [banReason, setBanReason] = useState('');
   const [banReasonOther, setBanReasonOther] = useState('');
   const [suspendReason, setSuspendReason] = useState('');
@@ -544,23 +506,25 @@ export default function Settings() {
     'Safety concern reported by another user',
     'Other',
   ];
-  const [adminSelectedUser, setAdminSelectedUser] = useState(null); // user open in detail/edit modal
-  const [adminEditForm, setAdminEditForm] = useState(null);          // edit form state
+  const [adminSelectedUser, setAdminSelectedUser] = useState(null);
+  const [adminEditForm, setAdminEditForm] = useState(null);
   const [adminSaving, setAdminSaving] = useState(false);
-  const [adminModalTab, setAdminModalTab] = useState('view');        // 'view' | 'edit'
+  const [adminModalTab, setAdminModalTab] = useState('view');
 
   useEffect(() => {
-    const isDark = localStorage.getItem('theme') === 'dark';
+    // Don't independently re-decide the theme here — App.jsx already applied
+    // the correct one on load (including falling back to system preference
+    // when nothing's been explicitly saved). Re-deciding from scratch here
+    // with a *different* fallback rule caused dark mode to flip every time
+    // this page mounted. Just read whatever's actually currently applied.
+    const isDark = document.documentElement.classList.contains('dark');
     setDarkMode(isDark);
-    document.documentElement.classList.toggle('dark', isDark);
     const savedSize = localStorage.getItem('scootlink_font_size') || '16px';
     setFontSize(savedSize);
     document.documentElement.style.fontSize = savedSize;
     setSignInMethod(localStorage.getItem('scootlink_signin_method') || 'password');
     setNotifications(localStorage.getItem('scootlink_notifications') !== 'false');
     loadUser().then(setUser).catch(() => {});
-    // Check for at least one real purchase (not the signup bonus) to decide
-    // whether the Credits tab should be visible at all.
     supabase.auth.getUser().then(async ({ data: { user: authUser } }) => {
       if (!authUser) return;
       const { data } = await supabase
@@ -573,7 +537,6 @@ export default function Settings() {
       setHasPurchasedCredits(!!data);
       if (!data && activeTab === 'credits') setActiveTab('general');
     });
-    // Detect Google OAuth users — they have no password so we show "Create" instead of "Change"
     supabase.auth.getUser().then(({ data: { user: authUser } }) => {
       const identities = authUser?.identities ?? [];
       const isGoogle = identities.some(i => i.provider === 'google') &&
@@ -601,8 +564,6 @@ export default function Settings() {
     localStorage.setItem('scootlink_notifications', String(val));
     toast.success(`Notifications ${val ? 'enabled' : 'disabled'}`);
   };
-
-  // ── Sign-in method toggle ────────────────────────────────────────────────
 
   const toggleSignInMethod = async () => {
     const switchingTo = signInMethod === 'password' ? 'biometric' : 'password';
@@ -632,13 +593,8 @@ export default function Settings() {
     }
   };
 
-  // ── Logout ────────────────────────────────────────────────────────────────
-
   const handleLogout = async () => {
     if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-      // Screen lock — do NOT call signOut(). The Supabase session stays alive
-      // in localStorage so fingerprint can restore it instantly on next login.
-      // (Crosssa pattern: unlockApp() reads this kept-alive session directly.)
       try {
         const { data } = await supabase.auth.getSession();
         if (data?.session) saveBiometricRefreshToken(data.session);
@@ -651,8 +607,6 @@ export default function Settings() {
     }
   };
 
-  // ── Delete: step 1 — verify identity ─────────────────────────────────────
-
   const handleVerifyIdentity = async () => {
     setVerifying(true);
     try {
@@ -661,7 +615,6 @@ export default function Settings() {
         setDeleteVerified(true);
         toast.success('Fingerprint verified. You can now confirm deletion.');
       } else {
-        // Password path (either always-password user, or biometric fallback)
         if (!deletePassword) { toast.error('Enter your password to continue.'); return; }
         const { error } = await supabase.auth.signInWithPassword({
           email: user?.email,
@@ -673,8 +626,6 @@ export default function Settings() {
       }
     } catch (err) {
       if (err.code === 'no-passkey-on-domain') {
-        // Fingerprint registered on a different domain — silently switch to
-        // the password fallback so the user isn't blocked.
         setBiometricFallback(true);
         toast.error('Fingerprint not registered on this browser. Enter your password instead.');
       } else if (err.name === 'NotAllowedError') {
@@ -687,17 +638,11 @@ export default function Settings() {
     }
   };
 
-  // ── Delete: step 2 — final deletion ──────────────────────────────────────
-
   const handleDeleteAccount = async () => {
     if (!deleteVerified) { toast.error('Verify your identity first.'); return; }
     if (deleteConfirmText !== 'DELETE') { toast.error('Type DELETE in capitals to confirm.'); return; }
     setDeleting(true);
     try {
-      // Force a fresh access token via the Supabase client's stored refresh
-      // token (set during login via supabase.auth.setSession). This is more
-      // reliable than the httpOnly-cookie route, which can fail if the cookie
-      // has already rotated since the last page load.
       const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
       const access_token = refreshed?.session?.access_token;
       if (refreshErr || !access_token) {
@@ -716,8 +661,6 @@ export default function Settings() {
     }
   };
 
-  // ── User loader (merges customer_code which auth.me() may omit) ──────────
-
   const loadUser = async () => {
     const u = await auth.me();
     if (u?.id) {
@@ -731,8 +674,6 @@ export default function Settings() {
     return u;
   };
 
-  // ── Admin helpers ─────────────────────────────────────────────────────────
-
   const isAdmin = user && (user?.user_metadata?.is_admin === true || ADMIN_EMAILS.includes(user.email));
 
   const fetchAdminUsers = async () => {
@@ -742,9 +683,6 @@ export default function Settings() {
       .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, banned, suspended_until, ban_reason, suspension_reason, id_document_number, id_document_type, created_at')
       .order('created_at', { ascending: false });
     if (!error) {
-      // Fetch credit balances for each user via the same RPC the app uses for
-      // a user's own balance (SQL-side SUM — not subject to PostgREST's
-      // default 1000-row cap, unlike pulling all credit_ledger rows client-side).
       const userIds = (data || []).map(u => u.id);
       let creditMap = {};
       if (userIds.length > 0) {
@@ -756,8 +694,6 @@ export default function Settings() {
         );
         results.forEach(([id, bal]) => { creditMap[id] = bal; });
       }
-      // Exclude the currently logged-in admin's own row — an admin should
-      // never be able to accidentally ban/suspend themselves from this list.
       const filtered = (data || []).filter(u => u.id !== user?.id);
       setAdminUsers(filtered.map(u => ({ ...u, credit_balance: creditMap[u.id] ?? 0 })));
     } else {
@@ -791,7 +727,6 @@ export default function Settings() {
       ? (currentIdVerified ? 'fully_verified' : 'dl_verified')
       : (currentIdVerified ? 'id_verified' : null);
 
-    // ── Step 1: safe columns (guaranteed to exist in all schema versions) ─────
     const safeUpdate = enabling
       ? { license_verified: true, license_pending: false }
       : { license_verified: false };
@@ -802,12 +737,10 @@ export default function Settings() {
       return;
     }
 
-    // ── Step 2: new badge columns (added by migration — silently skip if missing) ─
     const badgeUpdate = enabling
       ? { licence_verified: true, licence_verified_at: now, verification_badge: badge }
       : { licence_verified: false, verification_badge: badge };
     await supabase.from('profiles').update(badgeUpdate).eq('id', userId);
-    // (error ignored — these columns may not exist yet if migration hasn't been run)
 
     setAdminUsers(prev =>
       prev.map(u => u.id === userId
@@ -877,7 +810,6 @@ export default function Settings() {
     setTogglingId(null);
   };
 
-  // ── Ban (permanent, until an admin reverses it) ───────────────────────────
   const banUser = async (userId, currentlyBanned, reason = null) => {
     setBanningId(userId);
     const banning = !currentlyBanned;
@@ -893,8 +825,6 @@ export default function Settings() {
       return;
     }
 
-    // Permanent ID/passport blacklist stays tied to Ban specifically — a
-    // suspension is meant to expire, so it never touches this table.
     const { data: sensitiveRow } = await supabase
       .from('user_sensitive_info')
       .select('sa_id, passport')
@@ -909,10 +839,6 @@ export default function Settings() {
       }
     }
 
-    // Ban/unban at the Supabase Auth level too, for immediate session
-    // revocation. Safe to do unconditionally here since a ban is meant to be
-    // permanent anyway (unlike suspend, where we deliberately avoid this —
-    // see suspendUser below).
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
@@ -935,16 +861,6 @@ export default function Settings() {
     setBanPickerId(null);
   };
 
-  // ── Suspend (temporary, self-expiring) ────────────────────────────────────
-  // Deliberately does NOT call admin-ban-user or touch blacklisted_id_numbers —
-  // both of those are effectively permanent locks, which would defeat a
-  // suspension's whole point of automatically expiring. Enforcement instead
-  // relies entirely on the is_user_blocked() check at login time (Auth.jsx),
-  // which compares suspended_until against now() on every attempt.
-  // NOTE: because we skip admin-ban-user, an already-open session for the
-  // user being suspended won't be forcibly kicked out immediately — they'll
-  // be blocked on their next sign-in, not mid-session. Flagging this as a
-  // known limitation rather than a silent gap.
   const suspendUser = async (userId, days, reason) => {
     setSuspendingId(userId);
     const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
@@ -1017,15 +933,9 @@ export default function Settings() {
     setAdminSaving(false);
   };
 
-  // ── Plan ─────────────────────────────────────────────────────────────────
-
-
-  // ── Password change ───────────────────────────────────────────────────────
-
   const handlePasswordChange = async () => {
     setPasswordError('');
     if (isGoogleUser) {
-      // Google users have no existing password — only need new + confirm
       if (!newPassword || !confirmPassword) { setPasswordError('Fill all fields'); return; }
     } else {
       if (!currentPassword || !newPassword || !confirmPassword) { setPasswordError('Fill all fields'); return; }
@@ -1051,10 +961,7 @@ export default function Settings() {
     }
   };
 
-  // Whether the delete verify step uses the password input
   const deleteUsesPassword = signInMethod === 'password' || biometricFallback;
-
-  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
@@ -1069,10 +976,8 @@ export default function Settings() {
           {isAdmin && <TabsTrigger value="admin" onClick={fetchAdminUsers}>Admin</TabsTrigger>}
         </TabsList>
 
-        {/* ── General tab ── */}
         <TabsContent value="general">
           <div className="space-y-1">
-            {/* Customer Code card */}
             {user?.customer_code && (
               <div className="mb-3 p-4 rounded-xl bg-primary/5 border border-primary/20">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Your Customer Code</p>
@@ -1091,7 +996,6 @@ export default function Settings() {
                 <p className="text-[11px] text-muted-foreground mt-1.5">Quote this code whenever you contact Skootlink support.</p>
               </div>
             )}
-
 
             <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent" onClick={toggleNotifications}>
               <div className="flex items-center gap-3">
@@ -1142,7 +1046,6 @@ export default function Settings() {
                 ))}
               </div>
             </div>
-            {/* Privacy Policy – open static HTML in new tab */}
             <a
               href="/Privacy%20Policy.html"
               target="_blank"
@@ -1158,7 +1061,6 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </a>
 
-            {/* Terms of Service – open static HTML in new tab */}
             <a
               href="/Terms%20and%20Conditions.html"
               target="_blank"
@@ -1194,18 +1096,15 @@ export default function Settings() {
           </div>
         </TabsContent>
 
-        {/* ── Plan tab ── */}
         <TabsContent value="credits">
           <div className="space-y-4">
             <CreditBalanceWidget />
           </div>
         </TabsContent>
 
-        {/* ── Security tab ── */}
         <TabsContent value="security">
           <div className="space-y-4">
 
-            {/* Sign-in method */}
             <div className="p-4 rounded-xl bg-card border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -1240,7 +1139,6 @@ export default function Settings() {
                   Switch to Biometric to use your device fingerprint sensor at login. You'll be prompted to scan your finger once to register.
                 </p>
               )}
-              {/* Domain re-registration hint */}
               {signInMethod === 'biometric' && (
                 <div className="mt-3 ml-8 flex items-start gap-1.5">
                   <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
@@ -1251,7 +1149,6 @@ export default function Settings() {
               )}
             </div>
 
-            {/* Change password */}
             <div className="p-4 rounded-xl bg-card border">
               <div
                 className="flex items-center justify-between cursor-pointer"
@@ -1303,8 +1200,6 @@ export default function Settings() {
               )}
             </div>
 
-
-            {/* ── Delete account ── */}
             <div className="p-4 rounded-xl bg-card border border-destructive/30">
               <div
                 className="flex items-center justify-between cursor-pointer"
@@ -1329,7 +1224,6 @@ export default function Settings() {
               {showDeleteSection && (
                 <div className="mt-4 pt-4 border-t border-destructive/20 space-y-4">
 
-                  {/* Warning */}
                   <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20">
                     <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
                     <div className="text-xs text-destructive/80 space-y-1">
@@ -1345,7 +1239,6 @@ export default function Settings() {
                     </div>
                   </div>
 
-                  {/* Step 1: identity verification */}
                   <div className={`p-3 rounded-lg border space-y-3 ${deleteVerified ? 'border-green-500/40 bg-green-500/5' : 'border-border bg-muted/30'}`}>
                     <div className="flex items-center gap-2">
                       <ShieldCheck className={`w-4 h-4 shrink-0 ${deleteVerified ? 'text-green-600' : 'text-muted-foreground'}`} />
@@ -1356,7 +1249,6 @@ export default function Settings() {
 
                     {!deleteVerified && (
                       <>
-                        {/* Biometric fallback notice */}
                         {biometricFallback && (
                           <div className="flex items-start gap-1.5 pl-6">
                             <Info className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
@@ -1366,14 +1258,12 @@ export default function Settings() {
                           </div>
                         )}
 
-                        {/* Biometric button — shown for biometric users when no fallback yet */}
                         {signInMethod === 'biometric' && !biometricFallback && (
                           <p className="text-xs text-muted-foreground pl-6">
                             Scan your fingerprint to confirm it's really you before we delete anything.
                           </p>
                         )}
 
-                        {/* Password input — always shown for password users, or after biometric fallback */}
                         {deleteUsesPassword && (
                           <div className="pl-6">
                             <Label className="text-xs">Enter your current password</Label>
@@ -1404,7 +1294,6 @@ export default function Settings() {
                     )}
                   </div>
 
-                  {/* Step 2: type DELETE — gated until step 1 passes */}
                   <div className={`space-y-3 transition-opacity ${deleteVerified ? 'opacity-100' : 'opacity-40 pointer-events-none select-none'}`}>
                     <div>
                       <Label className="text-xs text-destructive">
@@ -1444,7 +1333,6 @@ export default function Settings() {
           </div>
         </TabsContent>
 
-        {/* ── Admin tab ── */}
         {isAdmin && (
           <TabsContent value="admin">
             <PlatformVerificationQueue />
@@ -1613,7 +1501,6 @@ export default function Settings() {
                           )}
                         </div>
 
-                        {/* Ban reason picker */}
                         {banPickerId === u.id && (
                           <div className="space-y-1.5 border border-red-200 rounded-lg p-2 bg-red-50/50">
                             <Select value={banReason} onValueChange={setBanReason}>
@@ -1655,7 +1542,6 @@ export default function Settings() {
                           </div>
                         )}
 
-                        {/* Suspend reason + duration picker */}
                         {suspendPickerId === u.id && (
                           <div className="space-y-1.5 border border-amber-200 rounded-lg p-2 bg-amber-50/50">
                             <Select value={suspendReason} onValueChange={setSuspendReason}>
@@ -1718,14 +1604,12 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {/* ── Admin User Detail / Edit Modal ── */}
         {isAdmin && adminSelectedUser && (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50" onClick={() => setAdminSelectedUser(null)}>
             <div
               className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[90vh]"
               onClick={e => e.stopPropagation()}
             >
-              {/* Modal header */}
               <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-primary" />
@@ -1744,7 +1628,6 @@ export default function Settings() {
                 </button>
               </div>
 
-              {/* Tab switcher */}
               <div className="flex border-b border-border shrink-0">
                 <button
                   className={`flex-1 py-2 text-xs font-medium transition-colors ${adminModalTab === 'view' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
@@ -1763,7 +1646,6 @@ export default function Settings() {
               <div className="overflow-y-auto flex-1 p-4">
                 {adminModalTab === 'view' ? (
                   <div className="space-y-3">
-                    {/* Identity */}
                     <div className="space-y-1.5">
                       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Identity</p>
                       <div className="rounded-xl border border-border/50 divide-y divide-border/50">
@@ -1780,7 +1662,6 @@ export default function Settings() {
                         ))}
                       </div>
                     </div>
-                    {/* Contact & Location */}
                     <div className="space-y-1.5">
                       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Contact & Location</p>
                       <div className="rounded-xl border border-border/50 divide-y divide-border/50">
@@ -1796,7 +1677,6 @@ export default function Settings() {
                         ))}
                       </div>
                     </div>
-                    {/* Licence */}
                     {(adminSelectedUser.license_number || adminSelectedUser.license_year) && (
                       <div className="space-y-1.5">
                         <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Driving Licence</p>
@@ -1813,7 +1693,6 @@ export default function Settings() {
                         </div>
                       </div>
                     )}
-                    {/* Status */}
                     <div className="space-y-1.5">
                       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Status</p>
                       <div className="rounded-xl border border-border/50 divide-y divide-border/50">
@@ -1835,7 +1714,6 @@ export default function Settings() {
                         ))}
                       </div>
                     </div>
-                    {/* Quick actions */}
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <Button
                         size="sm"
@@ -1876,8 +1754,6 @@ export default function Settings() {
                           ⏳ Suspend
                         </Button>
                       )}
-
-                      {/* Ban reason picker */}
                       {banPickerId === adminSelectedUser.id && (
                         <div className="col-span-2 space-y-1.5 border border-red-200 rounded-lg p-2 bg-red-50/50">
                           <Select value={banReason} onValueChange={setBanReason}>
@@ -1908,8 +1784,6 @@ export default function Settings() {
                           </div>
                         </div>
                       )}
-
-                      {/* Suspend reason + duration picker */}
                       {suspendPickerId === adminSelectedUser.id && (
                         <div className="col-span-2 space-y-1.5 border border-amber-200 rounded-lg p-2 bg-amber-50/50">
                           <Select value={suspendReason} onValueChange={setSuspendReason}>
@@ -1958,7 +1832,6 @@ export default function Settings() {
                     </div>
                   </div>
                 ) : (
-                  /* Edit tab */
                   adminEditForm && (
                     <div className="space-y-3">
                       <div>
