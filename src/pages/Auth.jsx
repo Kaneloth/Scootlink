@@ -238,12 +238,28 @@ export default function Auth() {
       setRecoveryMode(true);
     }
 
+    // Handle OAuth redirect: the code exchange (triggered by the appUrlOpen
+    // listener in App.jsx) may complete before this component even mounts.
+    // In that case onAuthStateChange below only ever sees INITIAL_SESSION,
+    // not SIGNED_IN - so we also check directly here on mount as a fallback.
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session?.user || sessionStorage.getItem('skootlink_recovery')) return;
+      const block = await checkUserBlocked(session.user.id);
+      if (block) {
+        await supabase.auth.signOut();
+        setBlockedEmail(session.user.email || '');
+        setBlockInfo(block);
+        return;
+      }
+      window.location.replace('/home');
+    });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
         setRecoveryMode(true);
       }
-      if (event === 'SIGNED_IN' && session && !sessionStorage.getItem('skootlink_recovery')) {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && !sessionStorage.getItem('skootlink_recovery')) {
         // Poll until session is fully confirmed before navigating to prevent blank screen
         let attempts = 0;
         const poll = setInterval(async () => {
