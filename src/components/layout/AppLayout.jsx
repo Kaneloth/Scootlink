@@ -185,10 +185,7 @@ function MobileHeader() {
   return (
     <div
       className="lg:hidden flex items-center justify-between px-4 border-b border-border bg-card z-30 shrink-0"
-      style={{
-        paddingTop:    'calc(0.75rem + env(safe-area-inset-top, 0px))',
-        paddingBottom: '0.75rem',
-      }}
+      style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem' }}
     >
       {/* Logo */}
       <Link to="/home" className="flex items-center gap-2">

@@ -46,7 +46,7 @@ const AuthenticatedApp = () => {
       if (isRecovery) {
         if (path !== '/auth') { window.location.replace('/auth'); }
         else { setSupabaseChecked(true); }
-      } else if (session && path === '/auth') {
+      } else if (session && (path === '/auth' || path === '/')) {
         window.location.replace('/home');
       } else if (!session && !publicPaths.includes(path)) {
         window.location.replace('/auth');
@@ -145,7 +145,7 @@ function App() {
     if (!Capacitor.isNativePlatform()) return;
     const isDark = document.documentElement.classList.contains('dark');
     StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
-    StatusBar.setStyle({ style: isDark ? Style.Light : Style.Dark }).catch(() => {});
+    StatusBar.setStyle({ style: isDark ? Style.Dark : Style.Light }).catch(() => {});
     StatusBar.setBackgroundColor({ color: isDark ? '#0f172a' : '#ffffff' }).catch(() => {});
   }, []);
 
