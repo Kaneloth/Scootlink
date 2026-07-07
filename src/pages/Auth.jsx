@@ -232,6 +232,19 @@ export default function Auth() {
   const [showNewPw, setShowNewPw] = useState(false);
   const [showConfirmNewPw, setShowConfirmNewPw] = useState(false);
 
+  // ── Surface OAuth callback failures from App.jsx ─────────────────────────
+  // exchangeCodeForSession/setSession happen in App.jsx's appUrlOpen handler,
+  // outside this component. If that exchange failed, App.jsx stashes the
+  // reason here instead of silently closing the browser and leaving the
+  // user back on this page wondering what happened.
+  useEffect(() => {
+    const oauthError = sessionStorage.getItem('skootlink_oauth_error');
+    if (oauthError) {
+      sessionStorage.removeItem('skootlink_oauth_error');
+      toast.error(oauthError);
+    }
+  }, []);
+
   // ── Detect PASSWORD_RECOVERY from reset link ─────────────────────────────
   // Three-pronged approach to catch the recovery token regardless of timing:
   //   1. Check URL hash (implicit flow: #type=recovery)

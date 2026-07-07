@@ -166,23 +166,51 @@ function App() {
         const capacitorAppPkg = '@' + 'capacitor/app';
         const { App: CapApp } = await import(/* @vite-ignore */ capacitorAppPkg);
         listener = await CapApp.addListener('appUrlOpen', async ({ url }) => {
+          let authError = null;
           try {
             const parsed = new URL(url);
             const code = parsed.searchParams.get('code');
             if (code) {
-              await supabase.auth.exchangeCodeForSession(code);
+              // exchangeCodeForSession does NOT throw on failure — it resolves
+              // with { data, error }. Discarding that return value was the
+              // actual cause of the silent bounce-back: a failed exchange
+              // (expired/invalid code, PKCE verifier mismatch, etc.) would
+              // fall straight through to Browser.close() below with zero
+              // indication anything went wrong.
+              const { error } = await supabase.auth.exchangeCodeForSession(code);
+              authError = error;
             } else {
               const params = new URLSearchParams(parsed.hash.replace('#', ''));
               const accessToken = params.get('access_token');
               const refreshToken = params.get('refresh_token');
+              const errorDescription = parsed.searchParams.get('error_description') || params.get('error_description');
               if (accessToken && refreshToken) {
-                await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+                const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+                authError = error;
+              } else if (errorDescription) {
+                // Google/Supabase sent back an error instead of tokens
+                // (e.g. access_denied, server_error) — surface it directly.
+                authError = { message: errorDescription };
               }
             }
-            const capacitorBrowserPkg = '@' + 'capacitor/browser';
-            const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
-            await Browser.close().catch(() => {});
-          } catch (e) { /* ignore */ }
+            if (authError) {
+              console.error('[App] OAuth callback failed:', authError);
+              // Auth.jsx can't see this — it happened before that component's
+              // own listener ever got a session to react to. Stash it so
+              // Auth.jsx can show a real error instead of just reverting
+              // silently to the login screen.
+              sessionStorage.setItem('skootlink_oauth_error', authError.message || 'Sign-in failed. Please try again.');
+            }
+          } catch (e) {
+            console.error('[App] appUrlOpen handler threw:', e);
+            sessionStorage.setItem('skootlink_oauth_error', e?.message || 'Sign-in failed. Please try again.');
+          } finally {
+            try {
+              const capacitorBrowserPkg = '@' + 'capacitor/browser';
+              const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
+              await Browser.close().catch(() => {});
+            } catch (e) { /* not in Capacitor environment */ }
+          }
         });
       } catch (e) { /* not in Capacitor environment */ }
     })();
