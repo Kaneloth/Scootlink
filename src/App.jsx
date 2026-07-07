@@ -149,8 +149,6 @@ function App() {
     StatusBar.setBackgroundColor({ color: isDark ? '#0f172a' : '#ffffff' }).catch(() => {});
   }, []);
 
-  return (
-
   // Global appUrlOpen listener - registered here (not in Auth.jsx) so it
   // stays active regardless of which page is currently mounted during the
   // OAuth flow. Handles the custom-scheme redirect (co.za.skootlink.app://auth)
