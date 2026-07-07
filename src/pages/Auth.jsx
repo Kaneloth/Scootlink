@@ -229,62 +229,53 @@ export default function Auth() {
   //   3. onAuthStateChange event (PKCE flow: code exchanged async)
   useEffect(() => {
     const hash = window.location.hash;
-
     const isRecoveryUrl = hash.includes('type=recovery');
     const isRecoveryStored = sessionStorage.getItem('skootlink_recovery') === '1';
-
     if (isRecoveryUrl || isRecoveryStored) {
       sessionStorage.setItem('skootlink_recovery', '1');
       setRecoveryMode(true);
     }
 
-    // Handle OAuth redirect: the code exchange (triggered by the appUrlOpen
-    // listener in App.jsx) may complete before this component even mounts.
-    // In that case onAuthStateChange below only ever sees INITIAL_SESSION,
-    // not SIGNED_IN - so we also check directly here on mount as a fallback.
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    // Navigation guard - prevents the getSession() check and the
+    // onAuthStateChange listener from both calling window.location.replace
+    // at the same time, which was causing an unpredictable race that could
+    // land the user back on the landing page.
+    let navigating = false;
+    const handleSession = async (session) => {
+      if (navigating) return;
       if (!session?.user || sessionStorage.getItem('skootlink_recovery')) return;
+      navigating = true;
       const block = await checkUserBlocked(session.user.id);
       if (block) {
+        navigating = false;
         await supabase.auth.signOut();
         setBlockedEmail(session.user.email || '');
         setBlockInfo(block);
         return;
       }
       window.location.replace('/home');
+    };
+
+    // Check for an existing session immediately on mount - handles the OAuth
+    // redirect case where the code was already exchanged before this
+    // component mounted (onAuthStateChange would then only see
+    // INITIAL_SESSION, not SIGNED_IN).
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleSession(session);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
         setRecoveryMode(true);
+        return;
       }
-      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && !sessionStorage.getItem('skootlink_recovery')) {
-        // Poll until session is fully confirmed before navigating to prevent blank screen
-        let attempts = 0;
-        const poll = setInterval(async () => {
-          attempts++;
-          const { data: { session: s } } = await supabase.auth.getSession();
-          if (s?.user) {
-            clearInterval(poll);
-            // Ban/suspend check — this listener fires independently of
-            // handleLogin's own check, so without this it would race ahead
-            // and navigate to /home before handleLogin's signOut() takes
-            // effect, causing the block screen to flash and then bounce
-            // back to /auth once /home discovers there's no valid session.
-            const block = await checkUserBlocked(s.user.id);
-            if (block) {
-              await supabase.auth.signOut();
-              setBlockedEmail(s.user.email || '');
-              setBlockInfo(block);
-              return;
-            }
-            window.location.replace('/home');
-          } else if (attempts > 10) {
-            clearInterval(poll);
-            window.location.replace('/home'); // give up and navigate anyway
-          }
-        }, 150);
+      if (
+        (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
+        session &&
+        !sessionStorage.getItem('skootlink_recovery')
+      ) {
+        handleSession(session);
       }
     });
 
