@@ -238,32 +238,6 @@ export default function Auth() {
       setRecoveryMode(true);
     }
 
-    // ── Capacitor deep link handler ──────────────────────────────────────────
-    // Only runs in native app — import is wrapped to prevent Rollup bundling it
-    let appListener = null;
-    (async () => {
-      try {
-        // Use indirect import string to prevent Rollup from trying to bundle
-        // @capacitor/app (not installed on web/Netlify builds)
-        const capacitorAppPkg = '@' + 'capacitor/app';
-        const capacitorBrowserPkg = '@' + 'capacitor/browser';
-        const { App } = await import(/* @vite-ignore */ capacitorAppPkg);
-        appListener = await App.addListener('appUrlOpen', async ({ url }) => {
-          if (url.includes('/auth')) {
-            const urlParams = new URLSearchParams(url.split('?')[1] || '');
-            const deepCode = urlParams.get('code');
-            if (deepCode) {
-              await supabase.auth.exchangeCodeForSession(deepCode);
-            }
-            try {
-              const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
-              await Browser.close();
-            } catch { /* already closed */ }
-          }
-        });
-      } catch { /* not in Capacitor environment */ }
-    })();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
@@ -300,7 +274,6 @@ export default function Auth() {
 
     return () => {
       subscription.unsubscribe();
-      if (appListener) appListener.remove();
     };
   }, []);
 
@@ -648,7 +621,7 @@ export default function Auth() {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: Capacitor.isNativePlatform() ? 'https://skootlink.co.za/auth' : window.location.origin + '/auth',
+          redirectTo: Capacitor.isNativePlatform() ? 'co.za.skootlink.app://auth' : window.location.origin + '/auth',
           skipBrowserRedirect: true,
           queryParams: {
             prompt: 'select_account',

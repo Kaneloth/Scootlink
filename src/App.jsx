@@ -150,6 +150,44 @@ function App() {
   }, []);
 
   return (
+
+  // Global appUrlOpen listener - registered here (not in Auth.jsx) so it
+  // stays active regardless of which page is currently mounted during the
+  // OAuth flow. Handles the custom-scheme redirect (co.za.skootlink.app://auth)
+  // that Google/Supabase send back to, closing the in-app browser and
+  // completing sign-in once the code is exchanged for a session.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let listener;
+    (async () => {
+      try {
+        const capacitorAppPkg = '@' + 'capacitor/app';
+        const { App: CapApp } = await import(/* @vite-ignore */ capacitorAppPkg);
+        listener = await CapApp.addListener('appUrlOpen', async ({ url }) => {
+          try {
+            const parsed = new URL(url);
+            const code = parsed.searchParams.get('code');
+            if (code) {
+              await supabase.auth.exchangeCodeForSession(code);
+            } else {
+              const params = new URLSearchParams(parsed.hash.replace('#', ''));
+              const accessToken = params.get('access_token');
+              const refreshToken = params.get('refresh_token');
+              if (accessToken && refreshToken) {
+                await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+              }
+            }
+            const capacitorBrowserPkg = '@' + 'capacitor/browser';
+            const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
+            await Browser.close().catch(() => {});
+          } catch (e) { /* ignore */ }
+        });
+      } catch (e) { /* not in Capacitor environment */ }
+    })();
+    return () => { if (listener) { listener.remove().catch(() => {}); } };
+  }, []);
+
+  return (
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router>
