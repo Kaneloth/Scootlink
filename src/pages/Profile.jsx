@@ -16,8 +16,6 @@ import { toast } from 'sonner';
 import VerificationPanel from '@/components/verification/VerificationPanel';
 import PlatformHistoryPanel from '@/components/profile/PlatformHistoryPanel';
 
-// ─── Skeleton components ──────────────────────────────────────────────────────
-
 function ProfileHeaderSkeleton() {
   return (
     <Card className="p-5 mb-4 border border-border/50 animate-pulse">
@@ -63,22 +61,20 @@ function FormSkeleton() {
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
-
 export default function Profile() {
   const navigate        = useNavigate();
   const [searchParams]  = useSearchParams();
   const defaultTab      = searchParams.get('tab') || 'edit';
   const fileInputRef    = useRef(null);
+
   const [user,          setUser]          = useState(null);
   const [userLoading,   setUserLoading]   = useState(true);
   const [avatarUrl,     setAvatarUrl]     = useState(null);
   const [avatarVisible, setAvatarVisible] = useState(true);
   const [profileVisible, setProfileVisible] = useState(true);
-  const [savingVisibility, setSavingVisibility] = useState(null); // 'avatar' | 'profile' | null
+  const [savingVisibility, setSavingVisibility] = useState(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
-  // Non-sensitive fields stored in user metadata
   const [form, setForm] = useState({
     full_name: '',
     email: '',
@@ -92,7 +88,6 @@ export default function Profile() {
     citizenship: 'South African',
   });
 
-  // Sensitive fields — loaded from the separate user_sensitive_info table
   const [sensitiveForm, setSensitiveForm] = useState({
     sa_id: '',
     passport: '',
@@ -105,7 +100,6 @@ export default function Profile() {
   const [showRoleConfirm, setShowRoleConfirm] = useState(false);
   const [pendingRole, setPendingRole] = useState(null);
 
-  // Location dropdowns — mirrors Onboarding
   const [sa_province, setSaProvince] = useState('');
   const [sa_city, setSaCity] = useState('');
   const [sa_city_other, setSaCityOther] = useState('');
@@ -125,11 +119,9 @@ export default function Profile() {
   const cityList = sa_province ? (SA_PROVINCE_CITIES[sa_province] ?? []) : [];
   const cityIsOther = sa_city === '__other__';
 
-  // Parse existing location string (e.g. "Johannesburg, Gauteng, South Africa") into dropdowns
   const parseLocationIntoDropdowns = (locationStr) => {
     if (!locationStr) return;
     const parts = locationStr.split(',').map(p => p.trim());
-    // Parts: [city, province, country] or [city, province]
     if (parts.length >= 2) {
       const province = parts[parts.length >= 3 ? parts.length - 2 : 1];
       const city = parts[0];
@@ -166,14 +158,12 @@ export default function Profile() {
       setShowRoleConfirm(false);
       setPendingRole(null);
       toast.success(`Role updated to ${pendingRole}. Your dashboard will reflect this immediately.`);
-      // Force full reload so Dashboard re-renders with the new role
       window.location.reload();
     } catch (err) {
       toast.error('Could not update role: ' + err.message);
     }
   };
 
-  // Handle PayFast return after verification payment
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const verifStatus = params.get('verif_payment');
@@ -206,7 +196,6 @@ export default function Profile() {
 
   useEffect(() => {
     let cancelled = false;
-
     auth.me()
       .then(async (u) => {
         if (cancelled) return;
@@ -229,24 +218,17 @@ export default function Profile() {
           license_year: u.license_year ? String(u.license_year) : '',
           citizenship: u.citizenship || 'South African',
         });
-
-        // Load sensitive fields from the isolated RLS-protected table
         const { data: sensitive } = await supabase
           .from('user_sensitive_info')
           .select('sa_id, passport')
           .eq('user_id', u.id)
           .maybeSingle();
-
         if (!cancelled && sensitive) {
           setSensitiveForm({
             sa_id: sensitive.sa_id || '',
             passport: sensitive.passport || '',
           });
         }
-
-        // Backfill geo_location if the user has a location text but no coordinates.
-        // This silently fixes anyone who completed onboarding before geo_location
-        // saving was added — they just need to visit their Profile page once.
         if (u.location && !cancelled) {
           const { data: row } = await supabase
             .from('profiles')
@@ -269,11 +251,9 @@ export default function Profile() {
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setUserLoading(false); });
-
     return () => { cancelled = true; };
   }, []);
 
-  // ── Avatar upload ──────────────────────────────────────────────────────────
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -292,7 +272,6 @@ export default function Profile() {
         .getPublicUrl(filePath);
       setAvatarUrl(publicUrl);
       await auth.updateMe({ avatar_url: publicUrl });
-      // Sync to profiles table so other users can see the new photo
       await supabase.from('profiles').upsert(
         { id: authUser.id, avatar_url: publicUrl },
         { onConflict: 'id' }
@@ -306,13 +285,9 @@ export default function Profile() {
     }
   };
 
-  // Both visibility toggles save immediately on click — same proven pattern as
-  // avatar upload above (auth.updateMe + a direct profiles upsert). They no
-  // longer depend on the person also finding and pressing the main "Save"
-  // button on the Edit Info tab, which is why the setting wasn't sticking.
   const handleToggleAvatarVisible = async () => {
     const next = !avatarVisible;
-    setAvatarVisible(next); // optimistic
+    setAvatarVisible(next);
     setSavingVisibility('avatar');
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -324,7 +299,7 @@ export default function Profile() {
       if (error) throw error;
       toast.success(next ? 'Photo is now visible to others' : 'Photo is now hidden from others');
     } catch (err) {
-      setAvatarVisible(!next); // roll back
+      setAvatarVisible(!next);
       toast.error('Could not update photo visibility: ' + err.message);
     } finally {
       setSavingVisibility(null);
@@ -333,7 +308,7 @@ export default function Profile() {
 
   const handleToggleProfileVisible = async () => {
     const next = !profileVisible;
-    setProfileVisible(next); // optimistic
+    setProfileVisible(next);
     setSavingVisibility('profile');
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -345,7 +320,7 @@ export default function Profile() {
       if (error) throw error;
       toast.success(next ? 'Profile is now visible to others' : 'Profile is now hidden from search');
     } catch (err) {
-      setProfileVisible(!next); // roll back
+      setProfileVisible(!next);
       toast.error('Could not update profile visibility: ' + err.message);
     } finally {
       setSavingVisibility(null);
@@ -358,7 +333,6 @@ export default function Profile() {
     setSaving(true);
     const locationStr = buildLocation() || form.location || '';
     try {
-      // ── Check for duplicate email / phone ────────────────────────────────
       const checks = [];
       if (form.email?.trim()) {
         checks.push(
@@ -389,7 +363,6 @@ export default function Profile() {
         toast.error('An account with this phone number already exists.');
         setSaving(false); return;
       }
-      // ── 1. Update non-sensitive user metadata ──────────────────────────────
       const metadataUpdates = {
         full_name: form.full_name,
         phone: form.phone,
@@ -401,9 +374,7 @@ export default function Profile() {
         license_year: form.license_year ? parseInt(form.license_year) : null,
         citizenship: form.citizenship,
       };
-
       await auth.updateMe(metadataUpdates);
-
       const { error: profileUpdateErr } = await supabase
         .from('profiles')
         .update({
@@ -415,35 +386,26 @@ export default function Profile() {
           residential_address:  form.residential_address || null,
           license_year:         form.license_year        ? parseInt(form.license_year) : null,
           license_number:       form.license_number      || null,
-          // Mark onboarding complete if the user has the minimum required fields —
-          // covers users who skipped Onboarding and filled in details via Profile instead.
           onboarding_completed: !!(form.full_name?.trim() && form.phone?.trim() && locationStr),
         })
         .eq('id', user.id);
-
       if (profileUpdateErr) {
         console.error('[Profile] profiles.update error:', profileUpdateErr);
         toast.error('Could not save profile: ' + profileUpdateErr.message);
         setSaving(false);
         return;
       }
-
-      // ── 2. Blacklist check — block saving if the ID / passport is banned ──
-      // A user who creates a new account to evade a ban will be caught here
-      // when they try to save their identity document for the first time.
       const submittedId = (
         form.citizenship === 'South African'
           ? sensitiveForm.sa_id
           : sensitiveForm.passport
       )?.trim().toUpperCase();
-
       if (submittedId) {
         const { data: bannedId } = await supabase
           .from('blacklisted_id_numbers')
           .select('id_number')
           .eq('id_number', submittedId)
           .maybeSingle();
-
         if (bannedId) {
           toast.error(
             'Your ID / passport number has been flagged. Please contact support at help@skootlink.co.za to resolve this.',
@@ -453,9 +415,6 @@ export default function Profile() {
           return;
         }
       }
-
-      // ── 3. Upsert sensitive fields in the isolated table ───────────────────
-      // RLS ensures only this user's row can be written.
       const { error: sensitiveError } = await supabase
         .from('user_sensitive_info')
         .upsert(
@@ -466,10 +425,7 @@ export default function Profile() {
           },
           { onConflict: 'user_id' }
         );
-
       if (sensitiveError) throw sensitiveError;
-
-      // ── 4. Handle email change separately (requires confirmation) ──────────
       let emailChangePending = false;
       if (form.email !== user.email) {
         const { error } = await supabase.auth.updateUser({ email: form.email });
@@ -477,11 +433,6 @@ export default function Profile() {
         emailChangePending = true;
         toast.success('Confirmation email sent to ' + form.email + '. Click the link to activate your new address.');
       }
-
-      // Geocode the location text and write coordinates via an SQL helper function.
-      // Direct WKT updates via PostgREST don't cast to geography automatically, so
-      // we call set_user_geo_location() which runs ST_SetSRID(ST_MakePoint(...))
-      // server-side.  Non-fatal — text-match search still works if geocoding fails.
       if (form.location) {
         try {
           const coords = await geocodeLocation(form.location);
@@ -495,9 +446,6 @@ export default function Profile() {
           }
         } catch (geoErr) { console.error('[Profile] geocode error:', geoErr); }
       }
-
-      // Refresh local state so the header reflects the new values immediately
-      // and the user sees correct data if they navigate back without a full reload.
       const freshUser = await auth.me().catch(() => null);
       if (freshUser) {
         setUser(freshUser);
@@ -517,9 +465,6 @@ export default function Profile() {
           citizenship:          freshUser.citizenship || 'South African',
         });
       }
-
-      // Only show the generic success toast / navigate away when no email
-      // confirmation is pending — the confirmation toast above is enough.
       if (!emailChangePending) {
         toast.success('Profile updated!');
         navigate('/home');
@@ -538,7 +483,6 @@ export default function Profile() {
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <PageHeader title="My Profile" subtitle="Edit details & view your reviews" backTo="/home" />
 
-      {/* Hidden file input for avatar upload */}
       <input
         ref={fileInputRef}
         type="file"
@@ -547,14 +491,11 @@ export default function Profile() {
         onChange={handleAvatarUpload}
       />
 
-      {/* Profile header */}
       {userLoading ? (
         <ProfileHeaderSkeleton />
       ) : user ? (
         <Card className="p-5 mb-4 border border-border/50">
           <div className="flex items-center gap-4">
-
-            {/* Avatar with camera overlay */}
             <div className="relative shrink-0">
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary overflow-hidden">
                 {avatarUrl ? (
@@ -574,7 +515,6 @@ export default function Profile() {
                   : <Camera className="w-3 h-3" />}
               </button>
             </div>
-
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="font-bold text-lg text-foreground">{user.full_name || 'User'}</h2>
@@ -587,8 +527,6 @@ export default function Profile() {
                   <span className="text-xs text-muted-foreground">({user.total_reviews} reviews)</span>
                 )}
               </div>
-
-              {/* Photo visibility toggle — saves immediately */}
               <button
                 onClick={() => savingVisibility === null && handleToggleAvatarVisible()}
                 disabled={savingVisibility === 'avatar'}
@@ -603,7 +541,6 @@ export default function Profile() {
         </Card>
       ) : null}
 
-      {/* Privacy — self-saving toggle, same style as the Settings page switches */}
       {user && (
         <Card className="p-2 mb-4 border border-border/50">
           <div
@@ -627,7 +564,7 @@ export default function Profile() {
       )}
 
       <Tabs defaultValue={defaultTab}>
-        <TabsList className={`grid w-full mb-4 ${accountType === 'owner' ? 'grid-cols-3' : 'grid-cols-4'}`}>
+        <TabsList className={`grid w-full mb-4 h-auto gap-1 ${accountType === 'owner' ? 'grid-cols-3' : 'grid-cols-2'}`}>
           <TabsTrigger value="edit">Edit Info</TabsTrigger>
           <TabsTrigger value="verification">Verification</TabsTrigger>
           {accountType !== 'owner' && <TabsTrigger value="platform-history">Platforms</TabsTrigger>}
@@ -666,7 +603,6 @@ export default function Profile() {
                     )}
                   </div>
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <Label>Phone <span className="text-red-500">*</span></Label>
@@ -702,8 +638,6 @@ export default function Profile() {
                     </div>
                   )}
                 </div>
-
-                {/* Location — province + city dropdowns matching Onboarding */}
                 <div>
                   <Label>Province</Label>
                   <Select value={sa_province} onValueChange={(v) => { setSaProvince(v); setSaCity(''); setSaCityOther(''); }}>
@@ -715,7 +649,6 @@ export default function Profile() {
                     </SelectContent>
                   </Select>
                 </div>
-
                 {sa_province && (
                   <div>
                     <Label>City / Town</Label>
@@ -730,7 +663,6 @@ export default function Profile() {
                     </Select>
                   </div>
                 )}
-
                 {cityIsOther && (
                   <div>
                     <Label>Your city / town</Label>
@@ -742,7 +674,6 @@ export default function Profile() {
                     />
                   </div>
                 )}
-
                 <div>
                   <Label>Residential Address</Label>
                   <Input
@@ -752,8 +683,6 @@ export default function Profile() {
                     onChange={(e) => update('residential_address', e.target.value)}
                   />
                 </div>
-
-                {/* Role switcher */}
                 <div>
                   <Label>Account Role</Label>
                   <p className="text-xs text-muted-foreground mb-2">Switch your role if your needs have changed. Your dashboard will update immediately.</p>
@@ -779,7 +708,6 @@ export default function Profile() {
                     ))}
                   </div>
                 </div>
-
                 <Button onClick={handleSave} className="w-full" disabled={saving}>
                   {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                   {saving ? 'Saving...' : 'Save Changes'}
@@ -846,7 +774,6 @@ export default function Profile() {
         </TabsContent>
       </Tabs>
 
-      {/* Role change confirmation modal */}
       {showRoleConfirm && pendingRole && createPortal(
         <div
           className="fixed inset-0 z-[99999] bg-black/50 flex items-center justify-center p-4"

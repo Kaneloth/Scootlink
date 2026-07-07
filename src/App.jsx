@@ -4,6 +4,8 @@ import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
@@ -26,7 +28,6 @@ import Onboarding from '@/pages/Onboarding';
 
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
-
 
 const AuthenticatedApp = () => {
   const [supabaseChecked, setSupabaseChecked] = React.useState(false);
@@ -134,6 +135,18 @@ function App() {
     } else {
       document.documentElement.classList.remove('dark');
     }
+  }, []);
+
+  // Initialize the native status bar — a no-op on the website (guarded by
+  // isNativePlatform), but on Android this reserves the status bar's own
+  // space instead of letting the WebView draw underneath it, and sets the
+  // icon color to match the current theme so they're actually visible.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const isDark = document.documentElement.classList.contains('dark');
+    StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+    StatusBar.setStyle({ style: isDark ? Style.Light : Style.Dark }).catch(() => {});
+    StatusBar.setBackgroundColor({ color: isDark ? '#0f172a' : '#ffffff' }).catch(() => {});
   }, []);
 
   return (

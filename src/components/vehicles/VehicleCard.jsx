@@ -77,7 +77,7 @@ export default function VehicleCard({ vehicle, onClick, showPrice = true }) {
             </div>
           </div>
           {showPrice && (
-            <div className="text-sm shrink-0">
+            <div className="text-sm w-full sm:w-auto sm:shrink-0 flex justify-end sm:block">
               <span className="font-bold text-foreground">R {vehicle.price_per_week}</span>
               <span className="text-muted-foreground">/week</span>
               {vehicle.deposit > 0 && (
@@ -102,7 +102,6 @@ export default function VehicleCard({ vehicle, onClick, showPrice = true }) {
           </div>
         )}
       </Card>
-
       {lightboxSrc && createPortal(
         <div
           className="fixed inset-0 z-[99999] bg-black/90 flex items-center justify-center p-4"

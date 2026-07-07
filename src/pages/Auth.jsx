@@ -648,7 +648,7 @@ export default function Auth() {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin + '/auth',
+          redirectTo: Capacitor.isNativePlatform() ? 'https://skootlink.co.za/auth' : window.location.origin + '/auth',
           skipBrowserRedirect: true,
           queryParams: {
             prompt: 'select_account',
@@ -767,7 +767,7 @@ export default function Auth() {
             )}
           </div>
           <div className="space-y-3 pt-2">
-            <a
+            
               href="mailto:help@skootlink.co.za"
               className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors"
             >
@@ -1230,7 +1230,7 @@ export default function Auth() {
                 />
                 <label htmlFor="terms" className="text-sm text-muted-foreground">
                   I agree to the{' '}
-                  <a
+                  
                     href="/Terms%20and%20Conditions.html"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -1239,7 +1239,7 @@ export default function Auth() {
                     Terms and Conditions
                   </a>
                   {' '}and{' '}
-                  <a
+                  
                     href="/Privacy%20Policy.html"
                     target="_blank"
                     rel="noopener noreferrer"

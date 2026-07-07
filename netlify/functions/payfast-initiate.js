@@ -16,29 +16,45 @@ const MERCHANT_ID  = process.env.PAYFAST_MERCHANT_ID;
 const MERCHANT_KEY = process.env.PAYFAST_MERCHANT_KEY;
 const PASSPHRASE   = process.env.PAYFAST_PASSPHRASE || '';
 
+// Required so the native app (running from a different origin than
+// skootlink.co.za) is allowed to call this function at all. Without these,
+// the browser/WebView blocks the request before it even reaches here,
+// surfacing to the user as a generic "Failed to fetch".
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
 export const handler = async (event) => {
+  // Browsers send this automatically before the real POST when the request
+  // is cross-origin — must succeed or the actual POST never gets sent.
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers: CORS_HEADERS, body: '' };
+  }
+
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
+    return { statusCode: 405, headers: CORS_HEADERS, body: 'Method Not Allowed' };
   }
 
   if (!MERCHANT_ID || !MERCHANT_KEY) {
     console.error('[payfast-initiate] Missing PAYFAST_MERCHANT_ID / PAYFAST_MERCHANT_KEY');
-    return { statusCode: 500, body: JSON.stringify({ error: 'Payments not configured.' }) };
+    return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Payments not configured.' }) };
   }
 
   const jwt = (event.headers['authorization'] || '').replace('Bearer ', '').trim();
-  if (!jwt) return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
+  if (!jwt) return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
 
   const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt);
-  if (authErr || !user) return { statusCode: 401, body: JSON.stringify({ error: 'Invalid session' }) };
+  if (authErr || !user) return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Invalid session' }) };
 
   let body;
   try { body = JSON.parse(event.body); }
-  catch { return { statusCode: 400, body: 'Invalid JSON' }; }
+  catch { return { statusCode: 400, headers: CORS_HEADERS, body: 'Invalid JSON' }; }
 
   const pkg = PACKAGES[body.package_id];
   if (!pkg) {
-    return { statusCode: 400, body: JSON.stringify({ error: `Unknown package "${body.package_id}"` }) };
+    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: `Unknown package "${body.package_id}"` }) };
   }
 
   const m_payment_id = `skoot_${user.id.slice(0, 8)}_${Date.now()}`;
@@ -66,6 +82,7 @@ export const handler = async (event) => {
 
   return {
     statusCode: 200,
+    headers: CORS_HEADERS,
     body: JSON.stringify({
       action_url: PAYFAST_PROCESS_URL,
       fields: { ...fields, signature },

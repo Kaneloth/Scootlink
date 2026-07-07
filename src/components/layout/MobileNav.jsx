@@ -111,7 +111,10 @@ export default function MobileNav() {
   if (creditModalOpen) return null;
 
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-lg border-t border-border z-50 safe-area-bottom">
+    <nav
+      className="lg:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-lg border-t border-border z-50"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+    >
       <div className="flex justify-around items-center py-2 px-2">
         {navItems.map((item) => {
           const isActive  = location.pathname === item.path;

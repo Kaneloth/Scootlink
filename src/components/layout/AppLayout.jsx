@@ -183,7 +183,13 @@ function MobileHeader() {
   };
 
   return (
-    <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card z-30 shrink-0">
+    <div
+      className="lg:hidden flex items-center justify-between px-4 border-b border-border bg-card z-30 shrink-0"
+      style={{
+        paddingTop:    'calc(0.75rem + env(safe-area-inset-top, 0px))',
+        paddingBottom: '0.75rem',
+      }}
+    >
       {/* Logo */}
       <Link to="/home" className="flex items-center gap-2">
         <img src="/favicon.png" alt="Skootlink" className="w-8 h-8" />
@@ -469,7 +475,7 @@ export default function AppLayout() {
         <NavigationProgressBar pathname={location.pathname} />
         <Sidebar />
 
-        <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-screen">
+        <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-full" style={{ height: '100dvh' }}>
           <MobileHeader />
 
           <div
@@ -496,7 +502,7 @@ export default function AppLayout() {
                     <div
                       key={path}
                       className="h-full overflow-y-auto pb-28 lg:pb-0"
-                      style={{ width: `${100 / N}%`, flexShrink: 0, minHeight: '100vh' }}
+                      style={{ width: `${100 / N}%`, flexShrink: 0, minHeight: '100%' }}
                     >
                       {isVisible ? <Page /> : null}
                     </div>

@@ -15,14 +15,12 @@ export default function NotificationBell() {
   const panelRef                          = useRef(null);
   const navigate                          = useNavigate();
 
-  // ── Fetch user id once ────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setUserId(user.id);
     });
   }, []);
 
-  // ── Fetch notifications ───────────────────────────────────────────────────
   const fetchNotifications = useCallback(async () => {
     if (!userId) return;
     const { data } = await supabase
@@ -38,7 +36,6 @@ export default function NotificationBell() {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  // ── Realtime: push new notifications live ────────────────────────────────
   useEffect(() => {
     if (!userId) return;
     const channel = supabase
@@ -57,17 +54,13 @@ export default function NotificationBell() {
       }, () => fetchNotifications())
       .subscribe();
 
-    // Polling fallback — re-fetches every 30s in case realtime doesn't fire
-    // (e.g. notification inserted server-side before realtime replication was enabled)
     const poll = setInterval(fetchNotifications, 30_000);
-
     return () => {
       supabase.removeChannel(channel);
       clearInterval(poll);
     };
   }, [userId, fetchNotifications]);
 
-  // ── Close on outside click ────────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
@@ -79,7 +72,6 @@ export default function NotificationBell() {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // ── Mark all as read when panel opens ────────────────────────────────────
   const handleOpen = async () => {
     setOpen(v => !v);
     const unread = notifications.filter(n => !n.read).map(n => n.id);
@@ -104,8 +96,6 @@ export default function NotificationBell() {
 
   const iconForType = (type) => {
     switch (type) {
-      case 'new_proposal':    return '📥';
-      case 'credit_usage_warning': return '💳';
       case 'rental_contract': return '📄';
       case 'rental_accepted': return '✅';
       case 'rental_active':   return '🚀';
@@ -116,7 +106,6 @@ export default function NotificationBell() {
 
   return (
     <div className="relative flex-shrink-0" ref={panelRef}>
-      {/* Bell button */}
       <button
         onClick={handleOpen}
         className="relative w-10 h-10 flex items-center justify-center rounded-full bg-muted text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -131,12 +120,10 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* Dropdown panel */}
       {open && (
         <div
-          className="fixed top-16 right-2 w-80 max-w-[calc(100vw-1rem)] rounded-2xl border border-border bg-card shadow-xl z-[999] overflow-hidden"
+          className="absolute top-full right-0 mt-2 w-80 max-w-[calc(100vw-1rem)] rounded-2xl border border-border bg-card shadow-xl z-[999] overflow-hidden"
         >
-          {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <p className="text-sm font-semibold text-foreground">Notifications</p>
             {notifications.length > 0 && (
@@ -151,8 +138,6 @@ export default function NotificationBell() {
               </button>
             )}
           </div>
-
-          {/* List */}
           <div className="max-h-80 overflow-y-auto divide-y divide-border">
             {notifications.length === 0 ? (
               <div className="px-4 py-8 text-center">
@@ -172,7 +157,6 @@ export default function NotificationBell() {
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
                     <p className="text-[10px] text-muted-foreground mt-1">{formatTime(n.created_at)}</p>
-                    {/* Action button for listing expiry notifications */}
                     {['listing_expiry_7d','listing_expiry_3d','listing_expiry_1d','listing_expired','listing_hidden'].includes(n.type) && n.data?.vehicle_id && (
                       <button
                         onClick={() => {
@@ -182,18 +166,6 @@ export default function NotificationBell() {
                         className="mt-2 text-[11px] font-semibold text-primary hover:underline"
                       >
                         Re-list now →
-                      </button>
-                    )}
-                    {/* Action button for new proposal notifications — jumps straight to it on the dashboard */}
-                    {n.type === 'new_proposal' && n.data?.rental_id && (
-                      <button
-                        onClick={() => {
-                          setOpen(false);
-                          navigate(`/home?proposalId=${n.data.rental_id}`);
-                        }}
-                        className="mt-2 text-[11px] font-semibold text-primary hover:underline"
-                      >
-                        View proposal →
                       </button>
                     )}
                   </div>
