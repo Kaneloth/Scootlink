@@ -34,7 +34,11 @@ const AuthenticatedApp = () => {
 
   React.useEffect(() => {
     const path = window.location.pathname;
-    const publicPaths = ['/', '/auth'];
+    // '/' is only "public" on the web (marketing landing page). A native
+    // app cold-starts at '/' too, but there's no landing page concept there —
+    // a logged-out native user should always land on /auth, not the website.
+    const isNative = Capacitor.isNativePlatform();
+    const publicPaths = isNative ? ['/auth'] : ['/', '/auth'];
 
     // Safety net — never stay stuck beyond 5 seconds
     const timer = setTimeout(() => setSupabaseChecked(true), 5000);

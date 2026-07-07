@@ -153,11 +153,21 @@ export default function Auth() {
   // biometric and password login paths, plus the ID/passport blacklist
   // check that runs alongside it.
   const checkUserBlocked = async (userId) => {
-    const { data } = await supabase.rpc('is_user_blocked', { p_user_id: userId });
-    if (data?.blocked) {
-      return { reason: data.reason, until: data.until || null };
+    try {
+      const { data, error } = await supabase.rpc('is_user_blocked', { p_user_id: userId });
+      if (error) throw error;
+      if (data?.blocked) {
+        return { reason: data.reason, until: data.until || null };
+      }
+      return null;
+    } catch (err) {
+      // Fail OPEN: a network hiccup or a transient auth-context timing issue
+      // (this runs right after a fresh OAuth session is set) should not
+      // permanently block a legitimate sign-in. We just let the user in;
+      // server-side RLS is still the real enforcement boundary.
+      console.error('[Auth] checkUserBlocked failed, allowing sign-in:', err);
+      return null;
     }
-    return null;
   };
 
   const [loginStage, setLoginStage] = useState('idle');
@@ -245,15 +255,26 @@ export default function Auth() {
       if (navigating) return;
       if (!session?.user || sessionStorage.getItem('skootlink_recovery')) return;
       navigating = true;
-      const block = await checkUserBlocked(session.user.id);
-      if (block) {
+      try {
+        const block = await checkUserBlocked(session.user.id);
+        if (block) {
+          await supabase.auth.signOut();
+          setBlockedEmail(session.user.email || '');
+          setBlockInfo(block);
+          return;
+        }
+        window.location.replace('/home');
+      } catch (err) {
+        // Whatever went wrong, don't leave the user stuck staring at a spinner
+        // that silently resets — surface it and let them retry.
+        console.error('[Auth] handleSession failed:', err);
+        toast.error('Something went wrong signing you in. Please try again.');
+      } finally {
+        // Always release the lock — a thrown error here must never
+        // permanently prevent future SIGNED_IN/INITIAL_SESSION events
+        // (e.g. a retry) from being handled.
         navigating = false;
-        await supabase.auth.signOut();
-        setBlockedEmail(session.user.email || '');
-        setBlockInfo(block);
-        return;
       }
-      window.location.replace('/home');
     };
 
     // Check for an existing session immediately on mount - handles the OAuth
