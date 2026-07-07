@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { Toaster } from "@/components/ui/toaster"
-import { Toaster as SonnerToaster } from "sonner"
+import { Toaster as SonnerToaster, toast } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
@@ -162,15 +162,23 @@ function App() {
         const capacitorAppPkg = '@' + 'capacitor/app';
         const { App: CapApp } = await import(/* @vite-ignore */ capacitorAppPkg);
         listener = await CapApp.addListener('appUrlOpen', async ({ url }) => {
+          toast.info('appUrlOpen fired: ' + url, { duration: 15000 });
           try {
             const parsed = new URL(url);
             const code = parsed.searchParams.get('code');
+            toast.info('code param: ' + (code || 'NONE'), { duration: 15000 });
             if (code) {
-              await supabase.auth.exchangeCodeForSession(code);
+              const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+              if (error) {
+                toast.error('exchangeCodeForSession error: ' + error.message, { duration: 15000 });
+              } else {
+                toast.success('exchangeCodeForSession OK, session: ' + (data?.session ? 'YES' : 'NO'), { duration: 15000 });
+              }
             } else {
               const params = new URLSearchParams(parsed.hash.replace('#', ''));
               const accessToken = params.get('access_token');
               const refreshToken = params.get('refresh_token');
+              toast.info('hash tokens: access=' + (accessToken ? 'YES' : 'NO') + ' refresh=' + (refreshToken ? 'YES' : 'NO'), { duration: 15000 });
               if (accessToken && refreshToken) {
                 await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
               }
@@ -178,7 +186,7 @@ function App() {
             const capacitorBrowserPkg = '@' + 'capacitor/browser';
             const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
             await Browser.close().catch(() => {});
-          } catch (e) { /* ignore */ }
+          } catch (e) { toast.error('appUrlOpen catch: ' + (e?.message || String(e)), { duration: 15000 }); }
         });
       } catch (e) { /* not in Capacitor environment */ }
     })();
