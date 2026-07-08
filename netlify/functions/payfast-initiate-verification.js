@@ -73,6 +73,8 @@ export const handler = async (event) => {
     ? `co.za.skootlink.app://payment-result?status=cancelled&category=verification`
     : `${SITE_URL}/profile?verif_payment=cancelled`;
 
+  console.log(`[payfast-initiate-verification] is_native=${isNative} return_url=${return_url} cancel_url=${cancel_url}`);
+
   const fields = {
     merchant_id:      MERCHANT_ID,
     merchant_key:     MERCHANT_KEY,
