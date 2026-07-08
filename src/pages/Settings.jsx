@@ -15,7 +15,7 @@ import {
 import { sendSMS } from '@/lib/sms';
 import { toast } from 'sonner';
 import { useCredits } from '@/hooks/useCredits';
-import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
+import { BiometricAuth, AndroidBiometryStrength } from '@aparajita/capacitor-biometric-auth';
 
 const TEXT_SIZES = [
   { label: 'Normal',   value: '16px' },
@@ -35,12 +35,15 @@ const CREDIT_PACKAGES = [
 async function registerBiometric() {
   // Ask the OS what's actually available and enrolled — no per-user
   // "credential" to create; enrollment lives at the device level.
+  // strongBiometryIsAvailable specifically means fingerprint-tier (Class 3)
+  // biometry — most devices classify face unlock as "weak" (Class 2), so
+  // checking this instead of isAvailable is what keeps this fingerprint-only.
   const check = await BiometricAuth.checkBiometry();
-  if (!check.isAvailable) {
+  if (!check.strongBiometryIsAvailable) {
     throw new Error(
-      check.code === 'biometryNotEnrolled'
-        ? 'No fingerprint or face enrolled on this device. Add one in your device settings first, then try again.'
-        : 'Biometric authentication is not available on this device.'
+      check.strongCode === 'biometryNotEnrolled'
+        ? 'No fingerprint enrolled on this device. Add one in your device settings first, then try again.'
+        : 'Fingerprint authentication is not available on this device.'
     );
   }
   // Confirm it actually works before turning the setting on, so we never
@@ -49,13 +52,14 @@ async function registerBiometric() {
     reason: "Confirm it's you to enable biometric sign-in",
     androidTitle: 'Skootlink',
     androidSubtitle: 'Set up biometric sign-in',
+    androidBiometryStrength: AndroidBiometryStrength.strong,
   });
 }
 
 async function verifyBiometric() {
   const check = await BiometricAuth.checkBiometry();
-  if (!check.isAvailable) {
-    const err = new Error('Biometric authentication is not available on this device.');
+  if (!check.strongBiometryIsAvailable) {
+    const err = new Error('Fingerprint authentication is not available on this device.');
     err.code = 'no-credential';
     throw err;
   }
@@ -64,6 +68,7 @@ async function verifyBiometric() {
       reason: "Confirm it's you",
       androidTitle: 'Skootlink',
       androidSubtitle: 'Verify your identity',
+      androidBiometryStrength: AndroidBiometryStrength.strong,
     });
   } catch (err) {
     if (err?.code === 'userCancel' || err?.code === 'systemCancel' || err?.code === 'appCancel') {
