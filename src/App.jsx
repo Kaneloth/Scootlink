@@ -29,6 +29,12 @@ import Onboarding from '@/pages/Onboarding';
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 
+// TODO: replace with your actual Web client ID from Google Cloud Console
+// (Supabase Dashboard → Authentication → Providers → Google → Client ID).
+// This MUST be the Web client ID on every platform, including Android —
+// see https://capawesome.io/docs/sdks/capacitor/google-sign-in/#initializeoptions
+const GOOGLE_WEB_CLIENT_ID = '777597551403-o1c521882a048uhk9luvgdpu8qluj0qm.apps.googleusercontent.com';
+
 const AuthenticatedApp = () => {
   const [supabaseChecked, setSupabaseChecked] = React.useState(false);
 
@@ -151,6 +157,23 @@ function App() {
     StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
     StatusBar.setStyle({ style: isDark ? Style.Dark : Style.Light }).catch(() => {});
     StatusBar.setBackgroundColor({ color: isDark ? '#0f172a' : '#ffffff' }).catch(() => {});
+  }, []);
+
+  // Initialize native Google Sign-In (Credential Manager on Android). Must
+  // run once before GoogleSignIn.signIn() is ever called from Auth.jsx —
+  // this replaces the old Browser/deep-link OAuth flow entirely on native,
+  // so there's no Custom Tab, no appUrlOpen round-trip, and no PKCE code
+  // exchange to go wrong for Google sign-in specifically.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    (async () => {
+      try {
+        const { GoogleSignIn } = await import('@capawesome/capacitor-google-sign-in');
+        await GoogleSignIn.initialize({ clientId: GOOGLE_WEB_CLIENT_ID });
+      } catch (e) {
+        console.error('[App] GoogleSignIn.initialize failed:', e);
+      }
+    })();
   }, []);
 
   // Global appUrlOpen listener - registered here (not in Auth.jsx) so it

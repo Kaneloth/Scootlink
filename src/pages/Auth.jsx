@@ -658,11 +658,44 @@ export default function Auth() {
   // ── Google Sign-In ────────────────────────────────────────────────────────
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
+
+    // Native: use the Credential Manager (Android) / Google Sign-In SDK (iOS)
+    // via @capawesome/capacitor-google-sign-in instead of a browser redirect.
+    // No Custom Tab, no deep link, no PKCE code exchange — signIn() resolves
+    // directly with an ID token that we hand straight to Supabase.
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { GoogleSignIn } = await import('@capawesome/capacitor-google-sign-in');
+        const result = await GoogleSignIn.signIn();
+        if (!result?.idToken) {
+          throw new Error('No ID token returned from Google.');
+        }
+        const { error } = await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token: result.idToken,
+        });
+        if (error) throw error;
+        // Session is now set — the onAuthStateChange listener registered
+        // above (handleSession) will pick up SIGNED_IN and navigate to /home.
+      } catch (err) {
+        console.error('[Auth] Native Google sign-in failed:', err);
+        // Error code 'canceled' means the user just closed the account
+        // picker — not a real failure, don't show a scary toast for it.
+        if (err?.code !== 'canceled') {
+          toast.error(err?.message || 'Google sign-in failed. Please try again.');
+        }
+      } finally {
+        setGoogleLoading(false);
+      }
+      return;
+    }
+
+    // Web: unchanged browser-redirect OAuth flow.
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: Capacitor.isNativePlatform() ? 'co.za.skootlink.app://auth' : window.location.origin + '/auth',
+          redirectTo: window.location.origin + '/auth',
           skipBrowserRedirect: true,
           queryParams: {
             prompt: 'select_account',
@@ -672,25 +705,7 @@ export default function Auth() {
       });
       if (error) throw error;
       if (data?.url) {
-        // On Capacitor (native app), open in an in-app browser sheet.
-        // iOS uses SFSafariViewController, Android uses Chrome Custom Tabs —
-        // both have a built-in close/cancel button so the user is never stuck.
-        // Falls back to window.location.href in plain browser.
-        try {
-          const { Browser } = await import(/* @vite-ignore */ '@' + 'capacitor/browser');
-          await Browser.open({
-            url: data.url,
-            windowName: '_self',
-            presentationStyle: 'popover', // sheet on iOS
-          });
-          // Listen for the app returning from the browser (user cancelled or completed)
-          Browser.addListener('browserFinished', () => {
-            setGoogleLoading(false);
-          });
-        } catch {
-          // Not running in Capacitor — fall back to standard navigation
-          window.location.href = data.url;
-        }
+        window.location.href = data.url;
       }
     } catch (err) {
       toast.error(err.message || 'Google sign-in failed');
