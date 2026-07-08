@@ -15,6 +15,7 @@ import {
 import { sendSMS } from '@/lib/sms';
 import { toast } from 'sonner';
 import { useCredits } from '@/hooks/useCredits';
+import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
 
 const TEXT_SIZES = [
   { label: 'Normal',   value: '16px' },
@@ -31,65 +32,48 @@ const CREDIT_PACKAGES = [
   { id: 'business', credits: 1040, price: 199 },
 ];
 
-function bufferToBase64(buffer) {
-  return btoa(String.fromCharCode(...new Uint8Array(buffer)));
-}
-
-function base64ToBuffer(b64) {
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-}
-
-async function registerBiometric(user) {
-  if (!window.PublicKeyCredential) {
-    throw new Error('Biometric authentication is not supported on this device or browser.');
+async function registerBiometric() {
+  // Ask the OS what's actually available and enrolled — no per-user
+  // "credential" to create; enrollment lives at the device level.
+  const check = await BiometricAuth.checkBiometry();
+  if (!check.isAvailable) {
+    throw new Error(
+      check.code === 'biometryNotEnrolled'
+        ? 'No fingerprint or face enrolled on this device. Add one in your device settings first, then try again.'
+        : 'Biometric authentication is not available on this device.'
+    );
   }
-  const credential = await navigator.credentials.create({
-    publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: 'Skootlink', id: window.location.hostname },
-      user: {
-        id: new TextEncoder().encode(user?.id || 'skootlink-user'),
-        name: user?.email || 'user@skootlink.co.za',
-        displayName: user?.full_name || user?.email || 'Skootlink User',
-      },
-      pubKeyCredParams: [
-        { alg: -7,   type: 'public-key' },
-        { alg: -257, type: 'public-key' },
-      ],
-      authenticatorSelection: {
-        authenticatorAttachment: 'platform',
-        userVerification: 'required',
-      },
-      timeout: 60000,
-    },
+  // Confirm it actually works before turning the setting on, so we never
+  // flip signInMethod to 'biometric' without having proven it succeeds.
+  await BiometricAuth.authenticate({
+    reason: "Confirm it's you to enable biometric sign-in",
+    androidTitle: 'Skootlink',
+    androidSubtitle: 'Set up biometric sign-in',
   });
-  localStorage.setItem('scootlink_biometric_credential_id', bufferToBase64(credential.rawId));
 }
 
 async function verifyBiometric() {
-  const storedId = localStorage.getItem('scootlink_biometric_credential_id');
-  if (!storedId) {
-    const err = new Error('No biometric credential found on this device.');
+  const check = await BiometricAuth.checkBiometry();
+  if (!check.isAvailable) {
+    const err = new Error('Biometric authentication is not available on this device.');
     err.code = 'no-credential';
     throw err;
   }
   try {
-    const assertion = await navigator.credentials.get({
-      publicKey: {
-        challenge: crypto.getRandomValues(new Uint8Array(32)),
-        allowCredentials: [{ type: 'public-key', id: base64ToBuffer(storedId) }],
-        userVerification: 'required',
-        timeout: 60000,
-      },
+    await BiometricAuth.authenticate({
+      reason: "Confirm it's you",
+      androidTitle: 'Skootlink',
+      androidSubtitle: 'Verify your identity',
     });
-    if (!assertion) throw new Error('Biometric verification failed.');
   } catch (err) {
-    if (err.name === 'NotAllowedError' || err.name === 'InvalidStateError') {
-      const e = new Error('no-passkey-on-domain');
-      e.code = 'no-passkey-on-domain';
+    if (err?.code === 'userCancel' || err?.code === 'systemCancel' || err?.code === 'appCancel') {
+      const e = new Error('Verification was cancelled.');
+      e.code = 'cancelled';
       throw e;
     }
-    throw err;
+    const e = new Error('Fingerprint not recognised. Try again.');
+    e.code = 'fingerprint-failed';
+    throw e;
   }
 }
 
@@ -576,7 +560,7 @@ export default function Settings() {
         supabase.auth.updateUser({ data: { sign_in_method: 'biometric' } });
         toast.success('Fingerprint registered! You can now sign in with your fingerprint.');
       } catch (err) {
-        if (err.name === 'NotAllowedError') {
+        if (err?.code === 'userCancel') {
           toast.error('Fingerprint setup was cancelled.');
         } else {
           toast.error(err.message || 'Biometric setup failed.');
@@ -585,7 +569,6 @@ export default function Settings() {
         setBiometricLoading(false);
       }
     } else {
-      localStorage.removeItem('scootlink_biometric_credential_id');
       setSignInMethod('password');
       localStorage.setItem('scootlink_signin_method', 'password');
       supabase.auth.updateUser({ data: { sign_in_method: 'password' } });
@@ -625,10 +608,10 @@ export default function Settings() {
         toast.success('Password confirmed. You can now confirm deletion.');
       }
     } catch (err) {
-      if (err.code === 'no-passkey-on-domain') {
+      if (err.code === 'no-credential') {
         setBiometricFallback(true);
-        toast.error('Fingerprint not registered on this browser. Enter your password instead.');
-      } else if (err.name === 'NotAllowedError') {
+        toast.error('Biometric authentication is not available on this device. Enter your password instead.');
+      } else if (err.code === 'cancelled') {
         toast.error('Fingerprint scan was cancelled. Try again or use your password.');
       } else {
         toast.error(err.message || 'Verification failed. Try again.');
@@ -1143,7 +1126,7 @@ export default function Settings() {
                 <div className="mt-3 ml-8 flex items-start gap-1.5">
                   <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
                   <p className="text-[11px] text-muted-foreground">
-                    Using a new browser or device? Switch to Password and then back to Biometric to re-register your fingerprint here.
+                    Using a new device? Switch to Password and then back to Biometric to confirm your fingerprint again here.
                   </p>
                 </div>
               )}

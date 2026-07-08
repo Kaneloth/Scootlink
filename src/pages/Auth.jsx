@@ -11,15 +11,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Bike, LogIn, ArrowRight, ArrowLeft, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
+import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
-
-function base64ToBuffer(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
 
 function biometricError(code, message) {
   const err = new Error(message);
@@ -37,27 +31,27 @@ async function setTokenCookie(refresh_token) {
 }
 
 async function triggerBiometricLogin() {
-  if (!window.PublicKeyCredential) {
-    throw biometricError('unsupported', 'Your browser does not support biometric login.');
-  }
-
-  const credentialId = localStorage.getItem('scootlink_biometric_credential_id');
-  if (!credentialId) {
-    throw biometricError('no-credential', 'No fingerprint registered on this device.');
+  // Ask the OS directly rather than trusting a locally-stored flag — this
+  // self-corrects if the user removed their fingerprint in device settings
+  // since the last time they signed in.
+  const check = await BiometricAuth.checkBiometry();
+  if (!check.isAvailable) {
+    if (check.code === 'biometryNotEnrolled') {
+      throw biometricError('no-credential', 'No fingerprint or face enrolled on this device.');
+    }
+    throw biometricError('unsupported', 'Biometric authentication is not available on this device.');
   }
 
   try {
-    await navigator.credentials.get({
-      publicKey: {
-        challenge: crypto.getRandomValues(new Uint8Array(32)),
-        allowCredentials: [{ id: base64ToBuffer(credentialId), type: 'public-key' }],
-        userVerification: 'required',
-        timeout: 60000,
-      },
+    await BiometricAuth.authenticate({
+      reason: 'Sign in to Skootlink',
+      androidTitle: 'Skootlink',
+      androidSubtitle: 'Sign in with your fingerprint',
+      allowDeviceCredential: false,
     });
   } catch (err) {
-    if (err.name === 'NotAllowedError' || err.name === 'InvalidStateError') {
-      throw biometricError('no-credential', 'no-passkey-on-domain');
+    if (err?.code === 'userCancel' || err?.code === 'systemCancel' || err?.code === 'appCancel') {
+      throw biometricError('cancelled', 'Sign-in was cancelled.');
     }
     throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
   }
@@ -442,15 +436,16 @@ export default function Auth() {
         if (err.detail) toast.error(`Debug: ${err.detail}`, { duration: 15000 });
         setBannerReason('session-expired');
         setLoginStage('password');
-      } else if (err.code === 'no-credential') {
-        if (err.message === 'no-passkey-on-domain') {
-          localStorage.removeItem('scootlink_biometric_credential_id');
-          localStorage.setItem('scootlink_signin_method', 'password');
-          setBannerReason('no-passkey');
-        } else {
-          setBannerReason('session-expired');
-        }
+      } else if (err.code === 'no-credential' || err.code === 'unsupported') {
+        // Device has no biometry enrolled at all (or none available) —
+        // fall back to password and point them at device settings, not
+        // "re-register in-app" (that wouldn't fix a device-level issue).
+        localStorage.setItem('scootlink_signin_method', 'password');
+        setBannerReason('no-passkey');
         setLoginStage('password');
+      } else if (err.code === 'cancelled') {
+        // User dismissed the prompt — just let them tap and retry, no toast needed.
+        setLoginStage('idle');
       } else {
         toast.error(err.message || 'Biometric login failed.');
         setLoginStage('biometric-error');
@@ -820,7 +815,7 @@ export default function Auth() {
 
   const bannerContent = {
     'session-expired': 'Your biometric session expired. Sign in with your password once — biometric will work automatically from then on.',
-    'no-passkey': 'Your fingerprint isn\'t registered on this browser or device. Sign in with your password, then go to Settings → Security → Switch to Biometric to re-register.',
+    'no-passkey': 'No fingerprint is enrolled on this device, or it was removed. Sign in with your password, then add a fingerprint in your device settings if you\'d like to use biometric sign-in again.',
   };
 
   return (
