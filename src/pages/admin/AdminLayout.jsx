@@ -3,14 +3,15 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
 import {
   LayoutDashboard, Users, FileText, LogOut, ChevronLeft, Menu, Shield, X,
-  Loader2, Star,
+  Loader2, Star, Coins,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { label: 'Overview',              path: '/admin',                     icon: LayoutDashboard, end: true },
-  { label: 'Users',                 path: '/admin/users',               icon: Users },
-  { label: 'Rentals',                path: '/admin/rentals',             icon: FileText },
-  { label: 'Platform Verification', path: '/admin/platform-verification', icon: Star },
+  { label: 'Overview',              path: '/admin',                        icon: LayoutDashboard, end: true },
+  { label: 'Users',                 path: '/admin/users',                  icon: Users },
+  { label: 'Rentals',               path: '/admin/rentals',                icon: FileText },
+  { label: 'Platform Verification', path: '/admin/platform-verification',  icon: Star },
+  { label: 'Signup Credit Grants',  path: '/admin/credit-grants',          icon: Coins },
 ];
 
 export default function AdminLayout() {

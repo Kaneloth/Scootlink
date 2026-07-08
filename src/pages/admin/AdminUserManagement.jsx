@@ -26,6 +26,9 @@ export default function AdminUserManagement() {
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [banReason, setBanReason] = useState('');
   const [banReasonOther, setBanReasonOther] = useState('');
   const [suspendDays, setSuspendDays] = useState('7');
@@ -238,6 +241,46 @@ export default function AdminUserManagement() {
     setBusyId(null);
   };
 
+  const startEdit = (u) => {
+    setEditForm({
+      full_name: u.full_name || '',
+      phone: u.phone || '',
+      location: u.location || '',
+      residential_address: u.residential_address || '',
+      license_number: u.license_number || '',
+      license_year: u.license_year || '',
+      account_type: u.account_type || 'driver',
+    });
+    setEditMode(true);
+  };
+
+  const saveEdit = async () => {
+    if (!selected || !editForm) return;
+    setSaving(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        full_name:           editForm.full_name,
+        phone:               editForm.phone,
+        location:            editForm.location,
+        residential_address: editForm.residential_address,
+        license_number:      editForm.license_number || null,
+        license_year:        editForm.license_year ? parseInt(editForm.license_year) : null,
+        account_type:        editForm.account_type,
+      })
+      .eq('id', selected.id);
+    if (!error) {
+      const updated = { ...selected, ...editForm, license_year: editForm.license_year ? parseInt(editForm.license_year) : null };
+      setUsers(prev => prev.map(u => u.id === selected.id ? updated : u));
+      setSelected(updated);
+      setEditMode(false);
+      toast.success('Profile updated ✓');
+    } else {
+      toast.error('Failed to save: ' + error.message);
+    }
+    setSaving(false);
+  };
+
   const adjustCredits = async (u, amount) => {
     setBusyId(u.id);
     const { error } = await supabase.rpc('add_credits', {
@@ -315,7 +358,7 @@ export default function AdminUserManagement() {
                     <tr
                       key={u.id}
                       className={`border-t cursor-pointer hover:bg-muted/50 ${u.banned ? 'bg-red-50/60' : suspended ? 'bg-amber-50/60' : ''}`}
-                      onClick={() => setSelected(u)}
+                      onClick={() => { setSelected(u); setEditMode(false); }}
                     >
                       <td className="p-3 font-medium">
                         {u.full_name || '—'}
@@ -363,32 +406,111 @@ export default function AdminUserManagement() {
 
       {/* Detail / actions panel */}
       {selected && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50" onClick={() => setSelected(null)}>
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50" onClick={() => { setSelected(null); setEditMode(false); }}>
           <div className="bg-card rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto border border-border p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-bold text-lg">{selected.full_name || '—'}</h3>
                 <p className="text-xs text-muted-foreground">{selected.email} · {selected.customer_code}</p>
               </div>
-              <button onClick={() => setSelected(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
+              <button onClick={() => { setSelected(null); setEditMode(false); }}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
 
-            <div className="space-y-1 text-sm mb-4">
-              {[
-                ['Phone', selected.phone],
-                ['Location', selected.location],
-                ['Address', selected.residential_address],
-                ['Account Type', selected.account_type],
-                ['Credit Balance', selected.credit_balance],
-                ['Ban Reason', selected.ban_reason],
-                ['Suspension Reason', selected.suspension_reason],
-              ].filter(([, v]) => v).map(([label, value]) => (
-                <div key={label} className="flex justify-between border-b border-border/50 py-1.5">
-                  <span className="text-muted-foreground">{label}</span>
-                  <span className="font-medium text-right">{value}</span>
+            {editMode ? (
+              <div className="space-y-2 mb-4">
+                <div>
+                  <label className="text-xs text-muted-foreground">Full Name</label>
+                  <input
+                    className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                    value={editForm.full_name}
+                    onChange={e => setEditForm(f => ({ ...f, full_name: e.target.value }))}
+                  />
                 </div>
-              ))}
-            </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Phone</label>
+                  <input
+                    className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                    value={editForm.phone}
+                    onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Location</label>
+                  <input
+                    className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                    value={editForm.location}
+                    onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Address</label>
+                  <input
+                    className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                    value={editForm.residential_address}
+                    onChange={e => setEditForm(f => ({ ...f, residential_address: e.target.value }))}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-xs text-muted-foreground">Licence Number</label>
+                    <input
+                      className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                      value={editForm.license_number}
+                      onChange={e => setEditForm(f => ({ ...f, license_number: e.target.value }))}
+                    />
+                  </div>
+                  <div className="w-24">
+                    <label className="text-xs text-muted-foreground">Licence Year</label>
+                    <input
+                      type="number"
+                      className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                      value={editForm.license_year}
+                      onChange={e => setEditForm(f => ({ ...f, license_year: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Account Type</label>
+                  <select
+                    className="w-full border rounded-lg px-2 py-1.5 text-sm bg-background"
+                    value={editForm.account_type}
+                    onChange={e => setEditForm(f => ({ ...f, account_type: e.target.value }))}
+                  >
+                    <option value="driver">Driver</option>
+                    <option value="owner">Owner</option>
+                    <option value="both">Fleet Pro</option>
+                  </select>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setEditMode(false)} className="flex-1 text-xs px-3 py-1.5 rounded-lg border">Cancel</button>
+                  <button onClick={saveEdit} disabled={saving} className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-60">
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1 text-sm mb-2">
+                  {[
+                    ['Phone', selected.phone],
+                    ['Location', selected.location],
+                    ['Address', selected.residential_address],
+                    ['Account Type', selected.account_type],
+                    ['Credit Balance', selected.credit_balance],
+                    ['Ban Reason', selected.ban_reason],
+                    ['Suspension Reason', selected.suspension_reason],
+                  ].filter(([, v]) => v).map(([label, value]) => (
+                    <div key={label} className="flex justify-between border-b border-border/50 py-1.5">
+                      <span className="text-muted-foreground">{label}</span>
+                      <span className="font-medium text-right">{value}</span>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => startEdit(selected)} className="text-xs px-3 py-1.5 rounded-lg border mb-4">
+                  Edit Profile
+                </button>
+              </>
+            )}
 
             <div className="space-y-3 border-t border-border pt-4">
               <div className="flex flex-wrap gap-2">
