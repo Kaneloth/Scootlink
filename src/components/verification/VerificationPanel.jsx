@@ -10,6 +10,7 @@
  * Place at: src/components/verification/VerificationPanel.jsx
  */
 import React, { useState, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -84,6 +85,8 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
 
+    const isNative = Capacitor.isNativePlatform();
+
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate-verification', {
         method: 'POST',
@@ -91,7 +94,7 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ service_type: service }),
+        body: JSON.stringify({ service_type: service, is_native: isNative }),
       });
 
       // Guard against HTML error pages (function not found, crashed, etc.)
@@ -104,6 +107,15 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
+
+      if (isNative) {
+        // See Credits.jsx handlePurchase for why this uses a Custom Tab
+        // and a GET query string instead of the form POST below.
+        const qs = new URLSearchParams(data.fields).toString();
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.open({ url: `${data.action_url}?${qs}`, presentationStyle: 'popover' });
+        return;
+      }
 
       // Build PayFast form and POST
       const form = document.createElement('form');

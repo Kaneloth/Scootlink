@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { Coins, ArrowUpRight, ArrowDownLeft, Loader2, ChevronUp, ChevronDown } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -49,12 +50,85 @@ export default function Credits() {
     });
   }, []);
 
+  // Native: PayFast returns via co.za.skootlink.app://payment-result, which
+  // App.jsx's appUrlOpen listener stashes here rather than as a URL query
+  // param (a real https:// return_url would load skootlink.co.za as a
+  // separate, session-less origin instead of coming back into the app).
+  useEffect(() => {
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (!raw) return;
+    sessionStorage.removeItem('skootlink_payment_result');
+    let result;
+    try { result = JSON.parse(raw); } catch { return; }
+    if (result.category !== 'credits') return; // not ours — e.g. a verification payment
+
+    if (result.status === 'success') {
+      toast.success('Payment received! Your credits have been added.');
+      refetch();
+      // credit_ledger insert happens via the webhook, which can land a beat
+      // after the redirect — refresh the visible history shortly after too.
+      setTimeout(() => {
+        supabase.auth.getUser().then(async ({ data: { user } }) => {
+          if (!user) return;
+          const { data } = await supabase
+            .from('credit_ledger')
+            .select('id, amount, type, description, created_at')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(50);
+          setLedger(data || []);
+        });
+      }, 2000);
+    } else if (result.status === 'cancelled') {
+      toast.info('Payment cancelled.');
+    }
+  }, []);
+
+  // Web only: PayFast's own https:// return_url lands here with a query
+  // param instead — native never takes this path (see above).
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('payment');
+    if (status === 'success') {
+      toast.success('Payment received! Your credits have been added.');
+      refetch();
+    } else if (status === 'cancelled') {
+      toast.info('Payment cancelled.');
+    }
+    if (status) {
+      params.delete('payment');
+      const newUrl = window.location.pathname + (params.toString() ? `?${params}` : '');
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
+
+  // Reset the "Processing…" button state whenever the native Custom Tab
+  // closes — for any reason, success or cancelled — since unlike the old
+  // main-WebView form.submit() flow, this component stays mounted the
+  // whole time and won't naturally reset on its own otherwise.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let listener;
+    (async () => {
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        listener = await Browser.addListener('browserFinished', () => {
+          setPurchasing(null);
+        });
+      } catch { /* not in Capacitor environment */ }
+    })();
+    return () => { if (listener) listener.remove().catch(() => {}); };
+  }, []);
+
   const handlePurchase = async () => {
     const pkg = PACKAGES.find(p => p.id === selectedPkg);
     if (!pkg) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
     setPurchasing(pkg.id);
+
+    const isNative = Capacitor.isNativePlatform();
 
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate', {
@@ -63,10 +137,24 @@ export default function Credits() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ package_id: pkg.id }),
+        body: JSON.stringify({ package_id: pkg.id, is_native: isNative }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
+
+      if (isNative) {
+        // Open in a Custom Tab, not the app's own WebView — PayFast's
+        // process endpoint accepts the same fields as a GET query string,
+        // so no form POST is needed here. Keeping this outside the app's
+        // own WebView means the eventual return_url (a custom URL scheme)
+        // gets handed to the OS the same proven way Google sign-in's
+        // redirect does, rather than trying to navigate the main WebView
+        // away to an external origin and back.
+        const qs = new URLSearchParams(data.fields).toString();
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.open({ url: `${data.action_url}?${qs}`, presentationStyle: 'popover' });
+        return;
+      }
 
       const form = document.createElement('form');
       form.method = 'POST';

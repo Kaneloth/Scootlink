@@ -29,6 +29,12 @@ import Onboarding from '@/pages/Onboarding';
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 
+// Web client ID from Google Cloud Console (Supabase Dashboard → Authentication
+// → Providers → Google → Client ID). Must be the Web client ID on every
+// platform, including Android — see
+// https://capawesome.io/docs/sdks/capacitor/google-sign-in/#initializeoptions
+const GOOGLE_WEB_CLIENT_ID = '777597551403-o1c521882a048uhk9luvgdpu8qluj0qm.apps.googleusercontent.com';
+
 // __INCLUDE_ADMIN__ is replaced with a literal `true`/`false` at build time
 // (see vite.config.js). For `npm run build:native`, it's `false`, and the
 // ternary below lets esbuild/Rollup prove the import() calls are dead code
@@ -54,7 +60,11 @@ const AuthenticatedApp = () => {
 
   React.useEffect(() => {
     const path = window.location.pathname;
-    const publicPaths = ['/', '/auth'];
+    // '/' is only "public" on the web (marketing landing page). A native
+    // app cold-starts at '/' too, but there's no landing page concept there —
+    // a logged-out native user should always land on /auth, not the website.
+    const isNative = Capacitor.isNativePlatform();
+    const publicPaths = isNative ? ['/auth'] : ['/', '/auth'];
 
     // Safety net — never stay stuck beyond 5 seconds
     const timer = setTimeout(() => setSupabaseChecked(true), 5000);
@@ -190,6 +200,23 @@ function App() {
     StatusBar.setBackgroundColor({ color: isDark ? '#0f172a' : '#ffffff' }).catch(() => {});
   }, []);
 
+  // Initialize native Google Sign-In (Credential Manager on Android). Must
+  // run once before GoogleSignIn.signIn() is ever called from Auth.jsx —
+  // this replaces the old Browser/deep-link OAuth flow entirely on native,
+  // so there's no Custom Tab, no appUrlOpen round-trip, and no PKCE code
+  // exchange to go wrong for Google sign-in specifically.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    (async () => {
+      try {
+        const { GoogleSignIn } = await import('@capawesome/capacitor-google-sign-in');
+        await GoogleSignIn.initialize({ clientId: GOOGLE_WEB_CLIENT_ID });
+      } catch (e) {
+        console.error('[App] GoogleSignIn.initialize failed:', e);
+      }
+    })();
+  }, []);
+
   // Global appUrlOpen listener - registered here (not in Auth.jsx) so it
   // stays active regardless of which page is currently mounted during the
   // OAuth flow. Handles the custom-scheme redirect (co.za.skootlink.app://auth)
@@ -203,23 +230,71 @@ function App() {
         const capacitorAppPkg = '@' + 'capacitor/app';
         const { App: CapApp } = await import(/* @vite-ignore */ capacitorAppPkg);
         listener = await CapApp.addListener('appUrlOpen', async ({ url }) => {
+          let authError = null;
           try {
             const parsed = new URL(url);
+
+            // ── PayFast payment return (credits or verification) ──────────
+            // Separate from the OAuth branch below — PayFast redirects here
+            // via co.za.skootlink.app://payment-result, never with a `code`
+            // param, so it's safe to fully branch off before touching any
+            // Supabase auth calls.
+            if (parsed.hostname === 'payment-result') {
+              const status = parsed.searchParams.get('status');
+              const category = parsed.searchParams.get('category');
+              const pkg = parsed.searchParams.get('package');
+              const service = parsed.searchParams.get('service');
+              sessionStorage.setItem('skootlink_payment_result', JSON.stringify({ status, category, package: pkg, service }));
+              try {
+                const capacitorBrowserPkg = '@' + 'capacitor/browser';
+                const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
+                await Browser.close().catch(() => {});
+              } catch (e) { /* not in Capacitor environment */ }
+              return;
+            }
+
             const code = parsed.searchParams.get('code');
             if (code) {
-              await supabase.auth.exchangeCodeForSession(code);
+              // exchangeCodeForSession does NOT throw on failure — it resolves
+              // with { data, error }. Discarding that return value was the
+              // actual cause of the silent bounce-back: a failed exchange
+              // (expired/invalid code, PKCE verifier mismatch, etc.) would
+              // fall straight through to Browser.close() below with zero
+              // indication anything went wrong.
+              const { error } = await supabase.auth.exchangeCodeForSession(code);
+              authError = error;
             } else {
               const params = new URLSearchParams(parsed.hash.replace('#', ''));
               const accessToken = params.get('access_token');
               const refreshToken = params.get('refresh_token');
+              const errorDescription = parsed.searchParams.get('error_description') || params.get('error_description');
               if (accessToken && refreshToken) {
-                await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+                const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+                authError = error;
+              } else if (errorDescription) {
+                // Google/Supabase sent back an error instead of tokens
+                // (e.g. access_denied, server_error) — surface it directly.
+                authError = { message: errorDescription };
               }
             }
-            const capacitorBrowserPkg = '@' + 'capacitor/browser';
-            const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
-            await Browser.close().catch(() => {});
-          } catch (e) { /* ignore */ }
+            if (authError) {
+              console.error('[App] OAuth callback failed:', authError);
+              // Auth.jsx can't see this — it happened before that component's
+              // own listener ever got a session to react to. Stash it so
+              // Auth.jsx can show a real error instead of just reverting
+              // silently to the login screen.
+              sessionStorage.setItem('skootlink_oauth_error', authError.message || 'Sign-in failed. Please try again.');
+            }
+          } catch (e) {
+            console.error('[App] appUrlOpen handler threw:', e);
+            sessionStorage.setItem('skootlink_oauth_error', e?.message || 'Sign-in failed. Please try again.');
+          } finally {
+            try {
+              const capacitorBrowserPkg = '@' + 'capacitor/browser';
+              const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
+              await Browser.close().catch(() => {});
+            } catch (e) { /* not in Capacitor environment */ }
+          }
         });
       } catch (e) { /* not in Capacitor environment */ }
     })();

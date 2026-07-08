@@ -180,6 +180,24 @@ export default function Profile() {
     }
   }, []);
 
+  // Native: PayFast returns via co.za.skootlink.app://payment-result, which
+  // App.jsx's appUrlOpen listener stashes here instead of as a URL query
+  // param — see the equivalent effect in Credits.jsx for why.
+  useEffect(() => {
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (!raw) return;
+    sessionStorage.removeItem('skootlink_payment_result');
+    let result;
+    try { result = JSON.parse(raw); } catch { return; }
+    if (result.category !== 'verification') return; // not ours — e.g. a credits purchase
+
+    if (result.status === 'success') {
+      toast.success('Payment received! You can now proceed with verification.');
+    } else if (result.status === 'cancelled') {
+      toast.info('Payment cancelled — verification was not started.');
+    }
+  }, []);
+
   const fetchMyReviews = async (userId) => {
     setReviewsLoading(true);
     try {

@@ -63,11 +63,21 @@ export const handler = async (event) => {
   const m_payment_id = `skoot_verif_${body.service_type}_${user.id.slice(0, 8)}_${Date.now()}`;
   const firstName = (user.user_metadata?.full_name || 'Skootlink').split(' ')[0];
 
+  // See payfast-initiate.js for why native uses the custom URL scheme
+  // instead of an https:// return_url.
+  const isNative = body.is_native === true;
+  const return_url = isNative
+    ? `co.za.skootlink.app://payment-result?status=success&category=verification&service=${body.service_type}`
+    : `${SITE_URL}/profile?verif_payment=success&service=${body.service_type}`;
+  const cancel_url = isNative
+    ? `co.za.skootlink.app://payment-result?status=cancelled&category=verification`
+    : `${SITE_URL}/profile?verif_payment=cancelled`;
+
   const fields = {
     merchant_id:      MERCHANT_ID,
     merchant_key:     MERCHANT_KEY,
-    return_url:       `${SITE_URL}/profile?verif_payment=success&service=${body.service_type}`,
-    cancel_url:       `${SITE_URL}/profile?verif_payment=cancelled`,
+    return_url,
+    cancel_url,
     notify_url:       `https://hkdk.events/ej5pgh02nhm47r`,
     name_first:       firstName,
     email_address:    user.email,

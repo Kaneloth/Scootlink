@@ -60,11 +60,24 @@ export const handler = async (event) => {
   const m_payment_id = `skoot_${user.id.slice(0, 8)}_${Date.now()}`;
   const firstName = (user.user_metadata?.full_name || 'Skootlink').split(' ')[0];
 
+  // Native app: return via the custom URL scheme, which the OS hands back
+  // to the app's own appUrlOpen listener — a real https:// return_url would
+  // instead load skootlink.co.za as a totally separate, session-less origin
+  // inside whatever browser context PayFast redirects through (the same
+  // class of bug the Google sign-in flow had before its native rewrite).
+  const isNative = body.is_native === true;
+  const return_url = isNative
+    ? `co.za.skootlink.app://payment-result?status=success&category=credits&package=${body.package_id}`
+    : `${SITE_URL}/credits?payment=success`;
+  const cancel_url = isNative
+    ? `co.za.skootlink.app://payment-result?status=cancelled&category=credits`
+    : `${SITE_URL}/credits?payment=cancelled`;
+
   const fields = {
     merchant_id:      MERCHANT_ID,
     merchant_key:     MERCHANT_KEY,
-    return_url:       `${SITE_URL}/credits?payment=success`,
-    cancel_url:       `${SITE_URL}/credits?payment=cancelled`,
+    return_url,
+    cancel_url,
     notify_url:       `https://hkdk.events/ej5pgh02nhm47r`,
     name_first:       firstName,
     email_address:    user.email,
