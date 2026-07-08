@@ -1327,6 +1327,20 @@ export default function Settings() {
 
         {isAdmin && (
           <TabsContent value="admin">
+            {/* __INCLUDE_ADMIN__ is a compile-time flag (see vite.config.js) —
+                false on native builds, so this never renders in the app;
+                the full dashboard only exists on the web. */}
+            {__INCLUDE_ADMIN__ && (
+              <div className="mb-4 p-4 rounded-xl border border-primary/20 bg-primary/5 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Full Admin Dashboard</p>
+                  <p className="text-xs text-muted-foreground">Overview, users, and rentals in one place — open in your browser.</p>
+                </div>
+                <Button size="sm" onClick={() => navigate('/admin')}>
+                  Open Dashboard
+                </Button>
+              </div>
+            )}
             <PlatformVerificationQueue />
             <div className="space-y-4">
               <div className="flex items-center justify-between">

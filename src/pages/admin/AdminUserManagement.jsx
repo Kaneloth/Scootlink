@@ -7,6 +7,16 @@ import { toast } from 'sonner';
 
 const PAGE_SIZE = 25;
 
+const MODERATION_REASONS = [
+  'Fraudulent activity',
+  'Fake or duplicate account',
+  'Harassment or abusive behaviour',
+  'Violation of Terms of Service',
+  'Payment or chargeback dispute',
+  'Safety concern reported by another user',
+  'Other',
+];
+
 export default function AdminUserManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,8 +26,10 @@ export default function AdminUserManagement() {
   const [busyId, setBusyId] = useState(null);
   const [selected, setSelected] = useState(null);
   const [banReason, setBanReason] = useState('');
+  const [banReasonOther, setBanReasonOther] = useState('');
   const [suspendDays, setSuspendDays] = useState('7');
   const [suspendReason, setSuspendReason] = useState('');
+  const [suspendReasonOther, setSuspendReasonOther] = useState('');
   const [creditAmount, setCreditAmount] = useState('50');
 
   const fetchUsers = async () => {
@@ -75,13 +87,52 @@ export default function AdminUserManagement() {
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // ── Actions — identical logic to Settings.jsx's admin tab ────────────────
-  const toggleVerified = async (u) => {
-    setBusyId(u.id);
-    const { error } = await supabase.from('profiles').update({ verified: !u.verified }).eq('id', u.id);
+  const toggleIdVerified = async (u) => {
+    setBusyId(u.id + '_id');
+    const enabling = !u.id_verified;
+    const now = new Date().toISOString();
+    const badge = enabling
+      ? (u.licence_verified ? 'fully_verified' : 'id_verified')
+      : (u.licence_verified ? 'dl_verified' : null);
+    const { error } = await supabase.from('profiles')
+      .update({ id_verified: enabling, id_verified_at: enabling ? now : null, verification_badge: badge })
+      .eq('id', u.id);
     if (!error) {
-      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, verified: !u.verified } : x));
-      toast.success(u.verified ? 'User unverified' : 'User verified ✓');
-    } else toast.error('Failed to update verification');
+      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, id_verified: enabling, verification_badge: badge } : x));
+      if (selected?.id === u.id) setSelected(p => ({ ...p, id_verified: enabling, verification_badge: badge }));
+      toast.success(enabling ? 'ID verified ✓' : 'ID verification removed');
+    } else {
+      toast.error('Failed to update ID verification: ' + error.message);
+    }
+    setBusyId(null);
+  };
+
+  const toggleLicenceVerified = async (u) => {
+    setBusyId(u.id + '_lic');
+    const enabling = !u.licence_verified;
+    const now = new Date().toISOString();
+    const badge = enabling
+      ? (u.id_verified ? 'fully_verified' : 'dl_verified')
+      : (u.id_verified ? 'id_verified' : null);
+
+    const safeUpdate = enabling ? { license_verified: true, license_pending: false } : { license_verified: false };
+    const { error: safeErr } = await supabase.from('profiles').update(safeUpdate).eq('id', u.id);
+    if (safeErr) {
+      toast.error('Failed to update licence: ' + safeErr.message);
+      setBusyId(null);
+      return;
+    }
+    await supabase.from('profiles')
+      .update({ licence_verified: enabling, licence_verified_at: enabling ? now : null, verification_badge: badge })
+      .eq('id', u.id);
+
+    setUsers(prev => prev.map(x => x.id === u.id
+      ? { ...x, licence_verified: enabling, license_pending: enabling ? false : x.license_pending, verification_badge: badge }
+      : x));
+    if (selected?.id === u.id) {
+      setSelected(p => ({ ...p, licence_verified: enabling, verification_badge: badge }));
+    }
+    toast.success(enabling ? 'Licence verified ✓' : 'Licence verification removed');
     setBusyId(null);
   };
 
@@ -192,6 +243,7 @@ export default function AdminUserManagement() {
     });
     if (!error) {
       setUsers(prev => prev.map(x => x.id === u.id ? { ...x, credit_balance: (x.credit_balance || 0) + amount } : x));
+      if (selected?.id === u.id) setSelected(p => ({ ...p, credit_balance: (p.credit_balance || 0) + amount }));
       toast.success(`${amount > 0 ? 'Added' : 'Subtracted'} ${Math.abs(amount)} credits`);
     } else {
       toast.error('Credit adjustment failed: ' + error.message);
@@ -335,11 +387,18 @@ export default function AdminUserManagement() {
             <div className="space-y-3 border-t border-border pt-4">
               <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={() => toggleVerified(selected)}
-                  disabled={busyId === selected.id}
-                  className="text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1"
+                  onClick={() => toggleIdVerified(selected)}
+                  disabled={busyId === selected.id + '_id'}
+                  className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1 ${selected.id_verified ? 'border-green-300 text-green-700 bg-green-50' : ''}`}
                 >
-                  <ShieldCheck className="w-3.5 h-3.5" /> {selected.verified ? 'Un-verify' : 'Verify'}
+                  <ShieldCheck className="w-3.5 h-3.5" /> {selected.id_verified ? 'Un-verify ID' : 'Verify ID'}
+                </button>
+                <button
+                  onClick={() => toggleLicenceVerified(selected)}
+                  disabled={busyId === selected.id + '_lic'}
+                  className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1 ${selected.licence_verified ? 'border-green-300 text-green-700 bg-green-50' : ''}`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" /> {selected.licence_verified ? 'Un-verify Licence' : 'Verify Licence'}
                 </button>
                 <button
                   onClick={() => toggleAdminRole(selected)}
@@ -386,24 +445,41 @@ export default function AdminUserManagement() {
 
               {/* Suspend */}
               {!(selected.suspended_until && new Date(selected.suspended_until) > new Date()) && !selected.banned && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={suspendDays}
-                    onChange={e => setSuspendDays(e.target.value)}
-                    className="w-16 border rounded-lg px-2 py-1.5 text-sm"
-                  />
-                  <span className="text-xs text-muted-foreground">days</span>
-                  <input
-                    placeholder="Reason"
+                <div className="space-y-1.5 border border-amber-200 rounded-lg p-2 bg-amber-50/50">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={suspendDays}
+                      onChange={e => setSuspendDays(e.target.value)}
+                      className="w-16 border rounded-lg px-2 py-1.5 text-sm"
+                    />
+                    <span className="text-xs text-muted-foreground">days</span>
+                  </div>
+                  <select
                     value={suspendReason}
                     onChange={e => setSuspendReason(e.target.value)}
-                    className="flex-1 border rounded-lg px-2 py-1.5 text-sm"
-                  />
+                    className="w-full border rounded-lg px-2 py-1.5 text-sm bg-background"
+                  >
+                    <option value="" disabled>Select a reason</option>
+                    {MODERATION_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  {suspendReason === 'Other' && (
+                    <input
+                      placeholder="Type the reason…"
+                      value={suspendReasonOther}
+                      onChange={e => setSuspendReasonOther(e.target.value)}
+                      className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  )}
                   <button
-                    onClick={() => suspendUser(selected, parseInt(suspendDays) || 1, suspendReason || null)}
+                    onClick={() => {
+                      const finalReason = suspendReason === 'Other' ? suspendReasonOther.trim() : suspendReason;
+                      if (!finalReason) { toast.error('Please select or enter a reason'); return; }
+                      suspendUser(selected, parseInt(suspendDays) || 1, finalReason);
+                      setSuspendReason(''); setSuspendReasonOther('');
+                    }}
                     disabled={busyId === selected.id}
-                    className="text-xs px-3 py-1.5 rounded-lg border text-amber-600 border-amber-300"
+                    className="w-full text-xs px-3 py-1.5 rounded-lg border text-amber-600 border-amber-300"
                   >
                     Suspend
                   </button>
@@ -411,23 +487,44 @@ export default function AdminUserManagement() {
               )}
 
               {/* Ban */}
-              <div className="flex items-center gap-2 pt-2 border-t border-border">
+              <div className="space-y-1.5 pt-2 border-t border-border">
                 {!selected.banned && (
-                  <input
-                    placeholder="Ban reason"
-                    value={banReason}
-                    onChange={e => setBanReason(e.target.value)}
-                    className="flex-1 border rounded-lg px-2 py-1.5 text-sm"
-                  />
+                  <>
+                    <select
+                      value={banReason}
+                      onChange={e => setBanReason(e.target.value)}
+                      className="w-full border rounded-lg px-2 py-1.5 text-sm bg-background"
+                    >
+                      <option value="" disabled>Select a reason</option>
+                      {MODERATION_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    {banReason === 'Other' && (
+                      <input
+                        placeholder="Type the reason…"
+                        value={banReasonOther}
+                        onChange={e => setBanReasonOther(e.target.value)}
+                        className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                      />
+                    )}
+                  </>
                 )}
                 <button
-                  onClick={() => banUser(selected, selected.banned ? null : (banReason || null))}
+                  onClick={() => {
+                    if (selected.banned) {
+                      banUser(selected, null);
+                      return;
+                    }
+                    const finalReason = banReason === 'Other' ? banReasonOther.trim() : banReason;
+                    if (!finalReason) { toast.error('Please select or enter a reason'); return; }
+                    banUser(selected, finalReason);
+                    setBanReason(''); setBanReasonOther('');
+                  }}
                   disabled={busyId === selected.id}
-                  className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 ${
+                  className={`w-full text-xs px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 ${
                     selected.banned ? 'bg-red-600 text-white' : 'border text-red-600 border-red-300'
                   }`}
                 >
-                  <Ban className="w-3.5 h-3.5" /> {selected.banned ? 'Unban' : 'Ban'}
+                  <Ban className="w-3.5 h-3.5" /> {selected.banned ? 'Unban' : 'Confirm Ban'}
                 </button>
               </div>
             </div>
