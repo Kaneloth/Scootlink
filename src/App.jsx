@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, Suspense } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster, toast } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -29,22 +29,30 @@ import Onboarding from '@/pages/Onboarding';
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 
-// TODO: replace with your actual Web client ID from Google Cloud Console
-// (Supabase Dashboard → Authentication → Providers → Google → Client ID).
-// This MUST be the Web client ID on every platform, including Android —
-// see https://capawesome.io/docs/sdks/capacitor/google-sign-in/#initializeoptions
-const GOOGLE_WEB_CLIENT_ID = '777597551403-o1c521882a048uhk9luvgdpu8qluj0qm.apps.googleusercontent.com';
+// __INCLUDE_ADMIN__ is replaced with a literal `true`/`false` at build time
+// (see vite.config.js). For `npm run build:native`, it's `false`, and the
+// ternary below lets esbuild/Rollup prove the import() calls are dead code
+// and drop them entirely — the admin dashboard never ends up in the APK.
+// The regular web build (`npm run build`) keeps them as normal lazy chunks.
+const AdminLayout = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminLayout')) : null;
+const AdminOverview = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminOverview')) : null;
+const AdminUserManagement = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminUserManagement')) : null;
+const AdminRentalsOversight = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminRentalsOversight')) : null;
+
+function AdminLoadingScreen() {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-background">
+      <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+    </div>
+  );
+}
 
 const AuthenticatedApp = () => {
   const [supabaseChecked, setSupabaseChecked] = React.useState(false);
 
   React.useEffect(() => {
     const path = window.location.pathname;
-    // '/' is only "public" on the web (marketing landing page). A native
-    // app cold-starts at '/' too, but there's no landing page concept there —
-    // a logged-out native user should always land on /auth, not the website.
-    const isNative = Capacitor.isNativePlatform();
-    const publicPaths = isNative ? ['/auth'] : ['/', '/auth'];
+    const publicPaths = ['/', '/auth'];
 
     // Safety net — never stay stuck beyond 5 seconds
     const timer = setTimeout(() => setSupabaseChecked(true), 5000);
@@ -111,6 +119,25 @@ const AuthenticatedApp = () => {
         <Route path="/contact" element={<ContactUs />} />
       </Route>
 
+      {/* Admin dashboard — reachable as a normal web URL (skootlink.co.za/admin),
+          entirely absent from native builds (see vite.config.js / package.json
+          build:native). __INCLUDE_ADMIN__ is a compile-time literal, so this
+          whole block is dead code and gets stripped for the native build. */}
+      {__INCLUDE_ADMIN__ && (
+        <Route
+          path="/admin"
+          element={
+            <Suspense fallback={<AdminLoadingScreen />}>
+              <AdminLayout />
+            </Suspense>
+          }
+        >
+          <Route index element={<AdminOverview />} />
+          <Route path="users" element={<AdminUserManagement />} />
+          <Route path="rentals" element={<AdminRentalsOversight />} />
+        </Route>
+      )}
+
       {/* Redirect legacy /dashboard to /home */}
       <Route path="/dashboard" element={<Navigate to="/home" replace />} />
 
@@ -159,23 +186,6 @@ function App() {
     StatusBar.setBackgroundColor({ color: isDark ? '#0f172a' : '#ffffff' }).catch(() => {});
   }, []);
 
-  // Initialize native Google Sign-In (Credential Manager on Android). Must
-  // run once before GoogleSignIn.signIn() is ever called from Auth.jsx —
-  // this replaces the old Browser/deep-link OAuth flow entirely on native,
-  // so there's no Custom Tab, no appUrlOpen round-trip, and no PKCE code
-  // exchange to go wrong for Google sign-in specifically.
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    (async () => {
-      try {
-        const { GoogleSignIn } = await import('@capawesome/capacitor-google-sign-in');
-        await GoogleSignIn.initialize({ clientId: GOOGLE_WEB_CLIENT_ID });
-      } catch (e) {
-        console.error('[App] GoogleSignIn.initialize failed:', e);
-      }
-    })();
-  }, []);
-
   // Global appUrlOpen listener - registered here (not in Auth.jsx) so it
   // stays active regardless of which page is currently mounted during the
   // OAuth flow. Handles the custom-scheme redirect (co.za.skootlink.app://auth)
@@ -189,51 +199,23 @@ function App() {
         const capacitorAppPkg = '@' + 'capacitor/app';
         const { App: CapApp } = await import(/* @vite-ignore */ capacitorAppPkg);
         listener = await CapApp.addListener('appUrlOpen', async ({ url }) => {
-          let authError = null;
           try {
             const parsed = new URL(url);
             const code = parsed.searchParams.get('code');
             if (code) {
-              // exchangeCodeForSession does NOT throw on failure — it resolves
-              // with { data, error }. Discarding that return value was the
-              // actual cause of the silent bounce-back: a failed exchange
-              // (expired/invalid code, PKCE verifier mismatch, etc.) would
-              // fall straight through to Browser.close() below with zero
-              // indication anything went wrong.
-              const { error } = await supabase.auth.exchangeCodeForSession(code);
-              authError = error;
+              await supabase.auth.exchangeCodeForSession(code);
             } else {
               const params = new URLSearchParams(parsed.hash.replace('#', ''));
               const accessToken = params.get('access_token');
               const refreshToken = params.get('refresh_token');
-              const errorDescription = parsed.searchParams.get('error_description') || params.get('error_description');
               if (accessToken && refreshToken) {
-                const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-                authError = error;
-              } else if (errorDescription) {
-                // Google/Supabase sent back an error instead of tokens
-                // (e.g. access_denied, server_error) — surface it directly.
-                authError = { message: errorDescription };
+                await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
               }
             }
-            if (authError) {
-              console.error('[App] OAuth callback failed:', authError);
-              // Auth.jsx can't see this — it happened before that component's
-              // own listener ever got a session to react to. Stash it so
-              // Auth.jsx can show a real error instead of just reverting
-              // silently to the login screen.
-              sessionStorage.setItem('skootlink_oauth_error', authError.message || 'Sign-in failed. Please try again.');
-            }
-          } catch (e) {
-            console.error('[App] appUrlOpen handler threw:', e);
-            sessionStorage.setItem('skootlink_oauth_error', e?.message || 'Sign-in failed. Please try again.');
-          } finally {
-            try {
-              const capacitorBrowserPkg = '@' + 'capacitor/browser';
-              const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
-              await Browser.close().catch(() => {});
-            } catch (e) { /* not in Capacitor environment */ }
-          }
+            const capacitorBrowserPkg = '@' + 'capacitor/browser';
+            const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
+            await Browser.close().catch(() => {});
+          } catch (e) { /* ignore */ }
         });
       } catch (e) { /* not in Capacitor environment */ }
     })();
