@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Bike, LogIn, ArrowRight, ArrowLeft, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
-import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
+import { BiometricAuth, AndroidBiometryStrength } from '@aparajita/capacitor-biometric-auth';
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
 
@@ -35,11 +35,11 @@ async function triggerBiometricLogin() {
   // self-corrects if the user removed their fingerprint in device settings
   // since the last time they signed in.
   const check = await BiometricAuth.checkBiometry();
-  if (!check.isAvailable) {
-    if (check.code === 'biometryNotEnrolled') {
-      throw biometricError('no-credential', 'No fingerprint or face enrolled on this device.');
+  if (!check.strongBiometryIsAvailable) {
+    if (check.strongCode === 'biometryNotEnrolled') {
+      throw biometricError('no-credential', 'No fingerprint enrolled on this device.');
     }
-    throw biometricError('unsupported', 'Biometric authentication is not available on this device.');
+    throw biometricError('unsupported', 'Fingerprint authentication is not available on this device.');
   }
 
   try {
@@ -47,6 +47,7 @@ async function triggerBiometricLogin() {
       reason: 'Sign in to Skootlink',
       androidTitle: 'Skootlink',
       androidSubtitle: 'Sign in with your fingerprint',
+      androidBiometryStrength: AndroidBiometryStrength.strong,
       allowDeviceCredential: false,
     });
   } catch (err) {
@@ -1033,7 +1034,7 @@ export default function Auth() {
                       <p className="text-sm font-semibold text-foreground">
                         {loginStage === 'biometric-loading' ? 'Verifying…' : loginStage === 'biometric-error' ? 'Not recognised — tap to try again' : 'Tap to sign in with Biometric'}
                       </p>
-                      <p className="text-xs text-muted-foreground">Use your fingerprint or Face ID</p>
+                      <p className="text-xs text-muted-foreground">Use your fingerprint</p>
                     </div>
                     <button
                       type="button"
