@@ -38,6 +38,7 @@ const AdminLayout = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/A
 const AdminOverview = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminOverview')) : null;
 const AdminUserManagement = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminUserManagement')) : null;
 const AdminRentalsOversight = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminRentalsOversight')) : null;
+const AdminPlatformVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminPlatformVerification')) : null;
 
 function AdminLoadingScreen() {
   return (
@@ -135,6 +136,7 @@ const AuthenticatedApp = () => {
           <Route index element={<AdminOverview />} />
           <Route path="users" element={<AdminUserManagement />} />
           <Route path="rentals" element={<AdminRentalsOversight />} />
+          <Route path="platform-verification" element={<AdminPlatformVerification />} />
         </Route>
       )}
 
