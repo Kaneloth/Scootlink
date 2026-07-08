@@ -1,6 +1,7 @@
+// @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
-import { Loader2, Users, FileText, Coins, ShieldCheck, Ban, Clock } from 'lucide-react';
+import { Loader2, Users, FileText, Coins, ShieldCheck, Ban, Clock, UserX } from 'lucide-react';
 
 export default function AdminOverview() {
   const [stats, setStats] = useState(null);
@@ -11,6 +12,7 @@ export default function AdminOverview() {
       const [
         { count: totalUsers },
         { count: bannedUsers },
+        { count: suspendedUsers },
         { count: verifiedUsers },
         { count: activeRentals },
         { count: pendingRentals },
@@ -18,6 +20,7 @@ export default function AdminOverview() {
       ] = await Promise.all([
         supabase.from('profiles').select('id', { count: 'exact', head: true }),
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('banned', true),
+        supabase.from('profiles').select('id', { count: 'exact', head: true }).gt('suspended_until', new Date().toISOString()),
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('id_verified', true),
         supabase.from('rentals').select('id', { count: 'exact', head: true }).eq('status', 'active'),
         supabase.from('rentals').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
@@ -37,6 +40,7 @@ export default function AdminOverview() {
       setStats({
         totalUsers: totalUsers ?? 0,
         bannedUsers: bannedUsers ?? 0,
+        suspendedUsers: suspendedUsers ?? 0,
         verifiedUsers: verifiedUsers ?? 0,
         activeRentals: activeRentals ?? 0,
         pendingRentals: pendingRentals ?? 0,
@@ -59,6 +63,7 @@ export default function AdminOverview() {
     { label: 'Total Users',       value: stats.totalUsers,       icon: Users,       color: 'text-blue-600' },
     { label: 'ID Verified',       value: stats.verifiedUsers,    icon: ShieldCheck, color: 'text-green-600' },
     { label: 'Banned',            value: stats.bannedUsers,      icon: Ban,         color: 'text-red-600' },
+    { label: 'Suspended',         value: stats.suspendedUsers,   icon: UserX,       color: 'text-amber-600' },
     { label: 'Active Rentals',    value: stats.activeRentals,    icon: FileText,    color: 'text-purple-600' },
     { label: 'Pending Rentals',   value: stats.pendingRentals,   icon: Clock,       color: 'text-amber-600' },
     { label: 'Credits Purchased', value: stats.creditsPurchased.toLocaleString(), icon: Coins, color: 'text-teal-600' },

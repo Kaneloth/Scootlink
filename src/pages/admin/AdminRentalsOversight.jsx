@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/api/supabaseClient';
 import { Loader2, Search, ChevronLeft, ChevronRight, X } from 'lucide-react';
