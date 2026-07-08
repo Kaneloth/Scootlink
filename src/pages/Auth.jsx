@@ -11,15 +11,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Bike, LogIn, ArrowRight, ArrowLeft, Loader2, Fingerprint, AlertTriangle, KeyRound, Mail, Eye, EyeOff, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
+import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
-
-function base64ToBuffer(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
 
 function biometricError(code, message) {
   const err = new Error(message);
@@ -37,27 +31,27 @@ async function setTokenCookie(refresh_token) {
 }
 
 async function triggerBiometricLogin() {
-  if (!window.PublicKeyCredential) {
-    throw biometricError('unsupported', 'Your browser does not support biometric login.');
-  }
-
-  const credentialId = localStorage.getItem('scootlink_biometric_credential_id');
-  if (!credentialId) {
-    throw biometricError('no-credential', 'No fingerprint registered on this device.');
+  // Ask the OS directly rather than trusting a locally-stored flag — this
+  // self-corrects if the user removed their fingerprint in device settings
+  // since the last time they signed in.
+  const check = await BiometricAuth.checkBiometry();
+  if (!check.isAvailable) {
+    if (check.code === 'biometryNotEnrolled') {
+      throw biometricError('no-credential', 'No fingerprint or face enrolled on this device.');
+    }
+    throw biometricError('unsupported', 'Biometric authentication is not available on this device.');
   }
 
   try {
-    await navigator.credentials.get({
-      publicKey: {
-        challenge: crypto.getRandomValues(new Uint8Array(32)),
-        allowCredentials: [{ id: base64ToBuffer(credentialId), type: 'public-key' }],
-        userVerification: 'required',
-        timeout: 60000,
-      },
+    await BiometricAuth.authenticate({
+      reason: 'Sign in to Skootlink',
+      androidTitle: 'Skootlink',
+      androidSubtitle: 'Sign in with your fingerprint',
+      allowDeviceCredential: false,
     });
   } catch (err) {
-    if (err.name === 'NotAllowedError' || err.name === 'InvalidStateError') {
-      throw biometricError('no-credential', 'no-passkey-on-domain');
+    if (err?.code === 'userCancel' || err?.code === 'systemCancel' || err?.code === 'appCancel') {
+      throw biometricError('cancelled', 'Sign-in was cancelled.');
     }
     throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
   }
@@ -153,11 +147,21 @@ export default function Auth() {
   // biometric and password login paths, plus the ID/passport blacklist
   // check that runs alongside it.
   const checkUserBlocked = async (userId) => {
-    const { data } = await supabase.rpc('is_user_blocked', { p_user_id: userId });
-    if (data?.blocked) {
-      return { reason: data.reason, until: data.until || null };
+    try {
+      const { data, error } = await supabase.rpc('is_user_blocked', { p_user_id: userId });
+      if (error) throw error;
+      if (data?.blocked) {
+        return { reason: data.reason, until: data.until || null };
+      }
+      return null;
+    } catch (err) {
+      // Fail OPEN: a network hiccup or a transient auth-context timing issue
+      // (this runs right after a fresh OAuth session is set) should not
+      // permanently block a legitimate sign-in. We just let the user in;
+      // server-side RLS is still the real enforcement boundary.
+      console.error('[Auth] checkUserBlocked failed, allowing sign-in:', err);
+      return null;
     }
-    return null;
   };
 
   const [loginStage, setLoginStage] = useState('idle');
@@ -222,6 +226,19 @@ export default function Auth() {
   const [showNewPw, setShowNewPw] = useState(false);
   const [showConfirmNewPw, setShowConfirmNewPw] = useState(false);
 
+  // ── Surface OAuth callback failures from App.jsx ─────────────────────────
+  // exchangeCodeForSession/setSession happen in App.jsx's appUrlOpen handler,
+  // outside this component. If that exchange failed, App.jsx stashes the
+  // reason here instead of silently closing the browser and leaving the
+  // user back on this page wondering what happened.
+  useEffect(() => {
+    const oauthError = sessionStorage.getItem('skootlink_oauth_error');
+    if (oauthError) {
+      sessionStorage.removeItem('skootlink_oauth_error');
+      toast.error(oauthError);
+    }
+  }, []);
+
   // ── Detect PASSWORD_RECOVERY from reset link ─────────────────────────────
   // Three-pronged approach to catch the recovery token regardless of timing:
   //   1. Check URL hash (implicit flow: #type=recovery)
@@ -229,78 +246,78 @@ export default function Auth() {
   //   3. onAuthStateChange event (PKCE flow: code exchanged async)
   useEffect(() => {
     const hash = window.location.hash;
-
     const isRecoveryUrl = hash.includes('type=recovery');
     const isRecoveryStored = sessionStorage.getItem('skootlink_recovery') === '1';
-
     if (isRecoveryUrl || isRecoveryStored) {
       sessionStorage.setItem('skootlink_recovery', '1');
       setRecoveryMode(true);
     }
 
-    // ── Capacitor deep link handler ──────────────────────────────────────────
-    // Only runs in native app — import is wrapped to prevent Rollup bundling it
-    let appListener = null;
-    (async () => {
+    // Navigation guard - prevents the getSession() check and the
+    // onAuthStateChange listener from both calling window.location.replace
+    // at the same time, which was causing an unpredictable race that could
+    // land the user back on the landing page.
+    let navigating = false;
+    const handleSession = async (session) => {
+      if (navigating) return;
+      if (!session?.user || sessionStorage.getItem('skootlink_recovery')) return;
+      // The user explicitly logged out while in biometric mode. Their
+      // Supabase session is deliberately kept alive server-side (signing it
+      // out would revoke the refresh token and break biometric restore) —
+      // but that means a valid session still exists here, and without this
+      // check we'd auto-navigate straight back into the app, making logout
+      // look broken. Every explicit sign-in action (tap-to-unlock with
+      // biometric, password, Google) clears this flag itself before it
+      // needs a redirect to happen.
+      if (sessionStorage.getItem('skootlink_biometric_locked') === '1') return;
+      navigating = true;
       try {
-        // Use indirect import string to prevent Rollup from trying to bundle
-        // @capacitor/app (not installed on web/Netlify builds)
-        const capacitorAppPkg = '@' + 'capacitor/app';
-        const capacitorBrowserPkg = '@' + 'capacitor/browser';
-        const { App } = await import(/* @vite-ignore */ capacitorAppPkg);
-        appListener = await App.addListener('appUrlOpen', async ({ url }) => {
-          if (url.includes('/auth')) {
-            const urlParams = new URLSearchParams(url.split('?')[1] || '');
-            const deepCode = urlParams.get('code');
-            if (deepCode) {
-              await supabase.auth.exchangeCodeForSession(deepCode);
-            }
-            try {
-              const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
-              await Browser.close();
-            } catch { /* already closed */ }
-          }
-        });
-      } catch { /* not in Capacitor environment */ }
-    })();
+        const block = await checkUserBlocked(session.user.id);
+        if (block) {
+          await supabase.auth.signOut();
+          setBlockedEmail(session.user.email || '');
+          setBlockInfo(block);
+          return;
+        }
+        window.location.replace('/home');
+      } catch (err) {
+        // Whatever went wrong, don't leave the user stuck staring at a spinner
+        // that silently resets — surface it and let them retry.
+        console.error('[Auth] handleSession failed:', err);
+        toast.error('Something went wrong signing you in. Please try again.');
+      } finally {
+        // Always release the lock — a thrown error here must never
+        // permanently prevent future SIGNED_IN/INITIAL_SESSION events
+        // (e.g. a retry) from being handled.
+        navigating = false;
+      }
+    };
+
+    // Check for an existing session immediately on mount - handles the OAuth
+    // redirect case where the code was already exchanged before this
+    // component mounted (onAuthStateChange would then only see
+    // INITIAL_SESSION, not SIGNED_IN).
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleSession(session);
+    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         sessionStorage.setItem('skootlink_recovery', '1');
         setRecoveryMode(true);
+        return;
       }
-      if (event === 'SIGNED_IN' && session && !sessionStorage.getItem('skootlink_recovery')) {
-        // Poll until session is fully confirmed before navigating to prevent blank screen
-        let attempts = 0;
-        const poll = setInterval(async () => {
-          attempts++;
-          const { data: { session: s } } = await supabase.auth.getSession();
-          if (s?.user) {
-            clearInterval(poll);
-            // Ban/suspend check — this listener fires independently of
-            // handleLogin's own check, so without this it would race ahead
-            // and navigate to /home before handleLogin's signOut() takes
-            // effect, causing the block screen to flash and then bounce
-            // back to /auth once /home discovers there's no valid session.
-            const block = await checkUserBlocked(s.user.id);
-            if (block) {
-              await supabase.auth.signOut();
-              setBlockedEmail(s.user.email || '');
-              setBlockInfo(block);
-              return;
-            }
-            window.location.replace('/home');
-          } else if (attempts > 10) {
-            clearInterval(poll);
-            window.location.replace('/home'); // give up and navigate anyway
-          }
-        }, 150);
+      if (
+        (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
+        session &&
+        !sessionStorage.getItem('skootlink_recovery')
+      ) {
+        handleSession(session);
       }
     });
 
     return () => {
       subscription.unsubscribe();
-      if (appListener) appListener.remove();
     };
   }, []);
 
@@ -388,6 +405,10 @@ export default function Auth() {
     const method = localStorage.getItem('scootlink_signin_method') || 'password';
     if (method !== 'biometric') { setLoginStage('password'); return; }
 
+    // Any explicit sign-in attempt means the user wants back in — clear the
+    // post-logout lock so handleSession's onAuthStateChange listener won't
+    // fight with this flow once the session settles.
+    sessionStorage.removeItem('skootlink_biometric_locked');
     setLoginStage('biometric-loading');
     setLoading(true);
     try {
@@ -428,15 +449,16 @@ export default function Auth() {
         if (err.detail) toast.error(`Debug: ${err.detail}`, { duration: 15000 });
         setBannerReason('session-expired');
         setLoginStage('password');
-      } else if (err.code === 'no-credential') {
-        if (err.message === 'no-passkey-on-domain') {
-          localStorage.removeItem('scootlink_biometric_credential_id');
-          localStorage.setItem('scootlink_signin_method', 'password');
-          setBannerReason('no-passkey');
-        } else {
-          setBannerReason('session-expired');
-        }
+      } else if (err.code === 'no-credential' || err.code === 'unsupported') {
+        // Device has no biometry enrolled at all (or none available) —
+        // fall back to password and point them at device settings, not
+        // "re-register in-app" (that wouldn't fix a device-level issue).
+        localStorage.setItem('scootlink_signin_method', 'password');
+        setBannerReason('no-passkey');
         setLoginStage('password');
+      } else if (err.code === 'cancelled') {
+        // User dismissed the prompt — just let them tap and retry, no toast needed.
+        setLoginStage('idle');
       } else {
         toast.error(err.message || 'Biometric login failed.');
         setLoginStage('biometric-error');
@@ -541,6 +563,7 @@ export default function Auth() {
   const handleLogin = async () => {
     if (loading) return;
     if (!loginEmail || !loginPassword) { toast.error('Please fill in all fields'); return; }
+    sessionStorage.removeItem('skootlink_biometric_locked');
     setUnconfirmedEmail('');
     setLoading(true);
     try {
@@ -643,12 +666,46 @@ export default function Auth() {
 
   // ── Google Sign-In ────────────────────────────────────────────────────────
   const handleGoogleSignIn = async () => {
+    sessionStorage.removeItem('skootlink_biometric_locked');
     setGoogleLoading(true);
+
+    // Native: use the Credential Manager (Android) / Google Sign-In SDK (iOS)
+    // via @capawesome/capacitor-google-sign-in instead of a browser redirect.
+    // No Custom Tab, no deep link, no PKCE code exchange — signIn() resolves
+    // directly with an ID token that we hand straight to Supabase.
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { GoogleSignIn } = await import('@capawesome/capacitor-google-sign-in');
+        const result = await GoogleSignIn.signIn();
+        if (!result?.idToken) {
+          throw new Error('No ID token returned from Google.');
+        }
+        const { error } = await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token: result.idToken,
+        });
+        if (error) throw error;
+        // Session is now set — the onAuthStateChange listener registered
+        // above (handleSession) will pick up SIGNED_IN and navigate to /home.
+      } catch (err) {
+        console.error('[Auth] Native Google sign-in failed:', err);
+        // Error code 'canceled' means the user just closed the account
+        // picker — not a real failure, don't show a scary toast for it.
+        if (err?.code !== 'canceled') {
+          toast.error(err?.message || 'Google sign-in failed. Please try again.');
+        }
+      } finally {
+        setGoogleLoading(false);
+      }
+      return;
+    }
+
+    // Web: unchanged browser-redirect OAuth flow.
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: Capacitor.isNativePlatform() ? 'https://skootlink.co.za/auth' : window.location.origin + '/auth',
+          redirectTo: window.location.origin + '/auth',
           skipBrowserRedirect: true,
           queryParams: {
             prompt: 'select_account',
@@ -658,25 +715,7 @@ export default function Auth() {
       });
       if (error) throw error;
       if (data?.url) {
-        // On Capacitor (native app), open in an in-app browser sheet.
-        // iOS uses SFSafariViewController, Android uses Chrome Custom Tabs —
-        // both have a built-in close/cancel button so the user is never stuck.
-        // Falls back to window.location.href in plain browser.
-        try {
-          const { Browser } = await import(/* @vite-ignore */ '@' + 'capacitor/browser');
-          await Browser.open({
-            url: data.url,
-            windowName: '_self',
-            presentationStyle: 'popover', // sheet on iOS
-          });
-          // Listen for the app returning from the browser (user cancelled or completed)
-          Browser.addListener('browserFinished', () => {
-            setGoogleLoading(false);
-          });
-        } catch {
-          // Not running in Capacitor — fall back to standard navigation
-          window.location.href = data.url;
-        }
+        window.location.href = data.url;
       }
     } catch (err) {
       toast.error(err.message || 'Google sign-in failed');
@@ -791,7 +830,7 @@ export default function Auth() {
 
   const bannerContent = {
     'session-expired': 'Your biometric session expired. Sign in with your password once — biometric will work automatically from then on.',
-    'no-passkey': 'Your fingerprint isn\'t registered on this browser or device. Sign in with your password, then go to Settings → Security → Switch to Biometric to re-register.',
+    'no-passkey': 'No fingerprint is enrolled on this device, or it was removed. Sign in with your password, then add a fingerprint in your device settings if you\'d like to use biometric sign-in again.',
   };
 
   return (
