@@ -153,6 +153,11 @@ async function layoutLogout(navigate) {
       const { data } = await supabase.auth.getSession();
       if (data?.session) saveBiometricRefreshToken(data.session);
     } catch { /* non-fatal */ }
+    // The Supabase session is still valid on purpose (see above) — without
+    // this flag, Auth.jsx would see that valid session on mount and
+    // immediately navigate straight back into the app, making logout look
+    // broken. Cleared the moment the user explicitly signs back in.
+    sessionStorage.setItem('skootlink_biometric_locked', '1');
     navigate('/auth');
   } else {
     await supabase.auth.signOut();

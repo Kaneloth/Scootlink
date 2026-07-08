@@ -261,6 +261,15 @@ export default function Auth() {
     const handleSession = async (session) => {
       if (navigating) return;
       if (!session?.user || sessionStorage.getItem('skootlink_recovery')) return;
+      // The user explicitly logged out while in biometric mode. Their
+      // Supabase session is deliberately kept alive server-side (signing it
+      // out would revoke the refresh token and break biometric restore) —
+      // but that means a valid session still exists here, and without this
+      // check we'd auto-navigate straight back into the app, making logout
+      // look broken. Every explicit sign-in action (tap-to-unlock with
+      // biometric, password, Google) clears this flag itself before it
+      // needs a redirect to happen.
+      if (sessionStorage.getItem('skootlink_biometric_locked') === '1') return;
       navigating = true;
       try {
         const block = await checkUserBlocked(session.user.id);
@@ -396,6 +405,10 @@ export default function Auth() {
     const method = localStorage.getItem('scootlink_signin_method') || 'password';
     if (method !== 'biometric') { setLoginStage('password'); return; }
 
+    // Any explicit sign-in attempt means the user wants back in — clear the
+    // post-logout lock so handleSession's onAuthStateChange listener won't
+    // fight with this flow once the session settles.
+    sessionStorage.removeItem('skootlink_biometric_locked');
     setLoginStage('biometric-loading');
     setLoading(true);
     try {
@@ -550,6 +563,7 @@ export default function Auth() {
   const handleLogin = async () => {
     if (loading) return;
     if (!loginEmail || !loginPassword) { toast.error('Please fill in all fields'); return; }
+    sessionStorage.removeItem('skootlink_biometric_locked');
     setUnconfirmedEmail('');
     setLoading(true);
     try {
@@ -652,6 +666,7 @@ export default function Auth() {
 
   // ── Google Sign-In ────────────────────────────────────────────────────────
   const handleGoogleSignIn = async () => {
+    sessionStorage.removeItem('skootlink_biometric_locked');
     setGoogleLoading(true);
 
     // Native: use the Credential Manager (Android) / Google Sign-In SDK (iOS)

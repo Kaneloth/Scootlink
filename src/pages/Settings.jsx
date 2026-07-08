@@ -582,6 +582,10 @@ export default function Settings() {
         const { data } = await supabase.auth.getSession();
         if (data?.session) saveBiometricRefreshToken(data.session);
       } catch { /* non-fatal */ }
+      // See layoutLogout() in AppLayout.jsx for why this flag exists — the
+      // session is intentionally kept alive, so without this Auth.jsx would
+      // bounce straight back into the app instead of showing the login screen.
+      sessionStorage.setItem('skootlink_biometric_locked', '1');
       navigate('/auth');
     } else {
       await clearTokenCookie();
