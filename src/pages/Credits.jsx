@@ -143,16 +143,11 @@ export default function Credits() {
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
 
       if (isNative) {
-        // Open in a Custom Tab, not the app's own WebView — PayFast's
-        // process endpoint accepts the same fields as a GET query string,
-        // so no form POST is needed here. Keeping this outside the app's
-        // own WebView means the eventual return_url (a custom URL scheme)
-        // gets handed to the OS the same proven way Google sign-in's
-        // redirect does, rather than trying to navigate the main WebView
-        // away to an external origin and back.
         const qs = new URLSearchParams(data.fields).toString();
+        const fullUrl = `${data.action_url}?${qs}`;
+        console.log('[Credits] Opening native payment Custom Tab:', fullUrl);
         const { Browser } = await import('@capacitor/browser');
-        await Browser.open({ url: `${data.action_url}?${qs}`, presentationStyle: 'popover' });
+        await Browser.open({ url: fullUrl, presentationStyle: 'popover' });
         return;
       }
 
