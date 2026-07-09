@@ -1,104 +1,81 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Returning to Skootlink…</title>
-<style>
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    margin: 0;
-    background: #f4f4f5;
-    color: #09090b;
-    text-align: center;
-    padding: 24px;
-  }
-  .card { max-width: 320px; }
-  .spinner {
-    width: 36px;
-    height: 36px;
-    border: 4px solid rgba(37,99,235,0.15);
-    border-top-color: #2563eb;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin: 0 auto 16px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  p { color: #71717a; font-size: 15px; margin: 0 0 20px; }
-  .btn {
-    display: none;
-    width: 100%;
-    padding: 14px 20px;
-    background: #2563eb;
-    color: white;
-    border: none;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .btn.show { display: block; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Redirecting to Skootlink…</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .card {
+      text-align: center;
+      max-width: 360px;
+      width: 100%;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #e2e8f0;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h1 { font-size: 1.125rem; font-weight: 600; color: #0f172a; margin-bottom: 0.5rem; }
+    p  { font-size: 0.875rem; color: #64748b; line-height: 1.5; }
+    .fallback { display: none; margin-top: 1.5rem; }
+    .fallback p { font-size: 0.8rem; color: #94a3b8; }
+  </style>
 </head>
 <body>
   <div class="card">
     <div class="spinner" id="spinner"></div>
-    <p id="msg">Returning to Skootlink…</p>
-    <button class="btn" id="returnBtn">Tap to return to Skootlink</button>
+    <h1 id="heading">Redirecting to Skootlink…</h1>
+    <p id="subtext">Taking you back to the app.</p>
+    <div class="fallback" id="fallback">
+      <p>
+        If the app did not open automatically, please switch back to the
+        Skootlink app manually. Your payment has been recorded.
+      </p>
+    </div>
   </div>
 
   <script>
-    // PayFast lands here with e.g. ?status=success&category=credits&package=standard
-    // or ?status=cancelled&category=verification&service=sa_id
-    var params = window.location.search;
-    var qs = new URLSearchParams(params);
-    var status = qs.get('status');
-    var category = qs.get('category');
-    var service = qs.get('service');
-    var deepLink = 'co.za.skootlink.app://payment-result' + params;
+    // Forward ALL query params PayFast placed on this URL into the deep link.
+    // window.location.search is e.g.:
+    //   ?status=success&category=credits&package=starter
+    //   ?status=cancelled&category=verification&service=sa_id
+    //
+    // App.jsx's appUrlOpen listener parses the deep link, writes the result to
+    // sessionStorage AND dispatches a 'skootlink:payment-result' window event.
+    // Credits.jsx and VerificationPanel.jsx both listen for that event and act
+    // on it immediately — the category + package/service params in the query
+    // string are what tell each component whether the result belongs to it.
+    var deepLink = 'co.za.skootlink.app://payment-result' + window.location.search;
 
-    function fallbackUrl() {
-      if (category === 'verification') {
-        return '/profile?verif_payment=' + encodeURIComponent(status) +
-          (service ? '&service=' + encodeURIComponent(service) : '');
-      }
-      return '/credits?payment=' + encodeURIComponent(status);
-    }
-
-    // Attempt 1: automatic redirect. This works in some browser/device
-    // configurations, but Chrome on Android often silently blocks a
-    // JS-triggered top-level navigation to an unregistered scheme when it
-    // isn't tied to a genuine user tap — unlike a server-side HTTP redirect
-    // (which is how the Google sign-in deep link works, and why that one
-    // never had this problem). If this silently fails, nothing visible
-    // happens and the button below is the guaranteed path back.
+    // Navigate to the deep link. On Android the OS intercepts the intent and
+    // switches to the app. On iOS the OS intercepts the custom scheme and
+    // switches to the app; App.jsx then calls Browser.close() which dismisses
+    // the SFSafariViewController, completing the round-trip.
     window.location.href = deepLink;
 
-    // Attempt 2 (guaranteed): reveal a real, tappable button almost
-    // immediately. A genuine user tap satisfies Chrome's gesture
-    // requirement, so this should always succeed even when the automatic
-    // attempt above was silently blocked.
+    // Show a fallback message after 3 s in case the deep link didn't fire
+    // (e.g. app not installed, or the user opened this URL in a desktop browser).
     setTimeout(function () {
       document.getElementById('spinner').style.display = 'none';
-      document.getElementById('msg').textContent = 'Tap below to continue.';
-      var btn = document.getElementById('returnBtn');
-      btn.classList.add('show');
-      btn.addEventListener('click', function () {
-        window.location.href = deepLink;
-      });
-    }, 600);
-
-    // Last resort: if even the button doesn't get tapped (or the app truly
-    // isn't installed — e.g. testing this URL directly in a normal mobile
-    // browser), fall back to a normal in-page redirect after a while so
-    // nobody gets stuck here indefinitely.
-    setTimeout(function () {
-      window.location.href = fallbackUrl();
-    }, 8000);
+      document.getElementById('heading').textContent = 'Payment complete';
+      document.getElementById('subtext').textContent = 'You can close this tab and return to the Skootlink app.';
+      document.getElementById('fallback').style.display = 'block';
+    }, 3000);
   </script>
 </body>
 </html>

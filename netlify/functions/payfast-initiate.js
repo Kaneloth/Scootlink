@@ -2,6 +2,14 @@
  * Netlify Function: payfast-initiate
  * Builds a signed PayFast payment form for a credit package purchase.
  * POST body: { package_id: 'starter' | 'standard' | 'pro' | 'business' }
+ *
+ * return_url / cancel_url always point at the bridge page
+ * (public/payment-callback.html) regardless of platform.  The bridge page
+ * forwards every query param into a co.za.skootlink.app:// deep link, which
+ * App.jsx's appUrlOpen listener catches and dispatches as a
+ * 'skootlink:payment-result' window event.  This is the only approach that
+ * works reliably: PayFast's payment engine rejects non-https return URLs, so
+ * a direct co.za.skootlink.app:// return_url is never sent to PayFast.
  */
 import { createClient } from '@supabase/supabase-js';
 import { generateSignature, PAYFAST_PROCESS_URL, SITE_URL } from './lib/payfast.js';
@@ -17,9 +25,7 @@ const MERCHANT_KEY = process.env.PAYFAST_MERCHANT_KEY;
 const PASSPHRASE   = process.env.PAYFAST_PASSPHRASE || '';
 
 // Required so the native app (running from a different origin than
-// skootlink.co.za) is allowed to call this function at all. Without these,
-// the browser/WebView blocks the request before it even reaches here,
-// surfacing to the user as a generic "Failed to fetch".
+// skootlink.co.za) is allowed to call this function at all.
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -27,8 +33,6 @@ const CORS_HEADERS = {
 };
 
 export const handler = async (event) => {
-  // Browsers send this automatically before the real POST when the request
-  // is cross-origin — must succeed or the actual POST never gets sent.
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: CORS_HEADERS, body: '' };
   }
@@ -60,15 +64,14 @@ export const handler = async (event) => {
   const m_payment_id = `skoot_${user.id.slice(0, 8)}_${Date.now()}`;
   const firstName = (user.user_metadata?.full_name || 'Skootlink').split(' ')[0];
 
-  // Always a real https:// URL — PayFast's own acceptance of non-standard
-  // schemes for return_url/cancel_url is unverified, so route through a
-  // static bridge page on our own domain instead. That page then triggers
-  // the co.za.skootlink.app:// deep link itself (which we've already
-  // proven works, via the Google sign-in flow), falling back to a normal
-  // in-page redirect for web/desktop users where no app is installed to
-  // catch the deep link. See public/payment-callback.html.
-  const return_url = `${SITE_URL}/payment-callback.html?status=success&category=credits&package=${body.package_id}`;
-  const cancel_url = `${SITE_URL}/payment-callback.html?status=cancelled&category=credits`;
+  // Always route through the bridge page (public/payment-callback.html).
+  // The bridge page forwards every query param directly into the deep link:
+  //   co.za.skootlink.app://payment-result?status=success&category=credits&package=starter
+  // App.jsx's appUrlOpen listener picks that up and dispatches the result
+  // as a window event.  The category + package params are mandatory — without
+  // them Credits.jsx silently ignores the result.
+  const return_url = `${SITE_URL}/payment-callback?status=success&category=credits&package=${body.package_id}`;
+  const cancel_url = `${SITE_URL}/payment-callback?status=cancelled&category=credits&package=${body.package_id}`;
 
   console.log(`[payfast-initiate] return_url=${return_url} cancel_url=${cancel_url}`);
 
@@ -87,7 +90,7 @@ export const handler = async (event) => {
     custom_str1:      user.id,
     custom_str2:      body.package_id,
     // custom_str3 stays reserved for payment_category (see payfast-webhook.js)
-    custom_str4:      'skootlink', // app tag — Crosssa shares this merchant account/Hookdeck source; lets both the Hookdeck filter and the webhook guard ignore ITNs meant for the other app
+    custom_str4:      'skootlink', // app tag — Crosssa shares this merchant account
   };
 
   const signature = generateSignature(fields, PASSPHRASE);
