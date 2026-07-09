@@ -51,19 +51,17 @@ export default function Credits() {
   }, []);
 
   // Native: PayFast returns via co.za.skootlink.app://payment-result, which
-  // App.jsx's appUrlOpen listener stashes here rather than as a URL query
-  // Runs the moment the native Custom Tab closes (success or cancelled) —
-  // not just on mount, since this page never actually unmounts while the
-  // tab is open, so a mount-only check would already have run and finished
-  // long before the payment even completed.
-  const checkPaymentResult = React.useCallback(() => {
+  // App.jsx's appUrlOpen listener dispatches this directly the instant it
+  // parses the deep link — that's the one mechanism in this whole chain
+  // we've conclusively proven reliable (Google sign-in already depends on
+  // it). A plain window event listener persists for this component's whole
+  // lifetime, so it doesn't matter that this page never unmounts while the
+  // Custom Tab is open — unlike a mount-only check, or one tied to the
+  // Browser plugin's browserFinished event, which may not fire the same
+  // way for a programmatic close() as for a user-initiated one on Android.
+  const handlePaymentResult = React.useCallback((result) => {
     setPurchasing(null);
-    const raw = sessionStorage.getItem('skootlink_payment_result');
-    if (!raw) return;
-    sessionStorage.removeItem('skootlink_payment_result');
-    let result;
-    try { result = JSON.parse(raw); } catch { return; }
-    if (result.category !== 'credits') return; // not ours — e.g. a verification payment
+    if (!result || result.category !== 'credits') return; // not ours — e.g. a verification payment
 
     if (result.status === 'success') {
       toast.success('Payment received! Your credits have been added.');
@@ -89,18 +87,21 @@ export default function Credits() {
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    // Also check once on mount — covers the case where the app process was
-    // killed while the Custom Tab was open and got relaunched fresh.
-    checkPaymentResult();
-    let listener;
-    (async () => {
-      try {
-        const { Browser } = await import('@capacitor/browser');
-        listener = await Browser.addListener('browserFinished', checkPaymentResult);
-      } catch { /* not in Capacitor environment */ }
-    })();
-    return () => { if (listener) listener.remove().catch(() => {}); };
-  }, [checkPaymentResult]);
+
+    // Covers the case where App.jsx's dispatch fired before this component
+    // mounted (e.g. app process was killed while the Custom Tab was open
+    // and got relaunched fresh) — App.jsx also stashes the same detail here
+    // as a fallback.
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (raw) {
+      sessionStorage.removeItem('skootlink_payment_result');
+      try { handlePaymentResult(JSON.parse(raw)); } catch { /* ignore */ }
+    }
+
+    const onEvent = (e) => handlePaymentResult(e.detail);
+    window.addEventListener('skootlink:payment-result', onEvent);
+    return () => window.removeEventListener('skootlink:payment-result', onEvent);
+  }, [handlePaymentResult]);
 
   // Web only: PayFast's own https:// return_url lands here with a query
   // param instead — native never takes this path (see above).

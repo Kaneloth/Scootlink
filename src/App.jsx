@@ -244,7 +244,19 @@ function App() {
               const category = parsed.searchParams.get('category');
               const pkg = parsed.searchParams.get('package');
               const service = parsed.searchParams.get('service');
-              sessionStorage.setItem('skootlink_payment_result', JSON.stringify({ status, category, package: pkg, service }));
+              const detail = { status, category, package: pkg, service };
+              // Primary signal — appUrlOpen firing is the one thing in this
+              // whole chain we've conclusively proven reliable (it's the
+              // exact same mechanism Google sign-in already depends on).
+              // Dispatching directly means any currently-mounted page picks
+              // this up instantly via a plain event listener, with no
+              // dependency on the Browser plugin's browserFinished event
+              // (which may not fire the same way for a programmatic close()
+              // as it does for a user-initiated one on Android).
+              window.dispatchEvent(new CustomEvent('skootlink:payment-result', { detail }));
+              // Kept as a fallback for the case where the listening page
+              // isn't mounted yet (e.g. app was killed and relaunched).
+              sessionStorage.setItem('skootlink_payment_result', JSON.stringify(detail));
               try {
                 const capacitorBrowserPkg = '@' + 'capacitor/browser';
                 const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);

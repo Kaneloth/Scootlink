@@ -275,17 +275,16 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
 
   const isDriver = accountType === 'driver' || accountType === 'both';
 
-  // Runs the moment the native Custom Tab closes (success or cancelled) —
-  // not on mount, since this page never actually unmounts while the tab is
-  // open. See App.jsx's appUrlOpen listener for where skootlink_payment_result
-  // gets set, and Credits.jsx for the equivalent pattern on the credits side.
-  const checkPaymentResult = React.useCallback(() => {
-    const raw = sessionStorage.getItem('skootlink_payment_result');
-    if (!raw) return;
-    sessionStorage.removeItem('skootlink_payment_result');
-    let result;
-    try { result = JSON.parse(raw); } catch { return; }
-    if (result.category !== 'verification') return; // not ours — e.g. a credits purchase
+  // App.jsx's appUrlOpen listener dispatches this directly the instant it
+  // parses the deep link — the one mechanism in this whole chain we've
+  // conclusively proven reliable (Google sign-in already depends on it).
+  // A plain window event listener persists for this component's whole
+  // lifetime, so it doesn't matter that this page never unmounts while the
+  // Custom Tab is open — unlike a mount-only check, or one tied to the
+  // Browser plugin's browserFinished event, which may not fire the same
+  // way for a programmatic close() as for a user-initiated one on Android.
+  const handlePaymentResult = React.useCallback((result) => {
+    if (!result || result.category !== 'verification') return; // not ours — e.g. a credits purchase
 
     setPaymentModal(null);
     if (result.status === 'success') {
@@ -302,18 +301,20 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
 
   React.useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    // Also check once on mount — covers the case where the app process was
-    // killed while the Custom Tab was open and got relaunched fresh.
-    checkPaymentResult();
-    let listener;
-    (async () => {
-      try {
-        const { Browser } = await import('@capacitor/browser');
-        listener = await Browser.addListener('browserFinished', checkPaymentResult);
-      } catch { /* not in Capacitor environment */ }
-    })();
-    return () => { if (listener) listener.remove().catch(() => {}); };
-  }, [checkPaymentResult]);
+
+    // Covers the case where App.jsx's dispatch fired before this component
+    // mounted (app process killed while the Custom Tab was open, relaunched
+    // fresh) — App.jsx also stashes the same detail here as a fallback.
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (raw) {
+      sessionStorage.removeItem('skootlink_payment_result');
+      try { handlePaymentResult(JSON.parse(raw)); } catch { /* ignore */ }
+    }
+
+    const onEvent = (e) => handlePaymentResult(e.detail);
+    window.addEventListener('skootlink:payment-result', onEvent);
+    return () => window.removeEventListener('skootlink:payment-result', onEvent);
+  }, [handlePaymentResult]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   const compressImage = (file, maxPx = 1200, quality = 0.8) =>
