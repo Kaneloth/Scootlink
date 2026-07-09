@@ -174,6 +174,7 @@ export default function Credits() {
     setPurchasing(pkg.id);
 
     const isNative = Capacitor.isNativePlatform();
+    toast.info(`[DIAG] isNative=${isNative} — ${isNative ? 'should open Custom Tab' : 'WILL USE WEB FORM SUBMIT — this is the bug'}`, { duration: 15000 });
 
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate', {
