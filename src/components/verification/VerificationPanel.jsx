@@ -299,22 +299,64 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     }
   }, []);
 
+  // Reads whatever App.jsx's appUrlOpen handler stashed in sessionStorage —
+  // used both on mount and whenever the app resumes to the foreground.
+  const checkStoredResult = React.useCallback(() => {
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (!raw) return;
+    sessionStorage.removeItem('skootlink_payment_result');
+    try { handlePaymentResult(JSON.parse(raw)); } catch { /* ignore */ }
+  }, [handlePaymentResult]);
+
   React.useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
     // Covers the case where App.jsx's dispatch fired before this component
     // mounted (app process killed while the Custom Tab was open, relaunched
     // fresh) — App.jsx also stashes the same detail here as a fallback.
-    const raw = sessionStorage.getItem('skootlink_payment_result');
-    if (raw) {
-      sessionStorage.removeItem('skootlink_payment_result');
-      try { handlePaymentResult(JSON.parse(raw)); } catch { /* ignore */ }
-    }
+    checkStoredResult();
 
     const onEvent = (e) => handlePaymentResult(e.detail);
     window.addEventListener('skootlink:payment-result', onEvent);
-    return () => window.removeEventListener('skootlink:payment-result', onEvent);
-  }, [handlePaymentResult]);
+
+    // Second, independent trigger: Capacitor's own "app became active
+    // again" event — fires whenever the OS brings the app back to the
+    // foreground for any reason, regardless of the exact timing of our
+    // custom deep-link event dispatch.
+    let appListener;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        appListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) checkStoredResult();
+        });
+      } catch { /* not in Capacitor environment */ }
+    })();
+
+    // Third, independent safety net: if the Custom Tab closes for any
+    // reason — including the user manually backing out of PayFast's own
+    // confirmation screen instead of it auto-redirecting — this guarantees
+    // the payment modal never stays stuck open forever. Deliberately leaves
+    // pendingVerify untouched: if a real result still arrives shortly after
+    // (via the event or appStateChange above), it can still seamlessly
+    // continue the verification on success. Worst case, if no result ever
+    // arrives, the user just needs to tap Verify again.
+    let browserListener;
+    (async () => {
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        browserListener = await Browser.addListener('browserFinished', () => {
+          setPaymentModal(null);
+        });
+      } catch { /* not in Capacitor environment */ }
+    })();
+
+    return () => {
+      window.removeEventListener('skootlink:payment-result', onEvent);
+      if (appListener) appListener.remove().catch(() => {});
+      if (browserListener) browserListener.remove().catch(() => {});
+    };
+  }, [handlePaymentResult, checkStoredResult]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   const compressImage = (file, maxPx = 1200, quality = 0.8) =>

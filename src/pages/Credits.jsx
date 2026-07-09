@@ -85,6 +85,15 @@ export default function Credits() {
     }
   }, [refetch]);
 
+  // Reads whatever App.jsx's appUrlOpen handler stashed in sessionStorage —
+  // used both on mount and whenever the app resumes to the foreground.
+  const checkStoredResult = React.useCallback(() => {
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (!raw) return;
+    sessionStorage.removeItem('skootlink_payment_result');
+    try { handlePaymentResult(JSON.parse(raw)); } catch { /* ignore */ }
+  }, [handlePaymentResult]);
+
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
@@ -92,16 +101,51 @@ export default function Credits() {
     // mounted (e.g. app process was killed while the Custom Tab was open
     // and got relaunched fresh) — App.jsx also stashes the same detail here
     // as a fallback.
-    const raw = sessionStorage.getItem('skootlink_payment_result');
-    if (raw) {
-      sessionStorage.removeItem('skootlink_payment_result');
-      try { handlePaymentResult(JSON.parse(raw)); } catch { /* ignore */ }
-    }
+    checkStoredResult();
 
     const onEvent = (e) => handlePaymentResult(e.detail);
     window.addEventListener('skootlink:payment-result', onEvent);
-    return () => window.removeEventListener('skootlink:payment-result', onEvent);
-  }, [handlePaymentResult]);
+
+    // Second, independent trigger: Capacitor's own "app became active again"
+    // event. This doesn't depend on the exact timing of our custom deep-link
+    // event dispatch at all — it fires whenever the OS brings the app back
+    // to the foreground for any reason, which is exactly the moment we know
+    // to re-check sessionStorage for a result App.jsx may have already
+    // written before this event fires.
+    let appListener;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        appListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) checkStoredResult();
+        });
+      } catch { /* not in Capacitor environment */ }
+    })();
+
+    // Third, independent safety net: if the Custom Tab closes for any
+    // reason — including the user manually backing out of PayFast's own
+    // confirmation screen instead of it auto-redirecting — this guarantees
+    // the button never stays stuck on "Processing" forever, even in the
+    // worst case where the deep link genuinely never fires. If a real
+    // result does still arrive shortly after (via the event or
+    // appStateChange above), handlePaymentResult runs normally on top of
+    // this — no conflict, this only ever resets the spinner.
+    let browserListener;
+    (async () => {
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        browserListener = await Browser.addListener('browserFinished', () => {
+          setPurchasing(null);
+        });
+      } catch { /* not in Capacitor environment */ }
+    })();
+
+    return () => {
+      window.removeEventListener('skootlink:payment-result', onEvent);
+      if (appListener) appListener.remove().catch(() => {});
+      if (browserListener) browserListener.remove().catch(() => {});
+    };
+  }, [handlePaymentResult, checkStoredResult]);
 
   // Web only: PayFast's own https:// return_url lands here with a query
   // param instead — native never takes this path (see above).
