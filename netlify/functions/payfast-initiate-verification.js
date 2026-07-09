@@ -90,6 +90,7 @@ export const handler = async (event) => {
     custom_str1:      user.id,
     custom_str2:      body.service_type,
     custom_str3:      'verification',
+    custom_str4:      'skootlink', // app tag — see payfast-initiate.js note
   };
 
   const signature = generateSignature(fields, PASSPHRASE);

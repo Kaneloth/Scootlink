@@ -89,6 +89,8 @@ export const handler = async (event) => {
     item_description: `${pkg.credits} Skootlink credits`,
     custom_str1:      user.id,
     custom_str2:      body.package_id,
+    // custom_str3 stays reserved for payment_category (see payfast-webhook.js)
+    custom_str4:      'skootlink', // app tag — Crosssa shares this merchant account/Hookdeck source; lets both the Hookdeck filter and the webhook guard ignore ITNs meant for the other app
   };
 
   const signature = generateSignature(fields, PASSPHRASE);

@@ -2,6 +2,16 @@
  * Netlify Function: payfast-webhook (ITN handler)
  * Verifies PayFast payment and grants credits on success.
  * Set Notify URL in PayFast to: https://skootlink.co.za/.netlify/functions/payfast-webhook
+ *
+ * NOTE ON custom_str4 (app tag): Skootlink and Crosssa share one PayFast
+ * merchant account, routed through one shared Hookdeck source that fans out
+ * to both apps' webhooks. Hookdeck's Filter rule on the "payfast →
+ * Skootlink" connection should already stop Crosssa's ITNs from reaching
+ * here — this check is a second, independent line of defense in case that
+ * filter is ever disabled, misconfigured, or bypassed (e.g. manual replay
+ * in Hookdeck). custom_str4 is blank on older, already-in-flight payments
+ * initiated before this tag existed, so we only reject when it's present
+ * AND set to a different app — never when it's simply missing.
  */
 import { createClient } from '@supabase/supabase-js';
 import { generateITNSignature, PAYFAST_VALIDATE_URL } from './lib/payfast.js';
@@ -13,14 +23,7 @@ const supabase = createClient(
 );
 
 const PASSPHRASE = process.env.PAYFAST_PASSPHRASE || '';
-
-// PayFast live server IPs
-const PAYFAST_VALID_IPS = [
-  '197.97.145.144', '197.97.145.145', '197.97.145.146', '197.97.145.147',
-  '197.97.145.148', '197.97.145.149', '197.97.145.150', '197.97.145.151',
-  '197.97.145.152', '197.97.145.153', '197.97.145.154', '197.97.145.155',
-  '197.97.145.156', '197.97.145.157', '197.97.145.158', '197.97.145.159',
-];
+const APP_TAG = 'skootlink';
 
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -35,6 +38,7 @@ export const handler = async (event) => {
     pf_payment_id: fields.pf_payment_id,
     payment_status: fields.payment_status,
     m_payment_id: fields.m_payment_id,
+    custom_str4: fields.custom_str4,
   });
 
   // ── 0. IP validation skipped — requests proxied via Hookdeck ───────────
@@ -66,7 +70,14 @@ export const handler = async (event) => {
     return { statusCode: 500, body: 'Validation error' };
   }
 
-  // ── 3. Only process COMPLETE payments ──────────────────────────────────
+  // ── 3. Ignore ITNs tagged for a different app (belt-and-braces alongside
+  //      the Hookdeck filter — see note at top of file) ──────────────────────
+  if (fields.custom_str4 && fields.custom_str4 !== APP_TAG) {
+    console.log(`[payfast-webhook] ignoring ITN tagged for other app: custom_str4=${fields.custom_str4} pf_payment_id=${fields.pf_payment_id}`);
+    return { statusCode: 200, body: 'OK' };
+  }
+
+  // ── 4. Only process COMPLETE payments ──────────────────────────────────
   if (fields.payment_status !== 'COMPLETE') {
     console.log(`[payfast-webhook] payment_status=${fields.payment_status} — no action`);
     return { statusCode: 200, body: 'OK' };
@@ -101,14 +112,14 @@ export const handler = async (event) => {
     return { statusCode: 200, body: 'OK' };
   }
 
-  // ── 4. Amount sanity check ──────────────────────────────────────────────
+  // ── 5. Amount sanity check ──────────────────────────────────────────────
   const paidAmount = parseFloat(fields.amount_gross || fields.amount || '0');
   if (Math.abs(paidAmount - pkg.price_zar) > 0.5) {
     console.error(`[payfast-webhook] amount mismatch: expected ${pkg.price_zar}, got ${paidAmount}`);
     return { statusCode: 200, body: 'OK' };
   }
 
-  // ── 5. Idempotency check ────────────────────────────────────────────────
+  // ── 6. Idempotency check ────────────────────────────────────────────────
   const { data: existing } = await supabase
     .from('credit_ledger')
     .select('id')
@@ -121,7 +132,7 @@ export const handler = async (event) => {
     return { statusCode: 200, body: 'OK' };
   }
 
-  // ── 6. Grant credits ────────────────────────────────────────────────────
+  // ── 7. Grant credits ────────────────────────────────────────────────────
   const { error: creditErr } = await supabase.rpc('add_credits', {
     p_user_id:     user_id,
     p_amount:      pkg.credits,
