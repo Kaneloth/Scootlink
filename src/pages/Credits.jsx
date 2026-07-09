@@ -52,9 +52,12 @@ export default function Credits() {
 
   // Native: PayFast returns via co.za.skootlink.app://payment-result, which
   // App.jsx's appUrlOpen listener stashes here rather than as a URL query
-  // param (a real https:// return_url would load skootlink.co.za as a
-  // separate, session-less origin instead of coming back into the app).
-  useEffect(() => {
+  // Runs the moment the native Custom Tab closes (success or cancelled) —
+  // not just on mount, since this page never actually unmounts while the
+  // tab is open, so a mount-only check would already have run and finished
+  // long before the payment even completed.
+  const checkPaymentResult = React.useCallback(() => {
+    setPurchasing(null);
     const raw = sessionStorage.getItem('skootlink_payment_result');
     if (!raw) return;
     sessionStorage.removeItem('skootlink_payment_result');
@@ -82,7 +85,22 @@ export default function Credits() {
     } else if (result.status === 'cancelled') {
       toast.info('Payment cancelled.');
     }
-  }, []);
+  }, [refetch]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    // Also check once on mount — covers the case where the app process was
+    // killed while the Custom Tab was open and got relaunched fresh.
+    checkPaymentResult();
+    let listener;
+    (async () => {
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        listener = await Browser.addListener('browserFinished', checkPaymentResult);
+      } catch { /* not in Capacitor environment */ }
+    })();
+    return () => { if (listener) listener.remove().catch(() => {}); };
+  }, [checkPaymentResult]);
 
   // Web only: PayFast's own https:// return_url lands here with a query
   // param instead — native never takes this path (see above).
@@ -103,24 +121,6 @@ export default function Credits() {
     }
   }, []);
 
-  // Reset the "Processing…" button state whenever the native Custom Tab
-  // closes — for any reason, success or cancelled — since unlike the old
-  // main-WebView form.submit() flow, this component stays mounted the
-  // whole time and won't naturally reset on its own otherwise.
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    let listener;
-    (async () => {
-      try {
-        const { Browser } = await import('@capacitor/browser');
-        listener = await Browser.addListener('browserFinished', () => {
-          setPurchasing(null);
-        });
-      } catch { /* not in Capacitor environment */ }
-    })();
-    return () => { if (listener) listener.remove().catch(() => {}); };
-  }, []);
-
   const handlePurchase = async () => {
     const pkg = PACKAGES.find(p => p.id === selectedPkg);
     if (!pkg) return;
@@ -129,7 +129,6 @@ export default function Credits() {
     setPurchasing(pkg.id);
 
     const isNative = Capacitor.isNativePlatform();
-    toast.info(`[Debug] isNative=${isNative}`, { duration: 8000 });
 
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate', {
@@ -147,10 +146,8 @@ export default function Credits() {
         const qs = new URLSearchParams(data.fields).toString();
         const fullUrl = `${data.action_url}?${qs}`;
         console.log('[Credits] Opening native payment Custom Tab:', fullUrl);
-        toast.info(`[Debug] Opening: ${data.action_url}`, { duration: 8000 });
         const { Browser } = await import('@capacitor/browser');
         await Browser.open({ url: fullUrl, presentationStyle: 'popover' });
-        toast.info('[Debug] Browser.open() completed without error', { duration: 8000 });
         return;
       }
 
@@ -176,9 +173,6 @@ export default function Credits() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto pb-24">
-      <div style={{ background: 'red', color: 'white', padding: '16px', fontSize: '18px', fontWeight: 'bold', textAlign: 'center', marginBottom: '12px' }}>
-        BUILD MARKER — 2026-07-08-2300
-      </div>
       <PageHeader title="Credits" subtitle="Buy and manage your Skootlink credits" backTo="/home" />
 
       {/* Balance card */}

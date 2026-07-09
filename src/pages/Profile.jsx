@@ -180,23 +180,11 @@ export default function Profile() {
     }
   }, []);
 
-  // Native: PayFast returns via co.za.skootlink.app://payment-result, which
-  // App.jsx's appUrlOpen listener stashes here instead of as a URL query
-  // param — see the equivalent effect in Credits.jsx for why.
-  useEffect(() => {
-    const raw = sessionStorage.getItem('skootlink_payment_result');
-    if (!raw) return;
-    sessionStorage.removeItem('skootlink_payment_result');
-    let result;
-    try { result = JSON.parse(raw); } catch { return; }
-    if (result.category !== 'verification') return; // not ours — e.g. a credits purchase
-
-    if (result.status === 'success') {
-      toast.success('Payment received! You can now proceed with verification.');
-    } else if (result.status === 'cancelled') {
-      toast.info('Payment cancelled — verification was not started.');
-    }
-  }, []);
+  // Native handling of the co.za.skootlink.app://payment-result deep link
+  // for verification payments now lives in VerificationPanel.jsx itself —
+  // it owns the payment modal and the pendingVerify() continuation, and
+  // needs to react the moment the Custom Tab closes (via browserFinished),
+  // not just on mount, since this page never unmounts while the tab is open.
 
   const fetchMyReviews = async (userId) => {
     setReviewsLoading(true);

@@ -275,6 +275,46 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
 
   const isDriver = accountType === 'driver' || accountType === 'both';
 
+  // Runs the moment the native Custom Tab closes (success or cancelled) —
+  // not on mount, since this page never actually unmounts while the tab is
+  // open. See App.jsx's appUrlOpen listener for where skootlink_payment_result
+  // gets set, and Credits.jsx for the equivalent pattern on the credits side.
+  const checkPaymentResult = React.useCallback(() => {
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (!raw) return;
+    sessionStorage.removeItem('skootlink_payment_result');
+    let result;
+    try { result = JSON.parse(raw); } catch { return; }
+    if (result.category !== 'verification') return; // not ours — e.g. a credits purchase
+
+    setPaymentModal(null);
+    if (result.status === 'success') {
+      toast.success('Payment received! Verifying…');
+      setPendingVerify(prevFn => {
+        if (prevFn) prevFn();
+        return null;
+      });
+    } else if (result.status === 'cancelled') {
+      toast.info('Payment cancelled — verification was not started.');
+      setPendingVerify(null);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    // Also check once on mount — covers the case where the app process was
+    // killed while the Custom Tab was open and got relaunched fresh.
+    checkPaymentResult();
+    let listener;
+    (async () => {
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        listener = await Browser.addListener('browserFinished', checkPaymentResult);
+      } catch { /* not in Capacitor environment */ }
+    })();
+    return () => { if (listener) listener.remove().catch(() => {}); };
+  }, [checkPaymentResult]);
+
   // ── Helpers ─────────────────────────────────────────────────────────────────
   const compressImage = (file, maxPx = 1200, quality = 0.8) =>
     new Promise((resolve, reject) => {
