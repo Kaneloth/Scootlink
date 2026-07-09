@@ -85,8 +85,6 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
 
-    const isNative = Capacitor.isNativePlatform();
-
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate-verification', {
         method: 'POST',
@@ -94,7 +92,7 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ service_type: service, is_native: isNative }),
+        body: JSON.stringify({ service_type: service }),
       });
 
       // Guard against HTML error pages (function not found, crashed, etc.)
@@ -108,9 +106,13 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
 
-      if (isNative) {
-        // See Credits.jsx handlePurchase for why this uses a Custom Tab
-        // and a GET query string instead of the form POST below.
+      if (Capacitor.isNativePlatform()) {
+        // Open in a Custom Tab, not the app's own WebView — PayFast's
+        // process endpoint accepts the same fields as a GET query string.
+        // The return_url the server built always points at our own https
+        // bridge page (public/payment-callback.html) regardless of
+        // platform, which then triggers the co.za.skootlink.app:// deep
+        // link itself — see payfast-initiate-verification.js.
         const qs = new URLSearchParams(data.fields).toString();
         const { Browser } = await import('@capacitor/browser');
         await Browser.open({ url: `${data.action_url}?${qs}`, presentationStyle: 'popover' });
@@ -276,13 +278,11 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   const isDriver = accountType === 'driver' || accountType === 'both';
 
   // App.jsx's appUrlOpen listener dispatches this directly the instant it
-  // parses the deep link — the one mechanism in this whole chain we've
-  // conclusively proven reliable (Google sign-in already depends on it).
-  // A plain window event listener persists for this component's whole
-  // lifetime, so it doesn't matter that this page never unmounts while the
-  // Custom Tab is open — unlike a mount-only check, or one tied to the
-  // Browser plugin's browserFinished event, which may not fire the same
-  // way for a programmatic close() as for a user-initiated one on Android.
+  // parses the co.za.skootlink.app://payment-result deep link — the one
+  // mechanism in this whole chain proven reliable (Google sign-in already
+  // depends on it). A plain window event listener persists for this
+  // component's whole lifetime, so it doesn't matter that this page never
+  // unmounts while the Custom Tab is open.
   const handlePaymentResult = React.useCallback((result) => {
     if (!result || result.category !== 'verification') return; // not ours — e.g. a credits purchase
 
@@ -290,7 +290,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     if (result.status === 'success') {
       toast.success('Payment received! Verifying…');
       setPendingVerify(prevFn => {
-        if (prevFn) prevFn();
+        if (prevFn) prevFn(true); // true = justPaid, gives the webhook time to land
         return null;
       });
     } else if (result.status === 'cancelled') {
@@ -334,23 +334,35 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
       img.src = url;
     });
 
-  const hasPaid = async (serviceType) => {
+  const hasPaid = async (serviceType, { retries = 1, delayMs = 1500 } = {}) => {
     // Check if user has a recent verified_payment for this service_type —
     // and that it actually covers the CURRENT price. A stale unused payment
     // from before a price change (e.g. an old R15 SA ID payment that never
     // got marked `used`) must not silently satisfy a higher new price.
-    const { data } = await supabase
-      .from('verification_payments')
-      .select('id, amount')
-      .eq('user_id', user?.id)
-      .eq('service_type', serviceType)
-      .eq('status', 'paid')
-      .eq('used', false)
-      .maybeSingle();
-    if (!data) return false;
-    const requiredAmount = PRICES[serviceType]?.amount ?? 0;
-    if (data.amount != null && Number(data.amount) < requiredAmount) return false;
-    return true;
+    //
+    // retries > 1 is only used right after a payment completes — the ITN
+    // webhook (PayFast → Hookdeck → this app → Supabase) can take a few
+    // seconds to actually mark the row 'paid', and checking only once right
+    // as the user returns from paying could catch it mid-flight and
+    // wrongly show the payment prompt again. The normal "user just tapped
+    // Verify" path stays a single immediate check, so genuinely-unpaid
+    // users see the payment modal right away, not after a multi-second wait.
+    for (let attempt = 0; attempt < retries; attempt++) {
+      const { data } = await supabase
+        .from('verification_payments')
+        .select('id, amount')
+        .eq('user_id', user?.id)
+        .eq('service_type', serviceType)
+        .eq('status', 'paid')
+        .eq('used', false)
+        .maybeSingle();
+      if (data) {
+        const requiredAmount = PRICES[serviceType]?.amount ?? 0;
+        if (data.amount == null || Number(data.amount) >= requiredAmount) return true;
+      }
+      if (attempt < retries - 1) await new Promise(r => setTimeout(r, delayMs));
+    }
+    return false;
   };
 
   const refundCredits = async (serviceType, setRefundCredits) => {
@@ -380,14 +392,14 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   };
 
   // ── Verify RSA ID ────────────────────────────────────────────────────────────
-  const doVerifySaId = async () => {
+  const doVerifySaId = async (justPaid = false) => {
     if (!saId.trim() || saId.replace(/\s/g, '').length !== 13) {
       toast.error('Please enter a valid 13-digit SA ID number'); return;
     }
     if (!saIdSelfie) {
       toast.error('Please take a selfie — it\'s required to confirm you are the ID holder'); return;
     }
-    const paid = await hasPaid('sa_id');
+    const paid = await hasPaid('sa_id', justPaid ? { retries: 5, delayMs: 1500 } : {});
     if (!paid) { setPaymentModal('sa_id'); setPendingVerify(() => doVerifySaId); return; }
 
     setIdStatus('verifying'); setIdMsg('');
@@ -426,12 +438,12 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   };
 
   // ── Verify Passport ──────────────────────────────────────────────────────────
-  const doVerifyPassport = async () => {
+  const doVerifyPassport = async (justPaid = false) => {
     if (!passportNumber.trim()) { toast.error('Please enter your passport number'); return; }
     if (!passportFront || !passportBack) { toast.error('Please upload both passport photos as required by VerifyNow'); return; }
     if (!passportSelfie) { toast.error('Please take a selfie — it\'s required to confirm you are the passport holder'); return; }
 
-    const paid = await hasPaid('passport');
+    const paid = await hasPaid('passport', justPaid ? { retries: 5, delayMs: 1500 } : {});
     if (!paid) { setPaymentModal('passport'); setPendingVerify(() => doVerifyPassport); return; }
 
     setIdStatus('verifying'); setIdMsg('');
@@ -474,11 +486,11 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   };
 
   // ── Verify Driver's Licence ──────────────────────────────────────────────────
-  const doVerifyLicence = async () => {
+  const doVerifyLicence = async (justPaid = false) => {
     if (!licenceNumber.trim()) { toast.error('Please enter your driver\'s licence number'); return; }
     if (!licenceFront || !licenceBack) { toast.error('Please upload both front and back of your licence'); return; }
 
-    const paid = await hasPaid('licence');
+    const paid = await hasPaid('licence', justPaid ? { retries: 5, delayMs: 1500 } : {});
     if (!paid) { setPaymentModal('licence'); setPendingVerify(() => doVerifyLicence); return; }
 
     setLicStatus('verifying'); setLicMsg('');
