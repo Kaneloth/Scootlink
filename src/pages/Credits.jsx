@@ -129,6 +129,7 @@ export default function Credits() {
     setPurchasing(pkg.id);
 
     const isNative = Capacitor.isNativePlatform();
+    toast.info(`[Debug] isNative=${isNative}`, { duration: 8000 });
 
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate', {
@@ -146,8 +147,10 @@ export default function Credits() {
         const qs = new URLSearchParams(data.fields).toString();
         const fullUrl = `${data.action_url}?${qs}`;
         console.log('[Credits] Opening native payment Custom Tab:', fullUrl);
+        toast.info(`[Debug] Opening: ${data.action_url}`, { duration: 8000 });
         const { Browser } = await import('@capacitor/browser');
         await Browser.open({ url: fullUrl, presentationStyle: 'popover' });
+        toast.info('[Debug] Browser.open() completed without error', { duration: 8000 });
         return;
       }
 
@@ -173,6 +176,9 @@ export default function Credits() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto pb-24">
+      <div style={{ background: 'red', color: 'white', padding: '16px', fontSize: '18px', fontWeight: 'bold', textAlign: 'center', marginBottom: '12px' }}>
+        BUILD MARKER — 2026-07-08-2300
+      </div>
       <PageHeader title="Credits" subtitle="Buy and manage your Skootlink credits" backTo="/home" />
 
       {/* Balance card */}

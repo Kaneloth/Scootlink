@@ -63,17 +63,12 @@ export const handler = async (event) => {
   const m_payment_id = `skoot_verif_${body.service_type}_${user.id.slice(0, 8)}_${Date.now()}`;
   const firstName = (user.user_metadata?.full_name || 'Skootlink').split(' ')[0];
 
-  // See payfast-initiate.js for why native uses the custom URL scheme
-  // instead of an https:// return_url.
-  const isNative = body.is_native === true;
-  const return_url = isNative
-    ? `co.za.skootlink.app://payment-result?status=success&category=verification&service=${body.service_type}`
-    : `${SITE_URL}/profile?verif_payment=success&service=${body.service_type}`;
-  const cancel_url = isNative
-    ? `co.za.skootlink.app://payment-result?status=cancelled&category=verification`
-    : `${SITE_URL}/profile?verif_payment=cancelled`;
+  // See payfast-initiate.js for why this always uses the https bridge page
+  // instead of branching on is_native.
+  const return_url = `${SITE_URL}/payment-callback.html?status=success&category=verification&service=${body.service_type}`;
+  const cancel_url = `${SITE_URL}/payment-callback.html?status=cancelled&category=verification`;
 
-  console.log(`[payfast-initiate-verification] is_native=${isNative} return_url=${return_url} cancel_url=${cancel_url}`);
+  console.log(`[payfast-initiate-verification] return_url=${return_url} cancel_url=${cancel_url}`);
 
   const fields = {
     merchant_id:      MERCHANT_ID,

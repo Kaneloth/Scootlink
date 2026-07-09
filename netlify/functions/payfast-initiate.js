@@ -60,20 +60,17 @@ export const handler = async (event) => {
   const m_payment_id = `skoot_${user.id.slice(0, 8)}_${Date.now()}`;
   const firstName = (user.user_metadata?.full_name || 'Skootlink').split(' ')[0];
 
-  // Native app: return via the custom URL scheme, which the OS hands back
-  // to the app's own appUrlOpen listener — a real https:// return_url would
-  // instead load skootlink.co.za as a totally separate, session-less origin
-  // inside whatever browser context PayFast redirects through (the same
-  // class of bug the Google sign-in flow had before its native rewrite).
-  const isNative = body.is_native === true;
-  const return_url = isNative
-    ? `co.za.skootlink.app://payment-result?status=success&category=credits&package=${body.package_id}`
-    : `${SITE_URL}/credits?payment=success`;
-  const cancel_url = isNative
-    ? `co.za.skootlink.app://payment-result?status=cancelled&category=credits`
-    : `${SITE_URL}/credits?payment=cancelled`;
+  // Always a real https:// URL — PayFast's own acceptance of non-standard
+  // schemes for return_url/cancel_url is unverified, so route through a
+  // static bridge page on our own domain instead. That page then triggers
+  // the co.za.skootlink.app:// deep link itself (which we've already
+  // proven works, via the Google sign-in flow), falling back to a normal
+  // in-page redirect for web/desktop users where no app is installed to
+  // catch the deep link. See public/payment-callback.html.
+  const return_url = `${SITE_URL}/payment-callback.html?status=success&category=credits&package=${body.package_id}`;
+  const cancel_url = `${SITE_URL}/payment-callback.html?status=cancelled&category=credits`;
 
-  console.log(`[payfast-initiate] is_native=${isNative} return_url=${return_url} cancel_url=${cancel_url}`);
+  console.log(`[payfast-initiate] return_url=${return_url} cancel_url=${cancel_url}`);
 
   const fields = {
     merchant_id:      MERCHANT_ID,
