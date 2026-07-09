@@ -17,6 +17,7 @@
     text-align: center;
     padding: 24px;
   }
+  .card { max-width: 320px; }
   .spinner {
     width: 36px;
     height: 36px;
@@ -27,13 +28,27 @@
     margin: 0 auto 16px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  p { color: #71717a; font-size: 15px; }
+  p { color: #71717a; font-size: 15px; margin: 0 0 20px; }
+  .btn {
+    display: none;
+    width: 100%;
+    padding: 14px 20px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn.show { display: block; }
 </style>
 </head>
 <body>
-  <div>
-    <div class="spinner"></div>
+  <div class="card">
+    <div class="spinner" id="spinner"></div>
     <p id="msg">Returning to Skootlink…</p>
+    <button class="btn" id="returnBtn">Tap to return to Skootlink</button>
   </div>
 
   <script>
@@ -44,26 +59,46 @@
     var status = qs.get('status');
     var category = qs.get('category');
     var service = qs.get('service');
-
-    // Try the native deep link first — if the app is installed, the OS
-    // intercepts this before the fallback below ever fires.
     var deepLink = 'co.za.skootlink.app://payment-result' + params;
+
+    function fallbackUrl() {
+      if (category === 'verification') {
+        return '/profile?verif_payment=' + encodeURIComponent(status) +
+          (service ? '&service=' + encodeURIComponent(service) : '');
+      }
+      return '/credits?payment=' + encodeURIComponent(status);
+    }
+
+    // Attempt 1: automatic redirect. This works in some browser/device
+    // configurations, but Chrome on Android often silently blocks a
+    // JS-triggered top-level navigation to an unregistered scheme when it
+    // isn't tied to a genuine user tap — unlike a server-side HTTP redirect
+    // (which is how the Google sign-in deep link works, and why that one
+    // never had this problem). If this silently fails, nothing visible
+    // happens and the button below is the guaranteed path back.
     window.location.href = deepLink;
 
-    // Fallback for web/desktop users (no app to catch the deep link) —
-    // send them to the same page + toast logic that already existed before
-    // this bridge page was introduced.
+    // Attempt 2 (guaranteed): reveal a real, tappable button almost
+    // immediately. A genuine user tap satisfies Chrome's gesture
+    // requirement, so this should always succeed even when the automatic
+    // attempt above was silently blocked.
     setTimeout(function () {
-      var fallbackUrl;
-      if (category === 'verification') {
-        fallbackUrl = '/profile?verif_payment=' + encodeURIComponent(status) +
-          (service ? '&service=' + encodeURIComponent(service) : '');
-      } else {
-        fallbackUrl = '/credits?payment=' + encodeURIComponent(status);
-      }
-      document.getElementById('msg').textContent = 'Redirecting…';
-      window.location.href = fallbackUrl;
-    }, 1500);
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('msg').textContent = 'Tap below to continue.';
+      var btn = document.getElementById('returnBtn');
+      btn.classList.add('show');
+      btn.addEventListener('click', function () {
+        window.location.href = deepLink;
+      });
+    }, 600);
+
+    // Last resort: if even the button doesn't get tapped (or the app truly
+    // isn't installed — e.g. testing this URL directly in a normal mobile
+    // browser), fall back to a normal in-page redirect after a while so
+    // nobody gets stuck here indefinitely.
+    setTimeout(function () {
+      window.location.href = fallbackUrl();
+    }, 8000);
   </script>
 </body>
 </html>
