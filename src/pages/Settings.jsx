@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 import { Input } from '@/components/ui/input';
@@ -119,20 +120,99 @@ function CreditBalanceWidget() {
   );
   const [showCosts, setShowCosts] = React.useState(false);
 
+  // App.jsx's appUrlOpen listener dispatches this directly the instant it
+  // parses the co.za.skootlink.app://payment-result deep link — proven
+  // reliable (Google sign-in already depends on it). A plain window event
+  // listener persists for this component's whole lifetime, so it doesn't
+  // matter that this widget never unmounts while the Custom Tab is open.
+  const handlePaymentResult = React.useCallback((result) => {
+    setPurchasing(null);
+    if (!result || result.category !== 'credits') return; // not ours — e.g. a verification payment
+
+    if (result.status === 'success') {
+      toast.success('Payment received! Your credits have been added.');
+      refetch();
+    } else if (result.status === 'cancelled') {
+      toast.info('Payment cancelled.');
+    }
+  }, [refetch]);
+
+  const checkStoredResult = React.useCallback(() => {
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (!raw) return;
+    sessionStorage.removeItem('skootlink_payment_result');
+    try { handlePaymentResult(JSON.parse(raw)); } catch { /* ignore */ }
+  }, [handlePaymentResult]);
+
+  React.useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    checkStoredResult();
+
+    const onEvent = (e) => handlePaymentResult(e.detail);
+    window.addEventListener('skootlink:payment-result', onEvent);
+
+    // Second, independent trigger: fires whenever the OS brings the app
+    // back to the foreground, for any reason.
+    let appListener;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        appListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) checkStoredResult();
+        });
+      } catch { /* not in Capacitor environment */ }
+    })();
+
+    // Third, independent safety net: guarantees the button never stays
+    // stuck on "Processing" even in the worst case where the deep link
+    // genuinely never fires.
+    let browserListener;
+    (async () => {
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        browserListener = await Browser.addListener('browserFinished', () => {
+          setPurchasing(null);
+        });
+      } catch { /* not in Capacitor environment */ }
+    })();
+
+    return () => {
+      window.removeEventListener('skootlink:payment-result', onEvent);
+      if (appListener) appListener.remove().catch(() => {});
+      if (browserListener) browserListener.remove().catch(() => {});
+    };
+  }, [handlePaymentResult, checkStoredResult]);
+
   const handlePurchase = async () => {
     const pkg = CREDIT_PACKAGES.find(p => p.id === selectedPkg);
     if (!pkg) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
     setPurchasing(pkg.id);
+
+    const isNative = Capacitor.isNativePlatform();
+
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ package_id: pkg.id }),
+        body: JSON.stringify({ package_id: pkg.id, is_native: isNative }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
+
+      if (isNative) {
+        // Open in a Custom Tab, not this WebView — PayFast's process
+        // endpoint accepts the same fields as a GET query string. Return
+        // trip goes through public/payment-callback.html regardless of
+        // where the purchase was started from in the app.
+        const qs = new URLSearchParams(data.fields).toString();
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.open({ url: `${data.action_url}?${qs}`, presentationStyle: 'popover' });
+        return;
+      }
+
       const form = document.createElement('form');
       form.method = 'POST';
       form.action = data.action_url;
@@ -1327,20 +1407,6 @@ export default function Settings() {
 
         {isAdmin && (
           <TabsContent value="admin">
-            {/* __INCLUDE_ADMIN__ is a compile-time flag (see vite.config.js) —
-                false on native builds, so this never renders in the app;
-                the full dashboard only exists on the web. */}
-            {__INCLUDE_ADMIN__ && (
-              <div className="mb-4 p-4 rounded-xl border border-primary/20 bg-primary/5 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold">Full Admin Dashboard</p>
-                  <p className="text-xs text-muted-foreground">Overview, users, and rentals in one place — open in your browser.</p>
-                </div>
-                <Button size="sm" onClick={() => navigate('/admin')}>
-                  Open Dashboard
-                </Button>
-              </div>
-            )}
             <PlatformVerificationQueue />
             <div className="space-y-4">
               <div className="flex items-center justify-between">
