@@ -7,7 +7,6 @@ import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-d
 import { Capacitor } from '@capacitor/core';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import PageNotFound from './lib/PageNotFound';
-import { dlog, getDebugLog, clearDebugLog } from '@/lib/debugLog';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
 
@@ -163,51 +162,6 @@ const AuthenticatedApp = () => {
   );
 };
 
-// TEMPORARY diagnostic tool — safe to delete once the payment redirect
-// issue is fully resolved. Floating, always-visible log panel so we can see
-// what's happening on-device without needing USB debugging.
-function DebugOverlay() {
-  const [logs, setLogs] = React.useState([]);
-  const [open, setOpen] = React.useState(false);
-
-  React.useEffect(() => {
-    const update = () => setLogs([...getDebugLog()]);
-    update();
-    window.addEventListener('skootlink:debuglog', update);
-    return () => window.removeEventListener('skootlink:debuglog', update);
-  }, []);
-
-  if (!Capacitor.isNativePlatform()) return null;
-
-  return (
-    <div style={{ position: 'fixed', bottom: 8, right: 8, zIndex: 999999 }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{ background: '#000', color: '#0f0', padding: '6px 10px', borderRadius: 8, fontSize: 12, border: '2px solid #0f0', fontFamily: 'monospace' }}
-      >
-        DBG ({logs.length})
-      </button>
-      {open && (
-        <div style={{
-          position: 'fixed', bottom: 44, right: 8, left: 8, maxHeight: '60vh', overflowY: 'auto',
-          background: 'rgba(0,0,0,0.95)', color: '#0f0', fontSize: 10, fontFamily: 'monospace',
-          padding: 8, borderRadius: 8, border: '2px solid #0f0', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-        }}>
-          {logs.length === 0
-            ? <p>No logs yet.</p>
-            : logs.map((l, i) => <div key={i} style={{ marginBottom: 4, borderBottom: '1px solid #030', paddingBottom: 4 }}>{l.t} — {l.msg}</div>)}
-          <button
-            onClick={clearDebugLog}
-            style={{ marginTop: 8, background: '#500', color: '#fff', padding: '4px 8px', borderRadius: 4, fontSize: 10, border: 'none' }}
-          >
-            Clear
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function App() {
   // Register the PASSWORD_RECOVERY listener as early as possible — useMemo runs
   // synchronously during render, before any child component mounts. This ensures
@@ -272,17 +226,14 @@ function App() {
   // completing sign-in once the code is exchanged for a session.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    dlog('[App.jsx] appUrlOpen registration useEffect started');
     let listener;
     (async () => {
       try {
         const { App: CapApp } = await import('@capacitor/app');
         listener = await CapApp.addListener('appUrlOpen', async ({ url }) => {
-          dlog(`appUrlOpen FIRED: ${url}`);
           let authError = null;
           try {
             const parsed = new URL(url);
-            dlog(`parsed hostname=${parsed.hostname}`);
 
             // ── PayFast payment return (credits or verification) ──────────
             // Separate from the OAuth branch below — PayFast redirects here
@@ -295,7 +246,6 @@ function App() {
               const pkg = parsed.searchParams.get('package');
               const service = parsed.searchParams.get('service');
               const detail = { status, category, package: pkg, service };
-              dlog(`payment-result detail=${JSON.stringify(detail)}`);
               // Primary signal — appUrlOpen firing is the one thing in this
               // whole chain we've conclusively proven reliable (it's the
               // exact same mechanism Google sign-in already depends on).
@@ -305,16 +255,13 @@ function App() {
               // (which may not fire the same way for a programmatic close()
               // as it does for a user-initiated one on Android).
               window.dispatchEvent(new CustomEvent('skootlink:payment-result', { detail }));
-              dlog('window.dispatchEvent called');
               // Kept as a fallback for the case where the listening page
               // isn't mounted yet (e.g. app was killed and relaunched).
               sessionStorage.setItem('skootlink_payment_result', JSON.stringify(detail));
-              dlog('sessionStorage set');
               try {
                 const { Browser } = await import('@capacitor/browser');
                 await Browser.close().catch(() => {});
-                dlog('Browser.close() completed');
-              } catch (e) { dlog(`Browser.close() threw: ${e?.message}`); }
+              } catch (e) { /* not in Capacitor environment */ }
               return;
             }
 
@@ -360,11 +307,9 @@ function App() {
             } catch (e) { /* not in Capacitor environment */ }
           }
         });
-        dlog('[App.jsx] appUrlOpen listener REGISTERED successfully');
-      } catch (e) { dlog(`[App.jsx] appUrlOpen listener registration FAILED: ${e?.message}`); }
+      } catch (e) { }
     })();
     return () => {
-      dlog('[App.jsx] appUrlOpen registration useEffect CLEANUP (unmounting)');
       if (listener) { listener.remove().catch(() => {}); }
     };
   }, []);
@@ -377,7 +322,6 @@ function App() {
         </Router>
         <Toaster />
         <SonnerToaster position="top-center" richColors />
-        <DebugOverlay />
       </QueryClientProvider>
     </AuthProvider>
   )

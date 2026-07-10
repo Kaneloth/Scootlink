@@ -14,7 +14,6 @@
  */
 import React, { useState, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { dlog } from '@/lib/debugLog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -341,23 +340,18 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   // component's whole lifetime, so it doesn't matter that this page never
   // unmounts while the Custom Tab is open.
   const handlePaymentResult = React.useCallback((result) => {
-    dlog(`[VerifPanel] handlePaymentResult called: ${JSON.stringify(result)}`);
     if (!result || result.category !== 'verification') {
-      dlog('[VerifPanel] ignored — not our category');
       return; // not ours — e.g. a credits purchase
     }
 
     setPaymentModal(null);
     if (result.status === 'success') {
-      dlog('[VerifPanel] status=success — showing toast + calling pendingVerify(true)');
       toast.success('Payment received! Verifying…');
       setPendingVerify(prevFn => {
-        dlog(`[VerifPanel] pendingVerify prevFn exists? ${!!prevFn}`);
         if (prevFn) prevFn(true); // true = justPaid, gives the webhook time to land
         return null;
       });
     } else if (result.status === 'cancelled') {
-      dlog('[VerifPanel] status=cancelled — showing toast');
       toast.info('Payment cancelled — verification was not started.');
       setPendingVerify(null);
     }
@@ -367,24 +361,21 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   // used both on mount and whenever the app resumes to the foreground.
   const checkStoredResult = React.useCallback(() => {
     const raw = sessionStorage.getItem('skootlink_payment_result');
-    dlog(`[VerifPanel] checkStoredResult: raw=${raw}`);
     if (!raw) return;
     sessionStorage.removeItem('skootlink_payment_result');
-    try { handlePaymentResult(JSON.parse(raw)); } catch (e) { dlog(`[VerifPanel] JSON.parse failed: ${e?.message}`); }
+    try { handlePaymentResult(JSON.parse(raw)); } catch (e) { }
   }, [handlePaymentResult]);
 
   React.useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    dlog('[VerifPanel] listener useEffect mounted');
 
     // Covers the case where App.jsx's dispatch fired before this component
     // mounted (app process killed while the Custom Tab was open, relaunched
     // fresh) — App.jsx also stashes the same detail here as a fallback.
     checkStoredResult();
 
-    const onEvent = (e) => { dlog(`[VerifPanel] window event received: ${JSON.stringify(e.detail)}`); handlePaymentResult(e.detail); };
+    const onEvent = (e) => handlePaymentResult(e.detail);
     window.addEventListener('skootlink:payment-result', onEvent);
-    dlog('[VerifPanel] window event listener registered');
 
     // Second, independent trigger: Capacitor's own "app became active
     // again" event — fires whenever the OS brings the app back to the
@@ -395,11 +386,9 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
       try {
         const { App: CapApp } = await import('@capacitor/app');
         appListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
-          dlog(`[VerifPanel] appStateChange fired: isActive=${isActive}`);
           if (isActive) checkStoredResult();
         });
-        dlog('[VerifPanel] appStateChange listener registered');
-      } catch (e) { dlog(`[VerifPanel] appStateChange listener setup failed: ${e?.message}`); }
+      } catch (e) { }
     })();
 
     // Third, independent safety net: if the Custom Tab closes for any
@@ -415,11 +404,9 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
       try {
         const { Browser } = await import('@capacitor/browser');
         browserListener = await Browser.addListener('browserFinished', () => {
-          dlog('[VerifPanel] browserFinished fired');
           setPaymentModal(null);
         });
-        dlog('[VerifPanel] browserFinished listener registered');
-      } catch (e) { dlog(`[VerifPanel] browserFinished listener setup failed: ${e?.message}`); }
+      } catch (e) { }
     })();
 
     return () => {
