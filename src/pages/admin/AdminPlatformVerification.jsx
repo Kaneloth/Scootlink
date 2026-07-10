@@ -72,13 +72,26 @@ export default function AdminPlatformVerification() {
       .eq('id', entry.id);
     if (error) {
       toast.error('Failed to update: ' + error.message);
-    } else {
-      toast.success(approve ? 'Platform history approved' : 'Platform history rejected');
-      setPending(prev => prev.filter(p => p.id !== entry.id));
-      setRejectingId(null);
-      setRejectReason('');
-      setRejectReasonOther('');
+      setProcessingId(null);
+      return;
     }
+
+    // Delete the evidence screenshot now that it's been reviewed — same
+    // data-minimisation approach used for identity documents. Best-effort:
+    // if this bucket doesn't yet have a DELETE policy for admins, this
+    // silently no-ops rather than blocking the review itself.
+    if (entry.evidence_url) {
+      try {
+        await supabase.storage.from('platform-evidence').remove([entry.evidence_url]);
+      } catch (e) {
+        console.warn('[AdminPlatformVerification] evidence cleanup skipped:', e?.message);
+      }
+    }
+    toast.success(approve ? 'Platform history approved' : 'Platform history rejected');
+    setPending(prev => prev.filter(p => p.id !== entry.id));
+    setRejectingId(null);
+    setRejectReason('');
+    setRejectReasonOther('');
     setProcessingId(null);
   };
 

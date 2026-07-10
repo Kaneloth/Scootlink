@@ -46,6 +46,7 @@ const AdminOverview = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin
 const AdminUserManagement = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminUserManagement')) : null;
 const AdminRentalsOversight = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminRentalsOversight')) : null;
 const AdminPlatformVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminPlatformVerification')) : null;
+const AdminIdentityVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminIdentityVerification')) : null;
 const AdminCreditGrants = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminCreditGrants')) : null;
 
 function AdminLoadingScreen() {
@@ -149,6 +150,7 @@ const AuthenticatedApp = () => {
           <Route path="users" element={<AdminUserManagement />} />
           <Route path="rentals" element={<AdminRentalsOversight />} />
           <Route path="platform-verification" element={<AdminPlatformVerification />} />
+          <Route path="identity-verification" element={<AdminIdentityVerification />} />
           <Route path="credit-grants" element={<AdminCreditGrants />} />
         </Route>
       )}
