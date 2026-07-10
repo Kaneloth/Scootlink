@@ -24,6 +24,7 @@ export default function AdminIdentityVerification() {
   const [signedUrls, setSignedUrls] = useState({});
   const [processingId, setProcessingId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectReasonOther, setRejectReasonOther] = useState('');
 
@@ -152,7 +153,12 @@ export default function AdminIdentityVerification() {
                   return (
                     <div key={key} className="text-center">
                       {url ? (
-                        <img src={url} alt={label} className="w-full aspect-square object-cover rounded-lg border border-border" />
+                        <img
+                          src={url}
+                          alt={label}
+                          onClick={() => setPreviewImage(url)}
+                          className="w-full aspect-square object-cover rounded-lg border border-border cursor-pointer hover:opacity-80 transition-opacity"
+                        />
                       ) : (
                         <div className="w-full aspect-square rounded-lg border border-border bg-muted flex items-center justify-center">
                           <AlertTriangle className="w-4 h-4 text-muted-foreground" />
@@ -222,6 +228,26 @@ export default function AdminIdentityVerification() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80"
+          onClick={() => setPreviewImage(null)}
+        >
+          <img
+            src={previewImage}
+            alt="Document preview"
+            className="max-w-full max-h-[90vh] rounded-xl object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setPreviewImage(null)}
+            className="absolute top-4 right-4 text-white bg-white/10 hover:bg-white/20 rounded-full w-9 h-9 flex items-center justify-center text-xl"
+          >
+            ×
+          </button>
         </div>
       )}
     </div>
