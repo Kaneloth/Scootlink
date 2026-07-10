@@ -270,6 +270,7 @@ function App() {
   // completing sign-in once the code is exchanged for a session.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
+    dlog('[App.jsx] appUrlOpen registration useEffect started');
     let listener;
     (async () => {
       try {
@@ -360,9 +361,13 @@ function App() {
             } catch (e) { /* not in Capacitor environment */ }
           }
         });
-      } catch (e) { /* not in Capacitor environment */ }
+        dlog('[App.jsx] appUrlOpen listener REGISTERED successfully');
+      } catch (e) { dlog(`[App.jsx] appUrlOpen listener registration FAILED: ${e?.message}`); }
     })();
-    return () => { if (listener) { listener.remove().catch(() => {}); } };
+    return () => {
+      dlog('[App.jsx] appUrlOpen registration useEffect CLEANUP (unmounting)');
+      if (listener) { listener.remove().catch(() => {}); }
+    };
   }, []);
 
   return (
