@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
+import { dlog } from '@/lib/debugLog';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 import { Input } from '@/components/ui/input';
@@ -120,37 +121,41 @@ function CreditBalanceWidget() {
   );
   const [showCosts, setShowCosts] = React.useState(false);
 
-  // App.jsx's appUrlOpen listener dispatches this directly the instant it
-  // parses the co.za.skootlink.app://payment-result deep link — proven
-  // reliable (Google sign-in already depends on it). A plain window event
-  // listener persists for this component's whole lifetime, so it doesn't
-  // matter that this widget never unmounts while the Custom Tab is open.
   const handlePaymentResult = React.useCallback((result) => {
+    dlog(`[CreditWidget] handlePaymentResult called: ${JSON.stringify(result)}`);
     setPurchasing(null);
-    if (!result || result.category !== 'credits') return; // not ours — e.g. a verification payment
+    if (!result || result.category !== 'credits') {
+      dlog('[CreditWidget] ignored — not our category');
+      return; // not ours — e.g. a verification payment
+    }
 
     if (result.status === 'success') {
+      dlog('[CreditWidget] status=success — showing toast + refetching');
       toast.success('Payment received! Your credits have been added.');
       refetch();
     } else if (result.status === 'cancelled') {
+      dlog('[CreditWidget] status=cancelled — showing toast');
       toast.info('Payment cancelled.');
     }
   }, [refetch]);
 
   const checkStoredResult = React.useCallback(() => {
     const raw = sessionStorage.getItem('skootlink_payment_result');
+    dlog(`[CreditWidget] checkStoredResult: raw=${raw}`);
     if (!raw) return;
     sessionStorage.removeItem('skootlink_payment_result');
-    try { handlePaymentResult(JSON.parse(raw)); } catch { /* ignore */ }
+    try { handlePaymentResult(JSON.parse(raw)); } catch (e) { dlog(`[CreditWidget] JSON.parse failed: ${e?.message}`); }
   }, [handlePaymentResult]);
 
   React.useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
+    dlog('[CreditWidget] listener useEffect mounted');
 
     checkStoredResult();
 
-    const onEvent = (e) => handlePaymentResult(e.detail);
+    const onEvent = (e) => { dlog(`[CreditWidget] window event received: ${JSON.stringify(e.detail)}`); handlePaymentResult(e.detail); };
     window.addEventListener('skootlink:payment-result', onEvent);
+    dlog('[CreditWidget] window event listener registered');
 
     // Second, independent trigger: fires whenever the OS brings the app
     // back to the foreground, for any reason.
@@ -159,9 +164,11 @@ function CreditBalanceWidget() {
       try {
         const { App: CapApp } = await import('@capacitor/app');
         appListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
+          dlog(`[CreditWidget] appStateChange fired: isActive=${isActive}`);
           if (isActive) checkStoredResult();
         });
-      } catch { /* not in Capacitor environment */ }
+        dlog('[CreditWidget] appStateChange listener registered');
+      } catch (e) { dlog(`[CreditWidget] appStateChange listener setup failed: ${e?.message}`); }
     })();
 
     // Third, independent safety net: guarantees the button never stays
@@ -172,9 +179,11 @@ function CreditBalanceWidget() {
       try {
         const { Browser } = await import('@capacitor/browser');
         browserListener = await Browser.addListener('browserFinished', () => {
+          dlog('[CreditWidget] browserFinished fired');
           setPurchasing(null);
         });
-      } catch { /* not in Capacitor environment */ }
+        dlog('[CreditWidget] browserFinished listener registered');
+      } catch (e) { dlog(`[CreditWidget] browserFinished listener setup failed: ${e?.message}`); }
     })();
 
     return () => {
@@ -203,10 +212,10 @@ function CreditBalanceWidget() {
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
 
       if (isNative) {
-        // Open in a Custom Tab, not this WebView — PayFast's process
-        // endpoint accepts the same fields as a GET query string. Return
-        // trip goes through public/payment-callback.html regardless of
-        // where the purchase was started from in the app.
+        // Open in a Custom Tab, not this WebView — return_url is a real
+        // server-side redirect (payment-redirect function) straight to
+        // co.za.skootlink.app://payment-result, the same mechanism the
+        // Google sign-in flow already uses successfully.
         const qs = new URLSearchParams(data.fields).toString();
         const { Browser } = await import('@capacitor/browser');
         await Browser.open({ url: `${data.action_url}?${qs}`, presentationStyle: 'popover' });
@@ -1407,6 +1416,20 @@ export default function Settings() {
 
         {isAdmin && (
           <TabsContent value="admin">
+            {/* __INCLUDE_ADMIN__ is a compile-time flag (see vite.config.js) —
+                false on native builds, so this never renders in the app;
+                the full dashboard only exists on the web. */}
+            {__INCLUDE_ADMIN__ && (
+              <div className="mb-4 p-4 rounded-xl border border-primary/20 bg-primary/5 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Full Admin Dashboard</p>
+                  <p className="text-xs text-muted-foreground">Overview, users, and rentals in one place — open in your browser.</p>
+                </div>
+                <Button size="sm" onClick={() => navigate('/admin')}>
+                  Open Dashboard
+                </Button>
+              </div>
+            )}
             <PlatformVerificationQueue />
             <div className="space-y-4">
               <div className="flex items-center justify-between">

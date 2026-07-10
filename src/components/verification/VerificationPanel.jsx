@@ -2,7 +2,7 @@
  * VerificationPanel.jsx
  * Handles ID verification (RSA ID + Passport tabs) and Driver's Licence verification.
  * Verification is a paid service — NOT payable with free credits.
- * Prices: RSA ID = R15, Passport = R35, Driver's Licence = R35
+ * Prices: RSA ID = R49, Passport = R35, Driver's Licence = R35
  *
  * On failure: user is credited back in usage credits (based on lowest package rate)
  * and shown a refund request option.
@@ -86,6 +86,8 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
 
+    const isNative = Capacitor.isNativePlatform();
+
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate-verification', {
         method: 'POST',
@@ -93,7 +95,7 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ service_type: service }),
+        body: JSON.stringify({ service_type: service, is_native: isNative }),
       });
 
       // Guard against HTML error pages (function not found, crashed, etc.)
@@ -107,13 +109,13 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
 
-      if (Capacitor.isNativePlatform()) {
+      if (isNative) {
         // Open in a Custom Tab, not the app's own WebView — PayFast's
         // process endpoint accepts the same fields as a GET query string.
-        // The return_url the server built always points at our own https
-        // bridge page (public/payment-callback.html) regardless of
-        // platform, which then triggers the co.za.skootlink.app:// deep
-        // link itself — see payfast-initiate-verification.js.
+        // return_url is a real server-side redirect (payment-redirect
+        // function) straight to co.za.skootlink.app://payment-result — see
+        // payfast-initiate-verification.js for why that's a server-side
+        // redirect rather than a client-side JS one.
         const qs = new URLSearchParams(data.fields).toString();
         const { Browser } = await import('@capacitor/browser');
         await Browser.open({ url: `${data.action_url}?${qs}`, presentationStyle: 'popover' });

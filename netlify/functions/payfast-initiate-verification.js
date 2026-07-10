@@ -65,10 +65,17 @@ export const handler = async (event) => {
 
   // See payfast-initiate.js for why this always uses the https bridge page
   // instead of branching on is_native.
-  const return_url = `${SITE_URL}/payment-callback.html?status=success&category=verification&service=${body.service_type}`;
-  const cancel_url = `${SITE_URL}/payment-callback.html?status=cancelled&category=verification`;
+  // See payfast-initiate.js for why native uses a real server-side redirect
+  // (payment-redirect function) instead of the old client-side JS bridge page.
+  const isNative = body.is_native === true;
+  const return_url = isNative
+    ? `${SITE_URL}/.netlify/functions/payment-redirect?status=success&category=verification&service=${body.service_type}`
+    : `${SITE_URL}/profile?verif_payment=success&service=${body.service_type}`;
+  const cancel_url = isNative
+    ? `${SITE_URL}/.netlify/functions/payment-redirect?status=cancelled&category=verification`
+    : `${SITE_URL}/profile?verif_payment=cancelled`;
 
-  console.log(`[payfast-initiate-verification] return_url=${return_url} cancel_url=${cancel_url}`);
+  console.log(`[payfast-initiate-verification] is_native=${isNative} return_url=${return_url} cancel_url=${cancel_url}`);
 
   const fields = {
     merchant_id:      MERCHANT_ID,

@@ -67,10 +67,22 @@ export const handler = async (event) => {
   // proven works, via the Google sign-in flow), falling back to a normal
   // in-page redirect for web/desktop users where no app is installed to
   // catch the deep link. See public/payment-callback.html.
-  const return_url = `${SITE_URL}/payment-callback.html?status=success&category=credits&package=${body.package_id}`;
-  const cancel_url = `${SITE_URL}/payment-callback.html?status=cancelled&category=credits`;
+  // Native: a real server-side 302 redirect straight to the custom scheme
+  // (payment-redirect function) — the same mechanism the Google sign-in
+  // flow already uses successfully. The previous approach (a static bridge
+  // page doing a client-side JS redirect) was silently blocked by Chrome's
+  // policy against gesture-less navigation to custom schemes — confirmed
+  // via on-device debug logging showing appUrlOpen never fired at all.
+  // Web: unchanged, a normal in-app https destination.
+  const isNative = body.is_native === true;
+  const return_url = isNative
+    ? `${SITE_URL}/.netlify/functions/payment-redirect?status=success&category=credits&package=${body.package_id}`
+    : `${SITE_URL}/credits?payment=success`;
+  const cancel_url = isNative
+    ? `${SITE_URL}/.netlify/functions/payment-redirect?status=cancelled&category=credits`
+    : `${SITE_URL}/credits?payment=cancelled`;
 
-  console.log(`[payfast-initiate] return_url=${return_url} cancel_url=${cancel_url}`);
+  console.log(`[payfast-initiate] is_native=${isNative} return_url=${return_url} cancel_url=${cancel_url}`);
 
   const fields = {
     merchant_id:      MERCHANT_ID,
