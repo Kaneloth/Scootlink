@@ -649,10 +649,11 @@ export default function Dashboard() {
         ? `${vehicle.make} ${vehicle.model}${vehicle.year ? ` (${vehicle.year})` : ''}`.trim()
         : '';
       try {
-        downloadContractPDF(editableContractText, rental.id, vehicleInfo);
+        await downloadContractPDF(editableContractText, rental.id, vehicleInfo);
         toast.info('Signed agreement downloaded. Driver can also download it from My Briefcase.');
       } catch (pdfErr) {
         console.error('[Dashboard] PDF download failed:', pdfErr);
+        toast.error('Could not download the signed agreement — you can still get it from My Briefcase.');
       }
 
       // Notify driver that rental is now active

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/api/supabaseClient";
 import { downloadContractPDF } from "@/lib/contractExport";
@@ -72,7 +73,7 @@ function Spinner() {
 
 /* ─── Contract download ──────────────────────────────────────────────────── */
 
-function downloadContract(rental) {
+async function downloadContract(rental) {
   const v = rental.vehicles ?? {};
   const vehicleInfo = [v.make, v.model, v.year ? `(${v.year})` : ''].filter(Boolean).join(' ');
   const text = rental.contract_text || [
@@ -97,7 +98,12 @@ function downloadContract(rental) {
     "www.skootlink.co.za | help@skootlink.co.za",
   ].join("\n");
 
-  downloadContractPDF(text, rental.id, vehicleInfo);
+  try {
+    await downloadContractPDF(text, rental.id, vehicleInfo);
+  } catch (err) {
+    console.error('[MyBriefcase] PDF download failed:', err);
+    toast.error('Could not download the contract. Please try again.');
+  }
 }
 
 /* ─── Contracts tab ──────────────────────────────────────────────────────── */
