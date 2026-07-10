@@ -186,6 +186,16 @@ function StatusBadge({ status, message, credits, onRequestRefund }) {
       {message || 'Submitted — awaiting review. This usually takes a day or two.'}
     </div>
   );
+  if (status === 'rejected') return (
+    <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">
+      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+      <div>
+        <p className="font-medium">Your submission was rejected</p>
+        <p className="mt-0.5">{message || 'Please review your details and photos, then submit again.'}</p>
+        <p className="text-xs mt-1 opacity-80">You can resubmit below at no extra charge.</p>
+      </div>
+    </div>
+  );
   if (status === 'verified') return (
     <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-sm">
       <CheckCircle2 className="w-4 h-4 shrink-0" /> {message || 'Verified successfully!'}
@@ -287,6 +297,42 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   const [pendingVerify,      setPendingVerify]      = useState(null); // function to call after payment confirmed
 
   const isDriver = accountType === 'driver' || accountType === 'both';
+
+  // Without this, idStatus/licStatus reset to blank on every mount — a
+  // pending or rejected submission from an earlier session would otherwise
+  // be invisible until the user happens to tap Verify again.
+  React.useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      const { data: idSubs } = await supabase
+        .from('identity_verification_submissions')
+        .select('verification_status, rejection_reason, created_at')
+        .eq('user_id', user.id)
+        .in('service_type', ['sa_id', 'passport'])
+        .order('created_at', { ascending: false })
+        .limit(1);
+      const idSub = idSubs?.[0];
+      if (idSub?.verification_status === 'pending') {
+        setIdStatus('pending'); setIdMsg('Submitted — awaiting review. This usually takes a day or two.');
+      } else if (idSub?.verification_status === 'rejected') {
+        setIdStatus('rejected'); setIdMsg(idSub.rejection_reason || 'Please review your details and photos, then submit again.');
+      }
+
+      const { data: licSubs } = await supabase
+        .from('identity_verification_submissions')
+        .select('verification_status, rejection_reason, created_at')
+        .eq('user_id', user.id)
+        .eq('service_type', 'licence')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      const licSub = licSubs?.[0];
+      if (licSub?.verification_status === 'pending') {
+        setLicStatus('pending'); setLicMsg('Submitted — awaiting review. This usually takes a day or two.');
+      } else if (licSub?.verification_status === 'rejected') {
+        setLicStatus('rejected'); setLicMsg(licSub.rejection_reason || 'Please review your details and photos, then submit again.');
+      }
+    })();
+  }, [user?.id]);
 
   // App.jsx's appUrlOpen listener dispatches this directly the instant it
   // parses the co.za.skootlink.app://payment-result deep link — the one
