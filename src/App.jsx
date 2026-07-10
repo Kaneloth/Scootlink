@@ -274,8 +274,7 @@ function App() {
     let listener;
     (async () => {
       try {
-        const capacitorAppPkg = '@' + 'capacitor/app';
-        const { App: CapApp } = await import(/* @vite-ignore */ capacitorAppPkg);
+        const { App: CapApp } = await import('@capacitor/app');
         listener = await CapApp.addListener('appUrlOpen', async ({ url }) => {
           dlog(`appUrlOpen FIRED: ${url}`);
           let authError = null;
@@ -310,8 +309,7 @@ function App() {
               sessionStorage.setItem('skootlink_payment_result', JSON.stringify(detail));
               dlog('sessionStorage set');
               try {
-                const capacitorBrowserPkg = '@' + 'capacitor/browser';
-                const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
+                const { Browser } = await import('@capacitor/browser');
                 await Browser.close().catch(() => {});
                 dlog('Browser.close() completed');
               } catch (e) { dlog(`Browser.close() threw: ${e?.message}`); }
@@ -355,8 +353,7 @@ function App() {
             sessionStorage.setItem('skootlink_oauth_error', e?.message || 'Sign-in failed. Please try again.');
           } finally {
             try {
-              const capacitorBrowserPkg = '@' + 'capacitor/browser';
-              const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
+              const { Browser } = await import('@capacitor/browser');
               await Browser.close().catch(() => {});
             } catch (e) { /* not in Capacitor environment */ }
           }
