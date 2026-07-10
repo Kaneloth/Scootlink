@@ -22,9 +22,9 @@ const PASSPHRASE   = process.env.PAYFAST_PASSPHRASE || '';
 // the payment modal shows one price while PayFast (and verification_payments.amount)
 // silently charges another.
 const SERVICES = {
-  sa_id:    { label: 'RSA ID Verification',          price: 49 },
-  passport: { label: 'Passport Verification',         price: 35 },
-  licence:  { label: "Driver's Licence Verification", price: 35 },
+  sa_id:    { label: 'RSA ID Verification',          price: 25 },
+  passport: { label: 'Passport Verification',         price: 25 },
+  licence:  { label: "Driver's Licence Verification", price: 25 },
 };
 
 const HEADERS = {
