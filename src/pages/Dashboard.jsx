@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
-  ChevronUp, ChevronDown, Star, RefreshCw
+  ChevronUp, ChevronDown, Star, RefreshCw, Megaphone
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
@@ -424,6 +424,45 @@ export default function Dashboard() {
     } catch (err) {
       console.error('[Dashboard] Failed to persist banner dismissal:', err);
       // Non-fatal — worst case it reappears next session, not a big deal.
+    }
+  };
+
+  // ── Admin announcements ──────────────────────────────────────────────────
+  const [announcement, setAnnouncement] = useState(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      try {
+        const { data: latest } = await supabase
+          .from('announcements')
+          .select('id, title, body, severity')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!latest) return;
+
+        const { data: dismissal } = await supabase
+          .from('announcement_dismissals')
+          .select('announcement_id')
+          .eq('user_id', user.id)
+          .eq('announcement_id', latest.id)
+          .maybeSingle();
+        if (!dismissal) setAnnouncement(latest);
+      } catch (err) {
+        console.error('[Dashboard] Failed to load announcement:', err);
+      }
+    })();
+  }, [user?.id]);
+
+  const dismissAnnouncement = async () => {
+    if (!announcement || !user?.id) return;
+    const id = announcement.id;
+    setAnnouncement(null); // hide immediately
+    try {
+      await supabase.from('announcement_dismissals').upsert({ user_id: user.id, announcement_id: id }, { onConflict: 'user_id,announcement_id' });
+    } catch (err) {
+      console.error('[Dashboard] Failed to persist announcement dismissal:', err);
     }
   };
 
@@ -1511,6 +1550,33 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
             <Link to={missingLocation ? '/profile' : '/onboarding'}>
               <Button size="sm" className="shrink-0 bg-amber-500 hover:bg-amber-600">Set Up</Button>
             </Link>
+          </Card>
+        );
+      })()}
+
+      {/* Admin announcement banner */}
+      {announcement && (() => {
+        const styles = {
+          info:    { border: 'border-blue-200', bg: 'bg-blue-50', text: 'text-blue-800', subtext: 'text-blue-700', icon: 'text-blue-500' },
+          warning: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-800', subtext: 'text-amber-700', icon: 'text-amber-500' },
+          success: { border: 'border-green-200', bg: 'bg-green-50', text: 'text-green-800', subtext: 'text-green-700', icon: 'text-green-500' },
+        }[announcement.severity || 'info'];
+        return (
+          <Card className={`p-4 border-2 ${styles.border} ${styles.bg} mb-3 flex items-start justify-between gap-3`}>
+            <div className="flex items-start gap-3">
+              <Megaphone className={`w-5 h-5 ${styles.icon} shrink-0 mt-0.5`} />
+              <div>
+                <p className={`text-sm font-semibold ${styles.text}`}>{announcement.title}</p>
+                <p className={`text-xs ${styles.subtext}`}>{announcement.body}</p>
+              </div>
+            </div>
+            <button
+              onClick={dismissAnnouncement}
+              aria-label="Dismiss"
+              className={`p-1 rounded-full ${styles.icon} hover:bg-black/5 transition-colors shrink-0`}
+            >
+              <X className="w-4 h-4" />
+            </button>
           </Card>
         );
       })()}
