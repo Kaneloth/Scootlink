@@ -28,14 +28,15 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('Please sign in again.'); return; }
 
-      // Count OTHER vehicles (excluding this one) to determine correct tier
+      // Count OTHER vehicles (excluding this one) to determine correct tier:
+      // 0 others = 250cr (1st vehicle), 1 other = 200cr (2nd), 2+ others = 175cr (3rd+)
       const [{ data: bal }, { data: otherVehicles }] = await Promise.all([
         supabase.rpc('get_credit_balance', { p_user_id: user.id }),
         supabase.from('vehicles').select('id', { count: 'exact' }).eq('owner_id', user.id).neq('id', vehicle.id),
       ]);
 
       const otherCount = otherVehicles?.length ?? 0;
-      const tierPrice  = otherCount === 0 ? 30 : otherCount === 1 ? 25 : 20;
+      const tierPrice  = otherCount === 0 ? 250 : otherCount === 1 ? 200 : 175;
 
       setPrice(tierPrice);
 
