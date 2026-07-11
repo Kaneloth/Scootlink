@@ -710,9 +710,9 @@ export default function Messages() {
         />
       )}
       {reportModal && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4"
           onClick={() => !reportSubmitting && setReportModal(null)}>
-          <div className="bg-background w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-4 max-h-[90vh] overflow-y-auto"
+          <div className="bg-background w-full max-w-md rounded-2xl p-4 max-h-[85vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
