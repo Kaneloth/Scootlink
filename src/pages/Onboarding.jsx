@@ -68,18 +68,6 @@ const SA_PROVINCE_CITIES = {
   ],
 };
 
-// ── Customer code generator ───────────────────────────────────────────────────
-// Generates a unique customer reference e.g. "SKT-12345ABC"
-// Format: SKT- + 5 digits + 3 uppercase letters
-function generateCustomerCode() {
-  const digits  = '0123456789';
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let code = 'SKT-';
-  for (let i = 0; i < 5; i++) code += digits[Math.floor(Math.random() * 10)];
-  for (let i = 0; i < 3; i++) code += letters[Math.floor(Math.random() * 26)];
-  return code;
-}
-
 // ── Phone normalisation ───────────────────────────────────────────────────────
 function normalisePhone(raw) {
   if (!raw) return raw;
@@ -325,7 +313,6 @@ export default function Onboarding() {
     location:             buildLocation(),
     residential_address:  form.residential_address,
     onboarding_completed: true,
-    customer_code:        generateCustomerCode(),
   });
 
   const saveGeoLocation = async (locationText, userId) => {
