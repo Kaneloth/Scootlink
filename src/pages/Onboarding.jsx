@@ -469,9 +469,17 @@ export default function Onboarding() {
       if (step === 0) {
         awardSignupCredits(form.role);
       }
-      setStep(nextIndex);
-      // Show privacy notice when entering Personal Info step
-      if (nextIndex === 1) setShowPrivacyNotice(true);
+      // Deferred by one tick (same fix as the Auth.jsx sign-in/sign-up
+      // toggle bug): on mobile browsers, if React swaps in new DOM content
+      // at the exact screen position of an in-progress tap, the browser can
+      // lose track of touch state there until an unrelated tap resets it.
+      // Letting this click finish being processed as a normal, complete
+      // gesture first avoids that entirely.
+      setTimeout(() => {
+        setStep(nextIndex);
+        // Show privacy notice when entering Personal Info step
+        if (nextIndex === 1) setShowPrivacyNotice(true);
+      }, 0);
       return;
     }
     saveAndNavigate('home');
@@ -807,7 +815,7 @@ export default function Onboarding() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => step === 0 ? navigate('/home') : setStep(s => s - 1)}
+                onClick={() => step === 0 ? navigate('/home') : setTimeout(() => setStep(s => s - 1), 0)}
                 className="gap-2"
               >
                 <ArrowLeft className="w-4 h-4" /> Back

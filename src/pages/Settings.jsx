@@ -1262,25 +1262,32 @@ export default function Settings() {
                     </p>
                   </div>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleSignInMethod}
-                  disabled={biometricLoading}
-                  className="gap-1.5"
-                >
-                  {biometricLoading && <Loader2 className="w-3 h-3 animate-spin" />}
-                  Switch to {signInMethod === 'password' ? 'Biometric' : 'Password'}
-                </Button>
+                {(Capacitor.isNativePlatform() || signInMethod === 'biometric') && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleSignInMethod}
+                    disabled={biometricLoading}
+                    className="gap-1.5"
+                  >
+                    {biometricLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                    Switch to {signInMethod === 'password' ? 'Biometric' : 'Password'}
+                  </Button>
+                )}
               </div>
               {signInMethod === 'biometric' && (
                 <p className="text-xs text-muted-foreground mt-3 pl-8">
                   Your fingerprint is registered on this device. The Sign In button on the login screen will prompt your fingerprint directly.
                 </p>
               )}
-              {signInMethod === 'password' && (
+              {signInMethod === 'password' && Capacitor.isNativePlatform() && (
                 <p className="text-xs text-muted-foreground mt-3 pl-8">
                   Switch to Biometric to use your device fingerprint sensor at login. You'll be prompted to scan your finger once to register.
+                </p>
+              )}
+              {signInMethod === 'password' && !Capacitor.isNativePlatform() && (
+                <p className="text-xs text-muted-foreground mt-3 pl-8">
+                  Biometric sign-in is only available in the Skootlink app, not in a web browser.
                 </p>
               )}
               {signInMethod === 'biometric' && (
