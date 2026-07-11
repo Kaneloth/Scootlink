@@ -592,6 +592,13 @@ export default function Settings() {
         .eq('blocker_id', user.id)
         .eq('blocked_id', blockedId);
       if (error) throw error;
+
+      // Blocking someone also hides their thread from the inbox (via the
+      // same mechanism as a plain "delete chat"). Without this, the thread
+      // would stay invisible even after unblocking, until they happened to
+      // send a brand new message.
+      await supabase.from('hidden_chats').delete().eq('user_id', user.id).eq('partner_id', blockedId);
+
       setBlockedUsers(prev => prev.filter(u => u.id !== blockedId));
       toast.success(`${name || 'User'} unblocked.`);
     } catch (err) {

@@ -22,8 +22,8 @@ async function hideMessageForUser(userId, messageId) {
   await supabase.from('hidden_messages').upsert({ user_id: userId, message_id: String(messageId) }, { onConflict: 'user_id,message_id' });
 }
 async function getHiddenChatPartnerIds(userId) {
-  const { data } = await supabase.from('hidden_chats').select('partner_id').eq('user_id', userId);
-  return new Set((data || []).map(r => r.partner_id));
+  const { data } = await supabase.from('hidden_chats').select('partner_id, created_at').eq('user_id', userId);
+  return new Map((data || []).map(r => [r.partner_id, r.created_at]));
 }
 async function hideChatForUser(userId, partnerId) {
   await supabase.from('hidden_chats').upsert({ user_id: userId, partner_id: partnerId }, { onConflict: 'user_id,partner_id' });
@@ -301,6 +301,21 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     e?.preventDefault();
     if (!text.trim() || sending) return;
     if (!canSend) { setShowTopUpPrompt(true); return; }
+
+    // Check this before spending any credits — RLS also enforces this
+    // server-side as the real guarantee, but checking here first avoids
+    // charging credits for a message that was never going to send anyway.
+    const { data: blockedByPartner } = await supabase
+      .from('blocked_users')
+      .select('blocker_id')
+      .eq('blocker_id', partner.id)
+      .eq('blocked_id', user.id)
+      .maybeSingle();
+    if (blockedByPartner) {
+      toast.error('This message could not be sent.');
+      return;
+    }
+
     const body = text.trim();
     setText('');
     setSending(true);
@@ -513,7 +528,7 @@ export default function Messages() {
   const [newChatEmail,  setNewChatEmail]  = useState('');
   const [showNewChat,   setShowNewChat]   = useState(false);
   const [selectedThread, setSelectedThread] = useState(null);
-  const [hiddenChats,   setHiddenChats]   = useState(new Set());
+  const [hiddenChats,   setHiddenChats]   = useState(new Map());
   const [previewProfile, setPreviewProfile] = useState(null);
   const menuRef      = useRef(null);
   const longPressRef = useRef(null);
@@ -555,7 +570,12 @@ export default function Messages() {
       const raw = [];
       for (const m of msgs) {
         const pid = m.sender_id === user.id ? m.receiver_id : m.sender_id;
-        if (hidden.has(pid) || blocked.has(pid) || seenIds.has(pid)) continue;
+        const hiddenAt = hidden.get(pid);
+        // msgs is ordered newest-first, so the first message we see for a
+        // given pid is that thread's most recent — comparing it against the
+        // hide timestamp tells us whether anything's arrived since the hide.
+        const stillHidden = hiddenAt && new Date(m.created_at) <= new Date(hiddenAt);
+        if (stillHidden || blocked.has(pid) || seenIds.has(pid)) continue;
         seenIds.add(pid);
         raw.push({ id: pid, name: pid, avatar: null, lastMsg: m.body, lastTime: m.created_at, unread: unreadCount.get(pid) || 0, isMine: m.sender_id === user.id });
       }
