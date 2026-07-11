@@ -71,6 +71,24 @@ export default function AdminDisputesCenter() {
 
       if (error) throw error;
 
+      // Let the reporter know the outcome — this is the whole point of them
+      // having filed the report in the first place; silently closing it
+      // with no feedback would be a bad experience.
+      const reportedLabel = report.reported?.full_name || report.reported_name || 'the user you reported';
+      try {
+        await supabase.rpc('create_notification', {
+          p_user_id: report.reporter_id,
+          p_type: 'dispute_update',
+          p_title: status === 'resolved' ? 'Your report has been resolved' : 'Your report has been reviewed',
+          p_body: status === 'resolved'
+            ? `We reviewed your report about ${reportedLabel} and took action. Thank you for helping keep Skootlink safe.`
+            : `We reviewed your report about ${reportedLabel} and closed it without further action.`,
+          p_data: { report_id: report.id },
+        });
+      } catch (notifyErr) {
+        console.warn('[AdminDisputesCenter] Failed to notify reporter (non-fatal):', notifyErr?.message);
+      }
+
       toast.success(status === 'resolved' ? 'Dispute marked resolved' : 'Dispute dismissed');
       setReports(prev => prev.filter(r => r.id !== report.id));
     } catch (err) {
