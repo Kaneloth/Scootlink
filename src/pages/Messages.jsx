@@ -709,7 +709,7 @@ export default function Messages() {
           onClose={() => setPreviewProfile(null)}
         />
       )}
-      {reportModal && (
+      {reportModal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
           onClick={() => !reportSubmitting && setReportModal(null)}>
           <div className="bg-background w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-4 max-h-[90vh] overflow-y-auto"
@@ -776,7 +776,8 @@ export default function Messages() {
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       <div className="max-w-2xl mx-auto pb-28">
         <div className="flex items-center gap-2 px-4 pt-4 pb-3">
