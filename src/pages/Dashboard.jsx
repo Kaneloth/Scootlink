@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { createPortal } from 'react-dom';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { auth, Vehicle, Rental, supabase } from '@/api/supabaseData';
@@ -693,6 +694,31 @@ export default function Dashboard() {
     }
   };
 
+  // Google's official in-app review popup — shown at most once per user,
+  // ever, tracked server-side so it doesn't repeat across devices. Note
+  // that Google's own Play Core library also applies its own internal
+  // quota on top of this (it won't necessarily display every single time
+  // requestReview() is called, by design, to avoid over-prompting users
+  // platform-wide) — this just stops *us* from asking again once we know
+  // we already have.
+  const maybePromptReview = async () => {
+    if (!user?.id || !Capacitor.isNativePlatform()) return;
+    try {
+      const { data } = await supabase.from('profiles').select('review_prompt_shown_at').eq('id', user.id).single();
+      if (data?.review_prompt_shown_at) return;
+
+      // Mark as shown before requesting — if the request itself fails or
+      // the user dismisses it, we still don't want to prompt again on
+      // their very next signing.
+      await supabase.from('profiles').update({ review_prompt_shown_at: new Date().toISOString() }).eq('id', user.id);
+
+      const { InAppReview } = await import('@capacitor-community/in-app-review');
+      await InAppReview.requestReview();
+    } catch (err) {
+      console.error('[Dashboard] Review prompt failed (non-fatal):', err);
+    }
+  };
+
   const handleDriverConfirm = async () => {
     if (!selectedProposal) return;
     try {
@@ -715,6 +741,7 @@ export default function Dashboard() {
       } catch { /* non-fatal */ }
 
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
+      maybePromptReview();
     } catch (err) {
       toast.error('Could not accept contract: ' + err.message);
     } finally {
@@ -786,6 +813,7 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+      maybePromptReview();
     } catch (err) {
       toast.error('Could not finalise rental: ' + err.message);
     } finally {
