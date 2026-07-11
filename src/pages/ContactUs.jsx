@@ -21,7 +21,7 @@ const CATEGORIES = [
 
 export default function ContactUs() {
   const location = useLocation();
-  const backTo       = location.state?.backTo        ?? '/settings';
+  const backTo       = location.state?.backTo        ?? -1;
   const passedCode   = location.state?.customerCode  ?? '';
   const passedName   = location.state?.userName      ?? '';
   const passedEmail  = location.state?.userEmail     ?? '';
