@@ -11,13 +11,27 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
-// ── localStorage helpers ──────────────────────────────────────────────────────
-const hiddenKey      = (uid) => `skootlink_hidden_msgs_${uid}`;
-const hiddenChatsKey = (uid) => `skootlink_hidden_chats_${uid}`;
-const getHidden      = (uid) => { try { return new Set(JSON.parse(localStorage.getItem(hiddenKey(uid))      || '[]')); } catch { return new Set(); } };
-const getHiddenChats = (uid) => { try { return new Set(JSON.parse(localStorage.getItem(hiddenChatsKey(uid))|| '[]')); } catch { return new Set(); } };
-const addHidden      = (uid, id)  => { const s = getHidden(uid);      s.add(id);  localStorage.setItem(hiddenKey(uid),      JSON.stringify([...s])); };
-const addHiddenChat  = (uid, pid) => { const s = getHiddenChats(uid); s.add(pid); localStorage.setItem(hiddenChatsKey(uid), JSON.stringify([...s])); };
+// ── Hidden chats / messages — stored server-side (not localStorage) so
+// deleting a chat or a single message, and blocking a user, all stay in
+// sync across every device the account is signed into, not just this one.
+async function getHiddenMessageIds(userId) {
+  const { data } = await supabase.from('hidden_messages').select('message_id').eq('user_id', userId);
+  return new Set((data || []).map(r => r.message_id));
+}
+async function hideMessageForUser(userId, messageId) {
+  await supabase.from('hidden_messages').upsert({ user_id: userId, message_id: String(messageId) }, { onConflict: 'user_id,message_id' });
+}
+async function getHiddenChatPartnerIds(userId) {
+  const { data } = await supabase.from('hidden_chats').select('partner_id').eq('user_id', userId);
+  return new Set((data || []).map(r => r.partner_id));
+}
+async function hideChatForUser(userId, partnerId) {
+  await supabase.from('hidden_chats').upsert({ user_id: userId, partner_id: partnerId }, { onConflict: 'user_id,partner_id' });
+}
+async function getBlockedPartnerIds(userId) {
+  const { data } = await supabase.from('blocked_users').select('blocked_id').eq('blocker_id', userId);
+  return new Set((data || []).map(r => r.blocked_id));
+}
 // ── Date separator helper ─────────────────────────────────────────────────────
 function dateSep(iso) {
   const d = new Date(iso);
@@ -171,7 +185,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const [loading,      setLoading]      = useState(true);
   const [selectedMsg,  setSelectedMsg]  = useState(null);
   const [menuOpenUp,   setMenuOpenUp]   = useState(false);
-  const [hiddenMsgs,   setHiddenMsgs]   = useState(() => getHidden(user.id));
+  const [hiddenMsgs,   setHiddenMsgs]   = useState(new Set());
   const [showProfile,  setShowProfile]  = useState(false);
   const [partnerLocation, setPartnerLocation] = useState('');
   const [chatCapReached,    setChatCapReached]    = useState(false);
@@ -198,7 +212,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         .select('*')
         .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partner.id}),and(sender_id.eq.${partner.id},receiver_id.eq.${user.id})`)
         .order('created_at', { ascending: true });
-      const hidden = getHidden(user.id);
+      const hidden = await getHiddenMessageIds(user.id);
       setHiddenMsgs(hidden);
       const filtered = (data || []).filter(m => !hidden.has(m.id));
       setMessages(filtered);
@@ -236,7 +250,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       .on('broadcast', { event: 'msg_deleted' }, ({ payload }) => {
           if (payload?.id) {
             setMessages(prev => prev.filter(m => m.id !== payload.id));
-            addHidden(user.id, payload.id);
+            hideMessageForUser(user.id, payload.id);
           }
         })
       .subscribe();
@@ -336,7 +350,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     setSelectedMsg(null);
   };
   const handleDeleteForMe = (msg) => {
-    addHidden(user.id, msg.id);
+    hideMessageForUser(user.id, msg.id);
     setMessages(prev => prev.filter(m => m.id !== msg.id));
     setSelectedMsg(null);
     toast.success('Deleted for you.');
@@ -345,7 +359,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     const { error } = await supabase.from('messages').delete().eq('id', msg.id).eq('sender_id', user.id);
     if (error) { toast.error('Could not delete.'); return; }
     setMessages(prev => prev.filter(m => m.id !== msg.id));
-    addHidden(user.id, msg.id);
+    hideMessageForUser(user.id, msg.id);
     setSelectedMsg(null);
     toast.success('Deleted for everyone.');
     broadcastRef.current?.send({ type: 'broadcast', event: 'msg_deleted', payload: { id: msg.id } });
@@ -506,10 +520,10 @@ export default function Messages() {
   const longTriggered= useRef(false);
 
   useEffect(() => {
-    auth.me().then(u => {
+    auth.me().then(async u => {
       setUser(u);
       if (u?.id) {
-        setHiddenChats(getHiddenChats(u.id));
+        setHiddenChats(await getHiddenChatPartnerIds(u.id));
         supabase.rpc('get_credit_balance', { p_user_id: u.id }).then(({ data }) => setCreditBalance(data ?? 0));
       }
     }).catch(() => {});
@@ -525,7 +539,11 @@ export default function Messages() {
         .order('created_at', { ascending: false })
         .limit(200);
       if (!msgs) { setThreads([]); return; }
-      const hidden = getHiddenChats(user.id);
+      const [hidden, blocked] = await Promise.all([
+        getHiddenChatPartnerIds(user.id),
+        getBlockedPartnerIds(user.id),
+      ]);
+      setHiddenChats(hidden);
       const seenIds = new Set();
       const unreadCount = new Map();
       for (const m of msgs) {
@@ -537,7 +555,7 @@ export default function Messages() {
       const raw = [];
       for (const m of msgs) {
         const pid = m.sender_id === user.id ? m.receiver_id : m.sender_id;
-        if (hidden.has(pid) || seenIds.has(pid)) continue;
+        if (hidden.has(pid) || blocked.has(pid) || seenIds.has(pid)) continue;
         seenIds.add(pid);
         raw.push({ id: pid, name: pid, avatar: null, lastMsg: m.body, lastTime: m.created_at, unread: unreadCount.get(pid) || 0, isMine: m.sender_id === user.id });
       }
@@ -603,7 +621,7 @@ export default function Messages() {
   };
 
   const handleDeleteChat = (pid) => {
-    addHiddenChat(user.id, pid);
+    hideChatForUser(user.id, pid);
     setHiddenChats(prev => new Set([...prev, pid]));
     setThreads(prev => prev.filter(t => t.id !== pid));
     setSelectedThread(null);
