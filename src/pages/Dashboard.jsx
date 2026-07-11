@@ -406,13 +406,26 @@ export default function Dashboard() {
       try {
         const { data } = await supabase
           .from('profiles')
-          .select('account_type')
+          .select('account_type, verification_banner_dismissed')
           .eq('id', u.id)
           .single();
         if (data?.account_type) setFreshAccountType(data.account_type);
+        if (data?.verification_banner_dismissed) setBannerDismissed(true);
       } catch { /* fall back to u.account_type */ }
     }).catch(() => {});
   }, []);
+
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const dismissVerificationBanner = async () => {
+    setBannerDismissed(true); // hide immediately, don't wait on the network
+    if (!user?.id) return;
+    try {
+      await supabase.from('profiles').update({ verification_banner_dismissed: true }).eq('id', user.id);
+    } catch (err) {
+      console.error('[Dashboard] Failed to persist banner dismissal:', err);
+      // Non-fatal — worst case it reappears next session, not a big deal.
+    }
+  };
 
   const queryClient = useQueryClient();
   const accountType = freshAccountType || user?.account_type || 'driver';
@@ -1505,7 +1518,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       {/* Banner 2 — profile done but not yet verified */}
       {user && (() => {
         const hasMinProfile = !!(user.full_name?.trim() && user.phone?.trim() && user.location?.trim());
-        if ((!user.onboarding_completed && !hasMinProfile) || user.verified || user.id_verified) return null;
+        if ((!user.onboarding_completed && !hasMinProfile) || user.verified || user.id_verified || bannerDismissed) return null;
         return (
           <Card className="p-4 border-2 border-blue-200 bg-blue-50 mb-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -1515,7 +1528,16 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                 <p className="text-xs text-blue-700">Verified users earn a ✅ badge that builds trust with owners and drivers on the platform</p>
               </div>
             </div>
-            <Link to="/profile?tab=verification"><Button size="sm" variant="outline" className="shrink-0 border-blue-400 text-blue-700 hover:bg-blue-100">Verify</Button></Link>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link to="/profile?tab=verification"><Button size="sm" variant="outline" className="border-blue-400 text-blue-700 hover:bg-blue-100">Verify</Button></Link>
+              <button
+                onClick={dismissVerificationBanner}
+                aria-label="Dismiss"
+                className="p-1 rounded-full text-blue-400 hover:text-blue-600 hover:bg-blue-100 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </Card>
         );
       })()}
