@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
 import {
   LayoutDashboard, Users, FileText, LogOut, ChevronLeft, Menu, Shield, X,
-  Loader2, Star, Coins, ShieldCheck, Flag, Megaphone,
+  Loader2, Star, Coins, ShieldCheck, Flag, Megaphone, Bell,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { label: 'Platform Verification', path: '/admin/platform-verification',  icon: Star },
   { label: 'Disputes Center',       path: '/admin/disputes',               icon: Flag },
   { label: 'Announcements',         path: '/admin/announcements',          icon: Megaphone },
+  { label: 'Automated Reminders',   path: '/admin/reminders',              icon: Bell },
   { label: 'Signup Credit Grants',  path: '/admin/credit-grants',          icon: Coins },
 ];
 
