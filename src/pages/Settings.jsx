@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Moon, Sun, ChevronRight, ChevronDown, ChevronUp, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
-  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins, Star, UserX, X,
+  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins, Star, UserX, X, HelpCircle,
 } from 'lucide-react';
 import { sendSMS } from '@/lib/sms';
 import { toast } from 'sonner';
@@ -1201,6 +1201,17 @@ export default function Settings() {
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </a>
+
+            <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors" onClick={() => navigate('/faq')}>
+              <div className="flex items-center gap-3">
+                <HelpCircle className="w-5 h-5 text-muted-foreground" />
+                <div className="text-left">
+                  <p className="text-sm font-medium text-foreground">FAQ</p>
+                  <p className="text-xs text-muted-foreground">Answers to common questions</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </div>
 
             <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors" onClick={() => navigate('/contact', { state: { customerCode: user?.customer_code, userName: user?.full_name, userEmail: user?.email } })}>
               <div className="flex items-center gap-3">

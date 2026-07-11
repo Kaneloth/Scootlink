@@ -200,6 +200,14 @@ function MobileHeader() {
 
       {/* Notification bell + profile button + dropdown */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={() => navigate('/contact')}
+          aria-label="Contact Support"
+          className="w-9 h-9 rounded-full flex items-center justify-center border border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors font-bold text-sm"
+          style={{ touchAction: 'manipulation' }}
+        >
+          ?
+        </button>
         <NotificationBell />
         <div className="relative" ref={dropdownRef}>
           <button
