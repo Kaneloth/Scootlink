@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import {
   ArrowLeft, Send, MessageCircle, Loader2, Plus,
   Copy, Trash, Trash2, Check, CheckCheck, UserX, RefreshCw,
+  Flag, X, Image as ImageIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
@@ -617,6 +618,62 @@ export default function Messages() {
     toast.success(`${name || 'User'} has been blocked.`);
   };
 
+  // ── Report and block ─────────────────────────────────────────────────────
+  const [reportModal, setReportModal] = useState(null); // { id, name } of the user being reported
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportFiles, setReportFiles] = useState([]); // File[]
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const reportFileInputRef = useRef(null);
+
+  const openReportModal = (pid, name) => {
+    setSelectedThread(null); // close the context menu
+    setReportModal({ id: pid, name });
+    setReportDetails('');
+    setReportFiles([]);
+  };
+
+  const handleReportFilesSelected = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) setReportFiles(prev => [...prev, ...files].slice(0, 5)); // cap at 5 screenshots
+    e.target.value = '';
+  };
+
+  const removeReportFile = (idx) => setReportFiles(prev => prev.filter((_, i) => i !== idx));
+
+  const handleSubmitReport = async () => {
+    if (!reportDetails.trim()) { toast.error('Please describe what happened.'); return; }
+    if (!reportModal?.id) return;
+    setReportSubmitting(true);
+
+    try {
+      const paths = [];
+      for (const file of reportFiles) {
+        const path = `${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const { error: uploadErr } = await supabase.storage.from('report-evidence').upload(path, file);
+        if (uploadErr) throw uploadErr;
+        paths.push(path);
+      }
+
+      const { error: insertErr } = await supabase.from('user_reports').insert({
+        reporter_id: user.id,
+        reported_id: reportModal.id,
+        reported_name: reportModal.name || 'User',
+        details: reportDetails.trim(),
+        screenshot_paths: paths,
+      });
+      if (insertErr) throw insertErr;
+
+      await handleBlockUser(reportModal.id, reportModal.name);
+      toast.success('Report submitted — our team will review it.');
+      setReportModal(null);
+    } catch (err) {
+      console.error('[Messages] Report submission failed:', err);
+      toast.error('Could not submit the report. Please try again.');
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
   const handleNewChat = async () => {
     if (!newChatEmail.trim()) return;
     const { data, error } = await supabase.from('profiles').select('id, full_name').eq('email', newChatEmail.trim()).single();
@@ -651,6 +708,75 @@ export default function Messages() {
           partnerAvatar={previewProfile.avatar}
           onClose={() => setPreviewProfile(null)}
         />
+      )}
+      {reportModal && (
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
+          onClick={() => !reportSubmitting && setReportModal(null)}>
+          <div className="bg-background w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-4 max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Flag className="w-4 h-4 text-destructive" />
+                <h2 className="font-bold text-foreground">Report {reportModal.name || 'user'}</h2>
+              </div>
+              <button onClick={() => !reportSubmitting && setReportModal(null)} className="p-1 rounded-full hover:bg-muted">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              This will block {reportModal.name || 'this user'} and send your report to our team for review. Please describe what happened.
+            </p>
+
+            <textarea
+              value={reportDetails}
+              onChange={e => setReportDetails(e.target.value)}
+              placeholder="What happened? Be as specific as possible…"
+              rows={4}
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card mb-3 resize-none"
+            />
+
+            <p className="text-xs font-medium text-foreground mb-1.5">Screenshots (optional, up to 5)</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {reportFiles.map((file, i) => (
+                <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-border">
+                  <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => removeReportFile(i)}
+                    className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+              {reportFiles.length < 5 && (
+                <button
+                  onClick={() => reportFileInputRef.current?.click()}
+                  className="w-16 h-16 rounded-lg border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:border-primary/40 transition-colors"
+                >
+                  <ImageIcon className="w-5 h-5" />
+                </button>
+              )}
+              <input
+                ref={reportFileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleReportFilesSelected}
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" disabled={reportSubmitting} onClick={() => setReportModal(null)}>
+                Cancel
+              </Button>
+              <Button className="flex-1 gap-1.5" disabled={reportSubmitting} onClick={handleSubmitReport}>
+                {reportSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag className="w-4 h-4" />}
+                Submit & Block
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
       <div className="max-w-2xl mx-auto pb-28">
         <div className="flex items-center gap-2 px-4 pt-4 pb-3">
@@ -733,6 +859,10 @@ export default function Messages() {
                       <button onClick={() => handleBlockUser(t.id, t.name)}
                         className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
                         <UserX className="w-4 h-4" /> Block user
+                      </button>
+                      <button onClick={() => openReportModal(t.id, t.name)}
+                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-destructive hover:bg-muted transition-colors">
+                        <Flag className="w-4 h-4" /> Report and block
                       </button>
                     </div>
                   )}
