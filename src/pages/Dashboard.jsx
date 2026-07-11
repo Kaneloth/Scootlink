@@ -433,22 +433,36 @@ export default function Dashboard() {
     if (!user?.id) return;
     (async () => {
       try {
-        const { data: latest } = await supabase
+        const { data: active } = await supabase
           .from('announcements')
-          .select('id, title, body, severity')
+          .select('id, title, body, severity, target_type')
           .eq('is_active', true)
           .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (!latest) return;
+          .limit(20);
+        if (!active?.length) return;
 
-        const { data: dismissal } = await supabase
+        const { data: dismissals } = await supabase
           .from('announcement_dismissals')
           .select('announcement_id')
-          .eq('user_id', user.id)
-          .eq('announcement_id', latest.id)
-          .maybeSingle();
-        if (!dismissal) setAnnouncement(latest);
+          .eq('user_id', user.id);
+        const dismissedIds = new Set((dismissals || []).map(d => d.announcement_id));
+
+        const specificIds = active.filter(a => a.target_type === 'specific').map(a => a.id);
+        let myTargetedIds = new Set();
+        if (specificIds.length) {
+          const { data: recipientRows } = await supabase
+            .from('announcement_recipients')
+            .select('announcement_id')
+            .eq('user_id', user.id)
+            .in('announcement_id', specificIds);
+          myTargetedIds = new Set((recipientRows || []).map(r => r.announcement_id));
+        }
+
+        const applicable = active.find(a =>
+          !dismissedIds.has(a.id) &&
+          (a.target_type === 'all' || myTargetedIds.has(a.id))
+        );
+        if (applicable) setAnnouncement(applicable);
       } catch (err) {
         console.error('[Dashboard] Failed to load announcement:', err);
       }
