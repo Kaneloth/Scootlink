@@ -1127,7 +1127,7 @@ export default function Auth() {
                     )}
                     <p>
                       Don't have an account?{' '}
-                      <button onClick={() => { setIsLogin(false); setLoginStage('idle'); setBannerReason(null); }}
+                      <button onClick={() => setTimeout(() => { setIsLogin(false); setLoginStage('idle'); setBannerReason(null); }, 0)}
                         className="text-primary font-semibold hover:underline">Create one</button>
                     </p>
                   </div>
@@ -1311,7 +1311,7 @@ export default function Auth() {
               </Button>
               <p className="text-center text-sm text-muted-foreground">
                 Already have an account?{' '}
-                <button onClick={() => setIsLogin(true)} className="text-primary hover:underline">
+                <button onClick={() => setTimeout(() => setIsLogin(true), 0)} className="text-primary hover:underline">
                   Sign in
                 </button>
               </p>
