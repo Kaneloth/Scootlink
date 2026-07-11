@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Capacitor } from '@capacitor/core';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
@@ -11,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Moon, Sun, ChevronRight, ChevronDown, ChevronUp, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
-  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins, Star,
+  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins, Star, UserX, X,
 } from 'lucide-react';
 import { sendSMS } from '@/lib/sms';
 import { toast } from 'sonner';
@@ -543,6 +544,62 @@ export default function Settings() {
   const [isGoogleUser, setIsGoogleUser] = useState(false);
 
   const [showDeleteSection, setShowDeleteSection] = useState(false);
+  const [showBlockedModal, setShowBlockedModal] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [blockedLoading, setBlockedLoading] = useState(false);
+  const [unblockingId, setUnblockingId] = useState(null);
+
+  const fetchBlockedUsers = async () => {
+    if (!user?.id) return;
+    setBlockedLoading(true);
+    try {
+      const { data: rows, error } = await supabase
+        .from('blocked_users')
+        .select('blocked_id, created_at')
+        .eq('blocker_id', user.id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+
+      const ids = (rows || []).map(r => r.blocked_id);
+      const { data: profiles } = ids.length
+        ? await supabase.from('profiles').select('id, full_name, email').in('id', ids)
+        : { data: [] };
+      const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
+
+      setBlockedUsers((rows || []).map(r => ({
+        id: r.blocked_id,
+        blockedAt: r.created_at,
+        name: profileMap[r.blocked_id]?.full_name || 'Unknown user',
+        email: profileMap[r.blocked_id]?.email || '',
+      })));
+    } catch (err) {
+      toast.error('Could not load blocked users: ' + err.message);
+    }
+    setBlockedLoading(false);
+  };
+
+  const openBlockedModal = () => {
+    setShowBlockedModal(true);
+    fetchBlockedUsers();
+  };
+
+  const handleUnblock = async (blockedId, name) => {
+    setUnblockingId(blockedId);
+    try {
+      const { error } = await supabase
+        .from('blocked_users')
+        .delete()
+        .eq('blocker_id', user.id)
+        .eq('blocked_id', blockedId);
+      if (error) throw error;
+      setBlockedUsers(prev => prev.filter(u => u.id !== blockedId));
+      toast.success(`${name || 'User'} unblocked.`);
+    } catch (err) {
+      toast.error('Could not unblock: ' + err.message);
+    }
+    setUnblockingId(null);
+  };
+
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -1269,6 +1326,19 @@ export default function Settings() {
               )}
             </div>
 
+            <div className="p-4 rounded-xl bg-card border cursor-pointer" onClick={openBlockedModal}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <UserX className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Blocked Users</p>
+                    <p className="text-xs text-muted-foreground">Manage people you've blocked</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </div>
+            </div>
+
             <div className="p-4 rounded-xl bg-card border border-destructive/30">
               <div
                 className="flex items-center justify-between cursor-pointer"
@@ -1967,6 +2037,52 @@ export default function Settings() {
         )}
 
       </Tabs>
+
+      {showBlockedModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setShowBlockedModal(false)}>
+          <div className="bg-background w-full max-w-md rounded-2xl p-4 max-h-[85vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <UserX className="w-4 h-4 text-muted-foreground" />
+                <h2 className="font-bold text-foreground">Blocked Users</h2>
+              </div>
+              <button onClick={() => setShowBlockedModal(false)} className="p-1 rounded-full hover:bg-muted">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+
+            {blockedLoading ? (
+              <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+            ) : blockedUsers.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">You haven't blocked anyone.</p>
+            ) : (
+              <div className="space-y-2">
+                {blockedUsers.map(u => (
+                  <div key={u.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{u.name}</p>
+                      {u.email && <p className="text-xs text-muted-foreground truncate">{u.email}</p>}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={unblockingId === u.id}
+                      onClick={() => handleUnblock(u.id, u.name)}
+                      className="shrink-0 gap-1.5"
+                    >
+                      {unblockingId === u.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                      Unblock
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
