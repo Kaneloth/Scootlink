@@ -34,46 +34,124 @@ const CREDIT_PACKAGES = [
   { id: 'business', credits: 1040, price: 199 },
 ];
 
-async function registerBiometric() {
-  // Ask the OS what's actually available and enrolled — no per-user
-  // "credential" to create; enrollment lives at the device level.
-  // strongBiometryIsAvailable specifically means fingerprint-tier (Class 3)
-  // biometry — most devices classify face unlock as "weak" (Class 2), so
-  // checking this instead of isAvailable is what keeps this fingerprint-only.
-  const check = await BiometricAuth.checkBiometry();
-  if (!check.strongBiometryIsAvailable) {
-    throw new Error(
-      check.strongCode === 'biometryNotEnrolled'
-        ? 'No fingerprint enrolled on this device. Add one in your device settings first, then try again.'
-        : 'Fingerprint authentication is not available on this device.'
-    );
+async function registerBiometric(user) {
+  if (Capacitor.isNativePlatform()) {
+    // Native — unchanged. Ask the OS what's actually available and
+    // enrolled — no per-user "credential" to create; enrollment lives at
+    // the device level. strongBiometryIsAvailable specifically means
+    // fingerprint-tier (Class 3) biometry — most devices classify face
+    // unlock as "weak" (Class 2), so checking this instead of isAvailable
+    // is what keeps this fingerprint-only.
+    const check = await BiometricAuth.checkBiometry();
+    if (!check.strongBiometryIsAvailable) {
+      throw new Error(
+        check.strongCode === 'biometryNotEnrolled'
+          ? 'No fingerprint enrolled on this device. Add one in your device settings first, then try again.'
+          : 'Fingerprint authentication is not available on this device.'
+      );
+    }
+    // Confirm it actually works before turning the setting on, so we never
+    // flip signInMethod to 'biometric' without having proven it succeeds.
+    await BiometricAuth.authenticate({
+      reason: "Confirm it's you to enable biometric sign-in",
+      androidTitle: 'Skootlink',
+      androidSubtitle: 'Set up biometric sign-in',
+      androidBiometryStrength: AndroidBiometryStrength.strong,
+    });
+    return;
   }
-  // Confirm it actually works before turning the setting on, so we never
-  // flip signInMethod to 'biometric' without having proven it succeeds.
-  await BiometricAuth.authenticate({
-    reason: "Confirm it's you to enable biometric sign-in",
-    androidTitle: 'Skootlink',
-    androidSubtitle: 'Set up biometric sign-in',
-    androidBiometryStrength: AndroidBiometryStrength.strong,
+
+  // Web — real WebAuthn, for browsers with a platform authenticator
+  // (Windows Hello, Touch ID, Android Chrome's fingerprint prompt, etc.).
+  // This is a genuinely separate, independent capability from the native
+  // path above — nothing to do with Capacitor's WebView limitations.
+  if (!window.PublicKeyCredential) {
+    throw new Error('Fingerprint authentication is not supported on this device or browser.');
+  }
+  const challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+  const userIdBytes = new TextEncoder().encode(user?.id || 'skootlink-user');
+  const credential = await navigator.credentials.create({
+    publicKey: {
+      challenge,
+      rp: { name: 'Skootlink', id: window.location.hostname },
+      user: {
+        id: userIdBytes,
+        name: user?.email || 'user',
+        displayName: user?.full_name || user?.email || 'User',
+      },
+      pubKeyCredParams: [
+        { alg: -7,   type: 'public-key' },
+        { alg: -257, type: 'public-key' },
+      ],
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',
+        userVerification: 'required',
+      },
+      timeout: 60000,
+    },
   });
+  if (!credential) throw new Error('Fingerprint enrollment failed.');
+  const raw = credential.rawId;
+  localStorage.setItem('scootlink_biometric_credential_id', btoa(String.fromCharCode(...new Uint8Array(raw))));
 }
 
 async function verifyBiometric() {
-  const check = await BiometricAuth.checkBiometry();
-  if (!check.strongBiometryIsAvailable) {
+  if (Capacitor.isNativePlatform()) {
+    // Native — unchanged.
+    const check = await BiometricAuth.checkBiometry();
+    if (!check.strongBiometryIsAvailable) {
+      const err = new Error('Fingerprint authentication is not available on this device.');
+      err.code = 'no-credential';
+      throw err;
+    }
+    try {
+      await BiometricAuth.authenticate({
+        reason: "Confirm it's you",
+        androidTitle: 'Skootlink',
+        androidSubtitle: 'Verify your identity',
+        androidBiometryStrength: AndroidBiometryStrength.strong,
+      });
+    } catch (err) {
+      if (err?.code === 'userCancel' || err?.code === 'systemCancel' || err?.code === 'appCancel') {
+        const e = new Error('Verification was cancelled.');
+        e.code = 'cancelled';
+        throw e;
+      }
+      const e = new Error('Fingerprint not recognised. Try again.');
+      e.code = 'fingerprint-failed';
+      throw e;
+    }
+    return;
+  }
+
+  // Web — WebAuthn verification, using the credential stored at registration.
+  if (!window.PublicKeyCredential) {
     const err = new Error('Fingerprint authentication is not available on this device.');
     err.code = 'no-credential';
     throw err;
   }
+  const storedId = localStorage.getItem('scootlink_biometric_credential_id');
+  if (!storedId) {
+    const err = new Error('No fingerprint registered on this device.');
+    err.code = 'no-credential';
+    throw err;
+  }
+  const challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+  const rawId = Uint8Array.from(atob(storedId), c => c.charCodeAt(0));
   try {
-    await BiometricAuth.authenticate({
-      reason: "Confirm it's you",
-      androidTitle: 'Skootlink',
-      androidSubtitle: 'Verify your identity',
-      androidBiometryStrength: AndroidBiometryStrength.strong,
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials: [{ id: rawId, type: 'public-key' }],
+        userVerification: 'required',
+        timeout: 60000,
+      },
     });
+    if (!assertion) throw new Error('Fingerprint not recognised. Try again.');
   } catch (err) {
-    if (err?.code === 'userCancel' || err?.code === 'systemCancel' || err?.code === 'appCancel') {
+    if (err?.name === 'NotAllowedError') {
       const e = new Error('Verification was cancelled.');
       e.code = 'cancelled';
       throw e;
@@ -715,6 +793,7 @@ export default function Settings() {
         setBiometricLoading(false);
       }
     } else {
+      localStorage.removeItem('scootlink_biometric_credential_id');
       setSignInMethod('password');
       localStorage.setItem('scootlink_signin_method', 'password');
       supabase.auth.updateUser({ data: { sign_in_method: 'password' } });
@@ -1262,32 +1341,25 @@ export default function Settings() {
                     </p>
                   </div>
                 </div>
-                {(Capacitor.isNativePlatform() || signInMethod === 'biometric') && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={toggleSignInMethod}
-                    disabled={biometricLoading}
-                    className="gap-1.5"
-                  >
-                    {biometricLoading && <Loader2 className="w-3 h-3 animate-spin" />}
-                    Switch to {signInMethod === 'password' ? 'Biometric' : 'Password'}
-                  </Button>
-                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleSignInMethod}
+                  disabled={biometricLoading}
+                  className="gap-1.5"
+                >
+                  {biometricLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Switch to {signInMethod === 'password' ? 'Biometric' : 'Password'}
+                </Button>
               </div>
               {signInMethod === 'biometric' && (
                 <p className="text-xs text-muted-foreground mt-3 pl-8">
                   Your fingerprint is registered on this device. The Sign In button on the login screen will prompt your fingerprint directly.
                 </p>
               )}
-              {signInMethod === 'password' && Capacitor.isNativePlatform() && (
+              {signInMethod === 'password' && (
                 <p className="text-xs text-muted-foreground mt-3 pl-8">
                   Switch to Biometric to use your device fingerprint sensor at login. You'll be prompted to scan your finger once to register.
-                </p>
-              )}
-              {signInMethod === 'password' && !Capacitor.isNativePlatform() && (
-                <p className="text-xs text-muted-foreground mt-3 pl-8">
-                  Biometric sign-in is only available in the Skootlink app, not in a web browser.
                 </p>
               )}
               {signInMethod === 'biometric' && (
