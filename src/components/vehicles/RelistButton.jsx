@@ -11,15 +11,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Coins, AlertTriangle } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
+import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
 
 export default function RelistButton({ vehicle, onRelisted, className = '' }) {
   const navigate = useNavigate();
   const [checking, setChecking] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
-  const [balance, setBalance] = useState(null);
   const [price, setPrice] = useState(null);
 
   const handleRelistClick = async () => {
@@ -28,22 +28,22 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('Please sign in again.'); return; }
 
-      // Count OTHER vehicles (excluding this one) to determine correct tier:
-      // 0 others = 250cr (1st vehicle), 1 other = 200cr (2nd), 2+ others = 175cr (3rd+)
+      // Count OTHER vehicles (excluding this one) to determine correct tier
       const [{ data: bal }, { data: otherVehicles }] = await Promise.all([
         supabase.rpc('get_credit_balance', { p_user_id: user.id }),
         supabase.from('vehicles').select('id', { count: 'exact' }).eq('owner_id', user.id).neq('id', vehicle.id),
       ]);
-      const otherCount = otherVehicles?.length ?? 0;
-      const tierPrice  = otherCount === 0 ? 250 : otherCount === 1 ? 200 : 175;
 
-      setBalance(bal ?? 0);
+      const otherCount = otherVehicles?.length ?? 0;
+      const tierPrice  = otherCount === 0 ? 30 : otherCount === 1 ? 25 : 20;
+
       setPrice(tierPrice);
 
       if ((bal ?? 0) < tierPrice) {
         setShowTopUp(true);
         return;
       }
+
       navigate(`/edit-vehicle?id=${vehicle.id}&relist=1`);
     } finally {
       setChecking(false);
@@ -61,33 +61,14 @@ export default function RelistButton({ vehicle, onRelisted, className = '' }) {
       >
         <RefreshCw className="w-3.5 h-3.5" /> Re-list{price ? ` (${price} cr)` : ''}
       </Button>
-      {showTopUp && (
-        <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowTopUp(false)}>
-          <div className="bg-card rounded-2xl w-full max-w-sm shadow-xl p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-              </div>
-              <div>
-                <p className="font-semibold text-foreground">Not enough credits</p>
-                <p className="text-xs text-muted-foreground">You need {price ?? 250} credits to re-list this vehicle</p>
-              </div>
-            </div>
-            <div className="bg-muted rounded-xl p-4 mb-4 flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Your balance</span>
-              <span className="font-bold text-foreground flex items-center gap-1">
-                <Coins className="w-4 h-4 text-primary" /> {balance ?? 0} credits
-              </span>
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setShowTopUp(false)}>Cancel</Button>
-              <Button className="flex-1" onClick={() => { setShowTopUp(false); navigate('/credits'); }}>
-                Top Up Credits
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+
+      <InsufficientCreditsModal
+        open={showTopUp}
+        onClose={() => setShowTopUp(false)}
+        requiredAmount={price}
+        actionLabel="re-list this vehicle"
+      />
     </>
   );
 }
+
