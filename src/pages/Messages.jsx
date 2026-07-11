@@ -658,6 +658,7 @@ export default function Messages() {
         reporter_id: user.id,
         reported_id: reportModal.id,
         reported_name: reportModal.name || 'User',
+        reason: reportDetails.trim(), // pre-existing column on this table, required (NOT NULL)
         details: reportDetails.trim(),
         screenshot_paths: paths,
       });
