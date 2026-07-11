@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
-  ChevronUp, ChevronDown, Star, RefreshCw, Megaphone
+  ChevronUp, ChevronDown, Star, RefreshCw, Megaphone, Bell
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
@@ -488,6 +488,56 @@ export default function Dashboard() {
     queryFn: () => Vehicle.filter({ owner_id: user?.id }),
     enabled: !!user?.id,
   });
+
+  // ── Automated reminder rules ──────────────────────────────────────────────
+  // Distinct from admin announcements — these trigger automatically based on
+  // the user's own account state (profile completeness, verification status,
+  // etc.), no manual sending required.
+  const [reminder, setReminder] = useState(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      try {
+        const { data: activeRules } = await supabase
+          .from('reminder_rules')
+          .select('id, title, body, severity, condition_type')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false });
+        if (!activeRules?.length) return;
+
+        const { data: dismissals } = await supabase
+          .from('reminder_dismissals')
+          .select('rule_id')
+          .eq('user_id', user.id);
+        const dismissedIds = new Set((dismissals || []).map(d => d.rule_id));
+
+        const hasMinProfile = !!(user.full_name?.trim() && user.phone?.trim() && user.location?.trim());
+        const conditionMatches = {
+          profile_incomplete: () => !hasMinProfile,
+          not_verified: () => !user.id_verified && !user.licence_verified,
+          no_vehicle_listed: () => (accountType === 'owner' || accountType === 'both') && vehicles.length === 0,
+        };
+
+        const applicable = activeRules.find(r =>
+          !dismissedIds.has(r.id) && conditionMatches[r.condition_type]?.()
+        );
+        if (applicable) setReminder(applicable);
+      } catch (err) {
+        console.error('[Dashboard] Failed to load reminder rules:', err);
+      }
+    })();
+  }, [user?.id, accountType, vehicles.length]);
+
+  const dismissReminder = async () => {
+    if (!reminder || !user?.id) return;
+    const id = reminder.id;
+    setReminder(null);
+    try {
+      await supabase.from('reminder_dismissals').upsert({ user_id: user.id, rule_id: id }, { onConflict: 'user_id,rule_id' });
+    } catch (err) {
+      console.error('[Dashboard] Failed to persist reminder dismissal:', err);
+    }
+  };
 
   const { data: allVehicles = [] } = useQuery({
     queryKey: ['all-vehicles'],
@@ -1542,6 +1592,33 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           </button>
         }
       />
+
+      {/* Automated reminder banner (condition-triggered, not manually sent) */}
+      {reminder && (() => {
+        const styles = {
+          info:    { border: 'border-blue-200', bg: 'bg-blue-50', text: 'text-blue-800', subtext: 'text-blue-700', icon: 'text-blue-500' },
+          warning: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-800', subtext: 'text-amber-700', icon: 'text-amber-500' },
+          success: { border: 'border-green-200', bg: 'bg-green-50', text: 'text-green-800', subtext: 'text-green-700', icon: 'text-green-500' },
+        }[reminder.severity || 'info'];
+        return (
+          <Card className={`p-4 border-2 ${styles.border} ${styles.bg} mb-3 flex items-start justify-between gap-3`}>
+            <div className="flex items-start gap-3">
+              <Bell className={`w-5 h-5 ${styles.icon} shrink-0 mt-0.5`} />
+              <div>
+                <p className={`text-sm font-semibold ${styles.text}`}>{reminder.title}</p>
+                <p className={`text-xs ${styles.subtext}`}>{reminder.body}</p>
+              </div>
+            </div>
+            <button
+              onClick={dismissReminder}
+              aria-label="Dismiss"
+              className={`p-1 rounded-full ${styles.icon} hover:bg-black/5 transition-colors shrink-0`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </Card>
+        );
+      })()}
 
       {/* Banner 1 — profile incomplete */}
       {user && (() => {
