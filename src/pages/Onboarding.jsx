@@ -718,7 +718,7 @@ export default function Onboarding() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
+    <div className="min-h-screen min-h-[100dvh] bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-start sm:items-center justify-center p-4 pt-8 pb-32">
       <div className="w-full max-w-xl">
         {/* Logo */}
         <div className="flex justify-center mb-6">
