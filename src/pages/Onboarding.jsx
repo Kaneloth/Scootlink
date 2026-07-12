@@ -664,6 +664,10 @@ export default function Onboarding() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
+      {/* TEMPORARY diagnostic — remove once confirmed fixed */}
+      <div className="fixed top-0 left-0 right-0 z-[999999] bg-black/90 text-green-400 text-[10px] font-mono p-1.5">
+        step={step} | body.pointerEvents="{document.body.style.pointerEvents}"
+      </div>
       <div className="w-full max-w-xl">
         {/* Logo */}
         <div className="flex justify-center mb-6">

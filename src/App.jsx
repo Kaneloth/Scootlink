@@ -185,12 +185,17 @@ function App() {
   // it's actually been observed so far.
   useEffect(() => {
     const clearIfStuck = () => {
-      // Never touch it while a genuine Radix dropdown/dialog is actually
-      // open and legitimately using the lock — only clear it once nothing
-      // with that data attribute is present, which is how Radix marks an
-      // actually-open popper/content element.
-      const somethingLegitimatelyOpen = document.querySelector('[data-radix-popper-content-wrapper], [role="dialog"][data-state="open"], [role="listbox"]');
-      if (document.body.style.pointerEvents === 'none' && !somethingLegitimatelyOpen) {
+      // Unconditional — no "is something legitimately open" guard. An
+      // earlier version tried to check for that, but Radix leaves closed
+      // dropdown elements sitting in the DOM (hidden, for animation/
+      // accessibility reasons) still carrying the same role/data attributes
+      // as genuinely open ones, so that check could match a stale, already-
+      // closed element and permanently block this from ever running. This
+      // is safe without the guard: if something is genuinely open, Radix
+      // re-applies its own lock synchronously the instant it opens, so any
+      // accidental clear during a real open state gets corrected almost
+      // immediately.
+      if (document.body.style.pointerEvents === 'none') {
         document.body.style.pointerEvents = '';
       }
     };
