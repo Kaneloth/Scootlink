@@ -653,6 +653,15 @@ export default function Onboarding() {
       // Letting this click finish being processed as a normal, complete
       // gesture first avoids that entirely.
       setTimeout(() => {
+        // Defensive: Radix-based dropdowns (the Select components on this
+        // and the vehicle step) can leave document.body locked with
+        // pointer-events:none if their portal gets torn down mid-transition
+        // — a known category of Radix bug. That lock lives on <body>, not
+        // per-step, which is exactly why it can appear to "spread" to
+        // earlier steps once it happens once. Clearing it unconditionally
+        // on every step change is a safe no-op when nothing was actually
+        // stuck.
+        document.body.style.pointerEvents = '';
         setStep(nextIndex);
         // Show privacy notice when entering Personal Info step
         if (nextIndex === 1) setShowPrivacyNotice(true);
@@ -663,6 +672,14 @@ export default function Onboarding() {
   };
 
   const currentStep = STEPS[step];
+
+  // Second layer of defense for the same Radix pointer-events lock issue —
+  // covers the case where the lock gets applied slightly after the click
+  // handler's own reset already ran, rather than exactly during it.
+  useEffect(() => {
+    document.body.style.pointerEvents = '';
+  }, [step]);
+
   const isSA        = form.country_type === 'South Africa';
   const cityList    = isSA && form.sa_province ? SA_PROVINCE_CITIES[form.sa_province] ?? [] : [];
   const cityIsOther = form.sa_city === '__other__';
@@ -1186,7 +1203,7 @@ export default function Onboarding() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => step === 0 ? navigate('/home') : setTimeout(() => setStep(s => s - 1), 0)}
+                onClick={() => step === 0 ? navigate('/home') : setTimeout(() => { document.body.style.pointerEvents = ''; setStep(s => s - 1); }, 0)}
                 className="gap-2"
               >
                 <ArrowLeft className="w-4 h-4" /> Back
