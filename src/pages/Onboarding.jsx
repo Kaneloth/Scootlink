@@ -128,25 +128,6 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep]   = useState(0);
 
-  // TEMPORARY diagnostic overlay — catches any JS error and shows it
-  // directly on screen. Safe to remove once the frozen-buttons bug is
-  // found; harmless if it never fires.
-  const [debugErrors, setDebugErrors] = useState([]);
-  useEffect(() => {
-    const onError = (e) => {
-      setDebugErrors(prev => [...prev, `ERROR: ${e.message} (${e.filename}:${e.lineno})`].slice(-5));
-    };
-    const onRejection = (e) => {
-      setDebugErrors(prev => [...prev, `UNHANDLED PROMISE: ${e.reason?.message || e.reason}`].slice(-5));
-    };
-    window.addEventListener('error', onError);
-    window.addEventListener('unhandledrejection', onRejection);
-    return () => {
-      window.removeEventListener('error', onError);
-      window.removeEventListener('unhandledrejection', onRejection);
-    };
-  }, []);
-
 
   // Android hardware back button — without this, Capacitor's default
   // behavior (history.back(), a real route change) fires instead, which has
@@ -683,16 +664,6 @@ export default function Onboarding() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
-      {/* TEMPORARY diagnostic overlay — remove once the frozen-buttons bug is found */}
-      <div className="fixed top-0 left-0 right-0 z-[999999] bg-black/90 text-green-400 text-[9px] font-mono p-1.5">
-        step={step} | showPrivacyNotice={String(showPrivacyNotice)} | body.pointerEvents="{document.body.style.pointerEvents}"
-      </div>
-      {debugErrors.length > 0 && (
-        <div className="fixed top-6 left-0 right-0 z-[999999] bg-red-950 text-red-100 text-[10px] font-mono p-2 max-h-40 overflow-y-auto">
-          {debugErrors.map((err, i) => <div key={i} className="mb-1 border-b border-red-800 pb-1">{err}</div>)}
-          <button onClick={() => setDebugErrors([])} className="text-red-300 underline">clear</button>
-        </div>
-      )}
       <div className="w-full max-w-xl">
         {/* Logo */}
         <div className="flex justify-center mb-6">
@@ -738,10 +709,7 @@ export default function Onboarding() {
                   return (
                     <div
                       key={role.id}
-                      onClick={() => {
-                        setDebugErrors(prev => [...prev, `ROLE CARD CLICKED: ${role.id}`].slice(-5));
-                        update('role', role.id);
-                      }}
+                      onClick={() => update('role', role.id)}
                       className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all select-none ${
                         selected
                           ? 'border-primary bg-primary/5 shadow-sm'
@@ -1212,17 +1180,14 @@ export default function Onboarding() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setDebugErrors(prev => [...prev, `BACK CLICKED at step=${step}`].slice(-5));
-                  step === 0 ? navigate('/home') : setStep(s => s - 1);
-                }}
+                onClick={() => step === 0 ? navigate('/home') : setStep(s => s - 1)}
                 className="gap-2"
               >
                 <ArrowLeft className="w-4 h-4" /> Back
               </Button>
 
               {step < STEPS.length - 1 ? (
-                <Button onClick={() => { setDebugErrors(prev => [...prev, `CONTINUE CLICKED at step=${step}`].slice(-5)); nextStep(); }} className="gap-2">
+                <Button onClick={nextStep} className="gap-2">
                   Continue <ArrowRight className="w-4 h-4" />
                 </Button>
               ) : (

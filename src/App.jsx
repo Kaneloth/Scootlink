@@ -171,6 +171,36 @@ const AuthenticatedApp = () => {
 };
 
 function App() {
+  // Radix's Select (and other Radix primitives) lock document.body with
+  // pointer-events:none while their dropdown/portal is open, and release it
+  // when it closes. Confirmed via on-device testing that this lock can get
+  // orphaned — left stuck at 'none' forever — most likely from rapid
+  // interaction with multiple Selects in quick succession (tapping one
+  // before a previous one's close/cleanup has fully finished). Since every
+  // interactive element in the app is a descendant of <body>, a stuck lock
+  // silently disables every button and link on the page with no error and
+  // no visual indication anything is wrong. This lives here (not on any
+  // one page) because the bug is in the shared Select component itself —
+  // any page using it is potentially affected, not just the screens where
+  // it's actually been observed so far.
+  useEffect(() => {
+    const clearIfStuck = () => {
+      // Never touch it while a genuine Radix dropdown/dialog is actually
+      // open and legitimately using the lock — only clear it once nothing
+      // with that data attribute is present, which is how Radix marks an
+      // actually-open popper/content element.
+      const somethingLegitimatelyOpen = document.querySelector('[data-radix-popper-content-wrapper], [role="dialog"][data-state="open"], [role="listbox"]');
+      if (document.body.style.pointerEvents === 'none' && !somethingLegitimatelyOpen) {
+        document.body.style.pointerEvents = '';
+      }
+    };
+    clearIfStuck();
+    const observer = new MutationObserver(clearIfStuck);
+    observer.observe(document.body, { attributes: true, attributeFilter: ['style'] });
+    const interval = setInterval(clearIfStuck, 300);
+    return () => { observer.disconnect(); clearInterval(interval); };
+  }, []);
+
   // Register the PASSWORD_RECOVERY listener as early as possible — useMemo runs
   // synchronously during render, before any child component mounts. This ensures
   // we catch the event even if Supabase fires it before Auth.jsx is mounted.
