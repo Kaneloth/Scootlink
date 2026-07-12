@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
@@ -126,6 +127,36 @@ const ROLES = [
 export default function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep]   = useState(0);
+
+  // Android hardware back button — without this, Capacitor's default
+  // behavior (history.back(), a real route change) fires instead, which has
+  // nothing to do with onboarding's own step state. That mismatch is what
+  // was causing Next/Back to become unresponsive: the app would navigate
+  // away from /onboarding via browser history while this component's
+  // internal state didn't necessarily reset to match, leaving things out of
+  // sync on the next visit. This makes hardware back behave identically to
+  // the on-screen Back button and stops the default behavior from also
+  // running alongside it.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let listener;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        listener = await CapApp.addListener('backButton', () => {
+          setStep(s => {
+            if (s === 0) {
+              navigate('/home');
+              return s;
+            }
+            return s - 1;
+          });
+        });
+      } catch (e) { /* not in Capacitor environment */ }
+    })();
+    return () => { if (listener) listener.remove().catch(() => {}); };
+  }, [navigate]);
+
   const [saving, setSaving] = useState(false);
   const [showPrivacyNotice, setShowPrivacyNotice] = useState(false);
 
