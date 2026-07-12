@@ -759,7 +759,10 @@ export default function Onboarding() {
                   return (
                     <div
                       key={role.id}
-                      onClick={() => update('role', role.id)}
+                      onClick={() => {
+                        setDebugErrors(prev => [...prev, `ROLE CARD CLICKED: ${role.id}`].slice(-5));
+                        setTimeout(() => update('role', role.id), 0);
+                      }}
                       className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all select-none ${
                         selected
                           ? 'border-primary bg-primary/5 shadow-sm'
