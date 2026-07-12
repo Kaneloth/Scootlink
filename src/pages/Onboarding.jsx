@@ -662,30 +662,32 @@ export default function Onboarding() {
     }
   };
 
+  const deferredStateChange = (fn) => {
+    // Double rAF: waits for two real paint cycles, not just "next tick" —
+    // setTimeout(0) only guarantees the current JS has finished, not that
+    // the browser has actually completed touch handling and painted a
+    // frame. For a large DOM swap like these steps, that gap matters.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      document.body.style.pointerEvents = '';
+      fn();
+    }));
+  };
+
   const nextStep = () => {
     if (step === 1 && !validatePersonal()) return;
     if (step < STEPS.length - 1) {
       const nextIndex = step + 1;
-      // Deferred by one tick (same fix as the Auth.jsx sign-in/sign-up
-      // toggle bug): on mobile browsers, if React swaps in new DOM content
-      // at the exact screen position of an in-progress tap, the browser can
-      // lose track of touch state there until an unrelated tap resets it.
-      // Letting this click finish being processed as a normal, complete
-      // gesture first avoids that entirely.
-      setTimeout(() => {
-        // Defensive: Radix-based dropdowns (the Select components on this
-        // and the vehicle step) can leave document.body locked with
-        // pointer-events:none if their portal gets torn down mid-transition
-        // — a known category of Radix bug. That lock lives on <body>, not
-        // per-step, which is exactly why it can appear to "spread" to
-        // earlier steps once it happens once. Clearing it unconditionally
-        // on every step change is a safe no-op when nothing was actually
-        // stuck.
-        document.body.style.pointerEvents = '';
+      // Deferred (same fix as the Auth.jsx sign-in/sign-up toggle bug): on
+      // mobile browsers, if React swaps in new DOM content at the exact
+      // screen position of an in-progress tap, the browser can lose track
+      // of touch state there until an unrelated tap resets it. Letting the
+      // browser fully finish the current interaction and paint first avoids
+      // that entirely.
+      deferredStateChange(() => {
         setStep(nextIndex);
         // Show privacy notice when entering Personal Info step
         if (nextIndex === 1) setShowPrivacyNotice(true);
-      }, 0);
+      });
       return;
     }
     saveAndNavigate('home');
@@ -708,8 +710,11 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
       {/* TEMPORARY diagnostic overlay — remove once the frozen-buttons bug is found */}
+      <div className="fixed top-0 left-0 right-0 z-[999999] bg-black/90 text-green-400 text-[9px] font-mono p-1.5">
+        step={step} | showPrivacyNotice={String(showPrivacyNotice)} | body.pointerEvents="{document.body.style.pointerEvents}"
+      </div>
       {debugErrors.length > 0 && (
-        <div className="fixed top-0 left-0 right-0 z-[999999] bg-red-950 text-red-100 text-[10px] font-mono p-2 max-h-40 overflow-y-auto">
+        <div className="fixed top-6 left-0 right-0 z-[999999] bg-red-950 text-red-100 text-[10px] font-mono p-2 max-h-40 overflow-y-auto">
           {debugErrors.map((err, i) => <div key={i} className="mb-1 border-b border-red-800 pb-1">{err}</div>)}
           <button onClick={() => setDebugErrors([])} className="text-red-300 underline">clear</button>
         </div>
@@ -1230,7 +1235,7 @@ export default function Onboarding() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => step === 0 ? navigate('/home') : setTimeout(() => { document.body.style.pointerEvents = ''; setStep(s => s - 1); }, 0)}
+                onClick={() => step === 0 ? navigate('/home') : deferredStateChange(() => setStep(s => s - 1))}
                 className="gap-2"
               >
                 <ArrowLeft className="w-4 h-4" /> Back
