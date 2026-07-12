@@ -555,6 +555,7 @@ export default function Onboarding() {
   };
 
   const saveAndNavigate = async (destination) => {
+    document.body.style.pointerEvents = '';
     setSaving(true);
     try {
       // Check for duplicate phone number before saving
@@ -666,7 +667,7 @@ export default function Onboarding() {
     if (step === 1 && !validatePersonal()) return;
     if (step < STEPS.length - 1) {
       const nextIndex = step + 1;
-      setStep(nextIndex);
+      goToStep(nextIndex);
       // Show privacy notice when entering Personal Info step
       if (nextIndex === 1) setShowPrivacyNotice(true);
       return;
@@ -686,16 +687,34 @@ export default function Onboarding() {
   // stuck at pointerEvents:none before any step change ever happens. At
   // that point the very buttons that would trigger a step change (and
   // therefore the earlier fixes) are the ones frozen — a genuine deadlock.
-  // This clears it the instant it's detected, regardless of cause.
   useEffect(() => {
-    const observer = new MutationObserver(() => {
+    const clearIfStuck = () => {
       if (document.body.style.pointerEvents === 'none' && !showPrivacyNotice) {
         document.body.style.pointerEvents = '';
       }
-    });
+    };
+    // Check immediately on mount/re-subscribe too, not just on the next
+    // mutation — a MutationObserver alone only reacts to *changes*, so a
+    // value that was already stuck before this effect (re)ran would
+    // otherwise never get caught if no further mutation happens afterward.
+    clearIfStuck();
+    const observer = new MutationObserver(clearIfStuck);
     observer.observe(document.body, { attributes: true, attributeFilter: ['style'] });
-    return () => observer.disconnect();
+    // Belt-and-suspenders: also poll on a short interval, since Radix can
+    // re-apply the lock asynchronously right after a mutation fires,
+    // potentially winning a timing race against the observer alone.
+    const interval = setInterval(clearIfStuck, 300);
+    return () => { observer.disconnect(); clearInterval(interval); };
   }, [showPrivacyNotice]);
+
+  // Synchronous clear-before-transition, called from every navigation
+  // action (role selection, Back, Continue, Skip) — guarantees the lock is
+  // gone at the one moment that matters most: right before step content
+  // swaps, regardless of whatever Radix cleanup timers are still pending.
+  const goToStep = (updater) => {
+    document.body.style.pointerEvents = '';
+    setStep(updater);
+  };
 
   const isSA        = form.country_type === 'South Africa';
   const cityList    = isSA && form.sa_province ? SA_PROVINCE_CITIES[form.sa_province] ?? [] : [];
@@ -761,7 +780,8 @@ export default function Onboarding() {
                       key={role.id}
                       onClick={() => {
                         setDebugErrors(prev => [...prev, `ROLE CARD CLICKED: ${role.id}`].slice(-5));
-                        setTimeout(() => update('role', role.id), 0);
+                        document.body.style.pointerEvents = '';
+                        update('role', role.id);
                       }}
                       className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all select-none ${
                         selected
@@ -1235,7 +1255,7 @@ export default function Onboarding() {
                 size="sm"
                 onClick={() => {
                   setDebugErrors(prev => [...prev, `BACK CLICKED at step=${step}`].slice(-5));
-                  step === 0 ? navigate('/home') : setStep(s => s - 1);
+                  step === 0 ? navigate('/home') : goToStep(s => s - 1);
                 }}
                 className="gap-2"
               >
