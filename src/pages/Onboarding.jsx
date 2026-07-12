@@ -906,21 +906,11 @@ export default function Onboarding() {
                 </p>
               </div>
 
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleAvatarUpload}
-              />
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="user"
-                className="hidden"
-                onChange={handleAvatarUpload}
-              />
+              {/* TEMPORARILY REMOVED for diagnostic isolation test — both
+                  hidden file inputs (especially the capture="user" one)
+                  are the one thing genuinely unique to this step that
+                  hasn't been ruled out yet. Restore once confirmed either
+                  way. */}
 
               <div className="flex flex-col items-center gap-4 py-2">
                 <div className="w-28 h-28 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border-2 border-dashed border-border">
