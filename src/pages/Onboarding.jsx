@@ -1235,14 +1235,17 @@ export default function Onboarding() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => step === 0 ? navigate('/home') : deferredStateChange(() => setStep(s => s - 1))}
+                onClick={() => {
+                  setDebugErrors(prev => [...prev, `BACK CLICKED at step=${step}`].slice(-5));
+                  step === 0 ? navigate('/home') : deferredStateChange(() => setStep(s => s - 1));
+                }}
                 className="gap-2"
               >
                 <ArrowLeft className="w-4 h-4" /> Back
               </Button>
 
               {step < STEPS.length - 1 ? (
-                <Button onClick={nextStep} className="gap-2">
+                <Button onClick={() => { setDebugErrors(prev => [...prev, `CONTINUE CLICKED at step=${step}`].slice(-5)); nextStep(); }} className="gap-2">
                   Continue <ArrowRight className="w-4 h-4" />
                 </Button>
               ) : (
