@@ -662,32 +662,13 @@ export default function Onboarding() {
     }
   };
 
-  const deferredStateChange = (fn) => {
-    // Double rAF: waits for two real paint cycles, not just "next tick" —
-    // setTimeout(0) only guarantees the current JS has finished, not that
-    // the browser has actually completed touch handling and painted a
-    // frame. For a large DOM swap like these steps, that gap matters.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      document.body.style.pointerEvents = '';
-      fn();
-    }));
-  };
-
   const nextStep = () => {
     if (step === 1 && !validatePersonal()) return;
     if (step < STEPS.length - 1) {
       const nextIndex = step + 1;
-      // Deferred (same fix as the Auth.jsx sign-in/sign-up toggle bug): on
-      // mobile browsers, if React swaps in new DOM content at the exact
-      // screen position of an in-progress tap, the browser can lose track
-      // of touch state there until an unrelated tap resets it. Letting the
-      // browser fully finish the current interaction and paint first avoids
-      // that entirely.
-      deferredStateChange(() => {
-        setStep(nextIndex);
-        // Show privacy notice when entering Personal Info step
-        if (nextIndex === 1) setShowPrivacyNotice(true);
-      });
+      setStep(nextIndex);
+      // Show privacy notice when entering Personal Info step
+      if (nextIndex === 1) setShowPrivacyNotice(true);
       return;
     }
     saveAndNavigate('home');
@@ -1251,7 +1232,7 @@ export default function Onboarding() {
                 size="sm"
                 onClick={() => {
                   setDebugErrors(prev => [...prev, `BACK CLICKED at step=${step}`].slice(-5));
-                  step === 0 ? navigate('/home') : deferredStateChange(() => setStep(s => s - 1));
+                  step === 0 ? navigate('/home') : setStep(s => s - 1);
                 }}
                 className="gap-2"
               >
