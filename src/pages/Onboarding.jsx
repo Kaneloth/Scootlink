@@ -260,6 +260,50 @@ export default function Onboarding() {
   const [vehicleImages, setVehicleImages] = useState([]);
   const [vehicleUploading, setVehicleUploading] = useState(false);
 
+  // ── Progress persistence ─────────────────────────────────────────────────
+  // Mitigation for the unresolved freezing bug: since a refresh has
+  // consistently and reliably recovered from it every time it's happened,
+  // this makes that recovery lossless — restoring exactly where the person
+  // left off instead of sending them back to step 0. Doesn't fix the
+  // underlying cause, just makes hitting it a minor inconvenience rather
+  // than losing entered data. sessionStorage (not localStorage) so it
+  // doesn't linger indefinitely across unrelated future visits.
+  const ONBOARDING_PROGRESS_KEY = 'skootlink_onboarding_progress';
+  const restoredOnce = useRef(false);
+
+  useEffect(() => {
+    if (restoredOnce.current) return;
+    restoredOnce.current = true;
+    try {
+      const saved = sessionStorage.getItem(ONBOARDING_PROGRESS_KEY);
+      if (!saved) return;
+      const data = JSON.parse(saved);
+      if (typeof data.step === 'number') setStep(data.step);
+      if (data.form) setForm(prev => ({ ...prev, ...data.form }));
+      if (data.vehicleForm) setVehicleForm(prev => ({ ...prev, ...data.vehicleForm }));
+      if (Array.isArray(data.vehicleImages)) setVehicleImages(data.vehicleImages);
+      if (Array.isArray(data.platformEntries)) setPlatformEntries(data.platformEntries);
+      if (data.avatarUrl) setAvatarUrl(data.avatarUrl);
+    } catch (err) {
+      console.warn('[Onboarding] Failed to restore saved progress:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      // platformEntries can hold a raw File (evidenceFile) — not
+      // JSON-serialisable, and not worth persisting anyway (the person
+      // would just need to re-pick it after a recovery, a reasonable
+      // trade-off for a mitigation rather than the actual fix).
+      const safePlatformEntries = platformEntries.map(({ evidenceFile, ...rest }) => rest);
+      sessionStorage.setItem(ONBOARDING_PROGRESS_KEY, JSON.stringify({
+        step, form, vehicleForm, vehicleImages, platformEntries: safePlatformEntries, avatarUrl,
+      }));
+    } catch (err) {
+      console.warn('[Onboarding] Failed to save progress:', err);
+    }
+  }, [step, form, vehicleForm, vehicleImages, platformEntries, avatarUrl]);
+
   const updateVehicle = (field, value) => setVehicleForm(prev => {
     const next = { ...prev, [field]: value };
     if (field === 'vehicle_type' && value === 'bicycle') next.transmission = '';
@@ -634,6 +678,7 @@ export default function Onboarding() {
         await awardSignupCredits(form.role, form.phone, vehicleActuallyListed);
       }
 
+      sessionStorage.removeItem(ONBOARDING_PROGRESS_KEY);
       toast.success('Profile saved! Welcome to Skootlink.');
       navigate('/home');
     } catch (err) {
@@ -674,10 +719,6 @@ export default function Onboarding() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen min-h-[100dvh] bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
-      {/* TEMPORARY diagnostic — remove once confirmed fixed */}
-      <div className="fixed top-0 left-0 right-0 z-[999999] bg-black/90 text-green-400 text-[10px] font-mono p-1.5">
-        step={step} | body.pointerEvents="{document.body.style.pointerEvents}"
-      </div>
       <div className="w-full max-w-xl">
         {/* Logo */}
         <div className="flex justify-center mb-6">
