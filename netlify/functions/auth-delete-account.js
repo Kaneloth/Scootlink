@@ -12,16 +12,27 @@
  */
 
 // Required so the native app (running from a different origin than
-// skootlink.co.za) is allowed to call this function at all. Without these,
-// the WebView blocks the request before it even reaches here, surfacing to
-// the user as a generic "Failed to fetch".
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
+// skootlink.co.za) is allowed to call this function at all. The client uses
+// credentials:'include' (to send cookies), and browsers/WebViews flatly
+// refuse to allow credentialed requests with a wildcard '*' origin — the
+// response has to echo back the SPECIFIC requesting origin instead, plus
+// explicitly allow credentials. Without this exact combination, the
+// preflight can look fine (e.g. via curl, which doesn't enforce this rule)
+// while the real app still gets a silent "Failed to fetch".
+function corsHeaders(event) {
+  const origin = event.headers.origin || event.headers.Origin || '*';
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
+    Vary: 'Origin',
+  };
+}
 
 exports.handler = async (event) => {
+  const CORS_HEADERS = corsHeaders(event);
+
   // Browsers/WebViews send this automatically before the real POST when the
   // request is cross-origin — must succeed or the actual POST never gets sent.
   if (event.httpMethod === 'OPTIONS') {
