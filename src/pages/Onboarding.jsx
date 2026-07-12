@@ -1267,6 +1267,19 @@ export default function Onboarding() {
             )}
           </div>
         </Card>
+
+        {/* Always-visible recovery option — not tied to any specific step.
+            Your progress is saved continuously (see the persistence effect
+            above), so this reloads without losing anything you've entered.
+            Exists because native has no browser chrome/refresh button at
+            all, and most people wouldn't think to force-close and reopen
+            the app on their own if navigation ever becomes unresponsive. */}
+        <button
+          onClick={() => window.location.reload()}
+          className="w-full text-center text-xs text-muted-foreground/70 hover:text-muted-foreground mt-3 underline underline-offset-2"
+        >
+          Buttons not responding? Tap here to reload
+        </button>
       </div>
 
       {/* Privacy notice modal — shown when user enters the Personal Info step */}
