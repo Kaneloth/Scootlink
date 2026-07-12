@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ShieldCheck, Loader2, Camera, Eye, EyeOff, Users } from 'lucide-react';
+import { ShieldCheck, Loader2, Camera, Eye, EyeOff, Users, Image as ImageIcon } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import StarRating from '@/components/reviews/StarRating';
 import { toast } from 'sonner';
@@ -66,6 +66,8 @@ export default function Profile() {
   const [searchParams]  = useSearchParams();
   const defaultTab      = searchParams.get('tab') || 'edit';
   const fileInputRef    = useRef(null);
+  const cameraInputRef  = useRef(null);
+  const [showPhotoMenu, setShowPhotoMenu] = useState(false);
 
   const [user,          setUser]          = useState(null);
   const [userLoading,   setUserLoading]   = useState(true);
@@ -496,6 +498,14 @@ export default function Profile() {
         className="hidden"
         onChange={handleAvatarUpload}
       />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="user"
+        className="hidden"
+        onChange={handleAvatarUpload}
+      />
 
       {userLoading ? (
         <ProfileHeaderSkeleton />
@@ -511,7 +521,7 @@ export default function Profile() {
                 )}
               </div>
               <button
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => setShowPhotoMenu(v => !v)}
                 disabled={avatarUploading}
                 className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors disabled:opacity-50"
                 title="Change photo"
@@ -520,6 +530,22 @@ export default function Profile() {
                   ? <Loader2 className="w-3 h-3 animate-spin" />
                   : <Camera className="w-3 h-3" />}
               </button>
+              {showPhotoMenu && (
+                <div className="absolute top-full right-0 mt-1 z-20 bg-card border border-border rounded-xl shadow-lg overflow-hidden w-40">
+                  <button
+                    onClick={() => { setShowPhotoMenu(false); cameraInputRef.current?.click(); }}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    <Camera className="w-4 h-4" /> Take Photo
+                  </button>
+                  <button
+                    onClick={() => { setShowPhotoMenu(false); fileInputRef.current?.click(); }}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-accent transition-colors border-t border-border"
+                  >
+                    <ImageIcon className="w-4 h-4" /> Choose from Gallery
+                  </button>
+                </div>
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
