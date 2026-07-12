@@ -673,7 +673,7 @@ export default function Onboarding() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
+    <div className="min-h-screen min-h-[100dvh] bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
       {/* TEMPORARY diagnostic — remove once confirmed fixed */}
       <div className="fixed top-0 left-0 right-0 z-[999999] bg-black/90 text-green-400 text-[10px] font-mono p-1.5">
         step={step} | body.pointerEvents="{document.body.style.pointerEvents}"
@@ -906,11 +906,21 @@ export default function Onboarding() {
                 </p>
               </div>
 
-              {/* TEMPORARILY REMOVED for diagnostic isolation test — both
-                  hidden file inputs (especially the capture="user" one)
-                  are the one thing genuinely unique to this step that
-                  hasn't been ruled out yet. Restore once confirmed either
-                  way. */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="user"
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
 
               <div className="flex flex-col items-center gap-4 py-2">
                 <div className="w-28 h-28 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border-2 border-dashed border-border">
