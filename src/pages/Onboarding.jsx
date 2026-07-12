@@ -695,12 +695,26 @@ export default function Onboarding() {
 
   const currentStep = STEPS[step];
 
-  // Second layer of defense for the same Radix pointer-events lock issue —
-  // covers the case where the lock gets applied slightly after the click
-  // handler's own reset already ran, rather than exactly during it.
+  // Watches document.body's style continuously for the entire time
+  // Onboarding is mounted — not gated on step changes. This closes a real
+  // gap in the two fixes above: both only ever run *after* a step change
+  // succeeds, so if Radix's pointer-events lock (applied while a Select is
+  // open, released when it closes) gets thrown off by rapid interactions
+  // with multiple Selects on the same step — e.g. tapping Gender then
+  // Country before the first one's close has fully finished — body can get
+  // stuck at pointerEvents:none before any step change ever happens. At
+  // that point the very buttons that would trigger a step change (and
+  // therefore the earlier fixes) are the ones frozen — a genuine deadlock.
+  // This clears it the instant it's detected, regardless of cause.
   useEffect(() => {
-    document.body.style.pointerEvents = '';
-  }, [step]);
+    const observer = new MutationObserver(() => {
+      if (document.body.style.pointerEvents === 'none' && !showPrivacyNotice) {
+        document.body.style.pointerEvents = '';
+      }
+    });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['style'] });
+    return () => observer.disconnect();
+  }, [showPrivacyNotice]);
 
   const isSA        = form.country_type === 'South Africa';
   const cityList    = isSA && form.sa_province ? SA_PROVINCE_CITIES[form.sa_province] ?? [] : [];
