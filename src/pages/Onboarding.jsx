@@ -647,9 +647,19 @@ export default function Onboarding() {
     if (step === 1 && !validatePersonal()) return;
     if (step < STEPS.length - 1) {
       const nextIndex = step + 1;
-      setStep(nextIndex);
-      // Show privacy notice when entering Personal Info step
-      if (nextIndex === 1) setShowPrivacyNotice(true);
+      // Deferred by one tick — same fix as the original Auth.jsx sign-in/
+      // sign-up toggle bug: if React swaps in new DOM content at the exact
+      // screen position of an in-progress tap (Back/Continue sit in the
+      // same spot on every step), the browser can lose track of touch
+      // state there until an unrelated tap resets it. This is a genuinely
+      // separate issue from the Radix pointer-events lock fixed in
+      // App.jsx — confirmed separate because this can freeze buttons with
+      // pointerEvents staying completely clean the whole time.
+      setTimeout(() => {
+        setStep(nextIndex);
+        // Show privacy notice when entering Personal Info step
+        if (nextIndex === 1) setShowPrivacyNotice(true);
+      }, 0);
       return;
     }
     saveAndNavigate('home');
@@ -1184,7 +1194,7 @@ export default function Onboarding() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => step === 0 ? navigate('/home') : setStep(s => s - 1)}
+                onClick={() => step === 0 ? navigate('/home') : setTimeout(() => setStep(s => s - 1), 0)}
                 className="gap-2"
               >
                 <ArrowLeft className="w-4 h-4" /> Back
