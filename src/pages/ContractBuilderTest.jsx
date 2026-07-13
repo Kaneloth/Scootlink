@@ -1,111 +1,22 @@
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import ContractSectionsList from '@/components/contract/ContractSectionsList';
+import { generateContractSections } from '@/lib/contractSections';
 
-// Real Section 3 content from the current hardcoded template, restructured
-// into the new data shape — see the note in chat about the two-intro-groups
-// simplification made for this first test.
-const INITIAL_SECTION = {
-  id: 'driver-requirements',
-  number: '3',
-  title: 'DRIVER REQUIREMENTS',
-  fields: [
-    { label: "Driver's Licence Number", value: '' },
-  ],
-  intro: 'The Driver confirms that:',
-  bullets: [
-    { text: 'They are at least 18 years of age.', subBullets: [] },
-    { text: "They hold a valid and legal driver's licence.", subBullets: [] },
-    { text: 'They are capable of operating the vehicle safely.', subBullets: [] },
-    { text: 'For motorcycles or scooters: a helmet must be worn at all times.', subBullets: [] },
-    { text: 'Only one rider is permitted unless the vehicle is designed for two riders.', subBullets: [] },
-  ],
-  subsections: [],
-};
-
-// Real Section 8 (Termination) content — the most structurally complex
-// section in the template, with genuine 8.1–8.7 subsections and, within
-// 8.5, real sub-bullets too. This is the actual proof that the recursive
-// subsection editor handles the hardest real case, not just a toy example.
-const TERMINATION_SECTION = {
-  id: 'termination',
-  number: '8',
-  title: 'TERMINATION',
-  fields: [],
-  intro: '',
-  bullets: [],
-  subsections: [
-    {
-      id: 'termination-8-1', number: '8.1', title: 'Termination for Breach', fields: [],
-      intro: 'Either party may terminate this Agreement immediately by written notice if the other party:',
-      bullets: [
-        { text: 'Breaches any material term; and', subBullets: [] },
-        { text: 'Fails to remedy such breach within a reasonable period (not exceeding 48 hours) after written notice.', subBullets: [] },
-      ],
-    },
-    {
-      id: 'termination-8-2', number: '8.2', title: "Owner's Right to Terminate", fields: [],
-      intro: 'The Owner may terminate immediately and reclaim the vehicle if:',
-      bullets: [
-        { text: 'The vehicle is used illegally or recklessly;', subBullets: [] },
-        { text: 'The Driver commits serious traffic violations;', subBullets: [] },
-        { text: 'There is a risk of damage, loss, or theft;', subBullets: [] },
-        { text: 'The Driver provides false or misleading information.', subBullets: [] },
-      ],
-    },
-    {
-      id: 'termination-8-3', number: '8.3', title: "Driver's Right to Terminate", fields: [],
-      intro: 'The Driver may terminate immediately if:',
-      bullets: [
-        { text: 'The vehicle is not roadworthy or safe;', subBullets: [] },
-        { text: 'The Owner fails to provide valid insurance;', subBullets: [] },
-        { text: 'The vehicle does not match its description;', subBullets: [] },
-        { text: 'The Owner fails to fulfil a material obligation.', subBullets: [] },
-      ],
-    },
-    {
-      id: 'termination-8-4', number: '8.4', title: 'Termination for Convenience (No Breach)', fields: [],
-      intro: 'Either party may terminate this Agreement without cause by giving written notice of __ hours/days.',
-      bullets: [
-        { text: 'The Driver must return the vehicle by the termination date.', subBullets: [] },
-      ],
-    },
-    {
-      id: 'termination-8-5', number: '8.5', title: 'Financial Consequences of Termination', fields: [],
-      intro: '',
-      bullets: [
-        { text: 'The Owner shall refund any unused rental fees on a pro-rata basis.', subBullets: [] },
-        { text: 'The deposit shall be refunded subject to deductions for:', subBullets: [
-          'Damages;', 'Outstanding fees or penalties;', 'Reasonable early termination costs.',
-        ] },
-        { text: 'An early termination fee of __ (if applicable) may apply.', subBullets: [] },
-      ],
-    },
-    {
-      id: 'termination-8-6', number: '8.6', title: 'Exceptional Circumstances', fields: [],
-      intro: 'Either party may terminate immediately without penalty due to:',
-      bullets: [
-        { text: 'Medical emergencies;', subBullets: [] },
-        { text: 'Safety risks;', subBullets: [] },
-        { text: 'Events beyond reasonable control (force majeure).', subBullets: [] },
-      ],
-    },
-    {
-      id: 'termination-8-7', number: '8.7', title: 'Effects of Termination', fields: [],
-      intro: '',
-      bullets: [
-        { text: 'The vehicle must be returned immediately upon termination.', subBullets: [] },
-        { text: 'A joint inspection is recommended upon return.', subBullets: [] },
-        { text: 'Any outstanding liabilities shall remain enforceable after termination.', subBullets: [] },
-      ],
-    },
-  ],
-};
+// Sample data standing in for a real rental/vehicle/profile — same shape
+// generateContractSections() expects when wired into Dashboard.jsx for real.
+const SAMPLE_RENTAL = { start_date: '2026-08-01', end_date: '2026-08-31', price_per_week: 650, deposit: 1500 };
+const SAMPLE_VEHICLE = { vehicle_type: 'Car', make: 'Suzuki', model: 'Swift', year: 2023 };
+const SAMPLE_DRIVER = { full_name: 'Kanelo Thelejane', id_number: '8802086603082', license_number: 'GP1234567' };
+const SAMPLE_OWNER = { full_name: 'Skootlink Test Owner', id_number: '9001015800086' };
 
 export default function ContractBuilderTest() {
   const navigate = useNavigate();
-  const [sections, setSections] = useState([INITIAL_SECTION, TERMINATION_SECTION]);
+  const [sections, setSections] = useState(() =>
+    generateContractSections(SAMPLE_RENTAL, SAMPLE_VEHICLE, SAMPLE_DRIVER, SAMPLE_OWNER)
+  );
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto pb-24">
@@ -114,7 +25,7 @@ export default function ContractBuilderTest() {
       </button>
       <h1 className="text-2xl font-bold text-foreground mb-1">Contract Section Editor — Test</h1>
       <p className="text-sm text-muted-foreground mb-6">
-        Phase 3: the full sections list. Try adding a brand new section, deleting one, and reordering with the up/down arrows.
+        Phase 4a: the complete real contract — all 9 sections plus the preamble and closing signature text, generated from sample rental/vehicle/profile data exactly as it will be in the real flow.
       </p>
 
       <ContractSectionsList sections={sections} onChange={setSections} />
