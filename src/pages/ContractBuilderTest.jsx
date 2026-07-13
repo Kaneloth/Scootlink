@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import ContractSectionEditor from '@/components/contract/ContractSectionEditor';
+import ContractSectionsList from '@/components/contract/ContractSectionsList';
 
 // Real Section 3 content from the current hardcoded template, restructured
 // into the new data shape — see the note in chat about the two-intro-groups
@@ -105,8 +105,7 @@ const TERMINATION_SECTION = {
 
 export default function ContractBuilderTest() {
   const navigate = useNavigate();
-  const [section, setSection] = useState(INITIAL_SECTION);
-  const [termination, setTermination] = useState(TERMINATION_SECTION);
+  const [sections, setSections] = useState([INITIAL_SECTION, TERMINATION_SECTION]);
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto pb-24">
@@ -115,33 +114,15 @@ export default function ContractBuilderTest() {
       </button>
       <h1 className="text-2xl font-bold text-foreground mb-1">Contract Section Editor — Test</h1>
       <p className="text-sm text-muted-foreground mb-6">
-        Phase 2: subsections. The second section below (Termination) is the real 8.1–8.7 structure, including genuine sub-bullets within 8.5 — the most complex case in the whole template.
+        Phase 3: the full sections list. Try adding a brand new section, deleting one, and reordering with the up/down arrows.
       </p>
 
-      <div className="space-y-8">
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Phase 1 — simple section</p>
-          <ContractSectionEditor
-            section={section}
-            onChange={setSection}
-            canDelete={false}
-          />
-        </div>
-
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Phase 2 — section with subsections</p>
-          <ContractSectionEditor
-            section={termination}
-            onChange={setTermination}
-            canDelete={false}
-          />
-        </div>
-      </div>
+      <ContractSectionsList sections={sections} onChange={setSections} />
 
       <div className="mt-8">
         <p className="text-xs font-medium text-muted-foreground mb-2">Live data (for verification):</p>
         <pre className="text-[10px] bg-muted rounded-xl p-3 overflow-x-auto whitespace-pre-wrap">
-          {JSON.stringify({ section, termination }, null, 2)}
+          {JSON.stringify(sections, null, 2)}
         </pre>
       </div>
     </div>
