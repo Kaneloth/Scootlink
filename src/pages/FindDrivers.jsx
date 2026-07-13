@@ -18,6 +18,8 @@ import { toast } from 'sonner';
 import { supabase } from '@/api/supabaseClient';
 import { geocodeLocation } from '@/lib/geocode';
 import ImageLightbox from '@/components/ui/ImageLightbox';
+import { generateContractSections, flattenContractSections } from '@/lib/contractSections';
+import ContractSectionsList from '@/components/contract/ContractSectionsList';
 import { notify } from '@/lib/notify';
 
 export default function FindDrivers() {
@@ -54,7 +56,7 @@ export default function FindDrivers() {
   });
   const [sendingContract, setSendingContract] = useState(false);
   const [showContractPreview, setShowContractPreview] = useState(false);
-  const [contractPreviewText, setContractPreviewText] = useState('');
+  const [contractSections, setContractSections] = useState([]);
 
   useEffect(() => {
     auth.me().then(u => {
@@ -244,127 +246,19 @@ export default function FindDrivers() {
   const isCurrentUserAdmin = ADMIN_EMAILS.includes(currentUser?.email);
   const canSendContract = true; // no subscription required — any owner can initiate a rental
 
-  const generateContractText = (vehicle, driver, owner, form) => {
-    const startDate = form.start_date ? new Date(form.start_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }) : '___________';
-    const endDate   = form.end_date   ? new Date(form.end_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }) : '___________';
-    const today     = new Date().toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' });
-    const weeks     = (form.start_date && form.end_date)
-      ? Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / (1000 * 60 * 60 * 24 * 7)))
-      : 0;
-    const rate      = parseFloat(form.price_per_week) || vehicle?.price_per_week || 0;
-    const deposit   = parseFloat(form.deposit) || vehicle?.deposit || 0;
-    const total     = weeks * rate;
-
-    return `VEHICLE RENTAL AGREEMENT
-${'='.repeat(50)}
-
-This Rental Agreement ("Agreement") is entered into on ${today} between:
-
-OWNER:  ${owner?.full_name || '___________'}
-        ID/Passport: ${owner?.id_number || owner?.id_document_number || '___________'}
-        Phone: ${owner?.phone || '___________'}
-
-DRIVER: ${driver?.full_name || '___________'}
-        ID/Passport: ${driver?.id_number || driver?.id_document_number || '___________'}
-        Licence No:  ${driver?.license_number || '___________'}
-        Phone: ${driver?.phone || '___________'}
-
-${'─'.repeat(50)}
-1. VEHICLE DETAILS
-${'─'.repeat(50)}
-
-Make & Model:  ${vehicle ? `${vehicle.make} ${vehicle.model}` : '___________'}
-Year:          ${vehicle?.year || '___________'}
-Plate Number:  ${vehicle?.plate || '___________'}
-Vehicle Type:  ${vehicle?.type || vehicle?.vehicle_type || '___________'}
-Colour:        ${vehicle?.colour || vehicle?.color || '___________'}
-
-${'─'.repeat(50)}
-2. RENTAL PERIOD
-${'─'.repeat(50)}
-
-Start Date:  ${startDate}
-End Date:    ${endDate}
-Duration:    ${weeks} week${weeks !== 1 ? 's' : ''}
-
-${'─'.repeat(50)}
-3. FINANCIAL TERMS
-${'─'.repeat(50)}
-
-Weekly Rate:   R ${rate.toFixed(2)}
-Total Amount:  R ${total.toFixed(2)} (${weeks} week${weeks !== 1 ? 's' : ''})
-Deposit:       R ${deposit.toFixed(2)}
-Payment Due:   Weekly in advance
-
-${form.message ? `Notes: ${form.message}\n` : ''}
-${'─'.repeat(50)}
-4. DRIVER RESPONSIBILITIES
-${'─'.repeat(50)}
-
-The Driver agrees to:
-• Use the vehicle solely for lawful delivery and transport purposes
-• Maintain the vehicle in clean and roadworthy condition
-• Report any accident, damage, or mechanical fault to the Owner within 24 hours
-• Not sublet or loan the vehicle to any third party
-• Return the vehicle on the agreed end date in the same condition as received
-• Cover all traffic fines, fuel, and day-to-day running costs
-
-${'─'.repeat(50)}
-5. OWNER RESPONSIBILITIES
-${'─'.repeat(50)}
-
-The Owner agrees to:
-• Provide the vehicle in a roadworthy and insured condition
-• Ensure the vehicle has a valid licence disc and roadworthy certificate
-• Not recall the vehicle before the end date without 7 days' written notice, except in the case of breach
-
-${'─'.repeat(50)}
-6. DEPOSIT & REFUND
-${'─'.repeat(50)}
-
-The deposit of R ${deposit.toFixed(2)} is held as security against damages, unpaid rent, or fines.
-Any damages, fines, or additional charges will be deducted from the deposit.
-The remaining deposit balance will be refunded within 7 days of the vehicle's return, subject to inspection.
-
-${'─'.repeat(50)}
-7. TERMINATION
-${'─'.repeat(50)}
-
-Either party may terminate this Agreement with 7 days' written notice.
-Immediate termination is permitted in the event of:
-• Non-payment of weekly rental
-• Reckless or unlawful use of the vehicle
-• Material breach of any term of this Agreement
-
-${'─'.repeat(50)}
-8. GOVERNING LAW
-${'─'.repeat(50)}
-
-This Agreement is governed by the laws of the Republic of South Africa.
-Any disputes shall be resolved through mediation before escalating to legal proceedings.
-
-${'─'.repeat(50)}
-9. SIGNATURES
-${'─'.repeat(50)}
-
-By confirming this Agreement on the Skootlink platform, both parties agree to be legally bound by all terms above.
-
-Owner:   ${owner?.full_name || '___________'}    Date: ${today}
-Driver:  ${driver?.full_name || '___________'}   Date: ___________
-
-${'='.repeat(50)}
-Generated by Skootlink (Pty) Ltd · www.skootlink.co.za
-`;
-  };
-
   const handlePreviewContract = () => {
     if (!contractForm.vehicle_id)                            { toast.error('Please select a vehicle'); return; }
     if (!contractForm.start_date || !contractForm.end_date)  { toast.error('Please set the rental dates'); return; }
     if (!contractForm.price_per_week)                        { toast.error('Please enter the weekly rate'); return; }
 
     const vehicle = ownerVehicles.find(v => String(v.id) === String(contractForm.vehicle_id));
-    const text = generateContractText(vehicle, selectedDriver, currentUser, contractForm);
-    setContractPreviewText(text);
+    // contractForm already has the same field names (start_date, end_date,
+    // price_per_week, deposit) that generateContractSections expects on its
+    // "rental" argument — no actual rental row exists yet at this point
+    // (that only gets created in handleSendContract below), but the shape
+    // matches so the form can stand in directly.
+    const sections = generateContractSections(contractForm, vehicle, selectedDriver, currentUser);
+    setContractSections(sections);
     setShowContractPreview(true);
   };
 
@@ -382,7 +276,8 @@ Generated by Skootlink (Pty) Ltd · www.skootlink.co.za
         price_per_week: parseFloat(contractForm.price_per_week),
         deposit:        parseFloat(contractForm.deposit) || 0,
         message:        contractForm.message || '',
-        contract_text:  contractPreviewText,
+        contract_sections: contractSections,
+        contract_text:  flattenContractSections(contractSections),
       }]).select().single();
       if (error) throw error;
 
@@ -616,11 +511,15 @@ Generated by Skootlink (Pty) Ltd · www.skootlink.co.za
             className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="overflow-y-auto p-6 flex-1">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold truncate">Driver Profile</h2>
-                <button onClick={() => { setSelectedDriver(null); setShowContractForm(false); }} className="text-muted-foreground hover:text-foreground shrink-0"><X className="w-5 h-5" /></button>
-              </div>
+            {/* Sticky header — stays visible no matter how tall the expanded
+                contract form below gets, instead of scrolling out of view
+                along with the rest of the content. */}
+            <div className="flex items-center justify-between p-6 pb-4 shrink-0 border-b border-border">
+              <h2 className="text-xl font-bold truncate">Driver Profile</h2>
+              <button onClick={() => { setSelectedDriver(null); setShowContractForm(false); }} className="text-muted-foreground hover:text-foreground shrink-0"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="overflow-y-auto p-6 pt-4 flex-1">
 
               <div className="flex items-center gap-4 mb-4">
                 <div
@@ -833,11 +732,7 @@ Generated by Skootlink (Pty) Ltd · www.skootlink.co.za
 
             <div className="bg-background border-2 border-primary/30 rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0">
               <p className="text-[10px] text-primary font-medium mb-2 uppercase tracking-wide">✏️ Editable — tap to make changes</p>
-              <textarea
-                className="w-full h-full min-h-[50vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
-                value={contractPreviewText}
-                onChange={e => setContractPreviewText(e.target.value)}
-              />
+              <ContractSectionsList sections={contractSections} onChange={setContractSections} />
             </div>
 
             <div className="flex gap-3 shrink-0">
