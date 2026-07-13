@@ -15,7 +15,7 @@ import {
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
 import { downloadContractPDF } from '@/lib/contractExport';
-import { generateContractSections, flattenContractSections } from '@/lib/contractSections';
+import { generateContractSections, flattenContractSections, mergeDriverIntoDraft } from '@/lib/contractSections';
 import ContractSectionsList from '@/components/contract/ContractSectionsList';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
@@ -961,7 +961,6 @@ export default function Dashboard() {
     if (Array.isArray(rental.contract_sections) && rental.contract_sections.length > 0) {
       sections = rental.contract_sections;
     } else if (Array.isArray(vehicle?.draft_contract_sections) && vehicle.draft_contract_sections.length > 0) {
-      const { mergeDriverIntoDraft } = await import('@/lib/contractSections');
       sections = mergeDriverIntoDraft(vehicle.draft_contract_sections, rental, driverProfileData);
     } else {
       sections = generateContractSections(rental, vehicle, driverProfileData, user);
