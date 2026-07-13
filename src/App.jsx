@@ -25,6 +25,7 @@ import MyBriefcase from '@/pages/MyBriefcase';
 import Settings from '@/pages/Settings';
 import Profile from '@/pages/Profile';
 import FAQPage from '@/pages/FAQPage';
+import ContractBuilderTest from '@/pages/ContractBuilderTest'; // TEMPORARY — Phase 1 test only
 import Onboarding from '@/pages/Onboarding';
 
 import Messages from '@/pages/Messages';
@@ -132,6 +133,7 @@ const AuthenticatedApp = () => {
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/faq" element={<FAQPage />} />
+        <Route path="/contract-builder-test" element={<ContractBuilderTest />} />
         <Route path="/mysearch" element={<SearchPage />} />
         <Route path="/messages" element={<Messages />} />
         <Route path="/contact" element={<ContactUs />} />
