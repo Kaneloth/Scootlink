@@ -1,9 +1,9 @@
 import React from 'react';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash2, X } from 'lucide-react';
+import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 
 /**
  * ContractSectionEditor
@@ -137,12 +137,11 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
       {/* Intro paragraph */}
       <div className="space-y-1.5">
         <Label className="text-xs font-medium">Intro Text (optional)</Label>
-        <Textarea
+        <AutoGrowTextarea
           value={section.intro}
-          onChange={e => update({ intro: e.target.value })}
+          onChange={v => update({ intro: v })}
           placeholder="Any paragraph text that appears before the bullet points…"
-          rows={2}
-          className="text-sm resize-none"
+          className="text-sm"
         />
       </div>
 
@@ -153,12 +152,11 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
           <div key={bi} className="space-y-1.5">
             <div className="flex items-start gap-2">
               <span className="text-muted-foreground text-sm shrink-0 w-4 text-center pt-2">•</span>
-              <Textarea
+              <AutoGrowTextarea
                 value={bullet.text}
-                onChange={e => updateBullet(bi, { text: e.target.value })}
+                onChange={v => updateBullet(bi, { text: v })}
                 placeholder="Enter a point…"
-                rows={1}
-                className="flex-1 text-sm resize-none min-h-0 py-2"
+                className="flex-1 text-sm"
               />
               <button onClick={() => removeBullet(bi)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 pt-2">
                 <X className="w-4 h-4" />
@@ -170,9 +168,9 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
               {(bullet.subBullets || []).map((sub, si) => (
                 <div key={si} className="flex items-start gap-2">
                   <span className="text-muted-foreground text-xs shrink-0 w-4 text-center pt-2">–</span>
-                  <Input
+                  <AutoGrowTextarea
                     value={sub}
-                    onChange={e => updateSubBullet(bi, si, e.target.value)}
+                    onChange={v => updateSubBullet(bi, si, v)}
                     placeholder="Enter a sub-point…"
                     className="flex-1 text-sm"
                   />
