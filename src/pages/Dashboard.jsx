@@ -15,6 +15,8 @@ import {
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
 import { downloadContractPDF } from '@/lib/contractExport';
+import { generateContractSections, flattenContractSections } from '@/lib/contractSections';
+import ContractSectionsList from '@/components/contract/ContractSectionsList';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
 import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
@@ -379,7 +381,7 @@ export default function Dashboard() {
   const [contractModal, setContractModal] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState(null);
   const [contractAgreed, setContractAgreed] = useState(false);
-  const [editableContractText, setEditableContractText] = useState('');
+  const [contractSections, setContractSections] = useState([]);
   // 'accept' = owner signing a fresh proposal
   // 'edit'   = owner updating an already-accepted contract
   // 'review' = driver reading and confirming
@@ -775,9 +777,10 @@ export default function Dashboard() {
     try {
       const rental = rentals.find(r => r.id === selectedProposal.id);
       if (!rental) return;
+      const flatText = flattenContractSections(contractSections);
       await safeRentalUpdate(
         rental.id,
-        { status: 'active', contract_text: editableContractText },
+        { status: 'active', contract_sections: contractSections, contract_text: flatText },
         { confirmed_at: new Date().toISOString() }
       );
       await Vehicle.update(rental.vehicle_id, { status: 'rented' });
@@ -792,7 +795,7 @@ export default function Dashboard() {
         ? `${vehicle.make} ${vehicle.model}${vehicle.year ? ` (${vehicle.year})` : ''}`.trim()
         : '';
       try {
-        await downloadContractPDF(editableContractText, rental.id, vehicleInfo);
+        await downloadContractPDF(flatText, rental.id, vehicleInfo);
         toast.info('Signed agreement downloaded. Driver can also download it from My Briefcase.');
       } catch (pdfErr) {
         console.error('[Dashboard] PDF download failed:', pdfErr);
@@ -923,162 +926,6 @@ export default function Dashboard() {
     }
   };
 
-  // Generates the full contract (all 9 sections).
-  // Owner can edit everything freely; driver sees it read-only and confirms when satisfied.
-  const generateContractText = (rental, vehicle, driverProfile) => {
-    const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
-    const ownerName = user?.full_name || '';
-    const ownerIdNo = user?.id_number || user?.passport_number || '';
-    const driverName = driverProfile?.full_name || '';
-    const driverIdNo = driverProfile?.id_number || driverProfile?.passport_number || '';
-    const licenseNumber = driverProfile?.license_number || '';
-    const vType = vehicle?.vehicle_type || vehicle?.type || '';
-    const vMake = vehicle?.make || '';
-    const vModel = vehicle?.model || '';
-    const vYear = vehicle?.year || '';
-    return `VEHICLE RENTAL AGREEMENT
-
-This Vehicle Rental Agreement ("Agreement") is entered into on ${today} (Effective Date),
-
-BETWEEN:
-
-Owner: ${ownerName}
-ID/Passport No: ${ownerIdNo}
-
-AND
-
-Driver (Renter): ${driverName}
-ID/Passport No: ${driverIdNo}
-
-
-1. VEHICLE DETAILS
-
-Type: ${vType}
-Make: ${vMake}
-Model: ${vModel}
-Year: ${vYear}
-Current Odometer Reading: 
-
-
-2. RENTAL TERMS
-
-Rental Start Date: ${rental.start_date || ''}
-Rental End Date: ${rental.end_date || ''}
-Weekly Rate: R ${rental.price_per_week || ''}
-Security Deposit: R ${rental.deposit || ''}
-
-The security deposit shall be refundable upon return of the vehicle, subject to inspection.
-Any damages, fines, or additional charges will be deducted from the deposit.
-
-
-3. DRIVER REQUIREMENTS
-
-The Driver confirms that:
-• They are at least 18 years of age.
-• They hold a valid and legal driver's licence.
-• They are capable of operating the vehicle safely.
-
-Driver's Licence Number: ${licenseNumber}
-
-For motorcycles or scooters:
-• A helmet must be worn at all times.
-• Only one rider is permitted unless the vehicle is designed for two riders.
-
-
-4. USE AND OPERATING CONDITIONS
-
-The Driver agrees to:
-• Comply with all traffic laws and regulations.
-• Observe all speed limits.
-• Not operate the vehicle under the influence of alcohol or drugs.
-• Not use the vehicle on restricted roads where prohibited.
-• Park only in designated and lawful areas.
-• Immediately report any accident, damage, or mechanical issue.
-• Not allow any unauthorised person to operate the vehicle.
-• Not use the vehicle for illegal purposes.
-
-
-5. OWNER'S RESPONSIBILITIES
-
-The Owner agrees to:
-• Ensure the vehicle is roadworthy and complies with all legal safety requirements.
-• Provide necessary safety equipment (e.g., helmet where applicable).
-• Maintain valid insurance coverage for the vehicle.
-• Ensure the vehicle is fitted with a functional tracking device (where applicable).
-
-
-6. LIABILITY AND DAMAGES
-
-• The Driver assumes responsibility for the vehicle during the rental period.
-• The Driver is liable for:
-    – Traffic fines, penalties, and violations;
-    – Damage beyond normal wear and tear.
-• The Owner shall not be liable for injury, loss, or damage resulting from use of the vehicle, except where required by law.
-• Insurance shall cover applicable risks; however, any excess, exclusions, or uncovered costs shall be borne by the Driver.
-
-
-7. RETURN OF VEHICLE
-
-• The vehicle must be returned on or before the rental end date.
-• The vehicle must be returned in the same condition as received, excluding normal wear and tear.
-• Late returns may incur additional charges.
-• The Owner reserves the right to inspect the vehicle upon return.
-
-
-8. TERMINATION
-
-8.1 Termination for Breach
-Either party may terminate this Agreement immediately by written notice if the other party:
-• Breaches any material term; and
-• Fails to remedy such breach within a reasonable period (not exceeding 48 hours) after written notice.
-
-8.2 Owner's Right to Terminate
-The Owner may terminate immediately and reclaim the vehicle if:
-• The vehicle is used illegally or recklessly;
-• The Driver commits serious traffic violations;
-• There is a risk of damage, loss, or theft;
-• The Driver provides false or misleading information.
-
-8.3 Driver's Right to Terminate
-The Driver may terminate immediately if:
-• The vehicle is not roadworthy or safe;
-• The Owner fails to provide valid insurance;
-• The vehicle does not match its description;
-• The Owner fails to fulfil a material obligation.
-
-8.4 Termination for Convenience (No Breach)
-Either party may terminate this Agreement without cause by giving written notice of  hours/days.
-• The Driver must return the vehicle by the termination date.
-
-8.5 Financial Consequences of Termination
-• The Owner shall refund any unused rental fees on a pro-rata basis.
-• The deposit shall be refunded subject to deductions for:
-    – Damages;
-    – Outstanding fees or penalties;
-    – Reasonable early termination costs.
-• An early termination fee of  (if applicable) may apply.
-
-8.6 Exceptional Circumstances
-Either party may terminate immediately without penalty due to:
-• Medical emergencies;
-• Safety risks;
-• Events beyond reasonable control (force majeure).
-
-8.7 Effects of Termination
-• The vehicle must be returned immediately upon termination.
-• A joint inspection is recommended upon return.
-• Any outstanding liabilities shall remain enforceable after termination.
-
-
-9. GENERAL TERMS
-
-• This Agreement constitutes the entire agreement between the parties.
-• Any amendments must be in writing and agreed to by both parties.
-• This Agreement shall be governed by the laws of 
-
-By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize Rental", both parties confirm they have read, understood, and agreed to this Agreement. This constitutes a valid digital signature.`;
-  };
-
   // mode: 'accept' (owner, fresh proposal) | 'edit' (owner, already accepted) | 'review' (driver)
   const openContractModal = async (rental, mode) => {
     setSelectedProposal(rental);
@@ -1102,13 +949,17 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       };
     }
 
-    // Use saved contract_text only when it is a complete contract (contains the header).
-    // Old saves only stored clauses 3–9 and lack the header — regenerate those from scratch.
-    const isComplete = rental.contract_text && rental.contract_text.trimStart().startsWith('VEHICLE RENTAL AGREEMENT');
-    const text = isComplete ? rental.contract_text : generateContractText(rental, vehicle, driverProfileData);
+    // Use saved contract_sections when this rental already has a real, edited
+    // contract (structured data present) — otherwise generate a fresh one.
+    // Older rentals saved before this structured format existed won't have
+    // contract_sections at all, so they correctly fall through to a fresh
+    // generation too, exactly like the old contract_text heuristic did.
+    const sections = Array.isArray(rental.contract_sections) && rental.contract_sections.length > 0
+      ? rental.contract_sections
+      : generateContractSections(rental, vehicle, driverProfileData, user);
 
-    setEditableContractText(text);
-    setSelectedProposal({ ...rental, contractText: text });
+    setContractSections(sections);
+    setSelectedProposal({ ...rental, contractSections: sections });
     setContractModal(true);
   };
 
@@ -1164,7 +1015,10 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
   const handleSaveContractEdits = async () => {
     if (!selectedProposal) return;
     try {
-      await Rental.update(selectedProposal.id, { contract_text: editableContractText });
+      await Rental.update(selectedProposal.id, {
+        contract_sections: contractSections,
+        contract_text: flattenContractSections(contractSections),
+      });
       toast.success('Contract updated. Driver will see the new version.');
       closeContractModal();
     } catch (err) {
@@ -1175,9 +1029,10 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
   const handleAcceptWithContract = async () => {
     if (!selectedProposal) return;
     try {
-      // Save the edited contract text and send to driver in one atomic step
+      // Save the edited contract and send to driver in one atomic step
       await Rental.update(selectedProposal.id, {
-        contract_text: editableContractText,
+        contract_sections: contractSections,
+        contract_text: flattenContractSections(contractSections),
         status: 'awaiting_driver_confirmation',
       });
       toast.success('Contract sent to driver for review!');
@@ -1856,15 +1711,14 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                     : 'Edit the contract below — fill in all details, dates and terms. When ready, send it to the driver to review and accept.'}
             </p>
 
-            {/* Full contract textarea */}
+            {/* Full contract, section by section */}
             <div className={`rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0 ${contractEditMode === 'accept' ? 'bg-background border-2 border-primary/30 ring-1 ring-primary/10' : 'bg-muted'}`}>
               {contractEditMode === 'accept' && (
                 <p className="text-[10px] text-primary font-medium mb-2 uppercase tracking-wide">✏️ Editable — tap to make changes</p>
               )}
-              <textarea
-                className="w-full h-full min-h-[40vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
-                value={editableContractText}
-                onChange={e => setEditableContractText(e.target.value)}
+              <ContractSectionsList
+                sections={contractSections}
+                onChange={setContractSections}
                 readOnly={contractEditMode === 'review' || contractEditMode === 'finalise'}
               />
             </div>

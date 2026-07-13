@@ -275,3 +275,39 @@ export function generateContractSections(rental, vehicle, driverProfile, ownerUs
     },
   ];
 }
+
+// ── Flatten back to plain text ──────────────────────────────────────────────
+// Converts structured section data back into the same flat-text format
+// contractExport.js's heuristic parser already understands (ALL-CAPS short
+// line = heading, "N. " prefix = numbered clause, •/– = bullet). This is a
+// deliberate bridge, not the long-term plan — Phase 4c will rewrite the PDF
+// exporter to draw directly from the structured data instead of re-parsing
+// text, but keeping this bridge means the exporter doesn't need to change in
+// the same step as this already-substantial Dashboard.jsx integration.
+function flattenSection(s) {
+  const lines = [];
+  if (s.number) lines.push(`${s.number}. ${s.title}`);
+  else if (s.title) lines.push(s.title);
+  lines.push('');
+
+  s.fields.forEach(f => lines.push(`${f.label}: ${f.value}`));
+  if (s.fields.length) lines.push('');
+
+  if (s.intro) { lines.push(s.intro); lines.push(''); }
+
+  s.bullets.forEach(b => {
+    lines.push(`• ${b.text}`);
+    (b.subBullets || []).forEach(sb => lines.push(`    – ${sb}`));
+  });
+  if (s.bullets.length) lines.push('');
+
+  (s.subsections || []).forEach(sub => {
+    lines.push(...flattenSection(sub));
+  });
+
+  return lines;
+}
+
+export function flattenContractSections(sections) {
+  return sections.map(s => flattenSection(s).join('\n')).join('\n\n').trim();
+}

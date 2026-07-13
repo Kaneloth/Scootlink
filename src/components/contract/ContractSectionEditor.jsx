@@ -30,7 +30,7 @@ import AutoGrowTextarea from '@/components/AutoGrowTextarea';
  * 8.5's similar structure) — plain flat bullets aren't enough to represent
  * the actual template faithfully.
  */
-export default function ContractSectionEditor({ section, onChange, onDelete, canDelete = true, allowSubsections = true }) {
+export default function ContractSectionEditor({ section, onChange, onDelete, canDelete = true, allowSubsections = true, readOnly = false }) {
   const update = (patch) => onChange({ ...section, ...patch });
 
   // ── Fields (label/value pairs) ────────────────────────────────────────────
@@ -94,15 +94,25 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
   };
   const removeSubsection = (i) => update({ subsections: subsections.filter((_, idx) => idx !== i) });
 
-  if (section.locked) {
+  if (section.locked || readOnly) {
     return (
       <div className="bg-muted/40 rounded-2xl border border-border p-4 space-y-2">
         <div className="flex items-center gap-2">
-          <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+          {section.locked && <Lock className="w-3.5 h-3.5 text-muted-foreground" />}
           <h3 className="font-semibold text-sm text-foreground">
             {section.number ? `${section.number}. ` : ''}{section.title}
           </h3>
         </div>
+        {section.fields.length > 0 && (
+          <dl className="space-y-1">
+            {section.fields.map((field, fi) => (
+              <div key={fi} className="flex gap-2 text-sm">
+                <dt className="text-muted-foreground shrink-0">{field.label}:</dt>
+                <dd className="text-foreground">{field.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
         {section.intro && (
           <p className="text-sm text-muted-foreground leading-relaxed">{section.intro}</p>
         )}
@@ -128,9 +138,18 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
             ))}
           </ul>
         )}
-        <p className="text-[11px] text-muted-foreground/70 italic">
-          This section's wording is fixed — it can't be edited or removed.
-        </p>
+        {(section.subsections || []).length > 0 && (
+          <div className="space-y-3 pt-1">
+            {section.subsections.map(sub => (
+              <ContractSectionEditor key={sub.id} section={sub} readOnly onChange={() => {}} allowSubsections={false} />
+            ))}
+          </div>
+        )}
+        {section.locked && (
+          <p className="text-[11px] text-muted-foreground/70 italic">
+            This section's wording is fixed — it can't be edited or removed.
+          </p>
+        )}
       </div>
     );
   }
