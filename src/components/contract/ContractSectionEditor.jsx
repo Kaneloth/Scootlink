@@ -170,9 +170,9 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
       )}
 
       {/* Section header */}
-      <div className="grid grid-cols-[auto_1fr] gap-2 items-end pr-8">
+      <div className="grid grid-cols-[auto_1fr] gap-2 items-end pr-6">
         {section.number !== null && section.number !== undefined && (
-          <div className="w-14">
+          <div className="w-12">
             <Label className="text-xs font-medium">No.</Label>
             <Input
               value={section.number}

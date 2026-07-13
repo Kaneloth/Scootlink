@@ -1689,7 +1689,7 @@ export default function Dashboard() {
 
       {/* Contract Modal — portal so AppLayout transform/overflow can't clip it */}
       {contractModal && selectedProposal && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
+        <div className="fixed inset-0 z-[9999] flex items-start sm:items-center justify-center p-4 pt-8 sm:pt-4 bg-black/40 overflow-y-auto" onClick={closeContractModal}>
           <div className="bg-card rounded-2xl shadow-xl max-w-4xl w-full p-4 sm:p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-1 shrink-0">
               <h2 className="text-xl font-bold">
