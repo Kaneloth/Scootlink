@@ -21,6 +21,8 @@ import AutoGrowTextarea from '@/components/AutoGrowTextarea';
  *     fields: [{ label, value }],  // simple label/value rows, e.g. Type/Make/Model
  *     intro: string,                // optional paragraph before the bullets
  *     bullets: [{ text, subBullets: string[] }],
+ *     subsections: [Section],       // e.g. 8.1–8.7 within Termination — same
+ *                                    // shape recursively, one level deep only
  *   }
  *
  * Sub-bullets exist because the real contract has them (Section 6's "The
@@ -28,7 +30,7 @@ import AutoGrowTextarea from '@/components/AutoGrowTextarea';
  * 8.5's similar structure) — plain flat bullets aren't enough to represent
  * the actual template faithfully.
  */
-export default function ContractSectionEditor({ section, onChange, onDelete, canDelete = true }) {
+export default function ContractSectionEditor({ section, onChange, onDelete, canDelete = true, allowSubsections = true }) {
   const update = (patch) => onChange({ ...section, ...patch });
 
   // ── Fields (label/value pairs) ────────────────────────────────────────────
@@ -67,6 +69,30 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
     bullets[bi] = { ...bullets[bi], subBullets: (bullets[bi].subBullets || []).filter((_, idx) => idx !== si) };
     update({ bullets });
   };
+
+  // ── Subsections (e.g. 8.1–8.7 within Termination) — one level deep only,
+  // enforced by passing allowSubsections={false} on the recursive render
+  // below, since the real template never nests deeper than this. ───────────
+  const subsections = section.subsections || [];
+  const emptySubsection = (number) => ({
+    id: `${section.id}-sub-${Date.now()}`,
+    number,
+    title: '',
+    fields: [],
+    intro: '',
+    bullets: [{ text: '', subBullets: [] }],
+  });
+  const nextSubNumber = () => {
+    const base = section.number || '';
+    return base ? `${base}.${subsections.length + 1}` : '';
+  };
+  const addSubsection = () => update({ subsections: [...subsections, emptySubsection(nextSubNumber())] });
+  const updateSubsection = (i, updated) => {
+    const next = [...subsections];
+    next[i] = updated;
+    update({ subsections: next });
+  };
+  const removeSubsection = (i) => update({ subsections: subsections.filter((_, idx) => idx !== i) });
 
   return (
     <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
@@ -192,6 +218,26 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
           <Plus className="w-4 h-4" /> Add point
         </Button>
       </div>
+
+      {/* Subsections — recursive, one level deep only */}
+      {allowSubsections && (
+        <div className="space-y-3 pt-2 border-t border-border">
+          <Label className="text-xs font-medium">Subsections</Label>
+          {subsections.map((sub, si) => (
+            <ContractSectionEditor
+              key={sub.id}
+              section={sub}
+              onChange={updated => updateSubsection(si, updated)}
+              onDelete={() => removeSubsection(si)}
+              canDelete
+              allowSubsections={false}
+            />
+          ))}
+          <Button variant="outline" size="sm" onClick={addSubsection} className="w-full rounded-xl gap-2">
+            <Plus className="w-4 h-4" /> Add Subsection
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
