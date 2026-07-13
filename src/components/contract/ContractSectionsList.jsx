@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus, ChevronUp, ChevronDown } from 'lucide-react';
@@ -24,10 +25,17 @@ export default function ContractSectionsList({ sections, onChange }) {
     onChange(sections.filter((_, idx) => idx !== i));
   };
 
+  const nextSectionNumber = () => {
+    const nums = sections
+      .map(s => parseInt(s.number, 10))
+      .filter(n => !isNaN(n));
+    return nums.length ? String(Math.max(...nums) + 1) : '1';
+  };
+
   const addSection = () => {
     onChange([...sections, {
       id: `custom-${Date.now()}`,
-      number: null,
+      number: nextSectionNumber(),
       title: '',
       fields: [],
       intro: '',
