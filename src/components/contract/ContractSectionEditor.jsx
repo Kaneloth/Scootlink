@@ -155,40 +155,42 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
   }
 
   return (
-    <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
+    <div className="relative bg-card rounded-2xl border border-border p-4 space-y-4">
+      {/* Delete button — floats in the corner instead of sharing the header
+          row with the title, so the title input gets the full available
+          width instead of fighting the button for space. */}
+      {canDelete && (
+        <button
+          onClick={onDelete}
+          className="absolute top-3 right-3 text-muted-foreground hover:text-destructive transition-colors z-10"
+          title="Delete section"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      )}
+
       {/* Section header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 grid grid-cols-[auto_1fr] gap-2 items-end">
-          {section.number !== null && section.number !== undefined && (
-            <div className="w-14">
-              <Label className="text-xs font-medium">No.</Label>
-              <Input
-                value={section.number}
-                onChange={e => update({ number: e.target.value })}
-                className="mt-1 text-center"
-                placeholder="1"
-              />
-            </div>
-          )}
-          <div>
-            <Label className="text-xs font-medium">Section Title</Label>
+      <div className="grid grid-cols-[auto_1fr] gap-2 items-end pr-8">
+        {section.number !== null && section.number !== undefined && (
+          <div className="w-14">
+            <Label className="text-xs font-medium">No.</Label>
             <Input
-              value={section.title}
-              onChange={e => update({ title: e.target.value })}
-              className="mt-1"
-              placeholder="e.g. Driver Requirements"
+              value={section.number}
+              onChange={e => update({ number: e.target.value })}
+              className="mt-1 text-center"
+              placeholder="1"
             />
           </div>
-        </div>
-        {canDelete && (
-          <button
-            onClick={onDelete}
-            className="text-muted-foreground hover:text-destructive transition-colors shrink-0 mt-6"
-            title="Delete section"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
         )}
+        <div>
+          <Label className="text-xs font-medium">Section Title</Label>
+          <Input
+            value={section.title}
+            onChange={e => update({ title: e.target.value })}
+            className="mt-1"
+            placeholder="e.g. Driver Requirements"
+          />
+        </div>
       </div>
 
       {/* Fields (Type / Make / Model style rows) */}
