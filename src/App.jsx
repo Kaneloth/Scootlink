@@ -200,10 +200,21 @@ function App() {
       if (document.body.style.pointerEvents === 'none') {
         document.body.style.pointerEvents = '';
       }
+      // Some Radix components block the background via inert/aria-hidden
+      // on body instead of (or in addition to) pointer-events — same
+      // "trap focus while a popup is open" purpose, different mechanism.
+      // Confirmed via testing that pointerEvents alone doesn't catch every
+      // case (Select on FindDrivers specifically), so watch for this too.
+      if (document.body.hasAttribute('inert')) {
+        document.body.removeAttribute('inert');
+      }
+      if (document.body.getAttribute('aria-hidden') === 'true') {
+        document.body.removeAttribute('aria-hidden');
+      }
     };
     clearIfStuck();
     const observer = new MutationObserver(clearIfStuck);
-    observer.observe(document.body, { attributes: true, attributeFilter: ['style'] });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['style', 'inert', 'aria-hidden'] });
     const interval = setInterval(clearIfStuck, 300);
     return () => { observer.disconnect(); clearInterval(interval); };
   }, []);

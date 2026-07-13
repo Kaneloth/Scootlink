@@ -1690,7 +1690,7 @@ export default function Dashboard() {
       {/* Contract Modal — portal so AppLayout transform/overflow can't clip it */}
       {contractModal && selectedProposal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
-          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-4xl w-full p-4 sm:p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-1 shrink-0">
               <h2 className="text-xl font-bold">
                 {contractEditMode === 'accept' ? 'Draft & Send Contract' :
@@ -1712,7 +1712,7 @@ export default function Dashboard() {
             </p>
 
             {/* Full contract, section by section */}
-            <div className={`rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0 ${contractEditMode === 'accept' ? 'bg-background border-2 border-primary/30 ring-1 ring-primary/10' : 'bg-muted'}`}>
+            <div className={`rounded-xl p-2 sm:p-3 flex-1 overflow-y-auto mb-4 min-h-0 ${contractEditMode === 'accept' ? 'bg-background border-2 border-primary/30 ring-1 ring-primary/10' : 'bg-muted'}`}>
               {contractEditMode === 'accept' && (
                 <p className="text-[10px] text-primary font-medium mb-2 uppercase tracking-wide">✏️ Editable — tap to make changes</p>
               )}

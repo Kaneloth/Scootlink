@@ -716,7 +716,7 @@ export default function FindDrivers() {
       {showContractPreview && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40"
           onClick={() => setShowContractPreview(false)}>
-          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border flex flex-col max-h-[92vh]"
+          <div className="bg-card rounded-2xl shadow-xl max-w-4xl w-full p-4 sm:p-6 border border-border flex flex-col max-h-[92vh]"
             onClick={e => e.stopPropagation()}>
 
             <div className="flex items-center justify-between mb-1 shrink-0">
@@ -730,7 +730,7 @@ export default function FindDrivers() {
               Review and edit the contract below before sending to {selectedDriver?.full_name?.split(' ')[0] || 'the driver'}. Once sent, the driver will review and accept.
             </p>
 
-            <div className="bg-background border-2 border-primary/30 rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0">
+            <div className="bg-background border-2 border-primary/30 rounded-xl p-2 sm:p-3 flex-1 overflow-y-auto mb-4 min-h-0">
               <p className="text-[10px] text-primary font-medium mb-2 uppercase tracking-wide">✏️ Editable — tap to make changes</p>
               <ContractSectionsList sections={contractSections} onChange={setContractSections} />
             </div>
