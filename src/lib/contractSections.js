@@ -311,3 +311,54 @@ function flattenSection(s) {
 export function flattenContractSections(sections) {
   return sections.map(s => flattenSection(s).join('\n')).join('\n\n').trim();
 }
+
+// ── Merge driver/rental details into a saved draft ──────────────────────────
+// When an owner has prepared a contract in advance (Briefcase → Prepare
+// Contract), the driver fields are necessarily blank — there's no driver
+// yet at that point. This injects the real driver's name/ID/licence and the
+// actual rental dates/pricing into the right fields once a driver and rental
+// terms exist, without touching anything else the owner customized (custom
+// sections, edited wording, reordered sections, deleted sections — all of
+// it survives untouched since this only ever updates specific field values
+// by their known label, inside specific sections by their known id).
+export function mergeDriverIntoDraft(draftSections, rental, driverProfile) {
+  const driverName     = driverProfile?.full_name || '';
+  const driverIdNo     = driverProfile?.id_number || driverProfile?.passport_number || '';
+  const licenseNumber  = driverProfile?.license_number || '';
+
+  const updateFieldsByLabel = (fields, updates) =>
+    fields.map(f => (updates[f.label] !== undefined ? { ...f, value: updates[f.label] } : f));
+
+  return draftSections.map(section => {
+    if (section.id === 'preamble') {
+      return {
+        ...section,
+        fields: updateFieldsByLabel(section.fields, {
+          'Driver (Renter)': driverName,
+          "Driver's ID/Passport No": driverIdNo,
+        }),
+      };
+    }
+    if (section.id === 'rental-terms') {
+      return {
+        ...section,
+        fields: updateFieldsByLabel(section.fields, {
+          'Rental Start Date':  rental?.start_date || '',
+          'Rental End Date':    rental?.end_date || '',
+          'Weekly Rate':        rental?.price_per_week ? `R ${rental.price_per_week}` : '',
+          'Security Deposit':   rental?.deposit ? `R ${rental.deposit}` : '',
+        }),
+      };
+    }
+    if (section.id === 'driver-requirements') {
+      return {
+        ...section,
+        fields: updateFieldsByLabel(section.fields, {
+          "Driver's Licence Number": licenseNumber,
+        }),
+      };
+    }
+    return section;
+  });
+}
+

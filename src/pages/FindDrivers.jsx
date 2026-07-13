@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/api/supabaseClient';
 import { geocodeLocation } from '@/lib/geocode';
 import ImageLightbox from '@/components/ui/ImageLightbox';
-import { generateContractSections, flattenContractSections } from '@/lib/contractSections';
+import { generateContractSections, flattenContractSections, mergeDriverIntoDraft } from '@/lib/contractSections';
 import ContractSectionsList from '@/components/contract/ContractSectionsList';
 import { notify } from '@/lib/notify';
 
@@ -252,12 +252,23 @@ export default function FindDrivers() {
     if (!contractForm.price_per_week)                        { toast.error('Please enter the weekly rate'); return; }
 
     const vehicle = ownerVehicles.find(v => String(v.id) === String(contractForm.vehicle_id));
-    // contractForm already has the same field names (start_date, end_date,
-    // price_per_week, deposit) that generateContractSections expects on its
-    // "rental" argument — no actual rental row exists yet at this point
-    // (that only gets created in handleSendContract below), but the shape
-    // matches so the form can stand in directly.
-    const sections = generateContractSections(contractForm, vehicle, selectedDriver, currentUser);
+    // If this vehicle has a saved contract draft (Briefcase → Prepare
+    // Contract), start from that instead of generating fresh — preserves
+    // all the owner's customized wording, sections, and structure. The
+    // driver's real details and rental terms get merged into the right
+    // fields; everything else the owner customized is left untouched.
+    // Falls back to generating fresh when there's no saved draft.
+    let sections;
+    if (Array.isArray(vehicle?.draft_contract_sections) && vehicle.draft_contract_sections.length > 0) {
+      sections = mergeDriverIntoDraft(vehicle.draft_contract_sections, contractForm, selectedDriver);
+    } else {
+      // contractForm already has the same field names (start_date, end_date,
+      // price_per_week, deposit) that generateContractSections expects on its
+      // "rental" argument — no actual rental row exists yet at this point
+      // (that only gets created in handleSendContract below), but the shape
+      // matches so the form can stand in directly.
+      sections = generateContractSections(contractForm, vehicle, selectedDriver, currentUser);
+    }
     setContractSections(sections);
     setShowContractPreview(true);
   };

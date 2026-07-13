@@ -950,13 +950,22 @@ export default function Dashboard() {
     }
 
     // Use saved contract_sections when this rental already has a real, edited
-    // contract (structured data present) — otherwise generate a fresh one.
-    // Older rentals saved before this structured format existed won't have
-    // contract_sections at all, so they correctly fall through to a fresh
-    // generation too, exactly like the old contract_text heuristic did.
-    const sections = Array.isArray(rental.contract_sections) && rental.contract_sections.length > 0
-      ? rental.contract_sections
-      : generateContractSections(rental, vehicle, driverProfileData, user);
+    // contract (structured data present) — otherwise check for a saved
+    // vehicle draft (Briefcase → Prepare Contract) and merge the driver's
+    // real details into it, preserving all the owner's customized wording —
+    // otherwise generate a fresh one from scratch. Older rentals saved before
+    // this structured format existed won't have contract_sections at all, so
+    // they correctly fall through too, exactly like the old contract_text
+    // heuristic did.
+    let sections;
+    if (Array.isArray(rental.contract_sections) && rental.contract_sections.length > 0) {
+      sections = rental.contract_sections;
+    } else if (Array.isArray(vehicle?.draft_contract_sections) && vehicle.draft_contract_sections.length > 0) {
+      const { mergeDriverIntoDraft } = await import('@/lib/contractSections');
+      sections = mergeDriverIntoDraft(vehicle.draft_contract_sections, rental, driverProfileData);
+    } else {
+      sections = generateContractSections(rental, vehicle, driverProfileData, user);
+    }
 
     setContractSections(sections);
     setSelectedProposal({ ...rental, contractSections: sections });
