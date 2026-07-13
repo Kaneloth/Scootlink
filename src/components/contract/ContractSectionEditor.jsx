@@ -99,11 +99,37 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
       <div className="bg-muted/40 rounded-2xl border border-border p-4 space-y-2">
         <div className="flex items-center gap-2">
           <Lock className="w-3.5 h-3.5 text-muted-foreground" />
-          <h3 className="font-semibold text-sm text-foreground">{section.title}</h3>
+          <h3 className="font-semibold text-sm text-foreground">
+            {section.number ? `${section.number}. ` : ''}{section.title}
+          </h3>
         </div>
-        <p className="text-sm text-muted-foreground leading-relaxed">{section.intro}</p>
+        {section.intro && (
+          <p className="text-sm text-muted-foreground leading-relaxed">{section.intro}</p>
+        )}
+        {section.bullets.length > 0 && (
+          <ul className="space-y-1.5">
+            {section.bullets.map((bullet, bi) => (
+              <li key={bi}>
+                <div className="flex items-start gap-2">
+                  <span className="text-muted-foreground text-sm shrink-0">•</span>
+                  <span className="text-sm text-muted-foreground leading-relaxed">{bullet.text}</span>
+                </div>
+                {(bullet.subBullets || []).length > 0 && (
+                  <ul className="pl-8 space-y-1">
+                    {bullet.subBullets.map((sub, si) => (
+                      <li key={si} className="flex items-start gap-2">
+                        <span className="text-muted-foreground text-xs shrink-0">–</span>
+                        <span className="text-sm text-muted-foreground leading-relaxed">{sub}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
         <p className="text-[11px] text-muted-foreground/70 italic">
-          This section's wording is fixed — it's what makes the digital signature legally valid.
+          This section's wording is fixed — it can't be edited or removed.
         </p>
       </div>
     );

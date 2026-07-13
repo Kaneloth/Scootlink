@@ -204,7 +204,7 @@ export function generateContractSections(rental, vehicle, driverProfile, ownerUs
         },
         {
           id: 'termination-8-4', number: '8.4', title: 'Termination for Convenience (No Breach)', fields: [],
-          intro: 'Either party may terminate this Agreement without cause by giving written notice of __ hours/days.',
+          intro: 'Either party may terminate this Agreement without cause by giving written notice of [number] hours/days.',
           bullets: [
             emptyBullet('The Driver must return the vehicle by the termination date.'),
           ],
@@ -217,7 +217,7 @@ export function generateContractSections(rental, vehicle, driverProfile, ownerUs
             { text: 'The deposit shall be refunded subject to deductions for:', subBullets: [
               'Damages;', 'Outstanding fees or penalties;', 'Reasonable early termination costs.',
             ] },
-            emptyBullet('An early termination fee of __ (if applicable) may apply.'),
+            emptyBullet('An early termination fee of [amount] (if applicable) may apply.'),
           ],
         },
         {
@@ -241,7 +241,10 @@ export function generateContractSections(rental, vehicle, driverProfile, ownerUs
       ],
     },
 
-    // ── 9. General Terms ──────────────────────────────────────────────────────
+    // ── 9. General Terms — locked. All three points are standard boilerplate
+    // once the governing-law clause is hardcoded to South Africa rather than
+    // left as a blank for the user to fill in (Skootlink operates entirely
+    // within SA, so there's no actual variability here to leave editable). ──
     {
       id: 'general-terms',
       number: '9',
@@ -251,9 +254,10 @@ export function generateContractSections(rental, vehicle, driverProfile, ownerUs
       bullets: [
         emptyBullet('This Agreement constitutes the entire agreement between the parties.'),
         emptyBullet('Any amendments must be in writing and agreed to by both parties.'),
-        emptyBullet('This Agreement shall be governed by the laws of __________.'),
+        emptyBullet('This Agreement shall be governed by the laws of the Republic of South Africa.'),
       ],
       subsections: [],
+      locked: true,
     },
 
     // ── Closing — unnumbered, the digital-signature statement. Locked: this
