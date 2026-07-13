@@ -24,25 +24,6 @@ import { notify } from '@/lib/notify';
 
 export default function FindDrivers() {
   const navigate = useNavigate();
-
-  // TEMPORARY diagnostic — shows document.body's real attributes/inline
-  // style live, updated continuously. The Driver Profile modal's close
-  // button has been intermittently unresponsive despite three different
-  // fixes (pointer-events, inert, aria-hidden all cleared in App.jsx) —
-  // rather than guess at a fourth mechanism, this lets whatever's actually
-  // there be captured directly the next time it happens. Remove once the
-  // real cause is confirmed.
-  const [bodyDiag, setBodyDiag] = useState('');
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const attrs = Array.from(document.body.attributes)
-        .map(a => `${a.name}="${a.value}"`)
-        .join(' ');
-      setBodyDiag(attrs || '(no attributes)');
-    }, 250);
-    return () => clearInterval(interval);
-  }, []);
-
   const [driverReviews,    setDriverReviews]    = useState([]);
   const [loadingReviews,   setLoadingReviews]   = useState(false);
   const [showFilters,      setShowFilters]      = useState(false);
@@ -335,10 +316,6 @@ export default function FindDrivers() {
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      {/* TEMPORARY diagnostic — remove once the intermittent close-button issue is confirmed and fixed for real */}
-      <div className="fixed top-0 left-0 right-0 z-[999999] bg-black/90 text-green-400 text-[9px] font-mono p-1.5 break-all">
-        body attrs: {bodyDiag}
-      </div>
       <PageHeader
         title="Find Drivers"
         subtitle={
@@ -529,9 +506,9 @@ export default function FindDrivers() {
 
       {/* ── Driver Detail Modal ──────────────────────────────────────────────── */}
       {selectedDriver && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => { setSelectedDriver(null); setShowContractForm(false); }}>
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 pt-8 sm:pt-4 bg-black/40 overflow-y-auto" onClick={() => { setSelectedDriver(null); setShowContractForm(false); }}>
           <div
-            className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[90vh]"
+            className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[85vh]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Sticky header — stays visible no matter how tall the expanded
