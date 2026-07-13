@@ -256,7 +256,9 @@ export function generateContractSections(rental, vehicle, driverProfile, ownerUs
       subsections: [],
     },
 
-    // ── Closing — unnumbered, the digital-signature statement ────────────────
+    // ── Closing — unnumbered, the digital-signature statement. Locked: this
+    // exact wording is what makes the digital signature legally meaningful,
+    // so it isn't user-editable like everything else in the contract. ──────
     {
       id: 'closing',
       number: null,
@@ -265,6 +267,7 @@ export function generateContractSections(rental, vehicle, driverProfile, ownerUs
       intro: 'By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize Rental", both parties confirm they have read, understood, and agreed to this Agreement. This constitutes a valid digital signature.',
       bullets: [],
       subsections: [],
+      locked: true,
     },
   ];
 }

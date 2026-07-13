@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus, ChevronUp, ChevronDown } from 'lucide-react';
@@ -82,7 +81,7 @@ export default function ContractSectionsList({ sections, onChange }) {
             section={section}
             onChange={updated => updateSection(i, updated)}
             onDelete={() => deleteSection(i)}
-            canDelete
+            canDelete={!section.locked}
           />
         </div>
       ))}

@@ -2,7 +2,7 @@ import React from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2, X, Lock } from 'lucide-react';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 
 /**
@@ -93,6 +93,21 @@ export default function ContractSectionEditor({ section, onChange, onDelete, can
     update({ subsections: next });
   };
   const removeSubsection = (i) => update({ subsections: subsections.filter((_, idx) => idx !== i) });
+
+  if (section.locked) {
+    return (
+      <div className="bg-muted/40 rounded-2xl border border-border p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+          <h3 className="font-semibold text-sm text-foreground">{section.title}</h3>
+        </div>
+        <p className="text-sm text-muted-foreground leading-relaxed">{section.intro}</p>
+        <p className="text-[11px] text-muted-foreground/70 italic">
+          This section's wording is fixed — it's what makes the digital signature legally valid.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
