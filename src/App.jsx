@@ -51,6 +51,7 @@ const AdminIdentityVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@
 const AdminDisputesCenter = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminDisputesCenter')) : null;
 const AdminAnnouncements = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminAnnouncements')) : null;
 const AdminReminders = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminReminders')) : null;
+const AdminProximityAlerts = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminProximityAlerts')) : null;
 const AdminCreditGrants = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminCreditGrants')) : null;
 
 function AdminLoadingScreen() {
@@ -160,6 +161,7 @@ const AuthenticatedApp = () => {
           <Route path="disputes" element={<AdminDisputesCenter />} />
           <Route path="announcements" element={<AdminAnnouncements />} />
           <Route path="reminders" element={<AdminReminders />} />
+          <Route path="proximity-alerts" element={<AdminProximityAlerts />} />
           <Route path="credit-grants" element={<AdminCreditGrants />} />
         </Route>
       )}
