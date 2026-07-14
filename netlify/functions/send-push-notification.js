@@ -115,9 +115,12 @@ export const handler = async (event) => {
 
   const sent = results.filter(r => r.status === 'fulfilled').length;
   const failed = results.length - sent;
+  const failureReasons = results
+    .filter(r => r.status === 'rejected')
+    .map(r => ({ code: r.reason?.code, message: r.reason?.message }));
   if (failed > 0) {
-    console.warn('[send-push-notification] Some sends failed:', results.filter(r => r.status === 'rejected').map(r => r.reason?.message));
+    console.warn('[send-push-notification] Some sends failed:', failureReasons);
   }
 
-  return { statusCode: 200, body: JSON.stringify({ sent, failed }) };
+  return { statusCode: 200, body: JSON.stringify({ sent, failed, failureReasons }) };
 };
