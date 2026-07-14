@@ -11,7 +11,9 @@
  * custom header X-Webhook-Secret matching SUPABASE_WEBHOOK_SECRET below,
  * so this endpoint can't be triggered by anyone who just finds the URL.
  */
-import * as admin from 'firebase-admin';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const admin = require('firebase-admin');
 import { createClient } from '@supabase/supabase-js';
 
 // Netlify function containers can be reused across invocations — avoid
