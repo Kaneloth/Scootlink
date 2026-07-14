@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "521902976726",
+    "project_id": "scootlink-bc13e",
+    "storage_bucket": "scootlink-bc13e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:521902976726:android:ad8abd909e8a061111a377",
+        "android_client_info": {
+          "package_name": "co.za.skootlink.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3ewpxvZDsSiszJOKBUH3a06WMb_kqLDw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

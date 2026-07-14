@@ -221,6 +221,51 @@ function App() {
     return () => { observer.disconnect(); clearInterval(interval); };
   }, []);
 
+  // Push notification registration — native only. Requests permission,
+  // registers the device with FCM, and stores the resulting token so the
+  // backend (Phase 2) knows where to actually deliver pushes. Runs on every
+  // app launch, which naturally re-registers after login too, since the
+  // token itself is what's unique — re-registering an already-known token
+  // just updates its owner/timestamp rather than creating a duplicate.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    (async () => {
+      try {
+        const { PushNotifications } = await import('@capacitor/push-notifications');
+
+        let permStatus = await PushNotifications.checkPermissions();
+        if (permStatus.receive === 'prompt') {
+          permStatus = await PushNotifications.requestPermissions();
+        }
+        if (permStatus.receive !== 'granted') {
+          console.warn('[App] Push notification permission not granted:', permStatus.receive);
+          return;
+        }
+
+        await PushNotifications.addListener('registration', async (token) => {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return; // not logged in yet — token isn't tied to anyone
+            await supabase.from('device_push_tokens').upsert(
+              { user_id: user.id, token: token.value, platform: 'android', updated_at: new Date().toISOString() },
+              { onConflict: 'token' }
+            );
+          } catch (err) {
+            console.error('[App] Failed to save push token:', err);
+          }
+        });
+
+        await PushNotifications.addListener('registrationError', (err) => {
+          console.error('[App] Push registration error:', err);
+        });
+
+        await PushNotifications.register();
+      } catch (err) {
+        console.error('[App] Push notification setup failed:', err);
+      }
+    })();
+  }, []);
+
   // Register the PASSWORD_RECOVERY listener as early as possible — useMemo runs
   // synchronously during render, before any child component mounts. This ensures
   // we catch the event even if Supabase fires it before Auth.jsx is mounted.
