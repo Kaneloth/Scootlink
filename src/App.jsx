@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, Suspense } from 'react';
+import React, { useEffect, useMemo, useRef, Suspense } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster, toast } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -175,6 +175,11 @@ const AuthenticatedApp = () => {
 };
 
 function App() {
+  // Holds the most recently received FCM token, so it can be re-associated
+  // with whoever actually signs in — login and FCM registration can happen
+  // in either order, with no guarantee which comes first.
+  const latestPushTokenRef = useRef(null);
+
   // Radix's Select (and other Radix primitives) lock document.body with
   // pointer-events:none while their dropdown/portal is open, and release it
   // when it closes. Confirmed via on-device testing that this lock can get
@@ -223,12 +228,42 @@ function App() {
 
   // Push notification registration — native only. Requests permission,
   // registers the device with FCM, and stores the resulting token so the
-  // backend (Phase 2) knows where to actually deliver pushes. Runs on every
-  // app launch, which naturally re-registers after login too, since the
-  // token itself is what's unique — re-registering an already-known token
-  // just updates its owner/timestamp rather than creating a duplicate.
+  // backend (Phase 2) knows where to actually deliver pushes.
+  //
+  // This only runs once per app launch, but login can happen before OR
+  // after FCM's 'registration' event actually fires — there's no
+  // guaranteed order between them. The original version discarded the
+  // token entirely if no one was logged in yet at that exact moment, with
+  // no way to recover it once a login did happen. Fixed by keeping the
+  // token around (module-level, survives across this effect) and saving
+  // it again on every sign-in — the token itself is what's unique, so
+  // resaving an already-known token just updates its owner rather than
+  // duplicating anything.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
+
+    const savePushToken = async (tokenValue) => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        await supabase.from('device_push_tokens').upsert(
+          { user_id: user.id, token: tokenValue, platform: 'android', updated_at: new Date().toISOString() },
+          { onConflict: 'token' }
+        );
+      } catch (err) {
+        console.error('[App] Failed to save push token:', err);
+      }
+    };
+
+    // Re-associate the most recently seen token whenever someone actually
+    // signs in — covers the case where FCM registration completed before
+    // login did, which the original version silently dropped.
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((event) => {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && latestPushTokenRef.current) {
+        savePushToken(latestPushTokenRef.current);
+      }
+    });
+
     (async () => {
       try {
         const { PushNotifications } = await import('@capacitor/push-notifications');
@@ -242,17 +277,9 @@ function App() {
           return;
         }
 
-        await PushNotifications.addListener('registration', async (token) => {
-          try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return; // not logged in yet — token isn't tied to anyone
-            await supabase.from('device_push_tokens').upsert(
-              { user_id: user.id, token: token.value, platform: 'android', updated_at: new Date().toISOString() },
-              { onConflict: 'token' }
-            );
-          } catch (err) {
-            console.error('[App] Failed to save push token:', err);
-          }
+        await PushNotifications.addListener('registration', (token) => {
+          latestPushTokenRef.current = token.value;
+          savePushToken(token.value);
         });
 
         await PushNotifications.addListener('registrationError', (err) => {
@@ -264,6 +291,8 @@ function App() {
         console.error('[App] Push notification setup failed:', err);
       }
     })();
+
+    return () => { authSub?.unsubscribe(); };
   }, []);
 
   // Register the PASSWORD_RECOVERY listener as early as possible — useMemo runs
