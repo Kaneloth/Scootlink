@@ -11,20 +11,24 @@
  * custom header X-Webhook-Secret matching SUPABASE_WEBHOOK_SECRET below,
  * so this endpoint can't be triggered by anyone who just finds the URL.
  */
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const admin = require('firebase-admin');
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
 import { createClient } from '@supabase/supabase-js';
 
 // Netlify function containers can be reused across invocations — avoid
 // re-initializing the Firebase app (and its internal auth token cache)
 // on every single call.
-if (!admin.apps.length) {
+let firebaseApp;
+const existingApps = getApps();
+if (existingApps.length === 0) {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+  firebaseApp = initializeApp({
+    credential: cert(serviceAccount),
   });
+} else {
+  firebaseApp = existingApps[0];
 }
+const messaging = getMessaging(firebaseApp);
 
 const supabaseAdmin = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -85,7 +89,7 @@ export const handler = async (event) => {
   }
 
   const results = await Promise.allSettled(
-    tokens.map(t => admin.messaging().send({
+    tokens.map(t => messaging.send({
       token: t.token,
       notification: { title, body },
       data,
