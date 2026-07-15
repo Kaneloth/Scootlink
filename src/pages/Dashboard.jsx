@@ -547,6 +547,23 @@ export default function Dashboard() {
     queryFn: () => Vehicle.filter({ status: 'available' }),
   });
 
+  // Distance-filtered specifically for the driver's "Available Vehicles"
+  // list — kept separate from allVehicles above, which stays unfiltered
+  // since it's also used as a general lookup fallback elsewhere (rental
+  // cards need to find a vehicle's details even if it's far away).
+  const { data: nearbyVehicles = [] } = useQuery({
+    queryKey: ['nearby-vehicles', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_nearby_vehicles', {
+        p_user_id: user.id,
+        p_radius_meters: 50000,
+      });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user?.id,
+  });
+
   // All vehicles regardless of status — used to look up vehicle details on active/completed rental cards
   const { data: allVehiclesLookup = [] } = useQuery({
     queryKey: ['all-vehicles-lookup'],
@@ -625,7 +642,7 @@ export default function Dashboard() {
   });
   const reviewedRentalIds = new Set((myReviews || []).map(r => r.rental_id).filter(Boolean));
 
-  const availableForMe = allVehicles.filter(v => v.owner_id !== user?.id);
+  const availableForMe = nearbyVehicles.filter(v => v.owner_id !== user?.id);
   const completedRentals = rentals
     .filter(r => r.status === 'completed')
     .filter(r => !reviewedRentalIds.has(r.id));
@@ -673,6 +690,7 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['nearby-vehicles'] });
     } catch (err) {
       toast.error('Failed to update proposal: ' + err.message);
     }
@@ -816,6 +834,7 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['nearby-vehicles'] });
       maybePromptReview();
     } catch (err) {
       toast.error('Could not finalise rental: ' + err.message);
@@ -856,6 +875,7 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['nearby-vehicles'] });
     } catch (err) {
       toast.error('Could not end rental: ' + err.message);
     } finally {
@@ -1465,6 +1485,7 @@ export default function Dashboard() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] }),
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] }),
+      queryClient.invalidateQueries({ queryKey: ['nearby-vehicles'] }),
       queryClient.invalidateQueries({ queryKey: ['all-vehicles-lookup'] }),
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] }),
       queryClient.invalidateQueries({ queryKey: ['my-reviews'] }),
@@ -1568,7 +1589,14 @@ export default function Dashboard() {
         const hasMinProfile = !!(user.full_name?.trim() && user.phone?.trim() && user.location?.trim());
         if ((!user.onboarding_completed && !hasMinProfile) || user.verified || user.id_verified || bannerDismissed) return null;
         return (
-          <Card className="p-4 border-2 border-blue-200 bg-blue-50 mb-3 flex items-center justify-between gap-3">
+          <Card className="relative p-4 pr-10 border-2 border-blue-200 bg-blue-50 mb-3 flex items-center justify-between gap-3">
+            <button
+              onClick={dismissVerificationBanner}
+              aria-label="Dismiss"
+              className="absolute top-3 right-3 p-1 rounded-full text-blue-400 hover:text-blue-600 hover:bg-blue-100 transition-colors z-10"
+            >
+              <X className="w-4 h-4" />
+            </button>
             <div className="flex items-center gap-3">
               <ShieldCheck className="w-5 h-5 text-blue-500 shrink-0" />
               <div>
@@ -1576,16 +1604,7 @@ export default function Dashboard() {
                 <p className="text-xs text-blue-700">Verified users earn a ✅ badge that builds trust with owners and drivers on the platform</p>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Link to="/profile?tab=verification"><Button size="sm" variant="outline" className="border-blue-400 text-blue-700 hover:bg-blue-100">Verify</Button></Link>
-              <button
-                onClick={dismissVerificationBanner}
-                aria-label="Dismiss"
-                className="p-1 rounded-full text-blue-400 hover:text-blue-600 hover:bg-blue-100 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+            <Link to="/profile?tab=verification" className="shrink-0"><Button size="sm" variant="outline" className="border-blue-400 text-blue-700 hover:bg-blue-100">Verify</Button></Link>
           </Card>
         );
       })()}
