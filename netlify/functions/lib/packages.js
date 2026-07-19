@@ -1,4 +1,3 @@
-
 /**
  * packages — single source of truth for Skootlink credit pack pricing
  * Place at: netlify/functions/lib/packages.js
