@@ -382,6 +382,17 @@ function PrepareContractModal({ vehicle, ownerId, onClose }) {
   const [sections, setSections] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
+  const [resetting, setResetting] = useState(false);
+  // Kept so "Reset to Default" can rebuild a fresh contract without an
+  // extra network round-trip — this is fetched once on mount anyway.
+  const [ownerInfo, setOwnerInfo] = useState(null);
+
+  const buildFreshSections = (info) => generateContractSections(
+    { price_per_week: vehicle.price },
+    vehicle,
+    null,
+    info
+  );
 
   useEffect(() => {
     (async () => {
@@ -393,6 +404,9 @@ function PrepareContractModal({ vehicle, ownerId, onClose }) {
           .eq('id', ownerId)
           .single();
 
+        const info = { ...ownerProfile, email: authUser?.email };
+        setOwnerInfo(info);
+
         // Use the saved draft if one already exists for this vehicle,
         // otherwise generate fresh — pre-filled with vehicle + owner info,
         // driver fields left blank since there's no driver yet at this
@@ -401,13 +415,7 @@ function PrepareContractModal({ vehicle, ownerId, onClose }) {
         if (Array.isArray(vehicle.draft_contract_sections) && vehicle.draft_contract_sections.length > 0) {
           setSections(vehicle.draft_contract_sections);
         } else {
-          const fresh = generateContractSections(
-            { price_per_week: vehicle.price },
-            vehicle,
-            null,
-            { ...ownerProfile, email: authUser?.email }
-          );
-          setSections(fresh);
+          setSections(buildFreshSections(info));
         }
       } catch (err) {
         console.error('[PrepareContractModal] Failed to load:', err);
@@ -417,6 +425,17 @@ function PrepareContractModal({ vehicle, ownerId, onClose }) {
       }
     })();
   }, [vehicle, ownerId]);
+
+  const handleReset = () => {
+    if (!window.confirm('Reset this contract to its default, blank state? Any changes you\'ve made — saved or not — will be discarded and cannot be undone.')) return;
+    setResetting(true);
+    try {
+      setSections(buildFreshSections(ownerInfo));
+      toast.success('Contract reset to default. Remember to Save Draft to keep this.');
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const handleSaveDraft = async () => {
     setSaving(true);
@@ -443,9 +462,18 @@ function PrepareContractModal({ vehicle, ownerId, onClose }) {
           <h2 className="text-xl font-bold">Prepare Contract</h2>
           <button onClick={() => onClose()} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
         </div>
-        <p className="text-xs text-muted-foreground mb-3 shrink-0">
-          Draft and customise the rental contract for {vehicle.make} {vehicle.model} in advance. Driver details fill in automatically once you send it to a driver — this saves your wording and structure for that moment.
-        </p>
+        <div className="flex items-start justify-between gap-3 mb-3 shrink-0">
+          <p className="text-xs text-muted-foreground">
+            Draft and customise the rental contract for {vehicle.make} {vehicle.model} in advance. Driver details fill in automatically once you send it to a driver — this saves your wording and structure for that moment.
+          </p>
+          <button
+            onClick={handleReset}
+            disabled={loading || resetting}
+            className="shrink-0 text-xs text-muted-foreground hover:text-destructive underline underline-offset-2 disabled:opacity-50 whitespace-nowrap"
+          >
+            Reset to Default
+          </button>
+        </div>
 
         <div className="rounded-xl p-2 sm:p-3 flex-1 overflow-y-auto mb-4 min-h-0 bg-background border-2 border-primary/30 ring-1 ring-primary/10">
           {loading ? (
