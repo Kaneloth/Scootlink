@@ -28,10 +28,10 @@ const TEXT_SIZES = [
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 const CREDIT_PACKAGES = [
-  { id: 'starter',  credits: 240,  price: 49  },
-  { id: 'standard', credits: 400,  price: 79,  popular: true },
-  { id: 'pro',      credits: 660,  price: 129 },
-  { id: 'business', credits: 1040, price: 199 },
+  { id: 'starter',  credits: 250,  price: 49  },
+  { id: 'standard', credits: 450,  price: 79,  popular: true },
+  { id: 'pro',      credits: 750,  price: 129 },
+  { id: 'business', credits: 1250, price: 199 },
 ];
 
 async function registerBiometric(user) {

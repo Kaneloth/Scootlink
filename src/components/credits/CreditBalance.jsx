@@ -11,10 +11,10 @@ import { toast } from 'sonner';
 
 // ── Credit packages (Skootlink pricing) ─────────────────────────────────────
 const PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 240  },
-  { id: 'standard', label: 'Standard Pack', price: 79,  credits: 400, popular: true },
-  { id: 'pro',      label: 'Pro Pack',      price: 129, credits: 660  },
-  { id: 'business', label: 'Business Pack', price: 199, credits: 1040 },
+  { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 250  },
+  { id: 'standard', label: 'Standard Pack', price: 79,  credits: 450, popular: true },
+  { id: 'pro',      label: 'Pro Pack',      price: 129, credits: 750  },
+  { id: 'business', label: 'Business Pack', price: 199, credits: 1250 },
 ];
 
 // ── How far your credits go ─────────────────────────────────────────────────
