@@ -482,7 +482,7 @@ export default function Onboarding() {
   };
 
   const validatePersonal = () => {
-    if (!form.phone || !form.gender || !form.date_of_birth || !form.residential_address) {
+    if (!form.phone || !form.gender || !form.date_of_birth) {
       toast.error('Please fill in all required fields');
       return false;
     }
@@ -931,7 +931,7 @@ export default function Onboarding() {
 
               {/* Residential Address (always shown) */}
               <div>
-                <Label className="text-xs font-medium">Residential Address *</Label>
+                <Label className="text-xs font-medium">Residential Address</Label>
                 <Input className="mt-1" placeholder="123 Main St, Johannesburg, 2000" value={form.residential_address} onChange={e => update('residential_address', e.target.value)} />
               </div>
 
