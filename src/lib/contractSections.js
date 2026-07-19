@@ -19,8 +19,17 @@ export function generateContractSections(rental, vehicle, driverProfile, ownerUs
   const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
   const ownerName = ownerUser?.full_name || '';
   const ownerIdNo = ownerUser?.id_number || ownerUser?.passport_number || '';
+  // residential_address/phone are on the profiles table but not always
+  // present on every object this function is called with (e.g. a bare
+  // rental-form stand-in before the real profile is fetched) — optional
+  // chaining with an empty-string fallback means the field just shows
+  // blank and editable rather than erroring when they're missing.
+  const ownerAddress = ownerUser?.residential_address || ownerUser?.address || '';
+  const ownerPhone = ownerUser?.phone || '';
   const driverName = driverProfile?.full_name || '';
   const driverIdNo = driverProfile?.id_number || driverProfile?.passport_number || '';
+  const driverAddress = driverProfile?.residential_address || driverProfile?.address || '';
+  const driverPhone = driverProfile?.phone || '';
   const licenseNumber = driverProfile?.license_number || '';
   const vType = vehicle?.vehicle_type || vehicle?.type || '';
   const vMake = vehicle?.make || '';
@@ -37,8 +46,12 @@ export function generateContractSections(rental, vehicle, driverProfile, ownerUs
         { label: 'Effective Date', value: today },
         { label: 'Owner', value: ownerName },
         { label: "Owner's ID/Passport No", value: ownerIdNo },
+        { label: "Owner's Address", value: ownerAddress },
+        { label: "Owner's Phone", value: ownerPhone },
         { label: 'Driver (Renter)', value: driverName },
         { label: "Driver's ID/Passport No", value: driverIdNo },
+        { label: "Driver's Address", value: driverAddress },
+        { label: "Driver's Phone", value: driverPhone },
       ],
       intro: 'This Vehicle Rental Agreement ("Agreement") is entered into between the Owner and the Driver named above.',
       bullets: [],
@@ -324,6 +337,8 @@ export function flattenContractSections(sections) {
 export function mergeDriverIntoDraft(draftSections, rental, driverProfile) {
   const driverName     = driverProfile?.full_name || '';
   const driverIdNo     = driverProfile?.id_number || driverProfile?.passport_number || '';
+  const driverAddress  = driverProfile?.residential_address || driverProfile?.address || '';
+  const driverPhone    = driverProfile?.phone || '';
   const licenseNumber  = driverProfile?.license_number || '';
 
   const updateFieldsByLabel = (fields, updates) =>
@@ -336,6 +351,8 @@ export function mergeDriverIntoDraft(draftSections, rental, driverProfile) {
         fields: updateFieldsByLabel(section.fields, {
           'Driver (Renter)': driverName,
           "Driver's ID/Passport No": driverIdNo,
+          "Driver's Address": driverAddress,
+          "Driver's Phone": driverPhone,
         }),
       };
     }
@@ -361,4 +378,3 @@ export function mergeDriverIntoDraft(draftSections, rental, driverProfile) {
     return section;
   });
 }
-
