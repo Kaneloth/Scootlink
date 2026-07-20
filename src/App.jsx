@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, Suspense } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster, toast } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -24,16 +24,43 @@ import Activity from '@/pages/Activity';
 import MyBriefcase from '@/pages/MyBriefcase';
 import Settings from '@/pages/Settings';
 import Profile from '@/pages/Profile';
+import FAQPage from '@/pages/FAQPage';
+import ContractBuilderTest from '@/pages/ContractBuilderTest'; // TEMPORARY — Phase 1 test only
 import Onboarding from '@/pages/Onboarding';
 
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 
-// TODO: replace with your actual Web client ID from Google Cloud Console
-// (Supabase Dashboard → Authentication → Providers → Google → Client ID).
-// This MUST be the Web client ID on every platform, including Android —
-// see https://capawesome.io/docs/sdks/capacitor/google-sign-in/#initializeoptions
+// Web client ID from Google Cloud Console (Supabase Dashboard → Authentication
+// → Providers → Google → Client ID). Must be the Web client ID on every
+// platform, including Android — see
+// https://capawesome.io/docs/sdks/capacitor/google-sign-in/#initializeoptions
 const GOOGLE_WEB_CLIENT_ID = '777597551403-o1c521882a048uhk9luvgdpu8qluj0qm.apps.googleusercontent.com';
+
+// __INCLUDE_ADMIN__ is replaced with a literal `true`/`false` at build time
+// (see vite.config.js). For `npm run build:native`, it's `false`, and the
+// ternary below lets esbuild/Rollup prove the import() calls are dead code
+// and drop them entirely — the admin dashboard never ends up in the APK.
+// The regular web build (`npm run build`) keeps them as normal lazy chunks.
+const AdminLayout = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminLayout')) : null;
+const AdminOverview = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminOverview')) : null;
+const AdminUserManagement = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminUserManagement')) : null;
+const AdminRentalsOversight = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminRentalsOversight')) : null;
+const AdminPlatformVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminPlatformVerification')) : null;
+const AdminIdentityVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminIdentityVerification')) : null;
+const AdminDisputesCenter = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminDisputesCenter')) : null;
+const AdminAnnouncements = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminAnnouncements')) : null;
+const AdminReminders = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminReminders')) : null;
+const AdminProximityAlerts = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminProximityAlerts')) : null;
+const AdminCreditGrants = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminCreditGrants')) : null;
+
+function AdminLoadingScreen() {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-background">
+      <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+    </div>
+  );
+}
 
 const AuthenticatedApp = () => {
   const [supabaseChecked, setSupabaseChecked] = React.useState(false);
@@ -106,10 +133,38 @@ const AuthenticatedApp = () => {
         <Route path="/briefcase" element={<MyBriefcase />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/faq" element={<FAQPage />} />
+        <Route path="/contract-builder-test" element={<ContractBuilderTest />} />
         <Route path="/mysearch" element={<SearchPage />} />
         <Route path="/messages" element={<Messages />} />
         <Route path="/contact" element={<ContactUs />} />
       </Route>
+
+      {/* Admin dashboard — reachable as a normal web URL (skootlink.co.za/admin),
+          entirely absent from native builds (see vite.config.js / package.json
+          build:native). __INCLUDE_ADMIN__ is a compile-time literal, so this
+          whole block is dead code and gets stripped for the native build. */}
+      {__INCLUDE_ADMIN__ && (
+        <Route
+          path="/admin"
+          element={
+            <Suspense fallback={<AdminLoadingScreen />}>
+              <AdminLayout />
+            </Suspense>
+          }
+        >
+          <Route index element={<AdminOverview />} />
+          <Route path="users" element={<AdminUserManagement />} />
+          <Route path="rentals" element={<AdminRentalsOversight />} />
+          <Route path="platform-verification" element={<AdminPlatformVerification />} />
+          <Route path="identity-verification" element={<AdminIdentityVerification />} />
+          <Route path="disputes" element={<AdminDisputesCenter />} />
+          <Route path="announcements" element={<AdminAnnouncements />} />
+          <Route path="reminders" element={<AdminReminders />} />
+          <Route path="proximity-alerts" element={<AdminProximityAlerts />} />
+          <Route path="credit-grants" element={<AdminCreditGrants />} />
+        </Route>
+      )}
 
       {/* Redirect legacy /dashboard to /home */}
       <Route path="/dashboard" element={<Navigate to="/home" replace />} />
@@ -120,6 +175,126 @@ const AuthenticatedApp = () => {
 };
 
 function App() {
+  // Holds the most recently received FCM token, so it can be re-associated
+  // with whoever actually signs in — login and FCM registration can happen
+  // in either order, with no guarantee which comes first.
+  const latestPushTokenRef = useRef(null);
+
+  // Radix's Select (and other Radix primitives) lock document.body with
+  // pointer-events:none while their dropdown/portal is open, and release it
+  // when it closes. Confirmed via on-device testing that this lock can get
+  // orphaned — left stuck at 'none' forever — most likely from rapid
+  // interaction with multiple Selects in quick succession (tapping one
+  // before a previous one's close/cleanup has fully finished). Since every
+  // interactive element in the app is a descendant of <body>, a stuck lock
+  // silently disables every button and link on the page with no error and
+  // no visual indication anything is wrong. This lives here (not on any
+  // one page) because the bug is in the shared Select component itself —
+  // any page using it is potentially affected, not just the screens where
+  // it's actually been observed so far.
+  useEffect(() => {
+    const clearIfStuck = () => {
+      // Unconditional — no "is something legitimately open" guard. An
+      // earlier version tried to check for that, but Radix leaves closed
+      // dropdown elements sitting in the DOM (hidden, for animation/
+      // accessibility reasons) still carrying the same role/data attributes
+      // as genuinely open ones, so that check could match a stale, already-
+      // closed element and permanently block this from ever running. This
+      // is safe without the guard: if something is genuinely open, Radix
+      // re-applies its own lock synchronously the instant it opens, so any
+      // accidental clear during a real open state gets corrected almost
+      // immediately.
+      if (document.body.style.pointerEvents === 'none') {
+        document.body.style.pointerEvents = '';
+      }
+      // Some Radix components block the background via inert/aria-hidden
+      // on body instead of (or in addition to) pointer-events — same
+      // "trap focus while a popup is open" purpose, different mechanism.
+      // Confirmed via testing that pointerEvents alone doesn't catch every
+      // case (Select on FindDrivers specifically), so watch for this too.
+      if (document.body.hasAttribute('inert')) {
+        document.body.removeAttribute('inert');
+      }
+      if (document.body.getAttribute('aria-hidden') === 'true') {
+        document.body.removeAttribute('aria-hidden');
+      }
+    };
+    clearIfStuck();
+    const observer = new MutationObserver(clearIfStuck);
+    observer.observe(document.body, { attributes: true, attributeFilter: ['style', 'inert', 'aria-hidden'] });
+    const interval = setInterval(clearIfStuck, 300);
+    return () => { observer.disconnect(); clearInterval(interval); };
+  }, []);
+
+  // Push notification registration — native only. Requests permission,
+  // registers the device with FCM, and stores the resulting token so the
+  // backend (Phase 2) knows where to actually deliver pushes.
+  //
+  // This only runs once per app launch, but login can happen before OR
+  // after FCM's 'registration' event actually fires — there's no
+  // guaranteed order between them. The original version discarded the
+  // token entirely if no one was logged in yet at that exact moment, with
+  // no way to recover it once a login did happen. Fixed by keeping the
+  // token around (module-level, survives across this effect) and saving
+  // it again on every sign-in — the token itself is what's unique, so
+  // resaving an already-known token just updates its owner rather than
+  // duplicating anything.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const savePushToken = async (tokenValue) => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        await supabase.from('device_push_tokens').upsert(
+          { user_id: user.id, token: tokenValue, platform: 'android', updated_at: new Date().toISOString() },
+          { onConflict: 'token' }
+        );
+      } catch (err) {
+        console.error('[App] Failed to save push token:', err);
+      }
+    };
+
+    // Re-associate the most recently seen token whenever someone actually
+    // signs in — covers the case where FCM registration completed before
+    // login did, which the original version silently dropped.
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((event) => {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && latestPushTokenRef.current) {
+        savePushToken(latestPushTokenRef.current);
+      }
+    });
+
+    (async () => {
+      try {
+        const { PushNotifications } = await import('@capacitor/push-notifications');
+
+        let permStatus = await PushNotifications.checkPermissions();
+        if (permStatus.receive === 'prompt') {
+          permStatus = await PushNotifications.requestPermissions();
+        }
+        if (permStatus.receive !== 'granted') {
+          console.warn('[App] Push notification permission not granted:', permStatus.receive);
+          return;
+        }
+
+        await PushNotifications.addListener('registration', (token) => {
+          latestPushTokenRef.current = token.value;
+          savePushToken(token.value);
+        });
+
+        await PushNotifications.addListener('registrationError', (err) => {
+          console.error('[App] Push registration error:', err);
+        });
+
+        await PushNotifications.register();
+      } catch (err) {
+        console.error('[App] Push notification setup failed:', err);
+      }
+    })();
+
+    return () => { authSub?.unsubscribe(); };
+  }, []);
+
   // Register the PASSWORD_RECOVERY listener as early as possible — useMemo runs
   // synchronously during render, before any child component mounts. This ensures
   // we catch the event even if Supabase fires it before Auth.jsx is mounted.
@@ -186,12 +361,42 @@ function App() {
     let listener;
     (async () => {
       try {
-        const capacitorAppPkg = '@' + 'capacitor/app';
-        const { App: CapApp } = await import(/* @vite-ignore */ capacitorAppPkg);
+        const { App: CapApp } = await import('@capacitor/app');
         listener = await CapApp.addListener('appUrlOpen', async ({ url }) => {
           let authError = null;
           try {
             const parsed = new URL(url);
+
+            // ── PayFast payment return (credits or verification) ──────────
+            // Separate from the OAuth branch below — PayFast redirects here
+            // via co.za.skootlink.app://payment-result, never with a `code`
+            // param, so it's safe to fully branch off before touching any
+            // Supabase auth calls.
+            if (parsed.hostname === 'payment-result') {
+              const status = parsed.searchParams.get('status');
+              const category = parsed.searchParams.get('category');
+              const pkg = parsed.searchParams.get('package');
+              const service = parsed.searchParams.get('service');
+              const detail = { status, category, package: pkg, service };
+              // Primary signal — appUrlOpen firing is the one thing in this
+              // whole chain we've conclusively proven reliable (it's the
+              // exact same mechanism Google sign-in already depends on).
+              // Dispatching directly means any currently-mounted page picks
+              // this up instantly via a plain event listener, with no
+              // dependency on the Browser plugin's browserFinished event
+              // (which may not fire the same way for a programmatic close()
+              // as it does for a user-initiated one on Android).
+              window.dispatchEvent(new CustomEvent('skootlink:payment-result', { detail }));
+              // Kept as a fallback for the case where the listening page
+              // isn't mounted yet (e.g. app was killed and relaunched).
+              sessionStorage.setItem('skootlink_payment_result', JSON.stringify(detail));
+              try {
+                const { Browser } = await import('@capacitor/browser');
+                await Browser.close().catch(() => {});
+              } catch (e) { /* not in Capacitor environment */ }
+              return;
+            }
+
             const code = parsed.searchParams.get('code');
             if (code) {
               // exchangeCodeForSession does NOT throw on failure — it resolves
@@ -229,15 +434,16 @@ function App() {
             sessionStorage.setItem('skootlink_oauth_error', e?.message || 'Sign-in failed. Please try again.');
           } finally {
             try {
-              const capacitorBrowserPkg = '@' + 'capacitor/browser';
-              const { Browser } = await import(/* @vite-ignore */ capacitorBrowserPkg);
+              const { Browser } = await import('@capacitor/browser');
               await Browser.close().catch(() => {});
             } catch (e) { /* not in Capacitor environment */ }
           }
         });
-      } catch (e) { /* not in Capacitor environment */ }
+      } catch (e) { }
     })();
-    return () => { if (listener) { listener.remove().catch(() => {}); } };
+    return () => {
+      if (listener) { listener.remove().catch(() => {}); }
+    };
   }, []);
 
   return (

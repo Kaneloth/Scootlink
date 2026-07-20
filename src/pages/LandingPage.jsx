@@ -115,7 +115,7 @@ function Navbar() {
     <nav style={{ ...styles.navbar, boxShadow: scrolled ? "0 2px 20px rgba(37,99,235,.1)" : "none" }}>
       <div style={{ ...styles.container, ...styles.navInner }}>
         <a href="#home" style={styles.logo} onClick={e => { e.preventDefault(); scroll("home"); }}>
-          <img src="/logo.png" alt="Skootlink" style={{ height: 52, width: "auto" }} />
+          <img src="/skootlink-wordmark.png" alt="Skootlink" style={{ height: 52, width: "auto" }} />
         </a>
         <ul style={styles.navList} className="sl-nav-links">
           {[["How It Works", "how-it-works"], ["Gallery", "gallery"], ["Trust & Safety", "trust"], ["FAQ", "faq"], ["About", "about"], ["Contact", "contact"]].map(([label, id]) => (

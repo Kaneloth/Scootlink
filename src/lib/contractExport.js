@@ -9,6 +9,7 @@
  * Place at: src/lib/contractExport.js
  */
 import { jsPDF } from 'jspdf';
+import { Capacitor } from '@capacitor/core';
 
 // ── Page geometry (mm, A4) ────────────────────────────────────────────────────
 const PW     = 210;
@@ -95,7 +96,7 @@ function drawFooter(p, dateStr) {
  * @param {string|number} rentalId  — used in filename and header ref
  * @param {string} vehicleInfo  — e.g. "Toyota Corolla (2021)" shown in header
  */
-export function downloadContractPDF(contractText, rentalId = '', vehicleInfo = '') {
+export async function downloadContractPDF(contractText, rentalId = '', vehicleInfo = '') {
   const p = new jsPDF({ unit: 'mm', format: 'a4' });
 
   const dateStr = new Date().toLocaleDateString('en-ZA', {
@@ -242,5 +243,33 @@ export function downloadContractPDF(contractText, rentalId = '', vehicleInfo = '
     ? vehicleInfo.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
     : 'contract';
   const filename = `skootlink_rental_${safeName}_${String(rentalId).slice(0, 8) || 'agreement'}.pdf`;
+
+  if (Capacitor.isNativePlatform()) {
+    // jsPDF's own .save() relies on the browser's download manager (a blob
+    // URL + a simulated click on a hidden <a download> link) — a Capacitor
+    // WebView has no download manager to catch that, so it silently does
+    // nothing. Writing the file directly and handing it to the native share
+    // sheet is the actual working equivalent on native — it also lets the
+    // user save to Files, share via WhatsApp/email, etc., not just a
+    // Downloads folder they may not think to check on mobile.
+    try {
+      const { Filesystem, Directory } = await import('@capacitor/filesystem');
+      const { Share } = await import('@capacitor/share');
+
+      const base64Data = p.output('datauristring').split(',')[1];
+      await Filesystem.writeFile({
+        path: filename,
+        data: base64Data,
+        directory: Directory.Cache,
+      });
+      const { uri } = await Filesystem.getUri({ directory: Directory.Cache, path: filename });
+      await Share.share({ title: filename, url: uri });
+    } catch (err) {
+      console.error('[contractExport] Native save/share failed:', err);
+      throw err;
+    }
+    return;
+  }
+
   p.save(filename);
 }

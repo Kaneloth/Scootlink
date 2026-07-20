@@ -60,11 +60,35 @@ export const handler = async (event) => {
   const m_payment_id = `skoot_${user.id.slice(0, 8)}_${Date.now()}`;
   const firstName = (user.user_metadata?.full_name || 'Skootlink').split(' ')[0];
 
+  // Always a real https:// URL — PayFast's own acceptance of non-standard
+  // schemes for return_url/cancel_url is unverified, so route through a
+  // static bridge page on our own domain instead. That page then triggers
+  // the co.za.skootlink.app:// deep link itself (which we've already
+  // proven works, via the Google sign-in flow), falling back to a normal
+  // in-page redirect for web/desktop users where no app is installed to
+  // catch the deep link. See public/payment-callback.html.
+  // Native: a real server-side 302 redirect straight to the custom scheme
+  // (payment-redirect function) — the same mechanism the Google sign-in
+  // flow already uses successfully. The previous approach (a static bridge
+  // page doing a client-side JS redirect) was silently blocked by Chrome's
+  // policy against gesture-less navigation to custom schemes — confirmed
+  // via on-device debug logging showing appUrlOpen never fired at all.
+  // Web: unchanged, a normal in-app https destination.
+  const isNative = body.is_native === true;
+  const return_url = isNative
+    ? `${SITE_URL}/.netlify/functions/payment-redirect?status=success&category=credits&package=${body.package_id}`
+    : `${SITE_URL}/credits?payment=success`;
+  const cancel_url = isNative
+    ? `${SITE_URL}/.netlify/functions/payment-redirect?status=cancelled&category=credits`
+    : `${SITE_URL}/credits?payment=cancelled`;
+
+  console.log(`[payfast-initiate] is_native=${isNative} return_url=${return_url} cancel_url=${cancel_url}`);
+
   const fields = {
     merchant_id:      MERCHANT_ID,
     merchant_key:     MERCHANT_KEY,
-    return_url:       `${SITE_URL}/credits?payment=success`,
-    cancel_url:       `${SITE_URL}/credits?payment=cancelled`,
+    return_url,
+    cancel_url,
     notify_url:       `https://hkdk.events/ej5pgh02nhm47r`,
     name_first:       firstName,
     email_address:    user.email,
@@ -74,6 +98,8 @@ export const handler = async (event) => {
     item_description: `${pkg.credits} Skootlink credits`,
     custom_str1:      user.id,
     custom_str2:      body.package_id,
+    // custom_str3 stays reserved for payment_category (see payfast-webhook.js)
+    custom_str4:      'skootlink', // app tag — Crosssa shares this merchant account/Hookdeck source; lets both the Hookdeck filter and the webhook guard ignore ITNs meant for the other app
   };
 
   const signature = generateSignature(fields, PASSPHRASE);

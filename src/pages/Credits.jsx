@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { Coins, ArrowUpRight, ArrowDownLeft, Loader2, ChevronUp, ChevronDown } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,10 +10,10 @@ import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
 
 const PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 240  },
-  { id: 'standard', label: 'Standard Pack', price: 79,  credits: 400, popular: true },
-  { id: 'pro',      label: 'Pro Pack',      price: 129, credits: 660  },
-  { id: 'business', label: 'Business Pack', price: 199, credits: 1040 },
+  { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 250  },
+  { id: 'standard', label: 'Standard Pack', price: 79,  credits: 450, popular: true },
+  { id: 'pro',      label: 'Pro Pack',      price: 129, credits: 750  },
+  { id: 'business', label: 'Business Pack', price: 199, credits: 1250 },
 ];
 
 // ── How far your credits go ─────────────────────────────────────────────────
@@ -49,12 +50,130 @@ export default function Credits() {
     });
   }, []);
 
+  // Native: PayFast returns via co.za.skootlink.app://payment-result, which
+  // App.jsx's appUrlOpen listener dispatches this directly the instant it
+  // parses the deep link — that's the one mechanism in this whole chain
+  // we've conclusively proven reliable (Google sign-in already depends on
+  // it). A plain window event listener persists for this component's whole
+  // lifetime, so it doesn't matter that this page never unmounts while the
+  // Custom Tab is open — unlike a mount-only check, or one tied to the
+  // Browser plugin's browserFinished event, which may not fire the same
+  // way for a programmatic close() as for a user-initiated one on Android.
+  const handlePaymentResult = React.useCallback((result) => {
+    setPurchasing(null);
+    if (!result || result.category !== 'credits') return; // not ours — e.g. a verification payment
+
+    if (result.status === 'success') {
+      toast.success('Payment received! Your credits have been added.');
+      refetch();
+      // credit_ledger insert happens via the webhook, which can land a beat
+      // after the redirect — refresh the visible history shortly after too.
+      setTimeout(() => {
+        supabase.auth.getUser().then(async ({ data: { user } }) => {
+          if (!user) return;
+          const { data } = await supabase
+            .from('credit_ledger')
+            .select('id, amount, type, description, created_at')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(50);
+          setLedger(data || []);
+        });
+      }, 2000);
+    } else if (result.status === 'cancelled') {
+      toast.info('Payment cancelled.');
+    }
+  }, [refetch]);
+
+  // Reads whatever App.jsx's appUrlOpen handler stashed in sessionStorage —
+  // used both on mount and whenever the app resumes to the foreground.
+  const checkStoredResult = React.useCallback(() => {
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (!raw) return;
+    sessionStorage.removeItem('skootlink_payment_result');
+    try { handlePaymentResult(JSON.parse(raw)); } catch { /* ignore */ }
+  }, [handlePaymentResult]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    // Covers the case where App.jsx's dispatch fired before this component
+    // mounted (e.g. app process was killed while the Custom Tab was open
+    // and got relaunched fresh) — App.jsx also stashes the same detail here
+    // as a fallback.
+    checkStoredResult();
+
+    const onEvent = (e) => handlePaymentResult(e.detail);
+    window.addEventListener('skootlink:payment-result', onEvent);
+
+    // Second, independent trigger: Capacitor's own "app became active again"
+    // event. This doesn't depend on the exact timing of our custom deep-link
+    // event dispatch at all — it fires whenever the OS brings the app back
+    // to the foreground for any reason, which is exactly the moment we know
+    // to re-check sessionStorage for a result App.jsx may have already
+    // written before this event fires.
+    let appListener;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        appListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) checkStoredResult();
+        });
+      } catch { /* not in Capacitor environment */ }
+    })();
+
+    // Third, independent safety net: if the Custom Tab closes for any
+    // reason — including the user manually backing out of PayFast's own
+    // confirmation screen instead of it auto-redirecting — this guarantees
+    // the button never stays stuck on "Processing" forever, even in the
+    // worst case where the deep link genuinely never fires. If a real
+    // result does still arrive shortly after (via the event or
+    // appStateChange above), handlePaymentResult runs normally on top of
+    // this — no conflict, this only ever resets the spinner.
+    let browserListener;
+    (async () => {
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        browserListener = await Browser.addListener('browserFinished', () => {
+          setPurchasing(null);
+        });
+      } catch { /* not in Capacitor environment */ }
+    })();
+
+    return () => {
+      window.removeEventListener('skootlink:payment-result', onEvent);
+      if (appListener) appListener.remove().catch(() => {});
+      if (browserListener) browserListener.remove().catch(() => {});
+    };
+  }, [handlePaymentResult, checkStoredResult]);
+
+  // Web only: PayFast's own https:// return_url lands here with a query
+  // param instead — native never takes this path (see above).
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('payment');
+    if (status === 'success') {
+      toast.success('Payment received! Your credits have been added.');
+      refetch();
+    } else if (status === 'cancelled') {
+      toast.info('Payment cancelled.');
+    }
+    if (status) {
+      params.delete('payment');
+      const newUrl = window.location.pathname + (params.toString() ? `?${params}` : '');
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
+
   const handlePurchase = async () => {
     const pkg = PACKAGES.find(p => p.id === selectedPkg);
     if (!pkg) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
     setPurchasing(pkg.id);
+
+    const isNative = Capacitor.isNativePlatform();
 
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate', {
@@ -63,10 +182,18 @@ export default function Credits() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ package_id: pkg.id }),
+        body: JSON.stringify({ package_id: pkg.id, is_native: isNative }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
+
+      if (isNative) {
+        const qs = new URLSearchParams(data.fields).toString();
+        const fullUrl = `${data.action_url}?${qs}`;
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.open({ url: fullUrl, presentationStyle: 'popover' });
+        return;
+      }
 
       const form = document.createElement('form');
       form.method = 'POST';

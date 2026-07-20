@@ -13,3 +13,7 @@
 [[scheduled.functions]]
   name = "vehicle-expiry-check"
   schedule = "0 6 * * *"
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["firebase-admin"]

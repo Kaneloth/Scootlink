@@ -1,13 +1,17 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/api/supabaseClient";
 import { downloadContractPDF } from "@/lib/contractExport";
+import { generateContractSections } from "@/lib/contractSections";
+import ContractSectionsList from "@/components/contract/ContractSectionsList";
 import RelistButton from "@/components/vehicles/RelistButton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft, FileText, Car, Truck, Download, AlertCircle, Loader2,
+  ArrowLeft, FileText, Car, Truck, Download, AlertCircle, Loader2, X, PenLine,
 } from "lucide-react";
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
@@ -72,7 +76,7 @@ function Spinner() {
 
 /* ─── Contract download ──────────────────────────────────────────────────── */
 
-function downloadContract(rental) {
+async function downloadContract(rental) {
   const v = rental.vehicles ?? {};
   const vehicleInfo = [v.make, v.model, v.year ? `(${v.year})` : ''].filter(Boolean).join(' ');
   const text = rental.contract_text || [
@@ -97,7 +101,12 @@ function downloadContract(rental) {
     "www.skootlink.co.za | help@skootlink.co.za",
   ].join("\n");
 
-  downloadContractPDF(text, rental.id, vehicleInfo);
+  try {
+    await downloadContractPDF(text, rental.id, vehicleInfo);
+  } catch (err) {
+    console.error('[MyBriefcase] PDF download failed:', err);
+    toast.error('Could not download the contract. Please try again.');
+  }
 }
 
 /* ─── Contracts tab ──────────────────────────────────────────────────────── */
@@ -367,12 +376,134 @@ function ActiveAssignmentsTab({ userId }) {
   );
 }
 
+/* ─── Prepare Contract modal (owner, per-vehicle draft) ──────────────────── */
+
+function PrepareContractModal({ vehicle, ownerId, onClose }) {
+  const [sections, setSections] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [resetting, setResetting] = useState(false);
+  // Kept so "Reset to Default" can rebuild a fresh contract without an
+  // extra network round-trip — this is fetched once on mount anyway.
+  const [ownerInfo, setOwnerInfo] = useState(null);
+
+  const buildFreshSections = (info) => generateContractSections(
+    { price_per_week: vehicle.price },
+    vehicle,
+    null,
+    info
+  );
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        const { data: ownerProfile } = await supabase
+          .from('profiles')
+          .select('full_name, id_number, passport_number')
+          .eq('id', ownerId)
+          .single();
+
+        const info = { ...ownerProfile, email: authUser?.email };
+        setOwnerInfo(info);
+
+        // Use the saved draft if one already exists for this vehicle,
+        // otherwise generate fresh — pre-filled with vehicle + owner info,
+        // driver fields left blank since there's no driver yet at this
+        // stage. vehicle.price stands in as a sensible starting weekly
+        // rate; no rental exists yet so there are no real dates to fill.
+        if (Array.isArray(vehicle.draft_contract_sections) && vehicle.draft_contract_sections.length > 0) {
+          setSections(vehicle.draft_contract_sections);
+        } else {
+          setSections(buildFreshSections(info));
+        }
+      } catch (err) {
+        console.error('[PrepareContractModal] Failed to load:', err);
+        toast.error('Could not load the contract draft.');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [vehicle, ownerId]);
+
+  const handleReset = () => {
+    if (!window.confirm('Reset this contract to its default, blank state? Any changes you\'ve made — saved or not — will be discarded and cannot be undone.')) return;
+    setResetting(true);
+    try {
+      setSections(buildFreshSections(ownerInfo));
+      toast.success('Contract reset to default. Remember to Save Draft to keep this.');
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('vehicles')
+        .update({ draft_contract_sections: sections })
+        .eq('id', vehicle.id);
+      if (error) throw error;
+      toast.success('Contract draft saved. It\'ll be ready to send once you find a driver.');
+      onClose(sections);
+    } catch (err) {
+      console.error('[PrepareContractModal] Save failed:', err);
+      toast.error('Could not save the draft: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-start sm:items-center justify-center p-4 pt-8 sm:pt-4 bg-black/40 overflow-y-auto" onClick={() => onClose()}>
+      <div className="bg-card rounded-2xl shadow-xl max-w-4xl w-full p-4 sm:p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1 shrink-0">
+          <h2 className="text-xl font-bold">Prepare Contract</h2>
+          <button onClick={() => onClose()} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="flex items-start justify-between gap-3 mb-3 shrink-0">
+          <p className="text-xs text-muted-foreground">
+            Draft and customise the rental contract for {vehicle.make} {vehicle.model} in advance. Driver details fill in automatically once you send it to a driver — this saves your wording and structure for that moment.
+          </p>
+          <button
+            onClick={handleReset}
+            disabled={loading || resetting}
+            className="shrink-0 text-xs text-muted-foreground hover:text-destructive underline underline-offset-2 disabled:opacity-50 whitespace-nowrap"
+          >
+            Reset to Default
+          </button>
+        </div>
+
+        <div className="rounded-xl p-2 sm:p-3 flex-1 overflow-y-auto mb-4 min-h-0 bg-background border-2 border-primary/30 ring-1 ring-primary/10">
+          {loading ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" />
+            </div>
+          ) : (
+            <ContractSectionsList sections={sections} onChange={setSections} />
+          )}
+        </div>
+
+        <div className="flex gap-3 shrink-0">
+          <Button variant="outline" className="flex-1" onClick={() => onClose()}>Cancel</Button>
+          <Button className="flex-1 gap-2" disabled={loading || saving} onClick={handleSaveDraft}>
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save Draft'}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 /* ─── My Vehicle Listings (owner) ────────────────────────────────────────── */
 
 function VehicleListingsTab({ userId }) {
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
+  const [contractVehicle, setContractVehicle] = useState(null);
 
   useEffect(() => {
     if (!userId) { setLoading(false); return; }
@@ -381,7 +512,7 @@ function VehicleListingsTab({ userId }) {
         setLoading(true);
         const { data, error: err } = await supabase
           .from("vehicles")
-          .select("id, make, model, year, plate, type, location, price, status, images, pickup_return_location, expires_at, listing_state")
+          .select("id, make, model, year, plate, type, location, price, status, images, pickup_return_location, expires_at, listing_state, draft_contract_sections")
           .eq("owner_id", userId)
           .order("created_at", { ascending: false });
 
@@ -446,6 +577,18 @@ function VehicleListingsTab({ userId }) {
                       <RelistButton vehicle={v} />
                     </div>
                   )}
+                  {Array.isArray(v.draft_contract_sections) && v.draft_contract_sections.length > 0 && (
+                    <p className="text-[11px] font-medium text-primary mt-1">📝 Contract draft saved</p>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 gap-1.5 text-xs"
+                    onClick={() => setContractVehicle(v)}
+                  >
+                    <PenLine className="w-3.5 h-3.5" />
+                    {Array.isArray(v.draft_contract_sections) && v.draft_contract_sections.length > 0 ? 'Edit Contract Draft' : 'Prepare Contract'}
+                  </Button>
                 </div>
                 <StatusBadge status={v.status ?? "available"} />
               </div>
@@ -453,6 +596,24 @@ function VehicleListingsTab({ userId }) {
           </Card>
         );
       })}
+
+      {contractVehicle && (
+        <PrepareContractModal
+          vehicle={contractVehicle}
+          ownerId={userId}
+          onClose={(savedSections) => {
+            // Reflect the just-saved draft immediately in this list, without
+            // needing a full refetch, so the "Edit Contract Draft" label and
+            // "draft saved" note update right away.
+            if (savedSections) {
+              setItems(prev => prev.map(item =>
+                item.id === contractVehicle.id ? { ...item, draft_contract_sections: savedSections } : item
+              ));
+            }
+            setContractVehicle(null);
+          }}
+        />
+      )}
     </div>
   );
 }

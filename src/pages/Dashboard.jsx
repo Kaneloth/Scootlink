@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { createPortal } from 'react-dom';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { auth, Vehicle, Rental, supabase } from '@/api/supabaseData';
@@ -9,11 +10,13 @@ import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
-  ChevronUp, ChevronDown, Star, RefreshCw
+  ChevronUp, ChevronDown, Star, RefreshCw, Megaphone, Bell
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
 import { downloadContractPDF } from '@/lib/contractExport';
+import { generateContractSections, flattenContractSections, mergeDriverIntoDraft } from '@/lib/contractSections';
+import ContractSectionsList from '@/components/contract/ContractSectionsList';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
 import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
@@ -58,10 +61,10 @@ function ActionButtonsSkeleton() {
 // Same packages/copy as the Credits tab in Settings — shown when an owner
 // doesn't have enough credits to finalise a rental agreement.
 const TOPUP_PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 240  },
-  { id: 'standard', label: 'Standard Pack', price: 79,  credits: 400, popular: true },
-  { id: 'pro',      label: 'Pro Pack',      price: 129, credits: 660  },
-  { id: 'business', label: 'Business Pack', price: 199, credits: 1040 },
+  { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 250  },
+  { id: 'standard', label: 'Standard Pack', price: 79,  credits: 450, popular: true },
+  { id: 'pro',      label: 'Pro Pack',      price: 129, credits: 750  },
+  { id: 'business', label: 'Business Pack', price: 199, credits: 1250 },
 ];
 
 const TOPUP_CREDIT_COSTS = [
@@ -378,7 +381,7 @@ export default function Dashboard() {
   const [contractModal, setContractModal] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState(null);
   const [contractAgreed, setContractAgreed] = useState(false);
-  const [editableContractText, setEditableContractText] = useState('');
+  const [contractSections, setContractSections] = useState([]);
   // 'accept' = owner signing a fresh proposal
   // 'edit'   = owner updating an already-accepted contract
   // 'review' = driver reading and confirming
@@ -406,13 +409,79 @@ export default function Dashboard() {
       try {
         const { data } = await supabase
           .from('profiles')
-          .select('account_type')
+          .select('account_type, verification_banner_dismissed')
           .eq('id', u.id)
           .single();
         if (data?.account_type) setFreshAccountType(data.account_type);
+        if (data?.verification_banner_dismissed) setBannerDismissed(true);
       } catch { /* fall back to u.account_type */ }
     }).catch(() => {});
   }, []);
+
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const dismissVerificationBanner = async () => {
+    setBannerDismissed(true); // hide immediately, don't wait on the network
+    if (!user?.id) return;
+    try {
+      await supabase.from('profiles').update({ verification_banner_dismissed: true }).eq('id', user.id);
+    } catch (err) {
+      console.error('[Dashboard] Failed to persist banner dismissal:', err);
+      // Non-fatal — worst case it reappears next session, not a big deal.
+    }
+  };
+
+  // ── Admin announcements ──────────────────────────────────────────────────
+  const [announcement, setAnnouncement] = useState(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      try {
+        const { data: active } = await supabase
+          .from('announcements')
+          .select('id, title, body, severity, target_type')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (!active?.length) return;
+
+        const { data: dismissals } = await supabase
+          .from('announcement_dismissals')
+          .select('announcement_id')
+          .eq('user_id', user.id);
+        const dismissedIds = new Set((dismissals || []).map(d => d.announcement_id));
+
+        const specificIds = active.filter(a => a.target_type === 'specific').map(a => a.id);
+        let myTargetedIds = new Set();
+        if (specificIds.length) {
+          const { data: recipientRows } = await supabase
+            .from('announcement_recipients')
+            .select('announcement_id')
+            .eq('user_id', user.id)
+            .in('announcement_id', specificIds);
+          myTargetedIds = new Set((recipientRows || []).map(r => r.announcement_id));
+        }
+
+        const applicable = active.find(a =>
+          !dismissedIds.has(a.id) &&
+          (a.target_type === 'all' || myTargetedIds.has(a.id))
+        );
+        if (applicable) setAnnouncement(applicable);
+      } catch (err) {
+        console.error('[Dashboard] Failed to load announcement:', err);
+      }
+    })();
+  }, [user?.id]);
+
+  const dismissAnnouncement = async () => {
+    if (!announcement || !user?.id) return;
+    const id = announcement.id;
+    setAnnouncement(null); // hide immediately
+    try {
+      await supabase.from('announcement_dismissals').upsert({ user_id: user.id, announcement_id: id }, { onConflict: 'user_id,announcement_id' });
+    } catch (err) {
+      console.error('[Dashboard] Failed to persist announcement dismissal:', err);
+    }
+  };
 
   const queryClient = useQueryClient();
   const accountType = freshAccountType || user?.account_type || 'driver';
@@ -423,9 +492,76 @@ export default function Dashboard() {
     enabled: !!user?.id,
   });
 
+  // ── Automated reminder rules ──────────────────────────────────────────────
+  // Distinct from admin announcements — these trigger automatically based on
+  // the user's own account state (profile completeness, verification status,
+  // etc.), no manual sending required.
+  const [reminder, setReminder] = useState(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      try {
+        const { data: activeRules } = await supabase
+          .from('reminder_rules')
+          .select('id, title, body, severity, condition_type')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false });
+        if (!activeRules?.length) return;
+
+        const { data: dismissals } = await supabase
+          .from('reminder_dismissals')
+          .select('rule_id')
+          .eq('user_id', user.id);
+        const dismissedIds = new Set((dismissals || []).map(d => d.rule_id));
+
+        const hasMinProfile = !!(user.full_name?.trim() && user.phone?.trim() && user.location?.trim());
+        const conditionMatches = {
+          profile_incomplete: () => !hasMinProfile,
+          not_verified: () => !user.id_verified && !user.licence_verified,
+          no_vehicle_listed: () => (accountType === 'owner' || accountType === 'both') && vehicles.length === 0,
+        };
+
+        const applicable = activeRules.find(r =>
+          !dismissedIds.has(r.id) && conditionMatches[r.condition_type]?.()
+        );
+        if (applicable) setReminder(applicable);
+      } catch (err) {
+        console.error('[Dashboard] Failed to load reminder rules:', err);
+      }
+    })();
+  }, [user?.id, accountType, vehicles.length]);
+
+  const dismissReminder = async () => {
+    if (!reminder || !user?.id) return;
+    const id = reminder.id;
+    setReminder(null);
+    try {
+      await supabase.from('reminder_dismissals').upsert({ user_id: user.id, rule_id: id }, { onConflict: 'user_id,rule_id' });
+    } catch (err) {
+      console.error('[Dashboard] Failed to persist reminder dismissal:', err);
+    }
+  };
+
   const { data: allVehicles = [] } = useQuery({
     queryKey: ['all-vehicles'],
     queryFn: () => Vehicle.filter({ status: 'available' }),
+  });
+
+  // Distance-filtered specifically for the driver's "Available Vehicles"
+  // list — kept separate from allVehicles above, which stays unfiltered
+  // since it's also used as a general lookup fallback elsewhere (rental
+  // cards need to find a vehicle's details even if it's far away).
+  const { data: nearbyVehicles = [] } = useQuery({
+    queryKey: ['nearby-vehicles', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_nearby_vehicles', {
+        p_user_id: user.id,
+        p_radius_meters: 50000,
+      });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user?.id,
   });
 
   // All vehicles regardless of status — used to look up vehicle details on active/completed rental cards
@@ -506,7 +642,7 @@ export default function Dashboard() {
   });
   const reviewedRentalIds = new Set((myReviews || []).map(r => r.rental_id).filter(Boolean));
 
-  const availableForMe = allVehicles.filter(v => v.owner_id !== user?.id);
+  const availableForMe = nearbyVehicles.filter(v => v.owner_id !== user?.id);
   const completedRentals = rentals
     .filter(r => r.status === 'completed')
     .filter(r => !reviewedRentalIds.has(r.id));
@@ -554,6 +690,7 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['nearby-vehicles'] });
     } catch (err) {
       toast.error('Failed to update proposal: ' + err.message);
     }
@@ -574,6 +711,31 @@ export default function Dashboard() {
       } else {
         throw err;
       }
+    }
+  };
+
+  // Google's official in-app review popup — shown at most once per user,
+  // ever, tracked server-side so it doesn't repeat across devices. Note
+  // that Google's own Play Core library also applies its own internal
+  // quota on top of this (it won't necessarily display every single time
+  // requestReview() is called, by design, to avoid over-prompting users
+  // platform-wide) — this just stops *us* from asking again once we know
+  // we already have.
+  const maybePromptReview = async () => {
+    if (!user?.id || !Capacitor.isNativePlatform()) return;
+    try {
+      const { data } = await supabase.from('profiles').select('review_prompt_shown_at').eq('id', user.id).single();
+      if (data?.review_prompt_shown_at) return;
+
+      // Mark as shown before requesting — if the request itself fails or
+      // the user dismisses it, we still don't want to prompt again on
+      // their very next signing.
+      await supabase.from('profiles').update({ review_prompt_shown_at: new Date().toISOString() }).eq('id', user.id);
+
+      const { InAppReview } = await import('@capacitor-community/in-app-review');
+      await InAppReview.requestReview();
+    } catch (err) {
+      console.error('[Dashboard] Review prompt failed (non-fatal):', err);
     }
   };
 
@@ -599,6 +761,7 @@ export default function Dashboard() {
       } catch { /* non-fatal */ }
 
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
+      maybePromptReview();
     } catch (err) {
       toast.error('Could not accept contract: ' + err.message);
     } finally {
@@ -632,9 +795,10 @@ export default function Dashboard() {
     try {
       const rental = rentals.find(r => r.id === selectedProposal.id);
       if (!rental) return;
+      const flatText = flattenContractSections(contractSections);
       await safeRentalUpdate(
         rental.id,
-        { status: 'active', contract_text: editableContractText },
+        { status: 'active', contract_sections: contractSections, contract_text: flatText },
         { confirmed_at: new Date().toISOString() }
       );
       await Vehicle.update(rental.vehicle_id, { status: 'rented' });
@@ -649,10 +813,11 @@ export default function Dashboard() {
         ? `${vehicle.make} ${vehicle.model}${vehicle.year ? ` (${vehicle.year})` : ''}`.trim()
         : '';
       try {
-        downloadContractPDF(editableContractText, rental.id, vehicleInfo);
+        await downloadContractPDF(flatText, rental.id, vehicleInfo);
         toast.info('Signed agreement downloaded. Driver can also download it from My Briefcase.');
       } catch (pdfErr) {
         console.error('[Dashboard] PDF download failed:', pdfErr);
+        toast.error('Could not download the signed agreement — you can still get it from My Briefcase.');
       }
 
       // Notify driver that rental is now active
@@ -669,6 +834,8 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['nearby-vehicles'] });
+      maybePromptReview();
     } catch (err) {
       toast.error('Could not finalise rental: ' + err.message);
     } finally {
@@ -708,6 +875,7 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['nearby-vehicles'] });
     } catch (err) {
       toast.error('Could not end rental: ' + err.message);
     } finally {
@@ -778,162 +946,6 @@ export default function Dashboard() {
     }
   };
 
-  // Generates the full contract (all 9 sections).
-  // Owner can edit everything freely; driver sees it read-only and confirms when satisfied.
-  const generateContractText = (rental, vehicle, driverProfile) => {
-    const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' });
-    const ownerName = user?.full_name || '';
-    const ownerIdNo = user?.id_number || user?.passport_number || '';
-    const driverName = driverProfile?.full_name || '';
-    const driverIdNo = driverProfile?.id_number || driverProfile?.passport_number || '';
-    const licenseNumber = driverProfile?.license_number || '';
-    const vType = vehicle?.vehicle_type || vehicle?.type || '';
-    const vMake = vehicle?.make || '';
-    const vModel = vehicle?.model || '';
-    const vYear = vehicle?.year || '';
-    return `VEHICLE RENTAL AGREEMENT
-
-This Vehicle Rental Agreement ("Agreement") is entered into on ${today} (Effective Date),
-
-BETWEEN:
-
-Owner: ${ownerName}
-ID/Passport No: ${ownerIdNo}
-
-AND
-
-Driver (Renter): ${driverName}
-ID/Passport No: ${driverIdNo}
-
-
-1. VEHICLE DETAILS
-
-Type: ${vType}
-Make: ${vMake}
-Model: ${vModel}
-Year: ${vYear}
-Current Odometer Reading: 
-
-
-2. RENTAL TERMS
-
-Rental Start Date: ${rental.start_date || ''}
-Rental End Date: ${rental.end_date || ''}
-Weekly Rate: R ${rental.price_per_week || ''}
-Security Deposit: R ${rental.deposit || ''}
-
-The security deposit shall be refundable upon return of the vehicle, subject to inspection.
-Any damages, fines, or additional charges will be deducted from the deposit.
-
-
-3. DRIVER REQUIREMENTS
-
-The Driver confirms that:
-• They are at least 18 years of age.
-• They hold a valid and legal driver's licence.
-• They are capable of operating the vehicle safely.
-
-Driver's Licence Number: ${licenseNumber}
-
-For motorcycles or scooters:
-• A helmet must be worn at all times.
-• Only one rider is permitted unless the vehicle is designed for two riders.
-
-
-4. USE AND OPERATING CONDITIONS
-
-The Driver agrees to:
-• Comply with all traffic laws and regulations.
-• Observe all speed limits.
-• Not operate the vehicle under the influence of alcohol or drugs.
-• Not use the vehicle on restricted roads where prohibited.
-• Park only in designated and lawful areas.
-• Immediately report any accident, damage, or mechanical issue.
-• Not allow any unauthorised person to operate the vehicle.
-• Not use the vehicle for illegal purposes.
-
-
-5. OWNER'S RESPONSIBILITIES
-
-The Owner agrees to:
-• Ensure the vehicle is roadworthy and complies with all legal safety requirements.
-• Provide necessary safety equipment (e.g., helmet where applicable).
-• Maintain valid insurance coverage for the vehicle.
-• Ensure the vehicle is fitted with a functional tracking device (where applicable).
-
-
-6. LIABILITY AND DAMAGES
-
-• The Driver assumes responsibility for the vehicle during the rental period.
-• The Driver is liable for:
-    – Traffic fines, penalties, and violations;
-    – Damage beyond normal wear and tear.
-• The Owner shall not be liable for injury, loss, or damage resulting from use of the vehicle, except where required by law.
-• Insurance shall cover applicable risks; however, any excess, exclusions, or uncovered costs shall be borne by the Driver.
-
-
-7. RETURN OF VEHICLE
-
-• The vehicle must be returned on or before the rental end date.
-• The vehicle must be returned in the same condition as received, excluding normal wear and tear.
-• Late returns may incur additional charges.
-• The Owner reserves the right to inspect the vehicle upon return.
-
-
-8. TERMINATION
-
-8.1 Termination for Breach
-Either party may terminate this Agreement immediately by written notice if the other party:
-• Breaches any material term; and
-• Fails to remedy such breach within a reasonable period (not exceeding 48 hours) after written notice.
-
-8.2 Owner's Right to Terminate
-The Owner may terminate immediately and reclaim the vehicle if:
-• The vehicle is used illegally or recklessly;
-• The Driver commits serious traffic violations;
-• There is a risk of damage, loss, or theft;
-• The Driver provides false or misleading information.
-
-8.3 Driver's Right to Terminate
-The Driver may terminate immediately if:
-• The vehicle is not roadworthy or safe;
-• The Owner fails to provide valid insurance;
-• The vehicle does not match its description;
-• The Owner fails to fulfil a material obligation.
-
-8.4 Termination for Convenience (No Breach)
-Either party may terminate this Agreement without cause by giving written notice of  hours/days.
-• The Driver must return the vehicle by the termination date.
-
-8.5 Financial Consequences of Termination
-• The Owner shall refund any unused rental fees on a pro-rata basis.
-• The deposit shall be refunded subject to deductions for:
-    – Damages;
-    – Outstanding fees or penalties;
-    – Reasonable early termination costs.
-• An early termination fee of  (if applicable) may apply.
-
-8.6 Exceptional Circumstances
-Either party may terminate immediately without penalty due to:
-• Medical emergencies;
-• Safety risks;
-• Events beyond reasonable control (force majeure).
-
-8.7 Effects of Termination
-• The vehicle must be returned immediately upon termination.
-• A joint inspection is recommended upon return.
-• Any outstanding liabilities shall remain enforceable after termination.
-
-
-9. GENERAL TERMS
-
-• This Agreement constitutes the entire agreement between the parties.
-• Any amendments must be in writing and agreed to by both parties.
-• This Agreement shall be governed by the laws of 
-
-By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize Rental", both parties confirm they have read, understood, and agreed to this Agreement. This constitutes a valid digital signature.`;
-  };
-
   // mode: 'accept' (owner, fresh proposal) | 'edit' (owner, already accepted) | 'review' (driver)
   const openContractModal = async (rental, mode) => {
     setSelectedProposal(rental);
@@ -957,13 +969,25 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
       };
     }
 
-    // Use saved contract_text only when it is a complete contract (contains the header).
-    // Old saves only stored clauses 3–9 and lack the header — regenerate those from scratch.
-    const isComplete = rental.contract_text && rental.contract_text.trimStart().startsWith('VEHICLE RENTAL AGREEMENT');
-    const text = isComplete ? rental.contract_text : generateContractText(rental, vehicle, driverProfileData);
+    // Use saved contract_sections when this rental already has a real, edited
+    // contract (structured data present) — otherwise check for a saved
+    // vehicle draft (Briefcase → Prepare Contract) and merge the driver's
+    // real details into it, preserving all the owner's customized wording —
+    // otherwise generate a fresh one from scratch. Older rentals saved before
+    // this structured format existed won't have contract_sections at all, so
+    // they correctly fall through too, exactly like the old contract_text
+    // heuristic did.
+    let sections;
+    if (Array.isArray(rental.contract_sections) && rental.contract_sections.length > 0) {
+      sections = rental.contract_sections;
+    } else if (Array.isArray(vehicle?.draft_contract_sections) && vehicle.draft_contract_sections.length > 0) {
+      sections = mergeDriverIntoDraft(vehicle.draft_contract_sections, rental, driverProfileData);
+    } else {
+      sections = generateContractSections(rental, vehicle, driverProfileData, user);
+    }
 
-    setEditableContractText(text);
-    setSelectedProposal({ ...rental, contractText: text });
+    setContractSections(sections);
+    setSelectedProposal({ ...rental, contractSections: sections });
     setContractModal(true);
   };
 
@@ -1019,7 +1043,10 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
   const handleSaveContractEdits = async () => {
     if (!selectedProposal) return;
     try {
-      await Rental.update(selectedProposal.id, { contract_text: editableContractText });
+      await Rental.update(selectedProposal.id, {
+        contract_sections: contractSections,
+        contract_text: flattenContractSections(contractSections),
+      });
       toast.success('Contract updated. Driver will see the new version.');
       closeContractModal();
     } catch (err) {
@@ -1030,9 +1057,10 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
   const handleAcceptWithContract = async () => {
     if (!selectedProposal) return;
     try {
-      // Save the edited contract text and send to driver in one atomic step
+      // Save the edited contract and send to driver in one atomic step
       await Rental.update(selectedProposal.id, {
-        contract_text: editableContractText,
+        contract_sections: contractSections,
+        contract_text: flattenContractSections(contractSections),
         status: 'awaiting_driver_confirmation',
       });
       toast.success('Contract sent to driver for review!');
@@ -1457,6 +1485,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] }),
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] }),
+      queryClient.invalidateQueries({ queryKey: ['nearby-vehicles'] }),
       queryClient.invalidateQueries({ queryKey: ['all-vehicles-lookup'] }),
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] }),
       queryClient.invalidateQueries({ queryKey: ['my-reviews'] }),
@@ -1475,6 +1504,33 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
           </button>
         }
       />
+
+      {/* Automated reminder banner (condition-triggered, not manually sent) */}
+      {reminder && (() => {
+        const styles = {
+          info:    { border: 'border-blue-200', bg: 'bg-blue-50', text: 'text-blue-800', subtext: 'text-blue-700', icon: 'text-blue-500' },
+          warning: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-800', subtext: 'text-amber-700', icon: 'text-amber-500' },
+          success: { border: 'border-green-200', bg: 'bg-green-50', text: 'text-green-800', subtext: 'text-green-700', icon: 'text-green-500' },
+        }[reminder.severity || 'info'];
+        return (
+          <Card className={`p-4 border-2 ${styles.border} ${styles.bg} mb-3 flex items-start justify-between gap-3`}>
+            <div className="flex items-start gap-3">
+              <Bell className={`w-5 h-5 ${styles.icon} shrink-0 mt-0.5`} />
+              <div>
+                <p className={`text-sm font-semibold ${styles.text}`}>{reminder.title}</p>
+                <p className={`text-xs ${styles.subtext}`}>{reminder.body}</p>
+              </div>
+            </div>
+            <button
+              onClick={dismissReminder}
+              aria-label="Dismiss"
+              className={`p-1 rounded-full ${styles.icon} hover:bg-black/5 transition-colors shrink-0`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </Card>
+        );
+      })()}
 
       {/* Banner 1 — profile incomplete */}
       {user && (() => {
@@ -1501,12 +1557,46 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
         );
       })()}
 
+      {/* Admin announcement banner */}
+      {announcement && (() => {
+        const styles = {
+          info:    { border: 'border-blue-200', bg: 'bg-blue-50', text: 'text-blue-800', subtext: 'text-blue-700', icon: 'text-blue-500' },
+          warning: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-800', subtext: 'text-amber-700', icon: 'text-amber-500' },
+          success: { border: 'border-green-200', bg: 'bg-green-50', text: 'text-green-800', subtext: 'text-green-700', icon: 'text-green-500' },
+        }[announcement.severity || 'info'];
+        return (
+          <Card className={`p-4 border-2 ${styles.border} ${styles.bg} mb-3 flex items-start justify-between gap-3`}>
+            <div className="flex items-start gap-3">
+              <Megaphone className={`w-5 h-5 ${styles.icon} shrink-0 mt-0.5`} />
+              <div>
+                <p className={`text-sm font-semibold ${styles.text}`}>{announcement.title}</p>
+                <p className={`text-xs ${styles.subtext}`}>{announcement.body}</p>
+              </div>
+            </div>
+            <button
+              onClick={dismissAnnouncement}
+              aria-label="Dismiss"
+              className={`p-1 rounded-full ${styles.icon} hover:bg-black/5 transition-colors shrink-0`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </Card>
+        );
+      })()}
+
       {/* Banner 2 — profile done but not yet verified */}
       {user && (() => {
         const hasMinProfile = !!(user.full_name?.trim() && user.phone?.trim() && user.location?.trim());
-        if ((!user.onboarding_completed && !hasMinProfile) || user.verified || user.id_verified) return null;
+        if ((!user.onboarding_completed && !hasMinProfile) || user.verified || user.id_verified || bannerDismissed) return null;
         return (
-          <Card className="p-4 border-2 border-blue-200 bg-blue-50 mb-3 flex items-center justify-between gap-3">
+          <Card className="relative p-4 pr-10 border-2 border-blue-200 bg-blue-50 mb-3 flex items-center justify-between gap-3">
+            <button
+              onClick={dismissVerificationBanner}
+              aria-label="Dismiss"
+              className="absolute top-3 right-3 p-1 rounded-full text-blue-400 hover:text-blue-600 hover:bg-blue-100 transition-colors z-10"
+            >
+              <X className="w-4 h-4" />
+            </button>
             <div className="flex items-center gap-3">
               <ShieldCheck className="w-5 h-5 text-blue-500 shrink-0" />
               <div>
@@ -1514,7 +1604,7 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                 <p className="text-xs text-blue-700">Verified users earn a ✅ badge that builds trust with owners and drivers on the platform</p>
               </div>
             </div>
-            <Link to="/profile?tab=verification"><Button size="sm" variant="outline" className="shrink-0 border-blue-400 text-blue-700 hover:bg-blue-100">Verify</Button></Link>
+            <Link to="/profile?tab=verification" className="shrink-0"><Button size="sm" variant="outline" className="border-blue-400 text-blue-700 hover:bg-blue-100">Verify</Button></Link>
           </Card>
         );
       })()}
@@ -1626,8 +1716,8 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
 
       {/* Contract Modal — portal so AppLayout transform/overflow can't clip it */}
       {contractModal && selectedProposal && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={closeContractModal}>
-          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[9999] flex items-start sm:items-center justify-center p-4 pt-8 sm:pt-4 bg-black/40 overflow-y-auto" onClick={closeContractModal}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-4xl w-full p-4 sm:p-6 border border-border flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-1 shrink-0">
               <h2 className="text-xl font-bold">
                 {contractEditMode === 'accept' ? 'Draft & Send Contract' :
@@ -1648,15 +1738,14 @@ By checking the box and clicking "Accept & Sign Agreement" / "Confirm & Finalize
                     : 'Edit the contract below — fill in all details, dates and terms. When ready, send it to the driver to review and accept.'}
             </p>
 
-            {/* Full contract textarea */}
-            <div className={`rounded-xl p-3 flex-1 overflow-y-auto mb-4 min-h-0 ${contractEditMode === 'accept' ? 'bg-background border-2 border-primary/30 ring-1 ring-primary/10' : 'bg-muted'}`}>
+            {/* Full contract, section by section */}
+            <div className={`rounded-xl p-2 sm:p-3 flex-1 overflow-y-auto mb-4 min-h-0 ${contractEditMode === 'accept' ? 'bg-background border-2 border-primary/30 ring-1 ring-primary/10' : 'bg-muted'}`}>
               {contractEditMode === 'accept' && (
                 <p className="text-[10px] text-primary font-medium mb-2 uppercase tracking-wide">✏️ Editable — tap to make changes</p>
               )}
-              <textarea
-                className="w-full h-full min-h-[40vh] bg-transparent text-sm font-mono resize-none outline-none leading-relaxed"
-                value={editableContractText}
-                onChange={e => setEditableContractText(e.target.value)}
+              <ContractSectionsList
+                sections={contractSections}
+                onChange={setContractSections}
                 readOnly={contractEditMode === 'review' || contractEditMode === 'finalise'}
               />
             </div>

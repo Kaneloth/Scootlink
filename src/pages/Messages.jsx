@@ -7,16 +7,31 @@ import { Input } from '@/components/ui/input';
 import {
   ArrowLeft, Send, MessageCircle, Loader2, Plus,
   Copy, Trash, Trash2, Check, CheckCheck, UserX, RefreshCw,
+  Flag, X, Image as ImageIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
-// ── localStorage helpers ──────────────────────────────────────────────────────
-const hiddenKey      = (uid) => `skootlink_hidden_msgs_${uid}`;
-const hiddenChatsKey = (uid) => `skootlink_hidden_chats_${uid}`;
-const getHidden      = (uid) => { try { return new Set(JSON.parse(localStorage.getItem(hiddenKey(uid))      || '[]')); } catch { return new Set(); } };
-const getHiddenChats = (uid) => { try { return new Set(JSON.parse(localStorage.getItem(hiddenChatsKey(uid))|| '[]')); } catch { return new Set(); } };
-const addHidden      = (uid, id)  => { const s = getHidden(uid);      s.add(id);  localStorage.setItem(hiddenKey(uid),      JSON.stringify([...s])); };
-const addHiddenChat  = (uid, pid) => { const s = getHiddenChats(uid); s.add(pid); localStorage.setItem(hiddenChatsKey(uid), JSON.stringify([...s])); };
+// ── Hidden chats / messages — stored server-side (not localStorage) so
+// deleting a chat or a single message, and blocking a user, all stay in
+// sync across every device the account is signed into, not just this one.
+async function getHiddenMessageIds(userId) {
+  const { data } = await supabase.from('hidden_messages').select('message_id').eq('user_id', userId);
+  return new Set((data || []).map(r => r.message_id));
+}
+async function hideMessageForUser(userId, messageId) {
+  await supabase.from('hidden_messages').upsert({ user_id: userId, message_id: String(messageId) }, { onConflict: 'user_id,message_id' });
+}
+async function getHiddenChatPartnerIds(userId) {
+  const { data } = await supabase.from('hidden_chats').select('partner_id, created_at').eq('user_id', userId);
+  return new Map((data || []).map(r => [r.partner_id, r.created_at]));
+}
+async function hideChatForUser(userId, partnerId) {
+  await supabase.from('hidden_chats').upsert({ user_id: userId, partner_id: partnerId }, { onConflict: 'user_id,partner_id' });
+}
+async function getBlockedPartnerIds(userId) {
+  const { data } = await supabase.from('blocked_users').select('blocked_id').eq('blocker_id', userId);
+  return new Set((data || []).map(r => r.blocked_id));
+}
 // ── Date separator helper ─────────────────────────────────────────────────────
 function dateSep(iso) {
   const d = new Date(iso);
@@ -170,7 +185,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
   const [loading,      setLoading]      = useState(true);
   const [selectedMsg,  setSelectedMsg]  = useState(null);
   const [menuOpenUp,   setMenuOpenUp]   = useState(false);
-  const [hiddenMsgs,   setHiddenMsgs]   = useState(() => getHidden(user.id));
+  const [hiddenMsgs,   setHiddenMsgs]   = useState(new Set());
   const [showProfile,  setShowProfile]  = useState(false);
   const [partnerLocation, setPartnerLocation] = useState('');
   const [chatCapReached,    setChatCapReached]    = useState(false);
@@ -197,7 +212,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         .select('*')
         .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partner.id}),and(sender_id.eq.${partner.id},receiver_id.eq.${user.id})`)
         .order('created_at', { ascending: true });
-      const hidden = getHidden(user.id);
+      const hidden = await getHiddenMessageIds(user.id);
       setHiddenMsgs(hidden);
       const filtered = (data || []).filter(m => !hidden.has(m.id));
       setMessages(filtered);
@@ -235,7 +250,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       .on('broadcast', { event: 'msg_deleted' }, ({ payload }) => {
           if (payload?.id) {
             setMessages(prev => prev.filter(m => m.id !== payload.id));
-            addHidden(user.id, payload.id);
+            hideMessageForUser(user.id, payload.id);
           }
         })
       .subscribe();
@@ -286,6 +301,21 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     e?.preventDefault();
     if (!text.trim() || sending) return;
     if (!canSend) { setShowTopUpPrompt(true); return; }
+
+    // Check this before spending any credits — RLS also enforces this
+    // server-side as the real guarantee, but checking here first avoids
+    // charging credits for a message that was never going to send anyway.
+    const { data: blockedByPartner } = await supabase
+      .from('blocked_users')
+      .select('blocker_id')
+      .eq('blocker_id', partner.id)
+      .eq('blocked_id', user.id)
+      .maybeSingle();
+    if (blockedByPartner) {
+      toast.error('This message could not be sent.');
+      return;
+    }
+
     const body = text.trim();
     setText('');
     setSending(true);
@@ -335,7 +365,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     setSelectedMsg(null);
   };
   const handleDeleteForMe = (msg) => {
-    addHidden(user.id, msg.id);
+    hideMessageForUser(user.id, msg.id);
     setMessages(prev => prev.filter(m => m.id !== msg.id));
     setSelectedMsg(null);
     toast.success('Deleted for you.');
@@ -344,7 +374,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
     const { error } = await supabase.from('messages').delete().eq('id', msg.id).eq('sender_id', user.id);
     if (error) { toast.error('Could not delete.'); return; }
     setMessages(prev => prev.filter(m => m.id !== msg.id));
-    addHidden(user.id, msg.id);
+    hideMessageForUser(user.id, msg.id);
     setSelectedMsg(null);
     toast.success('Deleted for everyone.');
     broadcastRef.current?.send({ type: 'broadcast', event: 'msg_deleted', payload: { id: msg.id } });
@@ -498,17 +528,17 @@ export default function Messages() {
   const [newChatEmail,  setNewChatEmail]  = useState('');
   const [showNewChat,   setShowNewChat]   = useState(false);
   const [selectedThread, setSelectedThread] = useState(null);
-  const [hiddenChats,   setHiddenChats]   = useState(new Set());
+  const [hiddenChats,   setHiddenChats]   = useState(new Map());
   const [previewProfile, setPreviewProfile] = useState(null);
   const menuRef      = useRef(null);
   const longPressRef = useRef(null);
   const longTriggered= useRef(false);
 
   useEffect(() => {
-    auth.me().then(u => {
+    auth.me().then(async u => {
       setUser(u);
       if (u?.id) {
-        setHiddenChats(getHiddenChats(u.id));
+        setHiddenChats(await getHiddenChatPartnerIds(u.id));
         supabase.rpc('get_credit_balance', { p_user_id: u.id }).then(({ data }) => setCreditBalance(data ?? 0));
       }
     }).catch(() => {});
@@ -524,7 +554,11 @@ export default function Messages() {
         .order('created_at', { ascending: false })
         .limit(200);
       if (!msgs) { setThreads([]); return; }
-      const hidden = getHiddenChats(user.id);
+      const [hidden, blocked] = await Promise.all([
+        getHiddenChatPartnerIds(user.id),
+        getBlockedPartnerIds(user.id),
+      ]);
+      setHiddenChats(hidden);
       const seenIds = new Set();
       const unreadCount = new Map();
       for (const m of msgs) {
@@ -536,7 +570,12 @@ export default function Messages() {
       const raw = [];
       for (const m of msgs) {
         const pid = m.sender_id === user.id ? m.receiver_id : m.sender_id;
-        if (hidden.has(pid) || seenIds.has(pid)) continue;
+        const hiddenAt = hidden.get(pid);
+        // msgs is ordered newest-first, so the first message we see for a
+        // given pid is that thread's most recent — comparing it against the
+        // hide timestamp tells us whether anything's arrived since the hide.
+        const stillHidden = hiddenAt && new Date(m.created_at) <= new Date(hiddenAt);
+        if (stillHidden || blocked.has(pid) || seenIds.has(pid)) continue;
         seenIds.add(pid);
         raw.push({ id: pid, name: pid, avatar: null, lastMsg: m.body, lastTime: m.created_at, unread: unreadCount.get(pid) || 0, isMine: m.sender_id === user.id });
       }
@@ -602,7 +641,7 @@ export default function Messages() {
   };
 
   const handleDeleteChat = (pid) => {
-    addHiddenChat(user.id, pid);
+    hideChatForUser(user.id, pid);
     setHiddenChats(prev => new Set([...prev, pid]));
     setThreads(prev => prev.filter(t => t.id !== pid));
     setSelectedThread(null);
@@ -615,6 +654,63 @@ export default function Messages() {
     } catch { /* table may not exist yet */ }
     handleDeleteChat(pid);
     toast.success(`${name || 'User'} has been blocked.`);
+  };
+
+  // ── Report and block ─────────────────────────────────────────────────────
+  const [reportModal, setReportModal] = useState(null); // { id, name } of the user being reported
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportFiles, setReportFiles] = useState([]); // File[]
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const reportFileInputRef = useRef(null);
+
+  const openReportModal = (pid, name) => {
+    setSelectedThread(null); // close the context menu
+    setReportModal({ id: pid, name });
+    setReportDetails('');
+    setReportFiles([]);
+  };
+
+  const handleReportFilesSelected = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) setReportFiles(prev => [...prev, ...files].slice(0, 5)); // cap at 5 screenshots
+    e.target.value = '';
+  };
+
+  const removeReportFile = (idx) => setReportFiles(prev => prev.filter((_, i) => i !== idx));
+
+  const handleSubmitReport = async () => {
+    if (!reportDetails.trim()) { toast.error('Please describe what happened.'); return; }
+    if (!reportModal?.id) return;
+    setReportSubmitting(true);
+
+    try {
+      const paths = [];
+      for (const file of reportFiles) {
+        const path = `${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const { error: uploadErr } = await supabase.storage.from('report-evidence').upload(path, file);
+        if (uploadErr) throw uploadErr;
+        paths.push(path);
+      }
+
+      const { error: insertErr } = await supabase.from('user_reports').insert({
+        reporter_id: user.id,
+        reported_id: reportModal.id,
+        reported_name: reportModal.name || 'User',
+        reason: reportDetails.trim(), // pre-existing column on this table, required (NOT NULL)
+        details: reportDetails.trim(),
+        screenshot_paths: paths,
+      });
+      if (insertErr) throw insertErr;
+
+      await handleBlockUser(reportModal.id, reportModal.name);
+      toast.success('Report submitted — our team will review it.');
+      setReportModal(null);
+    } catch (err) {
+      console.error('[Messages] Report submission failed:', err);
+      toast.error('Could not submit the report. Please try again.');
+    } finally {
+      setReportSubmitting(false);
+    }
   };
 
   const handleNewChat = async () => {
@@ -651,6 +747,76 @@ export default function Messages() {
           partnerAvatar={previewProfile.avatar}
           onClose={() => setPreviewProfile(null)}
         />
+      )}
+      {reportModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !reportSubmitting && setReportModal(null)}>
+          <div className="bg-background w-full max-w-md rounded-2xl p-4 max-h-[85vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Flag className="w-4 h-4 text-destructive" />
+                <h2 className="font-bold text-foreground">Report {reportModal.name || 'user'}</h2>
+              </div>
+              <button onClick={() => !reportSubmitting && setReportModal(null)} className="p-1 rounded-full hover:bg-muted">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              This will block {reportModal.name || 'this user'} and send your report to our team for review. Please describe what happened.
+            </p>
+
+            <textarea
+              value={reportDetails}
+              onChange={e => setReportDetails(e.target.value)}
+              placeholder="What happened? Be as specific as possible…"
+              rows={4}
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card mb-3 resize-none"
+            />
+
+            <p className="text-xs font-medium text-foreground mb-1.5">Screenshots (optional, up to 5)</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {reportFiles.map((file, i) => (
+                <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-border">
+                  <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => removeReportFile(i)}
+                    className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+              {reportFiles.length < 5 && (
+                <button
+                  onClick={() => reportFileInputRef.current?.click()}
+                  className="w-16 h-16 rounded-lg border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:border-primary/40 transition-colors"
+                >
+                  <ImageIcon className="w-5 h-5" />
+                </button>
+              )}
+              <input
+                ref={reportFileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleReportFilesSelected}
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" disabled={reportSubmitting} onClick={() => setReportModal(null)}>
+                Cancel
+              </Button>
+              <Button className="flex-1 gap-1.5" disabled={reportSubmitting} onClick={handleSubmitReport}>
+                {reportSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag className="w-4 h-4" />}
+                Submit & Block
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
       <div className="max-w-2xl mx-auto pb-28">
         <div className="flex items-center gap-2 px-4 pt-4 pb-3">
@@ -733,6 +899,10 @@ export default function Messages() {
                       <button onClick={() => handleBlockUser(t.id, t.name)}
                         className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors">
                         <UserX className="w-4 h-4" /> Block user
+                      </button>
+                      <button onClick={() => openReportModal(t.id, t.name)}
+                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-destructive hover:bg-muted transition-colors">
+                        <Flag className="w-4 h-4" /> Report and block
                       </button>
                     </div>
                   )}

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { Capacitor } from '@capacitor/core';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
 import { Input } from '@/components/ui/input';
@@ -10,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Moon, Sun, ChevronRight, ChevronDown, ChevronUp, LogOut, User as UserIcon, Bell, Globe, Shield, FileText,
   Crown, Bike, Users, CheckCircle2, Loader2, ArrowRight, Lock, Fingerprint, Trash2,
-  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins, Star,
+  AlertTriangle, ShieldCheck, XCircle, Info, Type, LifeBuoy, Copy, Upload, Coins, Star, UserX, X, HelpCircle,
 } from 'lucide-react';
 import { sendSMS } from '@/lib/sms';
 import { toast } from 'sonner';
@@ -26,52 +28,130 @@ const TEXT_SIZES = [
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 const CREDIT_PACKAGES = [
-  { id: 'starter',  credits: 240,  price: 49  },
-  { id: 'standard', credits: 400,  price: 79,  popular: true },
-  { id: 'pro',      credits: 660,  price: 129 },
-  { id: 'business', credits: 1040, price: 199 },
+  { id: 'starter',  credits: 250,  price: 49  },
+  { id: 'standard', credits: 450,  price: 79,  popular: true },
+  { id: 'pro',      credits: 750,  price: 129 },
+  { id: 'business', credits: 1250, price: 199 },
 ];
 
-async function registerBiometric() {
-  // Ask the OS what's actually available and enrolled — no per-user
-  // "credential" to create; enrollment lives at the device level.
-  // strongBiometryIsAvailable specifically means fingerprint-tier (Class 3)
-  // biometry — most devices classify face unlock as "weak" (Class 2), so
-  // checking this instead of isAvailable is what keeps this fingerprint-only.
-  const check = await BiometricAuth.checkBiometry();
-  if (!check.strongBiometryIsAvailable) {
-    throw new Error(
-      check.strongCode === 'biometryNotEnrolled'
-        ? 'No fingerprint enrolled on this device. Add one in your device settings first, then try again.'
-        : 'Fingerprint authentication is not available on this device.'
-    );
+async function registerBiometric(user) {
+  if (Capacitor.isNativePlatform()) {
+    // Native — unchanged. Ask the OS what's actually available and
+    // enrolled — no per-user "credential" to create; enrollment lives at
+    // the device level. strongBiometryIsAvailable specifically means
+    // fingerprint-tier (Class 3) biometry — most devices classify face
+    // unlock as "weak" (Class 2), so checking this instead of isAvailable
+    // is what keeps this fingerprint-only.
+    const check = await BiometricAuth.checkBiometry();
+    if (!check.strongBiometryIsAvailable) {
+      throw new Error(
+        check.strongCode === 'biometryNotEnrolled'
+          ? 'No fingerprint enrolled on this device. Add one in your device settings first, then try again.'
+          : 'Fingerprint authentication is not available on this device.'
+      );
+    }
+    // Confirm it actually works before turning the setting on, so we never
+    // flip signInMethod to 'biometric' without having proven it succeeds.
+    await BiometricAuth.authenticate({
+      reason: "Confirm it's you to enable biometric sign-in",
+      androidTitle: 'Skootlink',
+      androidSubtitle: 'Set up biometric sign-in',
+      androidBiometryStrength: AndroidBiometryStrength.strong,
+    });
+    return;
   }
-  // Confirm it actually works before turning the setting on, so we never
-  // flip signInMethod to 'biometric' without having proven it succeeds.
-  await BiometricAuth.authenticate({
-    reason: "Confirm it's you to enable biometric sign-in",
-    androidTitle: 'Skootlink',
-    androidSubtitle: 'Set up biometric sign-in',
-    androidBiometryStrength: AndroidBiometryStrength.strong,
+
+  // Web — real WebAuthn, for browsers with a platform authenticator
+  // (Windows Hello, Touch ID, Android Chrome's fingerprint prompt, etc.).
+  // This is a genuinely separate, independent capability from the native
+  // path above — nothing to do with Capacitor's WebView limitations.
+  if (!window.PublicKeyCredential) {
+    throw new Error('Fingerprint authentication is not supported on this device or browser.');
+  }
+  const challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+  const userIdBytes = new TextEncoder().encode(user?.id || 'skootlink-user');
+  const credential = await navigator.credentials.create({
+    publicKey: {
+      challenge,
+      rp: { name: 'Skootlink', id: window.location.hostname },
+      user: {
+        id: userIdBytes,
+        name: user?.email || 'user',
+        displayName: user?.full_name || user?.email || 'User',
+      },
+      pubKeyCredParams: [
+        { alg: -7,   type: 'public-key' },
+        { alg: -257, type: 'public-key' },
+      ],
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',
+        userVerification: 'required',
+      },
+      timeout: 60000,
+    },
   });
+  if (!credential) throw new Error('Fingerprint enrollment failed.');
+  const raw = credential.rawId;
+  localStorage.setItem('scootlink_biometric_credential_id', btoa(String.fromCharCode(...new Uint8Array(raw))));
 }
 
 async function verifyBiometric() {
-  const check = await BiometricAuth.checkBiometry();
-  if (!check.strongBiometryIsAvailable) {
+  if (Capacitor.isNativePlatform()) {
+    // Native — unchanged.
+    const check = await BiometricAuth.checkBiometry();
+    if (!check.strongBiometryIsAvailable) {
+      const err = new Error('Fingerprint authentication is not available on this device.');
+      err.code = 'no-credential';
+      throw err;
+    }
+    try {
+      await BiometricAuth.authenticate({
+        reason: "Confirm it's you",
+        androidTitle: 'Skootlink',
+        androidSubtitle: 'Verify your identity',
+        androidBiometryStrength: AndroidBiometryStrength.strong,
+      });
+    } catch (err) {
+      if (err?.code === 'userCancel' || err?.code === 'systemCancel' || err?.code === 'appCancel') {
+        const e = new Error('Verification was cancelled.');
+        e.code = 'cancelled';
+        throw e;
+      }
+      const e = new Error('Fingerprint not recognised. Try again.');
+      e.code = 'fingerprint-failed';
+      throw e;
+    }
+    return;
+  }
+
+  // Web — WebAuthn verification, using the credential stored at registration.
+  if (!window.PublicKeyCredential) {
     const err = new Error('Fingerprint authentication is not available on this device.');
     err.code = 'no-credential';
     throw err;
   }
+  const storedId = localStorage.getItem('scootlink_biometric_credential_id');
+  if (!storedId) {
+    const err = new Error('No fingerprint registered on this device.');
+    err.code = 'no-credential';
+    throw err;
+  }
+  const challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+  const rawId = Uint8Array.from(atob(storedId), c => c.charCodeAt(0));
   try {
-    await BiometricAuth.authenticate({
-      reason: "Confirm it's you",
-      androidTitle: 'Skootlink',
-      androidSubtitle: 'Verify your identity',
-      androidBiometryStrength: AndroidBiometryStrength.strong,
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials: [{ id: rawId, type: 'public-key' }],
+        userVerification: 'required',
+        timeout: 60000,
+      },
     });
+    if (!assertion) throw new Error('Fingerprint not recognised. Try again.');
   } catch (err) {
-    if (err?.code === 'userCancel' || err?.code === 'systemCancel' || err?.code === 'appCancel') {
+    if (err?.name === 'NotAllowedError') {
       const e = new Error('Verification was cancelled.');
       e.code = 'cancelled';
       throw e;
@@ -119,20 +199,96 @@ function CreditBalanceWidget() {
   );
   const [showCosts, setShowCosts] = React.useState(false);
 
+  const handlePaymentResult = React.useCallback((result) => {
+    setPurchasing(null);
+    if (!result || result.category !== 'credits') {
+      return; // not ours — e.g. a verification payment
+    }
+
+    if (result.status === 'success') {
+      toast.success('Payment received! Your credits have been added.');
+      refetch();
+    } else if (result.status === 'cancelled') {
+      toast.info('Payment cancelled.');
+    }
+  }, [refetch]);
+
+  const checkStoredResult = React.useCallback(() => {
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (!raw) return;
+    sessionStorage.removeItem('skootlink_payment_result');
+    try { handlePaymentResult(JSON.parse(raw)); } catch (e) { }
+  }, [handlePaymentResult]);
+
+  React.useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    checkStoredResult();
+
+    const onEvent = (e) => handlePaymentResult(e.detail);
+    window.addEventListener('skootlink:payment-result', onEvent);
+
+    // Second, independent trigger: fires whenever the OS brings the app
+    // back to the foreground, for any reason.
+    let appListener;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        appListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) checkStoredResult();
+        });
+      } catch (e) { }
+    })();
+
+    // Third, independent safety net: guarantees the button never stays
+    // stuck on "Processing" even in the worst case where the deep link
+    // genuinely never fires.
+    let browserListener;
+    (async () => {
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        browserListener = await Browser.addListener('browserFinished', () => {
+          setPurchasing(null);
+        });
+      } catch (e) { }
+    })();
+
+    return () => {
+      window.removeEventListener('skootlink:payment-result', onEvent);
+      if (appListener) appListener.remove().catch(() => {});
+      if (browserListener) browserListener.remove().catch(() => {});
+    };
+  }, [handlePaymentResult, checkStoredResult]);
+
   const handlePurchase = async () => {
     const pkg = CREDIT_PACKAGES.find(p => p.id === selectedPkg);
     if (!pkg) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
     setPurchasing(pkg.id);
+
+    const isNative = Capacitor.isNativePlatform();
+
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ package_id: pkg.id }),
+        body: JSON.stringify({ package_id: pkg.id, is_native: isNative }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
+
+      if (isNative) {
+        // Open in a Custom Tab, not this WebView — return_url is a real
+        // server-side redirect (payment-redirect function) straight to
+        // co.za.skootlink.app://payment-result, the same mechanism the
+        // Google sign-in flow already uses successfully.
+        const qs = new URLSearchParams(data.fields).toString();
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.open({ url: `${data.action_url}?${qs}`, presentationStyle: 'popover' });
+        return;
+      }
+
       const form = document.createElement('form');
       form.method = 'POST';
       form.action = data.action_url;
@@ -466,6 +622,69 @@ export default function Settings() {
   const [isGoogleUser, setIsGoogleUser] = useState(false);
 
   const [showDeleteSection, setShowDeleteSection] = useState(false);
+  const [showBlockedModal, setShowBlockedModal] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [blockedLoading, setBlockedLoading] = useState(false);
+  const [unblockingId, setUnblockingId] = useState(null);
+
+  const fetchBlockedUsers = async () => {
+    if (!user?.id) return;
+    setBlockedLoading(true);
+    try {
+      const { data: rows, error } = await supabase
+        .from('blocked_users')
+        .select('blocked_id, created_at')
+        .eq('blocker_id', user.id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+
+      const ids = (rows || []).map(r => r.blocked_id);
+      const { data: profiles } = ids.length
+        ? await supabase.from('profiles').select('id, full_name, email').in('id', ids)
+        : { data: [] };
+      const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
+
+      setBlockedUsers((rows || []).map(r => ({
+        id: r.blocked_id,
+        blockedAt: r.created_at,
+        name: profileMap[r.blocked_id]?.full_name || 'Unknown user',
+        email: profileMap[r.blocked_id]?.email || '',
+      })));
+    } catch (err) {
+      toast.error('Could not load blocked users: ' + err.message);
+    }
+    setBlockedLoading(false);
+  };
+
+  const openBlockedModal = () => {
+    setShowBlockedModal(true);
+    fetchBlockedUsers();
+  };
+
+  const handleUnblock = async (blockedId, name) => {
+    setUnblockingId(blockedId);
+    try {
+      const { error } = await supabase
+        .from('blocked_users')
+        .delete()
+        .eq('blocker_id', user.id)
+        .eq('blocked_id', blockedId);
+      if (error) throw error;
+
+      // Blocking someone also hides their thread from the inbox (via the
+      // same mechanism as a plain "delete chat"). Without this, the thread
+      // would stay invisible even after unblocking, until they happened to
+      // send a brand new message.
+      await supabase.from('hidden_chats').delete().eq('user_id', user.id).eq('partner_id', blockedId);
+
+      setBlockedUsers(prev => prev.filter(u => u.id !== blockedId));
+      toast.success(`${name || 'User'} unblocked.`);
+    } catch (err) {
+      toast.error('Could not unblock: ' + err.message);
+    }
+    setUnblockingId(null);
+  };
+
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -574,6 +793,7 @@ export default function Settings() {
         setBiometricLoading(false);
       }
     } else {
+      localStorage.removeItem('scootlink_biometric_credential_id');
       setSignInMethod('password');
       localStorage.setItem('scootlink_signin_method', 'password');
       supabase.auth.updateUser({ data: { sign_in_method: 'password' } });
@@ -1068,6 +1288,17 @@ export default function Settings() {
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </a>
 
+            <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors" onClick={() => navigate('/faq')}>
+              <div className="flex items-center gap-3">
+                <HelpCircle className="w-5 h-5 text-muted-foreground" />
+                <div className="text-left">
+                  <p className="text-sm font-medium text-foreground">FAQ</p>
+                  <p className="text-xs text-muted-foreground">Answers to common questions</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </div>
+
             <div className="flex items-center justify-between p-4 rounded-xl cursor-pointer hover:bg-accent transition-colors" onClick={() => navigate('/contact', { state: { customerCode: user?.customer_code, userName: user?.full_name, userEmail: user?.email } })}>
               <div className="flex items-center gap-3">
                 <LifeBuoy className="w-5 h-5 text-muted-foreground" />
@@ -1190,6 +1421,19 @@ export default function Settings() {
                   </Button>
                 </div>
               )}
+            </div>
+
+            <div className="p-4 rounded-xl bg-card border cursor-pointer" onClick={openBlockedModal}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <UserX className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Blocked Users</p>
+                    <p className="text-xs text-muted-foreground">Manage people you've blocked</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </div>
             </div>
 
             <div className="p-4 rounded-xl bg-card border border-destructive/30">
@@ -1327,6 +1571,20 @@ export default function Settings() {
 
         {isAdmin && (
           <TabsContent value="admin">
+            {/* __INCLUDE_ADMIN__ is a compile-time flag (see vite.config.js) —
+                false on native builds, so this never renders in the app;
+                the full dashboard only exists on the web. */}
+            {__INCLUDE_ADMIN__ && (
+              <div className="mb-4 p-4 rounded-xl border border-primary/20 bg-primary/5 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Full Admin Dashboard</p>
+                  <p className="text-xs text-muted-foreground">Overview, users, and rentals in one place — open in your browser.</p>
+                </div>
+                <Button size="sm" onClick={() => navigate('/admin')}>
+                  Open Dashboard
+                </Button>
+              </div>
+            )}
             <PlatformVerificationQueue />
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -1876,6 +2134,52 @@ export default function Settings() {
         )}
 
       </Tabs>
+
+      {showBlockedModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setShowBlockedModal(false)}>
+          <div className="bg-background w-full max-w-md rounded-2xl p-4 max-h-[85vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <UserX className="w-4 h-4 text-muted-foreground" />
+                <h2 className="font-bold text-foreground">Blocked Users</h2>
+              </div>
+              <button onClick={() => setShowBlockedModal(false)} className="p-1 rounded-full hover:bg-muted">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+
+            {blockedLoading ? (
+              <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+            ) : blockedUsers.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">You haven't blocked anyone.</p>
+            ) : (
+              <div className="space-y-2">
+                {blockedUsers.map(u => (
+                  <div key={u.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{u.name}</p>
+                      {u.email && <p className="text-xs text-muted-foreground truncate">{u.email}</p>}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={unblockingId === u.id}
+                      onClick={() => handleUnblock(u.id, u.name)}
+                      className="shrink-0 gap-1.5"
+                    >
+                      {unblockingId === u.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                      Unblock
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

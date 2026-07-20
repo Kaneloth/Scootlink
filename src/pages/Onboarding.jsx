@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card } from '@/components/ui/card';
 import {
   User, Users, Crown, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Bike, Info,
-  Star, Upload, X, Plus, Trash2,
+  Star, Upload, X, Plus, Trash2, Camera, Image as ImageIcon, Car, ImagePlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -68,18 +69,6 @@ const SA_PROVINCE_CITIES = {
   ],
 };
 
-// ── Customer code generator ───────────────────────────────────────────────────
-// Generates a unique customer reference e.g. "SKT-12345ABC"
-// Format: SKT- + 5 digits + 3 uppercase letters
-function generateCustomerCode() {
-  const digits  = '0123456789';
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let code = 'SKT-';
-  for (let i = 0; i < 5; i++) code += digits[Math.floor(Math.random() * 10)];
-  for (let i = 0; i < 3; i++) code += letters[Math.floor(Math.random() * 26)];
-  return code;
-}
-
 // ── Phone normalisation ───────────────────────────────────────────────────────
 function normalisePhone(raw) {
   if (!raw) return raw;
@@ -96,7 +85,9 @@ const BASE_STEPS = [
   { id: 'role',     label: 'Your Role',    icon: Users },
   { id: 'personal', label: 'Personal Info', icon: User  },
 ];
+const PHOTO_STEP = { id: 'photo', label: 'Profile Photo', icon: Camera };
 const PLATFORM_STEP = { id: 'platform_history', label: 'Your Experience', icon: Star };
+const VEHICLE_STEP = { id: 'vehicle', label: 'List a Vehicle', icon: Car };
 const PLATFORM_OPTIONS = ['Uber', 'Bolt', 'Uber Eats', 'Mr D Food', 'Bolt Food', 'InDriver', 'Other'];
 
 // ── Role options ──────────────────────────────────────────────────────────────
@@ -136,8 +127,73 @@ const ROLES = [
 export default function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep]   = useState(0);
+
+
+  // Android hardware back button — without this, Capacitor's default
+  // behavior (history.back(), a real route change) fires instead, which has
+  // nothing to do with onboarding's own step state. That mismatch is what
+  // was causing Next/Back to become unresponsive: the app would navigate
+  // away from /onboarding via browser history while this component's
+  // internal state didn't necessarily reset to match, leaving things out of
+  // sync on the next visit. This makes hardware back behave identically to
+  // the on-screen Back button and stops the default behavior from also
+  // running alongside it.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let listener;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        listener = await CapApp.addListener('backButton', () => {
+          setStep(s => {
+            if (s === 0) {
+              navigate('/home');
+              return s;
+            }
+            return s - 1;
+          });
+        });
+      } catch (e) { /* not in Capacitor environment */ }
+    })();
+    return () => { if (listener) listener.remove().catch(() => {}); };
+  }, [navigate]);
+
   const [saving, setSaving] = useState(false);
   const [showPrivacyNotice, setShowPrivacyNotice] = useState(false);
+
+  // ── Profile photo (camera or gallery) ────────────────────────────────────
+  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const [showPhotoMenu, setShowPhotoMenu] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+    setAvatarUploading(true);
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const ext = file.name.split('.').pop() || 'jpg';
+      const filePath = `${authUser.id}/avatar_${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from('profile-images')
+        .upload(filePath, file, { contentType: file.type });
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage
+        .from('profile-images')
+        .getPublicUrl(filePath);
+      setAvatarUrl(publicUrl);
+      toast.success('Photo added!');
+    } catch (err) {
+      toast.error('Upload failed: ' + err.message);
+    } finally {
+      setAvatarUploading(false);
+      e.target.value = '';
+    }
+  };
+
   const [currentEmail, setCurrentEmail] = useState('');
   const [currentFullName, setCurrentFullName] = useState('');
 
@@ -167,8 +223,17 @@ export default function Onboarding() {
   const update = (field, val) => setForm(p => ({ ...p, [field]: val }));
 
   // Owners-only accounts skip the platform history step — it's specific to
-  // gig driving/delivery work, not vehicle listing.
-  const STEPS = form.role === 'owner' ? BASE_STEPS : [...BASE_STEPS, PLATFORM_STEP];
+  // gig driving/delivery work, not vehicle listing. Owner and "both"
+  // accounts get an extra step to list their first vehicle right here,
+  // since deferring it to after onboarding is exactly what causes people to
+  // never actually get around to it.
+  const canListVehicles = form.role === 'owner' || form.role === 'both';
+  const STEPS = [
+    ...BASE_STEPS,
+    PHOTO_STEP,
+    ...(form.role === 'owner' ? [] : [PLATFORM_STEP]),
+    ...(canListVehicles ? [VEHICLE_STEP] : []),
+  ];
 
   // ── Platform history (self-reported, optional) ────────────────────────────
   const [platformEntries, setPlatformEntries] = useState([]); // { platform, role, rating, evidenceFile, requestVerification }
@@ -176,6 +241,143 @@ export default function Onboarding() {
   const [savingPlatformHistory, setSavingPlatformHistory] = useState(false);
 
   const resetNewEntry = () => setNewEntry({ platform: '', otherPlatform: '', role: '', rating: 0, evidenceFile: null, requestVerification: false });
+
+  // ── Vehicle listing (owner/both accounts only) ───────────────────────────
+  const [vehicleForm, setVehicleForm] = useState({
+    vehicle_type:           'scooter',
+    make:                   '',
+    model:                  '',
+    year:                   '',
+    color:                  '',
+    transmission:           '',
+    plate:                  '',
+    location:               '',
+    price_per_week:         '',
+    deposit:                '',
+    storage_type:           'owner_address',
+    pickup_return_location: '',
+  });
+  const [vehicleImages, setVehicleImages] = useState([]);
+  const [vehicleUploading, setVehicleUploading] = useState(false);
+
+  // ── Progress persistence ─────────────────────────────────────────────────
+  // Mitigation for the unresolved freezing bug: since a refresh has
+  // consistently and reliably recovered from it every time it's happened,
+  // this makes that recovery lossless — restoring exactly where the person
+  // left off instead of sending them back to step 0. Doesn't fix the
+  // underlying cause, just makes hitting it a minor inconvenience rather
+  // than losing entered data. sessionStorage (not localStorage) so it
+  // doesn't linger indefinitely across unrelated future visits.
+  const ONBOARDING_PROGRESS_KEY = 'skootlink_onboarding_progress';
+  const restoredOnce = useRef(false);
+
+  useEffect(() => {
+    if (restoredOnce.current) return;
+    restoredOnce.current = true;
+    try {
+      const saved = sessionStorage.getItem(ONBOARDING_PROGRESS_KEY);
+      if (!saved) return;
+      const data = JSON.parse(saved);
+      if (typeof data.step === 'number') setStep(data.step);
+      if (data.form) setForm(prev => ({ ...prev, ...data.form }));
+      if (data.vehicleForm) setVehicleForm(prev => ({ ...prev, ...data.vehicleForm }));
+      if (Array.isArray(data.vehicleImages)) setVehicleImages(data.vehicleImages);
+      if (Array.isArray(data.platformEntries)) setPlatformEntries(data.platformEntries);
+      if (data.avatarUrl) setAvatarUrl(data.avatarUrl);
+    } catch (err) {
+      console.warn('[Onboarding] Failed to restore saved progress:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      // platformEntries can hold a raw File (evidenceFile) — not
+      // JSON-serialisable, and not worth persisting anyway (the person
+      // would just need to re-pick it after a recovery, a reasonable
+      // trade-off for a mitigation rather than the actual fix).
+      const safePlatformEntries = platformEntries.map(({ evidenceFile, ...rest }) => rest);
+      sessionStorage.setItem(ONBOARDING_PROGRESS_KEY, JSON.stringify({
+        step, form, vehicleForm, vehicleImages, platformEntries: safePlatformEntries, avatarUrl,
+      }));
+    } catch (err) {
+      console.warn('[Onboarding] Failed to save progress:', err);
+    }
+  }, [step, form, vehicleForm, vehicleImages, platformEntries, avatarUrl]);
+
+  const updateVehicle = (field, value) => setVehicleForm(prev => {
+    const next = { ...prev, [field]: value };
+    if (field === 'vehicle_type' && value === 'bicycle') next.transmission = '';
+    return next;
+  });
+
+  const handleVehicleImageUpload = async (e) => {
+    const files = Array.from(e.target.files || []).slice(0, 3 - vehicleImages.length);
+    if (!files.length) return;
+    setVehicleUploading(true);
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const urls = [];
+      for (const file of files) {
+        const filePath = `${authUser.id}/${Date.now()}_${file.name}`;
+        const { error } = await supabase.storage.from('vehicle-images').upload(filePath, file, { upsert: true, contentType: file.type });
+        if (error) throw error;
+        const { data: { publicUrl } } = supabase.storage.from('vehicle-images').getPublicUrl(filePath);
+        urls.push(publicUrl);
+      }
+      setVehicleImages(prev => [...prev, ...urls]);
+    } catch (err) {
+      toast.error('Image upload failed: ' + err.message);
+    } finally {
+      setVehicleUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  // A vehicle is only actually created if the person filled in the fields
+  // that matter — if they left this step blank (skipped it via Next), this
+  // correctly does nothing rather than inserting an empty listing.
+  const hasVehicleToSave = !!(vehicleForm.make && vehicleForm.model && vehicleForm.plate && vehicleForm.location && vehicleForm.price_per_week);
+
+  const saveVehicleListing = async (ownerId) => {
+    if (!hasVehicleToSave) return false;
+    try {
+      const dbRow = { ...vehicleForm };
+      dbRow.type = dbRow.vehicle_type; delete dbRow.vehicle_type;
+      dbRow.price = parseFloat(dbRow.price_per_week) || 0; delete dbRow.price_per_week;
+      dbRow.year = parseInt(dbRow.year) || 2024;
+      dbRow.deposit = parseFloat(dbRow.deposit) || 0;
+      dbRow.images = vehicleImages;
+      dbRow.rating = 0;
+      dbRow.total_reviews = 0;
+      dbRow.status = 'available';
+      dbRow.owner_id = ownerId;
+
+      if (dbRow.location) {
+        try {
+          const coords = await geocodeLocation(dbRow.location);
+          if (coords) dbRow.geo_location = `SRID=4326;POINT(${coords.longitude} ${coords.latitude})`;
+        } catch { /* non-fatal — vehicle still lists without coordinates */ }
+      }
+
+      // Deliberately free — no credit check, no deduction. This is the
+      // person's very first listing, created in the same flow meant to
+      // reduce drop-off; charging for it here (and being able to fail if
+      // their sign-up credit grant hasn't landed yet, e.g. due to an
+      // IP-based false positive) would work against the entire point.
+      // Every vehicle listed after onboarding still goes through the normal
+      // tiered pricing via the regular Add Vehicle page, unaffected by this.
+      const { error } = await supabase.from('vehicles').insert(dbRow).select('*').single();
+      if (error) throw error;
+
+      toast.success('Vehicle listed!');
+      return true;
+    } catch (err) {
+      console.error('[Onboarding] Vehicle save failed:', err);
+      toast.error("Vehicle wasn't listed — you can add it from your Briefcase any time.");
+      return false;
+    }
+  };
+
 
   const addPlatformEntry = () => {
     const platformName = newEntry.platform === 'Other' ? newEntry.otherPlatform.trim() : newEntry.platform;
@@ -280,7 +482,7 @@ export default function Onboarding() {
   };
 
   const validatePersonal = () => {
-    if (!form.phone || !form.gender || !form.date_of_birth || !form.residential_address) {
+    if (!form.phone || !form.gender || !form.date_of_birth) {
       toast.error('Please fill in all required fields');
       return false;
     }
@@ -325,7 +527,7 @@ export default function Onboarding() {
     location:             buildLocation(),
     residential_address:  form.residential_address,
     onboarding_completed: true,
-    customer_code:        generateCustomerCode(),
+    ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
   });
 
   const saveGeoLocation = async (locationText, userId) => {
@@ -351,7 +553,7 @@ export default function Onboarding() {
   // Called as soon as a role is selected (see nextStep), not gated behind
   // completing the rest of onboarding — someone who picks a role and never
   // finishes their profile still gets their bonus.
-  const awardSignupCredits = async (role, phone = '') => {
+  const awardSignupCredits = async (role, phone = '', vehicleListed = false) => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser?.id) return;
@@ -368,6 +570,7 @@ export default function Onboarding() {
           phone:              phone ?? '',
           device_fingerprint: localStorage.getItem('skootlink_device_fp') ?? '',
           profile_type:       role,
+          vehicle_listed:     vehicleListed,
         }),
       });
     } catch (creditErr) {
@@ -454,15 +657,28 @@ export default function Onboarding() {
         await savePlatformHistoryEntries(authUser.id, entriesToSave);
       }
 
-      // ── Award sign-up free credits (safety net) ───────────────────────────
-      // Normally already granted from the role-selection step (see nextStep)
-      // — this call is a harmless no-op in that case, since grant-signup-credits.js
-      // guards against duplicate grants. It only matters if that earlier call
-      // failed for some reason (e.g. a network blip).
-      if (authUser?.id) {
-        await awardSignupCredits(form.role, form.phone);
+      // ── List the vehicle first, if they added one on that step (free —
+      // see saveVehicleListing for why) ──────────────────────────────────────
+      let vehicleActuallyListed = false;
+      if (authUser?.id && canListVehicles) {
+        vehicleActuallyListed = await saveVehicleListing(authUser.id);
       }
 
+      // ── Award sign-up free credits ─────────────────────────────────────────
+      // This is now the only place credits are granted — deferred to actual
+      // onboarding completion (not the earlier role-selection step) so we
+      // know whether they used the free vehicle listing before deciding the
+      // amount. Based on whether the listing actually succeeded, not just
+      // whether the form had data in it — if the insert failed for some
+      // reason, they still get the full amount rather than coming up short.
+      // Trade-off: someone who abandons onboarding partway through no longer
+      // gets any credits at all, whereas they previously would have (a
+      // deliberate choice — see conversation with Kanelo).
+      if (authUser?.id) {
+        await awardSignupCredits(form.role, form.phone, vehicleActuallyListed);
+      }
+
+      sessionStorage.removeItem(ONBOARDING_PROGRESS_KEY);
       toast.success('Profile saved! Welcome to Skootlink.');
       navigate('/home');
     } catch (err) {
@@ -476,28 +692,33 @@ export default function Onboarding() {
     if (step === 1 && !validatePersonal()) return;
     if (step < STEPS.length - 1) {
       const nextIndex = step + 1;
-      // Leaving the role step — grant sign-up credits now, right after the
-      // user commits to a role, rather than waiting for full onboarding
-      // completion. Fire-and-forget: never blocks navigation to the next step.
-      if (step === 0) {
-        awardSignupCredits(form.role);
-      }
-      setStep(nextIndex);
-      // Show privacy notice when entering Personal Info step
-      if (nextIndex === 1) setShowPrivacyNotice(true);
+      // Deferred by one tick — same fix as the original Auth.jsx sign-in/
+      // sign-up toggle bug: if React swaps in new DOM content at the exact
+      // screen position of an in-progress tap (Back/Continue sit in the
+      // same spot on every step), the browser can lose track of touch
+      // state there until an unrelated tap resets it. This is a genuinely
+      // separate issue from the Radix pointer-events lock fixed in
+      // App.jsx — confirmed separate because this can freeze buttons with
+      // pointerEvents staying completely clean the whole time.
+      setTimeout(() => {
+        setStep(nextIndex);
+        // Show privacy notice when entering Personal Info step
+        if (nextIndex === 1) setShowPrivacyNotice(true);
+      }, 0);
       return;
     }
     saveAndNavigate('home');
   };
 
   const currentStep = STEPS[step];
+
   const isSA        = form.country_type === 'South Africa';
   const cityList    = isSA && form.sa_province ? SA_PROVINCE_CITIES[form.sa_province] ?? [] : [];
   const cityIsOther = form.sa_city === '__other__';
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
+    <div className="min-h-screen min-h-[100dvh] bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-start sm:items-center justify-center p-4 pt-8 pb-32">
       <div className="w-full max-w-xl">
         {/* Logo */}
         <div className="flex justify-center mb-6">
@@ -710,17 +931,77 @@ export default function Onboarding() {
 
               {/* Residential Address (always shown) */}
               <div>
-                <Label className="text-xs font-medium">Residential Address *</Label>
+                <Label className="text-xs font-medium">Residential Address</Label>
                 <Input className="mt-1" placeholder="123 Main St, Johannesburg, 2000" value={form.residential_address} onChange={e => update('residential_address', e.target.value)} />
               </div>
 
             </div>
           )}
 
-          {step === 2 && (
+          {STEPS[step]?.id === 'photo' && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="font-semibold text-lg">Add a Profile Photo</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  A real photo helps owners and drivers trust who they're dealing with.
+                </p>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="user"
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
+
+              <div className="flex flex-col items-center gap-4 py-2">
+                <div className="w-28 h-28 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border-2 border-dashed border-border">
+                  {avatarUploading ? (
+                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                  ) : avatarUrl ? (
+                    <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <Camera className="w-8 h-8 text-primary/50" />
+                  )}
+                </div>
+
+                <div className="flex gap-3 w-full">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 gap-2"
+                    disabled={avatarUploading}
+                    onClick={() => cameraInputRef.current?.click()}
+                  >
+                    <Camera className="w-4 h-4" /> Take Photo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 gap-2"
+                    disabled={avatarUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <ImageIcon className="w-4 h-4" /> Gallery
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {STEPS[step]?.id === 'platform_history' && (
             <div className="space-y-5">
               <p className="text-sm text-muted-foreground -mt-2">
-                Worked with Uber, Bolt, or a delivery app before? Adding your rating history helps owners trust you faster. This is completely optional — you can skip it or add it later in Settings.
+                Worked with Uber, Bolt, or a delivery app before? Adding your rating history helps owners trust you faster.
               </p>
 
               {/* Already-added entries */}
@@ -776,7 +1057,7 @@ export default function Onboarding() {
                 </div>
 
                 <div>
-                  <Label className="text-xs font-medium">Role (optional)</Label>
+                  <Label className="text-xs font-medium">Role</Label>
                   <Input className="mt-1" placeholder="e.g. Driver, Courier" value={newEntry.role} onChange={e => setNewEntry(p => ({ ...p, role: e.target.value }))} />
                 </div>
 
@@ -814,13 +1095,147 @@ export default function Onboarding() {
             </div>
           )}
 
+          {STEPS[step]?.id === 'vehicle' && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="font-semibold text-lg">List Your First Vehicle</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Get it in front of drivers right away — you can always add more later from your Briefcase.
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium">Vehicle Type</Label>
+                <Select value={vehicleForm.vehicle_type} onValueChange={v => updateVehicle('vehicle_type', v)}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent className="max-h-72 overflow-y-auto">
+                    <SelectItem value="scooter">🛵 Scooter</SelectItem>
+                    <SelectItem value="motorcycle">🏍️ Motorcycle</SelectItem>
+                    <SelectItem value="bicycle">🚲 Bicycle</SelectItem>
+                    <SelectItem value="car">🚗 Car</SelectItem>
+                    <SelectItem value="suv">🚙 SUV</SelectItem>
+                    <SelectItem value="bakkie">🛻 Bakkie / Pickup</SelectItem>
+                    <SelectItem value="van">🚐 Van</SelectItem>
+                    <SelectItem value="minibus_taxi">🚌 Minibus / Taxi</SelectItem>
+                    <SelectItem value="truck">🚚 Truck</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs font-medium">Make</Label>
+                  <Input className="mt-1" placeholder="Honda" value={vehicleForm.make} onChange={e => updateVehicle('make', e.target.value)} />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Model</Label>
+                  <Input className="mt-1" placeholder="PCX 150" value={vehicleForm.model} onChange={e => updateVehicle('model', e.target.value)} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs font-medium">Year</Label>
+                  <Input className="mt-1" type="number" placeholder="2024" value={vehicleForm.year} onChange={e => updateVehicle('year', e.target.value)} />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">License Plate</Label>
+                  <Input className="mt-1" placeholder="ABC 123 GP" value={vehicleForm.plate} onChange={e => updateVehicle('plate', e.target.value)} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs font-medium">Color</Label>
+                  <Input className="mt-1" placeholder="White" value={vehicleForm.color} onChange={e => updateVehicle('color', e.target.value)} />
+                </div>
+                {vehicleForm.vehicle_type !== 'bicycle' && (
+                  <div>
+                    <Label className="text-xs font-medium">Transmission</Label>
+                    <Select value={vehicleForm.transmission} onValueChange={v => updateVehicle('transmission', v)}>
+                      <SelectTrigger className="mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="automatic">Automatic</SelectItem>
+                        <SelectItem value="manual">Manual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium">Location</Label>
+                <Input className="mt-1" placeholder="Johannesburg CBD" value={vehicleForm.location} onChange={e => updateVehicle('location', e.target.value)} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs font-medium">Storage Type</Label>
+                  <Select value={vehicleForm.storage_type} onValueChange={v => updateVehicle('storage_type', v)}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="owner_address">Owner's Address</SelectItem>
+                      <SelectItem value="driver_responsibility">Driver's Responsibility</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Pickup/Return Address</Label>
+                  <Input className="mt-1" placeholder="123 Main St" value={vehicleForm.pickup_return_location} onChange={e => updateVehicle('pickup_return_location', e.target.value)} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs font-medium">Weekly Price (ZAR)</Label>
+                  <Input className="mt-1" type="number" placeholder="500" value={vehicleForm.price_per_week} onChange={e => updateVehicle('price_per_week', e.target.value)} />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Deposit (ZAR)</Label>
+                  <Input className="mt-1" type="number" placeholder="1000" value={vehicleForm.deposit} onChange={e => updateVehicle('deposit', e.target.value)} />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium">Photos (up to 3)</Label>
+                <div className="mt-2 flex gap-3 flex-wrap">
+                  {vehicleImages.map((img, i) => (
+                    <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group">
+                      <img src={img} alt="" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setVehicleImages(prev => prev.filter((_, idx) => idx !== i))}
+                        className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-4 h-4 text-white" />
+                      </button>
+                    </div>
+                  ))}
+                  {vehicleImages.length < 3 && (
+                    <label className="w-20 h-20 rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors">
+                      {vehicleUploading ? (
+                        <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                      ) : (
+                        <>
+                          <ImagePlus className="w-5 h-5 text-muted-foreground" />
+                          <span className="text-[10px] text-muted-foreground mt-1">Add</span>
+                        </>
+                      )}
+                      <input type="file" accept="image/*" className="hidden" onChange={handleVehicleImageUpload} />
+                    </label>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── Navigation ────────────────────────────────────────────────── */}
           <div className="mt-6 pt-4 border-t border-border space-y-3">
             <div className="flex justify-between items-center">
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => step === 0 ? navigate('/home') : setStep(s => s - 1)}
+                onClick={() => step === 0 ? navigate('/home') : setTimeout(() => setStep(s => s - 1), 0)}
                 className="gap-2"
               >
                 <ArrowLeft className="w-4 h-4" /> Back

@@ -2,41 +2,40 @@
  * VerificationPanel.jsx
  * Handles ID verification (RSA ID + Passport tabs) and Driver's Licence verification.
  * Verification is a paid service — NOT payable with free credits.
- * Prices: RSA ID = R15, Passport = R35, Driver's Licence = R35
+ * Prices: RSA ID = R25, Passport = R25, Driver's Licence = R25 (once-off each)
  *
- * On failure: user is credited back in usage credits (based on lowest package rate)
- * and shown a refund request option.
+ * Documents are reviewed manually by an admin (no third-party verification
+ * API) — see submit-verification.js and the admin Identity Verification
+ * queue. On approval the badge is granted; on rejection the user can
+ * re-submit once for free. If our own upload/submission fails before ever
+ * reaching the review queue, the user is credited back in usage credits.
  *
  * Place at: src/components/verification/VerificationPanel.jsx
  */
 import React, { useState, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ShieldCheck, Upload, Loader2, X, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Upload, Loader2, X, AlertTriangle, CheckCircle2, RefreshCw, Clock } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
-// sa_id: R49 covers the R32.89 real cost (1cr said_verification + 10cr Face
-// Match against the Home Affairs photo) with ~49% margin.
-// passport: R35 covers the R20.93 real cost (6cr id-document-verify OCR +
-// 1cr Face Match Standard) with ~67% margin — see verify-identity.js for
-// the passport flow, which now also fixes a previously-undocumented
-// reportType by switching to VerifyNow's documented /id-document-verify
-// endpoint (the same one already used for driver's licence verification).
+// All three are R25 flat, once-off — an admin manually reviews the uploaded
+// documents (see submit-verification.js), no third-party API cost anymore.
 const PRICES = {
-  sa_id:    { label: 'RSA ID Verification',       amount: 49 },
-  passport: { label: 'Passport Verification',      amount: 35 },
-  licence:  { label: "Driver's Licence Verification", amount: 35 },
+  sa_id:    { label: 'RSA ID Verification',       amount: 25 },
+  passport: { label: 'Passport Verification',      amount: 25 },
+  licence:  { label: "Driver's Licence Verification", amount: 25 },
 };
 
-// Refund-credit conversion rate — was still referencing the old R39/15cr
-// Starter Pack pricing from before the credit packages were repriced.
-// Current Starter Pack: R49 / 240 credits = R0.2042/credit.
-const PRICE_PER_CREDIT = 49 / 240; // ~R0.2042/credit
+// Refund-credit conversion rate: R0.20/credit → R25 refund = exactly 125
+// credits. All three verification services are now the same R25 price, so
+// this always resolves cleanly regardless of which service is refunded.
+const PRICE_PER_CREDIT = 0.20;
 const creditsForRefund = (priceZar) => Math.floor(priceZar / PRICE_PER_CREDIT);
 
 // ── Image uploader sub-component ──────────────────────────────────────────────
@@ -84,6 +83,8 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) { toast.error('Please sign in first.'); return; }
 
+    const isNative = Capacitor.isNativePlatform();
+
     try {
       const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate-verification', {
         method: 'POST',
@@ -91,7 +92,7 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ service_type: service }),
+        body: JSON.stringify({ service_type: service, is_native: isNative }),
       });
 
       // Guard against HTML error pages (function not found, crashed, etc.)
@@ -104,6 +105,19 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not start payment');
+
+      if (isNative) {
+        // Open in a Custom Tab, not the app's own WebView — PayFast's
+        // process endpoint accepts the same fields as a GET query string.
+        // return_url is a real server-side redirect (payment-redirect
+        // function) straight to co.za.skootlink.app://payment-result — see
+        // payfast-initiate-verification.js for why that's a server-side
+        // redirect rather than a client-side JS one.
+        const qs = new URLSearchParams(data.fields).toString();
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.open({ url: `${data.action_url}?${qs}`, presentationStyle: 'popover' });
+        return;
+      }
 
       // Build PayFast form and POST
       const form = document.createElement('form');
@@ -137,10 +151,11 @@ function PaymentModal({ service, onPay, onCancel, paying }) {
         <div className="bg-muted rounded-xl p-4 mb-4 space-y-2">
           <p className="text-[10px] text-muted-foreground">
             This is a direct payment — free credits cannot be used for verification services.
-            If verification fails due to a technical issue on our side before VerifyNow is contacted,
-            you will receive {creditsForRefund(price.amount)} usage credits as compensation,
-            or you may request a cash refund. If VerifyNow processes your request and returns
-            a negative result, no refund is issued as the verification service has been rendered.
+            Your documents are reviewed manually by our team. If our system fails to accept
+            your submission due to a technical issue on our side, you'll receive{' '}
+            {creditsForRefund(price.amount)} usage credits as compensation, or you may request
+            a cash refund. If your submission is reviewed and rejected, you may re-submit once
+            for free — no additional payment required.
           </p>
         </div>
 
@@ -161,7 +176,23 @@ function StatusBadge({ status, message, credits, onRequestRefund }) {
   if (status === 'verifying') return (
     <div className="flex items-center gap-2 p-3 rounded-xl bg-muted text-muted-foreground text-sm">
       <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-      Verifying with VerifyNow...
+      Submitting your documents...
+    </div>
+  );
+  if (status === 'pending') return (
+    <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-sm">
+      <Clock className="w-4 h-4 shrink-0" />
+      {message || 'Submitted — awaiting review. This usually takes a day or two.'}
+    </div>
+  );
+  if (status === 'rejected') return (
+    <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">
+      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+      <div>
+        <p className="font-medium">Your submission was rejected</p>
+        <p className="mt-0.5">{message || 'Please review your details and photos, then submit again.'}</p>
+        <p className="text-xs mt-1 opacity-80">You can resubmit below at no extra charge.</p>
+      </div>
     </div>
   );
   if (status === 'verified') return (
@@ -174,10 +205,10 @@ function StatusBadge({ status, message, credits, onRequestRefund }) {
       <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">
         <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
         <div>
-          <p>{message || 'Verification failed. Please check your details and try again.'}</p>
+          <p>{message || 'Something went wrong. Please check your details and try again.'}</p>
           {credits > 0 && (
             <p className="text-xs mt-1 opacity-80">
-              VerifyNow was not contacted due to a technical issue on our side.
+              Your submission could not be saved due to a technical issue on our side.
               {credits} usage credits have been added to your account as compensation.
             </p>
           )}
@@ -198,8 +229,8 @@ function StatusBadge({ status, message, credits, onRequestRefund }) {
 
 // ── Selfie capture sub-component ────────────────────────────────────────────
 // Uses capture="user" to prefer the front-facing camera on mobile. Required
-// for SA ID verification — VerifyNow's Face Match check compares this photo
-// against the Home Affairs photo on file for the entered ID number.
+// for every verification type — lets the reviewing admin visually confirm
+// the person submitting matches the photo on the uploaded document.
 function SelfieCapture({ file, onChange }) {
   const ref = useRef();
   return (
@@ -240,6 +271,8 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   // ID verification state
   const [idTab,              setIdTab]              = useState('sa_id');
   const [saId,               setSaId]               = useState('');
+  const [saIdFront,          setSaIdFront]          = useState(null);
+  const [saIdBack,           setSaIdBack]           = useState(null);
   const [saIdSelfie,         setSaIdSelfie]         = useState(null);
   const [passportNumber,     setPassportNumber]     = useState('');
   const [passportFront,      setPassportFront]      = useState(null);
@@ -253,6 +286,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   const [licenceNumber,      setLicenceNumber]      = useState(user?.license_number || '');
   const [licenceFront,       setLicenceFront]       = useState(null);
   const [licenceBack,        setLicenceBack]        = useState(null);
+  const [licenceSelfie,      setLicenceSelfie]      = useState(null);
   const [licStatus,          setLicStatus]          = useState('');
   const [licMsg,             setLicMsg]             = useState('');
   const [licRefundCredits,   setLicRefundCredits]   = useState(0);
@@ -262,6 +296,125 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   const [pendingVerify,      setPendingVerify]      = useState(null); // function to call after payment confirmed
 
   const isDriver = accountType === 'driver' || accountType === 'both';
+
+  // Without this, idStatus/licStatus reset to blank on every mount — a
+  // pending or rejected submission from an earlier session would otherwise
+  // be invisible until the user happens to tap Verify again.
+  React.useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      const { data: idSubs } = await supabase
+        .from('identity_verification_submissions')
+        .select('verification_status, rejection_reason, created_at')
+        .eq('user_id', user.id)
+        .in('service_type', ['sa_id', 'passport'])
+        .order('created_at', { ascending: false })
+        .limit(1);
+      const idSub = idSubs?.[0];
+      if (idSub?.verification_status === 'pending') {
+        setIdStatus('pending'); setIdMsg('Submitted — awaiting review. This usually takes a day or two.');
+      } else if (idSub?.verification_status === 'rejected') {
+        setIdStatus('rejected'); setIdMsg(idSub.rejection_reason || 'Please review your details and photos, then submit again.');
+      }
+
+      const { data: licSubs } = await supabase
+        .from('identity_verification_submissions')
+        .select('verification_status, rejection_reason, created_at')
+        .eq('user_id', user.id)
+        .eq('service_type', 'licence')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      const licSub = licSubs?.[0];
+      if (licSub?.verification_status === 'pending') {
+        setLicStatus('pending'); setLicMsg('Submitted — awaiting review. This usually takes a day or two.');
+      } else if (licSub?.verification_status === 'rejected') {
+        setLicStatus('rejected'); setLicMsg(licSub.rejection_reason || 'Please review your details and photos, then submit again.');
+      }
+    })();
+  }, [user?.id]);
+
+  // App.jsx's appUrlOpen listener dispatches this directly the instant it
+  // parses the co.za.skootlink.app://payment-result deep link — the one
+  // mechanism in this whole chain proven reliable (Google sign-in already
+  // depends on it). A plain window event listener persists for this
+  // component's whole lifetime, so it doesn't matter that this page never
+  // unmounts while the Custom Tab is open.
+  const handlePaymentResult = React.useCallback((result) => {
+    if (!result || result.category !== 'verification') {
+      return; // not ours — e.g. a credits purchase
+    }
+
+    setPaymentModal(null);
+    if (result.status === 'success') {
+      toast.success('Payment received! Verifying…');
+      setPendingVerify(prevFn => {
+        if (prevFn) prevFn(true); // true = justPaid, gives the webhook time to land
+        return null;
+      });
+    } else if (result.status === 'cancelled') {
+      toast.info('Payment cancelled — verification was not started.');
+      setPendingVerify(null);
+    }
+  }, []);
+
+  // Reads whatever App.jsx's appUrlOpen handler stashed in sessionStorage —
+  // used both on mount and whenever the app resumes to the foreground.
+  const checkStoredResult = React.useCallback(() => {
+    const raw = sessionStorage.getItem('skootlink_payment_result');
+    if (!raw) return;
+    sessionStorage.removeItem('skootlink_payment_result');
+    try { handlePaymentResult(JSON.parse(raw)); } catch (e) { }
+  }, [handlePaymentResult]);
+
+  React.useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    // Covers the case where App.jsx's dispatch fired before this component
+    // mounted (app process killed while the Custom Tab was open, relaunched
+    // fresh) — App.jsx also stashes the same detail here as a fallback.
+    checkStoredResult();
+
+    const onEvent = (e) => handlePaymentResult(e.detail);
+    window.addEventListener('skootlink:payment-result', onEvent);
+
+    // Second, independent trigger: Capacitor's own "app became active
+    // again" event — fires whenever the OS brings the app back to the
+    // foreground for any reason, regardless of the exact timing of our
+    // custom deep-link event dispatch.
+    let appListener;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        appListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) checkStoredResult();
+        });
+      } catch (e) { }
+    })();
+
+    // Third, independent safety net: if the Custom Tab closes for any
+    // reason — including the user manually backing out of PayFast's own
+    // confirmation screen instead of it auto-redirecting — this guarantees
+    // the payment modal never stays stuck open forever. Deliberately leaves
+    // pendingVerify untouched: if a real result still arrives shortly after
+    // (via the event or appStateChange above), it can still seamlessly
+    // continue the verification on success. Worst case, if no result ever
+    // arrives, the user just needs to tap Verify again.
+    let browserListener;
+    (async () => {
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        browserListener = await Browser.addListener('browserFinished', () => {
+          setPaymentModal(null);
+        });
+      } catch (e) { }
+    })();
+
+    return () => {
+      window.removeEventListener('skootlink:payment-result', onEvent);
+      if (appListener) appListener.remove().catch(() => {});
+      if (browserListener) browserListener.remove().catch(() => {});
+    };
+  }, [handlePaymentResult, checkStoredResult]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   const compressImage = (file, maxPx = 1200, quality = 0.8) =>
@@ -281,23 +434,35 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
       img.src = url;
     });
 
-  const hasPaid = async (serviceType) => {
+  const hasPaid = async (serviceType, { retries = 1, delayMs = 1500 } = {}) => {
     // Check if user has a recent verified_payment for this service_type —
     // and that it actually covers the CURRENT price. A stale unused payment
     // from before a price change (e.g. an old R15 SA ID payment that never
     // got marked `used`) must not silently satisfy a higher new price.
-    const { data } = await supabase
-      .from('verification_payments')
-      .select('id, amount')
-      .eq('user_id', user?.id)
-      .eq('service_type', serviceType)
-      .eq('status', 'paid')
-      .eq('used', false)
-      .maybeSingle();
-    if (!data) return false;
-    const requiredAmount = PRICES[serviceType]?.amount ?? 0;
-    if (data.amount != null && Number(data.amount) < requiredAmount) return false;
-    return true;
+    //
+    // retries > 1 is only used right after a payment completes — the ITN
+    // webhook (PayFast → Hookdeck → this app → Supabase) can take a few
+    // seconds to actually mark the row 'paid', and checking only once right
+    // as the user returns from paying could catch it mid-flight and
+    // wrongly show the payment prompt again. The normal "user just tapped
+    // Verify" path stays a single immediate check, so genuinely-unpaid
+    // users see the payment modal right away, not after a multi-second wait.
+    for (let attempt = 0; attempt < retries; attempt++) {
+      const { data } = await supabase
+        .from('verification_payments')
+        .select('id, amount')
+        .eq('user_id', user?.id)
+        .eq('service_type', serviceType)
+        .eq('status', 'paid')
+        .eq('used', false)
+        .maybeSingle();
+      if (data) {
+        const requiredAmount = PRICES[serviceType]?.amount ?? 0;
+        if (data.amount == null || Number(data.amount) >= requiredAmount) return true;
+      }
+      if (attempt < retries - 1) await new Promise(r => setTimeout(r, delayMs));
+    }
+    return false;
   };
 
   const refundCredits = async (serviceType, setRefundCredits) => {
@@ -327,58 +492,62 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   };
 
   // ── Verify RSA ID ────────────────────────────────────────────────────────────
-  const doVerifySaId = async () => {
+  const doVerifySaId = async (justPaid = false) => {
     if (!saId.trim() || saId.replace(/\s/g, '').length !== 13) {
       toast.error('Please enter a valid 13-digit SA ID number'); return;
+    }
+    if (!saIdFront || !saIdBack) {
+      toast.error('Please upload photos of the front and back of your ID'); return;
     }
     if (!saIdSelfie) {
       toast.error('Please take a selfie — it\'s required to confirm you are the ID holder'); return;
     }
-    const paid = await hasPaid('sa_id');
+    const paid = await hasPaid('sa_id', justPaid ? { retries: 5, delayMs: 1500 } : {});
     if (!paid) { setPaymentModal('sa_id'); setPendingVerify(() => doVerifySaId); return; }
 
     setIdStatus('verifying'); setIdMsg('');
     try {
-      const selfieB64 = await compressImage(saIdSelfie);
+      const [frontB64, backB64, selfieB64] = await Promise.all([
+        compressImage(saIdFront), compressImage(saIdBack), compressImage(saIdSelfie),
+      ]);
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/verify-identity', {
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/submit-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
-          documentType:      'sa_id',
+          serviceType:       'sa_id',
           idNumber:          saId.trim(),
+          frontImageBase64:  frontB64,
+          backImageBase64:   backB64,
           selfieImageBase64: selfieB64,
         }),
       });
       const data = await res.json();
-      if (data.verified) {
-        setIdStatus('verified'); setIdMsg(data.message || 'SA ID verified successfully.');
-        toast.success('Identity verified! Your ✅ ID Verified badge has been updated.');
-        onUserUpdated?.();
+      if (data.pending && !data.alreadyPending) {
+        setIdStatus('pending'); setIdMsg(data.message || 'Submitted — awaiting review.');
+        toast.success('Submitted! We\'ll review your ID shortly.');
+      } else if (data.alreadyPending) {
+        setIdStatus('pending'); setIdMsg(data.message);
       } else if (data.alreadyVerified) {
-        // Locked — identity was already successfully verified previously
         setIdStatus('verified'); setIdMsg(data.message || 'Your identity is already verified.');
       } else {
-        // VerifyNow was contacted and returned a negative result — no refund
-        setIdStatus('failed'); setIdMsg(data.message || 'Verification failed. Please check your ID number and try again.');
+        // Format/blacklist rejection — caught before payment was even consumed
+        setIdStatus('failed'); setIdMsg(data.message || 'Submission failed. Please check your details and try again.');
       }
-      // Mark payment as used regardless of result — VerifyNow was contacted
-      await supabase.from('verification_payments')
-        .update({ used: true }).eq('user_id', user?.id).eq('service_type', 'sa_id').eq('status', 'paid').eq('used', false);
     } catch (err) {
-      // Our side failed — VerifyNow was never contacted — issue refund
-      setIdStatus('failed'); setIdMsg('Verification service unavailable. Please try again later.');
+      // Our side failed before the submission was ever saved — refund
+      setIdStatus('failed'); setIdMsg('Something went wrong submitting your documents. Please try again later.');
       await refundCredits('sa_id', setIdRefundCredits);
     }
   };
 
   // ── Verify Passport ──────────────────────────────────────────────────────────
-  const doVerifyPassport = async () => {
+  const doVerifyPassport = async (justPaid = false) => {
     if (!passportNumber.trim()) { toast.error('Please enter your passport number'); return; }
-    if (!passportFront || !passportBack) { toast.error('Please upload both passport photos as required by VerifyNow'); return; }
+    if (!passportFront || !passportBack) { toast.error('Please upload both passport photos'); return; }
     if (!passportSelfie) { toast.error('Please take a selfie — it\'s required to confirm you are the passport holder'); return; }
 
-    const paid = await hasPaid('passport');
+    const paid = await hasPaid('passport', justPaid ? { retries: 5, delayMs: 1500 } : {});
     if (!paid) { setPaymentModal('passport'); setPendingVerify(() => doVerifyPassport); return; }
 
     setIdStatus('verifying'); setIdMsg('');
@@ -387,78 +556,73 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
         compressImage(passportFront), compressImage(passportBack), compressImage(passportSelfie),
       ]);
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/verify-identity', {
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/submit-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
-          documentType:      'passport',
-          idNumber:          passportNumber.trim(), // verify-identity.js uses idNumber for both types
+          serviceType:       'passport',
+          idNumber:          passportNumber.trim(),
           frontImageBase64:  frontB64,
           backImageBase64:   backB64,
           selfieImageBase64: selfieB64,
         }),
       });
       const data = await res.json();
-      if (data.verified) {
-        setIdStatus('verified'); setIdMsg(data.message || 'Passport verified successfully.');
-        toast.success('Passport verified! Your ✅ ID Verified badge has been updated.');
-        onUserUpdated?.();
+      if (data.pending && !data.alreadyPending) {
+        setIdStatus('pending'); setIdMsg(data.message || 'Submitted — awaiting review.');
+        toast.success('Submitted! We\'ll review your passport shortly.');
+      } else if (data.alreadyPending) {
+        setIdStatus('pending'); setIdMsg(data.message);
       } else if (data.alreadyVerified) {
-        // Locked — identity was already successfully verified previously
         setIdStatus('verified'); setIdMsg(data.message || 'Your identity is already verified.');
       } else {
-        // VerifyNow was contacted and returned a negative result — no refund
-        setIdStatus('failed'); setIdMsg(data.message || 'Verification failed. Please check your passport details and photos.');
+        setIdStatus('failed'); setIdMsg(data.message || 'Submission failed. Please check your details and try again.');
       }
-      // Mark payment as used regardless of result — VerifyNow was contacted
-      await supabase.from('verification_payments')
-        .update({ used: true }).eq('user_id', user?.id).eq('service_type', 'passport').eq('status', 'paid').eq('used', false);
     } catch (err) {
-      // Our side failed — VerifyNow was never contacted — issue refund
-      setIdStatus('failed'); setIdMsg('Verification service unavailable. Please try again later.');
+      setIdStatus('failed'); setIdMsg('Something went wrong submitting your documents. Please try again later.');
       await refundCredits('passport', setIdRefundCredits);
     }
   };
 
   // ── Verify Driver's Licence ──────────────────────────────────────────────────
-  const doVerifyLicence = async () => {
+  const doVerifyLicence = async (justPaid = false) => {
     if (!licenceNumber.trim()) { toast.error('Please enter your driver\'s licence number'); return; }
     if (!licenceFront || !licenceBack) { toast.error('Please upload both front and back of your licence'); return; }
+    if (!licenceSelfie) { toast.error('Please take a selfie — it\'s required to confirm you are the licence holder'); return; }
 
-    const paid = await hasPaid('licence');
+    const paid = await hasPaid('licence', justPaid ? { retries: 5, delayMs: 1500 } : {});
     if (!paid) { setPaymentModal('licence'); setPendingVerify(() => doVerifyLicence); return; }
 
     setLicStatus('verifying'); setLicMsg('');
     try {
-      const [frontB64, backB64] = await Promise.all([
-        compressImage(licenceFront), compressImage(licenceBack),
+      const [frontB64, backB64, selfieB64] = await Promise.all([
+        compressImage(licenceFront), compressImage(licenceBack), compressImage(licenceSelfie),
       ]);
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/verify-licence', {
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/submit-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
-          licenceNumber:           licenceNumber.trim(),
-          licenceFrontImageBase64: frontB64,
-          licenceBackImageBase64:  backB64,
+          serviceType:       'licence',
+          idNumber:          licenceNumber.trim(),
+          frontImageBase64:  frontB64,
+          backImageBase64:   backB64,
+          selfieImageBase64: selfieB64,
         }),
       });
       const data = await res.json();
-      if (data.verified || data.pending) {
-        setLicStatus('verified');
-        setLicMsg(data.message || (data.pending ? 'Licence submitted — pending review.' : 'Licence verified!'));
-        toast.success(data.pending ? 'Licence submitted for review. 🛡️' : 'Licence verified! 🛡️');
-        onUserUpdated?.();
+      if (data.pending && !data.alreadyPending) {
+        setLicStatus('pending'); setLicMsg(data.message || 'Submitted — awaiting review.');
+        toast.success('Submitted! We\'ll review your licence shortly.');
+      } else if (data.alreadyPending) {
+        setLicStatus('pending'); setLicMsg(data.message);
+      } else if (data.alreadyVerified) {
+        setLicStatus('verified'); setLicMsg(data.message || 'Your licence is already verified.');
       } else {
-        // VerifyNow was contacted and returned a negative result — no refund
-        setLicStatus('failed'); setLicMsg(data.message || 'Verification failed. Please check your licence details and photos.');
+        setLicStatus('failed'); setLicMsg(data.message || 'Submission failed. Please check your details and try again.');
       }
-      // Mark payment as used regardless of result — VerifyNow was contacted
-      await supabase.from('verification_payments')
-        .update({ used: true }).eq('user_id', user?.id).eq('service_type', 'licence').eq('status', 'paid').eq('used', false);
     } catch (err) {
-      // Our side failed — VerifyNow was never contacted — issue refund
-      setLicStatus('failed'); setLicMsg('Verification service unavailable. Please try again later.');
+      setLicStatus('failed'); setLicMsg('Something went wrong submitting your documents. Please try again later.');
       await refundCredits('licence', setLicRefundCredits);
     }
   };
@@ -508,6 +672,18 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
                 <p className="text-[10px] text-amber-500 mt-1">{13 - saId.length} more digits needed</p>
               )}
             </div>
+            <ImageUpload
+              label="ID Front"
+              hint="Clear photo of the front of your green ID book page or smart ID card"
+              file={saIdFront}
+              onChange={setSaIdFront}
+            />
+            <ImageUpload
+              label="ID Back"
+              hint="Clear photo of the back — smart ID cards especially, this side often has key details too"
+              file={saIdBack}
+              onChange={setSaIdBack}
+            />
             <SelfieCapture file={saIdSelfie} onChange={setSaIdSelfie} />
             <StatusBadge
               status={idStatus}
@@ -517,10 +693,11 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
             />
             <Button
               className="w-full gap-2"
-              disabled={idStatus === 'verifying' || idStatus === 'verified'}
+              disabled={idStatus === 'verifying' || idStatus === 'verified' || idStatus === 'pending'}
               onClick={doVerifySaId}
             >
-              {idStatus === 'verifying' ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</> :
+              {idStatus === 'verifying' ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</> :
+               idStatus === 'pending'   ? <><Clock className="w-4 h-4" /> Awaiting Review</> :
                idStatus === 'verified'  ? <><CheckCircle2 className="w-4 h-4" /> Verified</> :
                idStatus === 'failed'    ? <><RefreshCw className="w-4 h-4" /> Retry</> :
                <><ShieldCheck className="w-4 h-4" /> Verify RSA ID</>}
@@ -540,13 +717,13 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
             </div>
             <ImageUpload
               label="Passport Photo — Page with photo & details"
-              hint="Clear photo of the main data page (photo page). Required by VerifyNow."
+              hint="Clear photo of the main data page (photo page)"
               file={passportFront}
               onChange={setPassportFront}
             />
             <ImageUpload
               label="Passport Photo — Back cover or barcode page"
-              hint="Clear photo of the back cover or machine-readable zone. Required by VerifyNow."
+              hint="Clear photo of the back cover or machine-readable zone"
               file={passportBack}
               onChange={setPassportBack}
             />
@@ -559,10 +736,11 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
             />
             <Button
               className="w-full gap-2"
-              disabled={idStatus === 'verifying' || idStatus === 'verified'}
+              disabled={idStatus === 'verifying' || idStatus === 'verified' || idStatus === 'pending'}
               onClick={doVerifyPassport}
             >
-              {idStatus === 'verifying' ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</> :
+              {idStatus === 'verifying' ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</> :
+               idStatus === 'pending'   ? <><Clock className="w-4 h-4" /> Awaiting Review</> :
                idStatus === 'verified'  ? <><CheckCircle2 className="w-4 h-4" /> Verified</> :
                idStatus === 'failed'    ? <><RefreshCw className="w-4 h-4" /> Retry</> :
                <><ShieldCheck className="w-4 h-4" /> Verify Passport</>}
@@ -605,6 +783,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
               file={licenceBack}
               onChange={setLicenceBack}
             />
+            <SelfieCapture file={licenceSelfie} onChange={setLicenceSelfie} />
             <StatusBadge
               status={licStatus}
               message={licMsg}
@@ -613,10 +792,11 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
             />
             <Button
               className="w-full gap-2"
-              disabled={licStatus === 'verifying' || licStatus === 'verified'}
+              disabled={licStatus === 'verifying' || licStatus === 'verified' || licStatus === 'pending'}
               onClick={doVerifyLicence}
             >
-              {licStatus === 'verifying' ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</> :
+              {licStatus === 'verifying' ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</> :
+               licStatus === 'pending'   ? <><Clock className="w-4 h-4" /> Awaiting Review</> :
                licStatus === 'verified'  ? <><CheckCircle2 className="w-4 h-4" /> Verified</> :
                licStatus === 'failed'    ? <><RefreshCw className="w-4 h-4" /> Retry</> :
                <><ShieldCheck className="w-4 h-4" /> Verify Licence</>}
@@ -626,7 +806,8 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
       )}
 
       <p className="text-[10px] text-muted-foreground text-center px-4">
-        Verification is powered by VerifyNow. Your documents are processed securely and never stored on Skootlink servers.
+        Verification documents are reviewed manually by our team and are never shared with
+        third parties. Photos are deleted once your review is complete.
         Payments are processed securely and are non-refundable except in the case of technical failure.
       </p>
     </div>

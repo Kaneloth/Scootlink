@@ -12,6 +12,7 @@ import { Bike, LogIn, ArrowRight, ArrowLeft, Loader2, Fingerprint, AlertTriangle
 import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
 import { BiometricAuth, AndroidBiometryStrength } from '@aparajita/capacitor-biometric-auth';
+import { Capacitor } from '@capacitor/core';
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
 
@@ -31,30 +32,62 @@ async function setTokenCookie(refresh_token) {
 }
 
 async function triggerBiometricLogin() {
-  // Ask the OS directly rather than trusting a locally-stored flag — this
-  // self-corrects if the user removed their fingerprint in device settings
-  // since the last time they signed in.
-  const check = await BiometricAuth.checkBiometry();
-  if (!check.strongBiometryIsAvailable) {
-    if (check.strongCode === 'biometryNotEnrolled') {
-      throw biometricError('no-credential', 'No fingerprint enrolled on this device.');
+  if (Capacitor.isNativePlatform()) {
+    // Native — unchanged. Ask the OS directly rather than trusting a
+    // locally-stored flag — this self-corrects if the user removed their
+    // fingerprint in device settings since the last time they signed in.
+    const check = await BiometricAuth.checkBiometry();
+    if (!check.strongBiometryIsAvailable) {
+      if (check.strongCode === 'biometryNotEnrolled') {
+        throw biometricError('no-credential', 'No fingerprint enrolled on this device.');
+      }
+      throw biometricError('unsupported', 'Fingerprint authentication is not available on this device.');
     }
-    throw biometricError('unsupported', 'Fingerprint authentication is not available on this device.');
-  }
-
-  try {
-    await BiometricAuth.authenticate({
-      reason: 'Sign in to Skootlink',
-      androidTitle: 'Skootlink',
-      androidSubtitle: 'Sign in with your fingerprint',
-      androidBiometryStrength: AndroidBiometryStrength.strong,
-      allowDeviceCredential: false,
-    });
-  } catch (err) {
-    if (err?.code === 'userCancel' || err?.code === 'systemCancel' || err?.code === 'appCancel') {
-      throw biometricError('cancelled', 'Sign-in was cancelled.');
+    try {
+      await BiometricAuth.authenticate({
+        reason: 'Sign in to Skootlink',
+        androidTitle: 'Skootlink',
+        androidSubtitle: 'Sign in with your fingerprint',
+        androidBiometryStrength: AndroidBiometryStrength.strong,
+        allowDeviceCredential: false,
+      });
+    } catch (err) {
+      if (err?.code === 'userCancel' || err?.code === 'systemCancel' || err?.code === 'appCancel') {
+        throw biometricError('cancelled', 'Sign-in was cancelled.');
+      }
+      throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
     }
-    throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
+  } else {
+    // Web — real WebAuthn verification, using the credential stored at
+    // registration time in Settings. Independent capability from the
+    // native path above, unrelated to Capacitor's WebView limitations.
+    if (!window.PublicKeyCredential) {
+      throw biometricError('unsupported', 'Fingerprint authentication is not available on this device.');
+    }
+    const storedId = localStorage.getItem('scootlink_biometric_credential_id');
+    if (!storedId) {
+      throw biometricError('no-credential', 'No fingerprint registered on this device.');
+    }
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+    const rawId = Uint8Array.from(atob(storedId), c => c.charCodeAt(0));
+    try {
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [{ id: rawId, type: 'public-key' }],
+          userVerification: 'required',
+          timeout: 60000,
+        },
+      });
+      if (!assertion) throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
+    } catch (err) {
+      if (err?.name === 'NotAllowedError') {
+        throw biometricError('cancelled', 'Sign-in was cancelled.');
+      }
+      if (err?.code) throw err; // already one of our own biometricError()s
+      throw biometricError('fingerprint-failed', 'Fingerprint not recognised. Try again.');
+    }
   }
 
   // Path 1: Supabase JS has a live session in memory/localStorage
@@ -1127,7 +1160,7 @@ export default function Auth() {
                     )}
                     <p>
                       Don't have an account?{' '}
-                      <button onClick={() => { setIsLogin(false); setLoginStage('idle'); setBannerReason(null); }}
+                      <button onClick={() => setTimeout(() => { setIsLogin(false); setLoginStage('idle'); setBannerReason(null); }, 0)}
                         className="text-primary font-semibold hover:underline">Create one</button>
                     </p>
                   </div>
@@ -1311,7 +1344,7 @@ export default function Auth() {
               </Button>
               <p className="text-center text-sm text-muted-foreground">
                 Already have an account?{' '}
-                <button onClick={() => setIsLogin(true)} className="text-primary hover:underline">
+                <button onClick={() => setTimeout(() => setIsLogin(true), 0)} className="text-primary hover:underline">
                   Sign in
                 </button>
               </p>

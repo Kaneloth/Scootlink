@@ -11,9 +11,36 @@
  *  4. Return 200 so the client can clear cookies/localStorage and redirect.
  */
 
+// Required so the native app (running from a different origin than
+// skootlink.co.za) is allowed to call this function at all. The client uses
+// credentials:'include' (to send cookies), and browsers/WebViews flatly
+// refuse to allow credentialed requests with a wildcard '*' origin — the
+// response has to echo back the SPECIFIC requesting origin instead, plus
+// explicitly allow credentials. Without this exact combination, the
+// preflight can look fine (e.g. via curl, which doesn't enforce this rule)
+// while the real app still gets a silent "Failed to fetch".
+function corsHeaders(event) {
+  const origin = event.headers.origin || event.headers.Origin || '*';
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
+    Vary: 'Origin',
+  };
+}
+
 exports.handler = async (event) => {
+  const CORS_HEADERS = corsHeaders(event);
+
+  // Browsers/WebViews send this automatically before the real POST when the
+  // request is cross-origin — must succeed or the actual POST never gets sent.
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers: CORS_HEADERS, body: '' };
+  }
+
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
+    return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
@@ -22,6 +49,7 @@ exports.handler = async (event) => {
   if (!supabaseUrl || !serviceRoleKey) {
     return {
       statusCode: 500,
+      headers: CORS_HEADERS,
       body: JSON.stringify({ error: 'Server misconfigured — missing env vars' }),
     };
   }
@@ -32,7 +60,7 @@ exports.handler = async (event) => {
   const accessToken = authHeader.replace('Bearer ', '').trim();
 
   if (!accessToken) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'No access token provided' }) };
+    return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: 'No access token provided' }) };
   }
 
   const verifyRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
@@ -43,14 +71,14 @@ exports.handler = async (event) => {
   });
 
   if (!verifyRes.ok) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Invalid or expired token' }) };
+    return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Invalid or expired token' }) };
   }
 
   const userData = await verifyRes.json();
   const userId = userData.id;
 
   if (!userId) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Could not determine user ID' }) };
+    return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Could not determine user ID' }) };
   }
 
   // ── Step 2: delete all user data (child rows first) ───────────────────────
@@ -120,12 +148,14 @@ exports.handler = async (event) => {
     const body = await deleteRes.text();
     return {
       statusCode: 500,
+      headers: CORS_HEADERS,
       body: JSON.stringify({ error: 'Failed to delete account', detail: body }),
     };
   }
 
   return {
     statusCode: 200,
+    headers: CORS_HEADERS,
     body: JSON.stringify({ success: true }),
   };
 };

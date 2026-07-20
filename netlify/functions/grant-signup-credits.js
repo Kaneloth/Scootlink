@@ -3,8 +3,13 @@
  * Awards free sign-up credits to new users after onboarding.
  *
  * Credits awarded:
- *   Driver              → 350 credits
- *   Owner or Both       → 1250 credits
+ *   Driver                              → 350 credits
+ *   Owner or Both, no vehicle listed    → 1250 credits
+ *   Owner or Both, vehicle listed       → 1000 credits
+ *     (the onboarding vehicle listing itself is free and worth 250 credits
+ *     at the normal 1st-vehicle tier — this keeps the total value identical
+ *     to 1250 either way, it's just structured differently depending on
+ *     whether they actually used the free listing)
  *
  * Fraud guards (layered):
  *   0. email_grants table   — blocks re-registration with same email
@@ -16,7 +21,7 @@
  *      Kept slightly above 1 for SA mobile carrier-grade NAT, where
  *      unrelated real users can share one public IP.)
  *
- * POST body: { user_id, email, phone, profile_type }
+ * POST body: { user_id, email, phone, profile_type, vehicle_listed }
  */
 import { createClient } from '@supabase/supabase-js';
 
@@ -40,7 +45,6 @@ async function logAttempt({ user_id, email, ip, profile_type, granted, reason })
       reason,
     });
   } catch (err) {
-    // Never let audit logging break the actual grant flow
     console.error('[grant-signup-credits] Failed to write audit log:', err);
   }
 }
@@ -54,7 +58,7 @@ export const handler = async (event) => {
   try { body = JSON.parse(event.body); }
   catch { return { statusCode: 400, body: 'Invalid JSON' }; }
 
-  const { user_id, email, phone, profile_type } = body;
+  const { user_id, email, phone, profile_type, vehicle_listed } = body;
   const ip = event.headers['x-forwarded-for']?.split(',')[0]?.trim()
            || event.headers['client-ip']
            || 'unknown';
@@ -63,8 +67,10 @@ export const handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'user_id required' }) };
   }
 
-  // Driver → 350 credits, Owner or Both → 1250 credits
-  const freeCredits = (profile_type === 'owner' || profile_type === 'both') ? 1250 : 350;
+  // Driver → 350 credits, Owner or Both → 1250 (or 1000 if they used the
+  // free onboarding vehicle listing, which is itself worth 250).
+  const isOwnerLike = profile_type === 'owner' || profile_type === 'both';
+  const freeCredits = isOwnerLike ? (vehicle_listed ? 1000 : 1250) : 350;
 
   // ── Verify user_id actually exists in profiles ────────────────────────────
   const { data: profile, error: profileErr } = await supabase
@@ -161,7 +167,7 @@ export const handler = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ error: creditErr.message }) };
   }
 
-  console.log(`[grant-signup-credits] Granted ${freeCredits} credits to user=${user_id} type=${profile_type} ip=${ip}`);
+  console.log(`[grant-signup-credits] Granted ${freeCredits} credits to user=${user_id} type=${profile_type} vehicle_listed=${!!vehicle_listed} ip=${ip}`);
   await logAttempt({ user_id, email, ip, profile_type, granted: freeCredits, reason: 'clean_identity' });
   return {
     statusCode: 200,
