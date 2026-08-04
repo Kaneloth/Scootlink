@@ -187,6 +187,7 @@ export default function FindDrivers() {
     return source.filter(u => {
       if (currentUser?.id && u.id === currentUser.id) return false; // never show yourself
       if (u.blacklisted) return false; // blacklisted users are hidden
+      if (u.profile_visible === false) return false; // user has hidden their profile from search
       // Admin account always appears in search results regardless of account_type
       const isAdminUser = ADMIN_EMAILS_FILTER.includes(u.email);
       if (!isAdminUser && u.account_type !== 'driver' && u.account_type !== 'both') return false;

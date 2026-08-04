@@ -35,6 +35,9 @@ export default function AdminUserManagement() {
   const [suspendReason, setSuspendReason] = useState('');
   const [suspendReasonOther, setSuspendReasonOther] = useState('');
   const [creditAmount, setCreditAmount] = useState('50');
+  const [profileVisibilityEnabled, setProfileVisibilityEnabled] = useState(false);
+  const [appSettingsLoading, setAppSettingsLoading] = useState(true);
+  const [savingAppSetting, setSavingAppSetting] = useState(false);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -72,6 +75,48 @@ export default function AdminUserManagement() {
   };
 
   useEffect(() => { fetchUsers(); }, []);
+
+  const fetchAppSettings = async () => {
+    setAppSettingsLoading(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'get' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to load settings');
+      setProfileVisibilityEnabled(data.profile_visibility_toggle_enabled === true);
+    } catch (err) {
+      toast.error('Could not load app settings: ' + err.message);
+    }
+    setAppSettingsLoading(false);
+  };
+
+  useEffect(() => { fetchAppSettings(); }, []);
+
+  const toggleProfileVisibilityFeature = async () => {
+    const next = !profileVisibilityEnabled;
+    setSavingAppSetting(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'toggle_profile_visibility', enabled: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to update setting');
+      setProfileVisibilityEnabled(data.profile_visibility_toggle_enabled === true);
+      toast.success(next ? 'Profile visibility toggle enabled for users ✓' : 'Profile visibility toggle disabled for users');
+    } catch (err) {
+      toast.error('Could not update setting: ' + err.message);
+    }
+    setSavingAppSetting(false);
+  };
 
   const filtered = useMemo(() => {
     let list = users;
@@ -303,6 +348,22 @@ export default function AdminUserManagement() {
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">User Management</h2>
+
+      <div className="border border-border rounded-xl bg-card p-4 flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium">Profile Visibility Toggle (global)</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            When off, users can't hide their profile from search — keeps the platform from looking empty with a small user base.
+          </p>
+        </div>
+        <button
+          onClick={() => !appSettingsLoading && !savingAppSetting && toggleProfileVisibilityFeature()}
+          disabled={appSettingsLoading || savingAppSetting}
+          className={`h-6 w-10 rounded-full relative transition-colors shrink-0 ${profileVisibilityEnabled ? 'bg-primary' : 'bg-gray-300'} ${(appSettingsLoading || savingAppSetting) ? 'opacity-60' : ''}`}
+        >
+          <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${profileVisibilityEnabled ? 'right-1' : 'left-1'}`} />
+        </button>
+      </div>
 
       <div className="flex flex-wrap gap-3 items-center justify-between">
         <div className="flex gap-2 flex-wrap">

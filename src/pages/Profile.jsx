@@ -75,6 +75,7 @@ export default function Profile() {
   const [avatarVisible, setAvatarVisible] = useState(true);
   const [profileVisible, setProfileVisible] = useState(true);
   const [savingVisibility, setSavingVisibility] = useState(null);
+  const [profileVisibilityFeatureEnabled, setProfileVisibilityFeatureEnabled] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   const [form, setForm] = useState({
@@ -201,6 +202,21 @@ export default function Profile() {
       setReviewsLoading(false);
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('app_settings')
+      .select('profile_visibility_toggle_enabled')
+      .eq('id', 1)
+      .single()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        setProfileVisibilityFeatureEnabled(!error && data?.profile_visibility_toggle_enabled === true);
+      })
+      .catch(() => { if (!cancelled) setProfileVisibilityFeatureEnabled(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -573,7 +589,7 @@ export default function Profile() {
         </Card>
       ) : null}
 
-      {user && (
+      {user && profileVisibilityFeatureEnabled && (
         <Card className="p-2 mb-4 border border-border/50">
           <div
             className={`flex items-center justify-between p-4 rounded-xl transition-colors ${savingVisibility === 'profile' ? 'opacity-60' : 'cursor-pointer hover:bg-accent'}`}
