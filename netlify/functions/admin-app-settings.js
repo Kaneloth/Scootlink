@@ -2,7 +2,10 @@
  * Netlify Function: admin-app-settings
  * Admin-only read/write access to the app_settings table.
  *
- * POST body: { action: 'get' | 'toggle_profile_visibility', enabled?: boolean }
+ * POST body:
+ *   { action: 'get' }
+ *   { action: 'toggle_profile_visibility', enabled: boolean }
+ *   { action: 'update_signup_credits', driver_credits: number, owner_credits: number }
  * Auth: Bearer token, verified to belong to an admin (user_metadata.is_admin === true)
  */
 import { createClient } from '@supabase/supabase-js';
@@ -32,13 +35,13 @@ export const handler = async (event) => {
   try { body = JSON.parse(event.body); }
   catch { return { statusCode: 400, body: 'Invalid JSON' }; }
 
-  const { action, enabled } = body;
+  const { action, enabled, driver_credits, owner_credits } = body;
 
   try {
     if (action === 'get') {
       const { data, error } = await supabaseAdmin
         .from('app_settings')
-        .select('profile_visibility_toggle_enabled, updated_at')
+        .select('profile_visibility_toggle_enabled, signup_credits_driver, signup_credits_owner, updated_at')
         .eq('id', 1)
         .single();
       if (error) throw error;
@@ -59,6 +62,24 @@ export const handler = async (event) => {
         .eq('id', 1);
       if (error) throw error;
       return { statusCode: 200, body: JSON.stringify({ profile_visibility_toggle_enabled: enabled }) };
+    }
+
+    if (action === 'update_signup_credits') {
+      const isValidAmount = (n) => Number.isInteger(n) && n >= 0;
+      if (!isValidAmount(driver_credits) || !isValidAmount(owner_credits)) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'driver_credits and owner_credits must be non-negative integers' }) };
+      }
+      const { error } = await supabaseAdmin
+        .from('app_settings')
+        .update({
+          signup_credits_driver: driver_credits,
+          signup_credits_owner:  owner_credits,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        })
+        .eq('id', 1);
+      if (error) throw error;
+      return { statusCode: 200, body: JSON.stringify({ signup_credits_driver: driver_credits, signup_credits_owner: owner_credits }) };
     }
 
     return { statusCode: 400, body: JSON.stringify({ error: 'Unknown action' }) };

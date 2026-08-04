@@ -2,14 +2,17 @@
  * Netlify Function: grant-signup-credits
  * Awards free sign-up credits to new users after onboarding.
  *
- * Credits awarded:
+ * Credits awarded (base amounts are admin-configurable via app_settings,
+ * see admin-app-settings.js's update_signup_credits action; the numbers
+ * below are the fallback defaults used if that read ever fails):
  *   Driver                              → 350 credits
  *   Owner or Both, no vehicle listed    → 1250 credits
- *   Owner or Both, vehicle listed       → 1000 credits
+ *   Owner or Both, vehicle listed       → base owner amount − 250
  *     (the onboarding vehicle listing itself is free and worth 250 credits
  *     at the normal 1st-vehicle tier — this keeps the total value identical
- *     to 1250 either way, it's just structured differently depending on
- *     whether they actually used the free listing)
+ *     to the full owner amount either way, it's just structured differently
+ *     depending on whether they actually used the free listing. The 250cr
+ *     discount itself is fixed, independent of the admin-configurable base.)
  *
  * Fraud guards (layered):
  *   0. email_grants table   — blocks re-registration with same email
@@ -31,6 +34,16 @@ const supabase = createClient(
 );
 
 const IP_MAX_GRANTS = 2;
+
+// Used only if the app_settings read below fails — keeps behavior identical
+// to what shipped before admin control existed, rather than ever risking a
+// $0 grant because of a transient DB hiccup.
+const FALLBACK_DRIVER_CREDITS = 350;
+const FALLBACK_OWNER_CREDITS  = 1250;
+
+// Fixed, not admin-configurable — see admin-app-settings.js's
+// update_signup_credits action for the two amounts that are.
+const VEHICLE_LISTED_DISCOUNT = 250;
 
 // Records every attempt (granted or denied, and why) to a permanent audit
 // table — Netlify's own function logs rotate out too quickly to rely on.
@@ -67,10 +80,29 @@ export const handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'user_id required' }) };
   }
 
-  // Driver → 350 credits, Owner or Both → 1250 (or 1000 if they used the
-  // free onboarding vehicle listing, which is itself worth 250).
+  // Driver → configurable base (default 350), Owner or Both → configurable
+  // base (default 1250), minus the fixed 250cr discount if they used the
+  // free onboarding vehicle listing.
   const isOwnerLike = profile_type === 'owner' || profile_type === 'both';
-  const freeCredits = isOwnerLike ? (vehicle_listed ? 1000 : 1250) : 350;
+
+  let driverBase = FALLBACK_DRIVER_CREDITS;
+  let ownerBase  = FALLBACK_OWNER_CREDITS;
+  try {
+    const { data: settings, error: settingsErr } = await supabase
+      .from('app_settings')
+      .select('signup_credits_driver, signup_credits_owner')
+      .eq('id', 1)
+      .single();
+    if (settingsErr) throw settingsErr;
+    if (Number.isInteger(settings?.signup_credits_driver)) driverBase = settings.signup_credits_driver;
+    if (Number.isInteger(settings?.signup_credits_owner))  ownerBase  = settings.signup_credits_owner;
+  } catch (err) {
+    console.warn('[grant-signup-credits] Could not read app_settings, using fallback amounts:', err.message);
+  }
+
+  const freeCredits = isOwnerLike
+    ? Math.max(0, vehicle_listed ? ownerBase - VEHICLE_LISTED_DISCOUNT : ownerBase)
+    : driverBase;
 
   // ── Verify user_id actually exists in profiles ────────────────────────────
   const { data: profile, error: profileErr } = await supabase

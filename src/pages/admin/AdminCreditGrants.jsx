@@ -13,9 +13,11 @@ const REASON_LABELS = {
   error: 'Technical error during grant',
 };
 
-function creditsForType(profileType) {
-  return (profileType === 'owner' || profileType === 'both') ? 1250 : 350;
-}
+// Fallback shown only until the real app_settings values load, or if that
+// fetch fails — mirrors the same fallback defaults grant-signup-credits.js
+// uses server-side, so the two never visibly disagree.
+const FALLBACK_DRIVER_CREDITS = 350;
+const FALLBACK_OWNER_CREDITS = 1250;
 
 export default function AdminCreditGrants() {
   const [attempts, setAttempts] = useState([]);
@@ -23,6 +25,14 @@ export default function AdminCreditGrants() {
   const [search, setSearch] = useState('');
   const [busyId, setBusyId] = useState(null);
   const [amounts, setAmounts] = useState({});
+
+  const [baseCredits, setBaseCredits] = useState({ driver: FALLBACK_DRIVER_CREDITS, owner: FALLBACK_OWNER_CREDITS });
+  const [baseCreditsInput, setBaseCreditsInput] = useState({ driver: String(FALLBACK_DRIVER_CREDITS), owner: String(FALLBACK_OWNER_CREDITS) });
+  const [baseCreditsLoading, setBaseCreditsLoading] = useState(true);
+  const [savingBaseCredits, setSavingBaseCredits] = useState(false);
+
+  const creditsForType = (profileType) =>
+    (profileType === 'owner' || profileType === 'both') ? baseCredits.owner : baseCredits.driver;
 
   const fetchDenied = async () => {
     setLoading(true);
@@ -73,7 +83,64 @@ export default function AdminCreditGrants() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchDenied(); }, []);
+  const fetchBaseCredits = async () => {
+    setBaseCreditsLoading(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'get' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to load settings');
+      const driver = Number.isInteger(data.signup_credits_driver) ? data.signup_credits_driver : FALLBACK_DRIVER_CREDITS;
+      const owner  = Number.isInteger(data.signup_credits_owner)  ? data.signup_credits_owner  : FALLBACK_OWNER_CREDITS;
+      setBaseCredits({ driver, owner });
+      setBaseCreditsInput({ driver: String(driver), owner: String(owner) });
+    } catch (err) {
+      toast.error('Could not load signup credit amounts: ' + err.message);
+    }
+    setBaseCreditsLoading(false);
+  };
+
+  const saveBaseCredits = async () => {
+    const driver = parseInt(baseCreditsInput.driver, 10);
+    const owner = parseInt(baseCreditsInput.owner, 10);
+    if (!Number.isInteger(driver) || driver < 0 || !Number.isInteger(owner) || owner < 0) {
+      toast.error('Enter non-negative whole numbers for both amounts.');
+      return;
+    }
+    setSavingBaseCredits(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'update_signup_credits', driver_credits: driver, owner_credits: owner }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to save');
+      setBaseCredits({ driver, owner });
+      toast.success('Signup credit amounts updated ✓');
+    } catch (err) {
+      toast.error('Could not save: ' + err.message);
+    }
+    setSavingBaseCredits(false);
+  };
+
+  useEffect(() => {
+    (async () => {
+      // Load the real base amounts first — fetchDenied() prefills each row's
+      // grant amount from creditsForType(), which reads baseCredits, so the
+      // prefill should reflect the actual configured values, not fallbacks.
+      await fetchBaseCredits();
+      await fetchDenied();
+    })();
+  }, []);
+
 
   const filtered = useMemo(() => {
     if (!search.trim()) return attempts;
@@ -170,6 +237,47 @@ export default function AdminCreditGrants() {
         <button onClick={fetchDenied} disabled={loading} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border">
           {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '↻'} Refresh
         </button>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-4">
+        <p className="text-sm font-medium">Base Signup Credit Amounts</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Applied to every new automatic grant. Owners who list a vehicle during onboarding still get 250cr deducted from the owner amount on top of whatever's set here.
+        </p>
+        <div className="flex flex-wrap items-end gap-4 mt-3">
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Driver</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              disabled={baseCreditsLoading || savingBaseCredits}
+              value={baseCreditsInput.driver}
+              onChange={e => setBaseCreditsInput(prev => ({ ...prev, driver: e.target.value }))}
+              className="w-28 border rounded-lg px-2 py-1.5 text-sm disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Owner (or Both)</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              disabled={baseCreditsLoading || savingBaseCredits}
+              value={baseCreditsInput.owner}
+              onChange={e => setBaseCreditsInput(prev => ({ ...prev, owner: e.target.value }))}
+              className="w-28 border rounded-lg px-2 py-1.5 text-sm disabled:opacity-50"
+            />
+          </div>
+          <button
+            onClick={saveBaseCredits}
+            disabled={baseCreditsLoading || savingBaseCredits}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
+          >
+            {savingBaseCredits ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+            Save
+          </button>
+        </div>
       </div>
 
       <div className="relative max-w-sm">
