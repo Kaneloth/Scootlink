@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
-import { MapPin, Clock, MessageCircle, ShieldCheck, SlidersHorizontal, X, User as UserIcon, FileText, ChevronDown, ChevronUp, Loader2, Check } from 'lucide-react';
+import { MapPin, Clock, MessageCircle, ShieldCheck, SlidersHorizontal, X, User as UserIcon, FileText, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2, Check } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import StarRating from '@/components/reviews/StarRating';
 import PageHeader from '@/components/layout/PageHeader';
@@ -42,6 +42,10 @@ export default function FindDrivers() {
   const [locationCoords,   setLocationCoords]   = useState(null);
   const [geocoding,        setGeocoding]        = useState(false);
   const [rpcDrivers,       setRpcDrivers]       = useState(null); // null = use User.list(); array = RPC results
+
+  const DRIVERS_PAGE_SIZE = 10;
+  const [driversPage,      setDriversPage]      = useState(1);
+  const resultsRef         = useRef(null);
 
   // Owner-initiated contract state
   const [showContractForm, setShowContractForm] = useState(false);
@@ -199,6 +203,10 @@ export default function FindDrivers() {
       return true;
     });
   }, [rpcDrivers, users, filters, locationCoords, currentYear, currentUser]);
+
+  useEffect(() => {
+    setDriversPage(1);
+  }, [filters, locationCoords]);
 
   const fetchDriverReviews = async (driverId) => {
     setLoadingReviews(true);
@@ -452,8 +460,9 @@ export default function FindDrivers() {
       {isSearching ? (
         <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-20 bg-muted animate-pulse rounded-xl" />)}</div>
       ) : drivers.length > 0 ? (
-        <div className="space-y-3">
-          {drivers.map(d => {
+        <>
+          <div className="space-y-3" ref={resultsRef}>
+            {drivers.slice((driversPage - 1) * DRIVERS_PAGE_SIZE, driversPage * DRIVERS_PAGE_SIZE).map(d => {
             const exp = d.license_year ? currentYear - d.license_year : 0;
             return (
               <Card
@@ -500,8 +509,44 @@ export default function FindDrivers() {
                 </div>
               </Card>
             );
-          })}
-        </div>
+            })}
+          </div>
+
+          {drivers.length > DRIVERS_PAGE_SIZE && (() => {
+            const totalPages = Math.ceil(drivers.length / DRIVERS_PAGE_SIZE);
+            return (
+              <div className="mt-6 flex items-center justify-center gap-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={driversPage === 1}
+                  onClick={() => {
+                    setDriversPage(p => Math.max(1, p - 1));
+                    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  <ChevronLeft className="w-4 h-4" /> Prev
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {driversPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={driversPage === totalPages}
+                  onClick={() => {
+                    setDriversPage(p => Math.min(totalPages, p + 1));
+                    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  Next <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            );
+          })()}
+        </>
       ) : (
         <EmptyState
           icon="👤"

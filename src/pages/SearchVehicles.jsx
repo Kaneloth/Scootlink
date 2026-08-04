@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Card } from '@/components/ui/card';
-import { SlidersHorizontal, X, Loader2, MapPin } from 'lucide-react';
+import { SlidersHorizontal, X, Loader2, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/layout/PageHeader';
 import VehicleCard from '@/components/vehicles/VehicleCard';
@@ -21,15 +21,18 @@ const PAGE_SIZE = 10;
 
 function VehicleCardSkeleton() {
   return (
-    <div className="p-4 rounded-xl border border-border/50 animate-pulse">
-      <div className="flex gap-3">
-        <div className="w-24 h-20 rounded-lg bg-muted shrink-0" />
-        <div className="flex-1 space-y-2 py-1">
-          <div className="h-3.5 bg-muted rounded w-2/5" />
-          <div className="h-3 bg-muted rounded w-1/3" />
-          <div className="h-3 bg-muted rounded w-1/4" />
+    <div className="rounded-xl border border-border/50 overflow-hidden animate-pulse">
+      <div className="w-full h-48 bg-muted" />
+      <div className="px-4 pt-3 pb-4 space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="space-y-1.5 flex-1">
+            <div className="h-3.5 bg-muted rounded w-2/5" />
+            <div className="h-3 bg-muted rounded w-1/4" />
+          </div>
+          <div className="w-16 h-5 rounded-full bg-muted shrink-0" />
         </div>
-        <div className="w-16 h-7 rounded-full bg-muted shrink-0 self-start" />
+        <div className="h-3 bg-muted rounded w-1/3" />
+        <div className="h-3.5 bg-muted rounded w-1/4" />
       </div>
     </div>
   );
@@ -99,7 +102,10 @@ async function fetchVehiclePage({ pageParam = 0, filters }) {
 export default function SearchVehicles() {
   const navigate = useNavigate();
   const autoLocationRef = useRef(null);
+  const resultsRef = useRef(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [vehiclePage, setVehiclePage] = useState(1);
+  const pendingPageAdvanceRef = useRef(false);
 
   const [filters, setFilters] = useState({
     type:           'all',
@@ -216,6 +222,21 @@ export default function SearchVehicles() {
   useEffect(() => {
     if (isError && error) toast.error(`Could not load vehicles: ${error.message}`);
   }, [isError, error]);
+
+  // A new search (filters changed) invalidates previously loaded pages —
+  // always land back on page 1 rather than stranding the user past the end.
+  useEffect(() => {
+    setVehiclePage(1);
+  }, [filters]);
+
+  // "Next" past what's already loaded triggers fetchNextPage() in the
+  // background; once that settles, advance the visible page to reveal it.
+  useEffect(() => {
+    if (pendingPageAdvanceRef.current && !isFetchingNextPage) {
+      pendingPageAdvanceRef.current = false;
+      setVehiclePage(p => p + 1);
+    }
+  }, [isFetchingNextPage]);
 
   // Defensively flatten pages — stale/transitioning query state can leave
   // undefined entries in pages[], which crash .filter() on the next render.
@@ -438,26 +459,60 @@ export default function SearchVehicles() {
         <SearchSkeleton />
       ) : vehicles.length > 0 ? (
         <>
-          <div className="space-y-3">
+          <div className="space-y-3" ref={resultsRef}>
             {(() => {
-              return vehicles.map((v) => {
-              if (!v?.id) return null;
-              return (
-                <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
-              );
-            });
+              const pageItems = vehicles.slice((vehiclePage - 1) * PAGE_SIZE, vehiclePage * PAGE_SIZE);
+              return pageItems.map((v) => {
+                if (!v?.id) return null;
+                return (
+                  <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
+                );
+              });
             })()}
           </div>
 
-          {hasNextPage && (
-            <div className="mt-6 flex justify-center">
-              <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage} className="gap-2 min-w-[140px]">
-                {isFetchingNextPage
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</>
-                  : 'Load more'}
-              </Button>
-            </div>
-          )}
+          {(vehiclePage > 1 || vehiclePage * PAGE_SIZE < vehicles.length || hasNextPage) && (() => {
+            const knownTotalPages = Math.max(1, Math.ceil(vehicles.length / PAGE_SIZE));
+            const canGoNext = vehiclePage * PAGE_SIZE < vehicles.length || hasNextPage;
+            return (
+              <div className="mt-6 flex items-center justify-center gap-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={vehiclePage === 1}
+                  onClick={() => {
+                    setVehiclePage(p => Math.max(1, p - 1));
+                    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  <ChevronLeft className="w-4 h-4" /> Prev
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {vehiclePage} of {knownTotalPages}{hasNextPage ? '+' : ''}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={!canGoNext || isFetchingNextPage}
+                  onClick={() => {
+                    if (vehiclePage * PAGE_SIZE < vehicles.length) {
+                      setVehiclePage(p => p + 1);
+                    } else if (hasNextPage) {
+                      pendingPageAdvanceRef.current = true;
+                      fetchNextPage();
+                    }
+                    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  {isFetchingNextPage
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</>
+                    : <>Next <ChevronRight className="w-4 h-4" /></>}
+                </Button>
+              </div>
+            );
+          })()}
         </>
       ) : (
         <EmptyState

@@ -10,7 +10,7 @@ import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
-  ChevronUp, ChevronDown, Star, RefreshCw, Megaphone, Bell
+  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Star, RefreshCw, Megaphone, Bell
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
@@ -398,6 +398,9 @@ export default function Dashboard() {
   const reviewsSectionRef = useRef(null);
   const tabsRef = useRef(null);
 
+  const DRIVER_VEHICLES_PAGE_SIZE = 10;
+  const [driverVehiclesPage, setDriverVehiclesPage] = useState(1);
+
   const [bothTab, setBothTab] = useState('owner');
 
   // Counterparty names cache: { [userId]: displayName }
@@ -643,6 +646,11 @@ export default function Dashboard() {
   const reviewedRentalIds = new Set((myReviews || []).map(r => r.rental_id).filter(Boolean));
 
   const availableForMe = nearbyVehicles.filter(v => v.owner_id !== user?.id);
+
+  useEffect(() => {
+    setDriverVehiclesPage(1);
+  }, [availableForMe.length]);
+
   const completedRentals = rentals
     .filter(r => r.status === 'completed')
     .filter(r => !reviewedRentalIds.has(r.id));
@@ -1272,25 +1280,8 @@ export default function Dashboard() {
 
   const renderDriverContent = () => (
     <>
-      <h3 className="text-lg font-semibold mb-3" ref={driverAvailableRef}>Available Vehicles</h3>
-      {availableForMe.length > 0 ? (
-        <div className="space-y-3">
-          {availableForMe.map(v => {
-            const isAdminUser = user?.user_metadata?.is_admin === true || ['kaneloth@skootlink.co.za'].includes(user?.email);
-            const canRent = true; // credits checked at rental request stage
-            return canRent ? (
-              <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
-            ) : (
-              <VehicleCard key={v.id} vehicle={v} />
-            );
-          })}
-        </div>
-      ) : (
-        <EmptyState icon="🔍" title="No available vehicles" description="Check back later for new listings" />
-      )}
-
       {driverPendingConfRentals.length > 0 && (
-        <div className="mt-6">
+        <div className="mb-6">
           <h3 className="text-lg font-semibold mb-3">Contract Pending Your Review</h3>
           <div className="space-y-3">
             {driverPendingConfRentals.map(r => {
@@ -1323,7 +1314,7 @@ export default function Dashboard() {
       )}
 
       {driverAcceptedRentals.length > 0 && (
-        <div className="mt-6">
+        <div className="mb-6">
           <h3 className="text-lg font-semibold mb-3">Awaiting Owner Finalisation</h3>
           <div className="space-y-3">
             {driverAcceptedRentals.map(r => {
@@ -1345,7 +1336,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <h3 className="text-lg font-semibold mb-3 mt-8" ref={driverActiveRentalsRef}>My Active Rentals</h3>
+      <h3 className="text-lg font-semibold mb-3" ref={driverActiveRentalsRef}>My Active Rentals</h3>
       {driverActiveRentals.length > 0 ? (
         <div className="space-y-3">
           {driverActiveRentals.map(r => {
@@ -1398,10 +1389,67 @@ export default function Dashboard() {
       ) : (
         <EmptyState icon="📋" title="No active rentals" description="You haven't rented any vehicles yet" />
       )}
+
+      <h3 className="text-lg font-semibold mb-3 mt-8" ref={driverAvailableRef}>Available Vehicles</h3>
+      {availableForMe.length > 0 ? (
+        <>
+          <div className="space-y-3">
+            {availableForMe
+              .slice((driverVehiclesPage - 1) * DRIVER_VEHICLES_PAGE_SIZE, driverVehiclesPage * DRIVER_VEHICLES_PAGE_SIZE)
+              .map(v => {
+                const isAdminUser = user?.user_metadata?.is_admin === true || ['kaneloth@skootlink.co.za'].includes(user?.email);
+                const canRent = true; // credits checked at rental request stage
+                return canRent ? (
+                  <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
+                ) : (
+                  <VehicleCard key={v.id} vehicle={v} />
+                );
+              })}
+          </div>
+
+          {availableForMe.length > DRIVER_VEHICLES_PAGE_SIZE && (() => {
+            const totalPages = Math.ceil(availableForMe.length / DRIVER_VEHICLES_PAGE_SIZE);
+            return (
+              <div className="flex items-center justify-center gap-4 mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={driverVehiclesPage === 1}
+                  onClick={() => {
+                    setDriverVehiclesPage(p => Math.max(1, p - 1));
+                    driverAvailableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  <ChevronLeft className="w-4 h-4" /> Prev
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {driverVehiclesPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={driverVehiclesPage === totalPages}
+                  onClick={() => {
+                    setDriverVehiclesPage(p => Math.min(totalPages, p + 1));
+                    driverAvailableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  Next <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            );
+          })()}
+        </>
+      ) : (
+        <EmptyState icon="🔍" title="No available vehicles" description="Check back later for new listings" />
+      )}
     </>
   );
 
   const renderStatCards = () => {
+
     // Show skeleton while user hasn't loaded yet
     if (!user) return <StatCardsSkeleton />;
 
