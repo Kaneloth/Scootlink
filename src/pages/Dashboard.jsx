@@ -7,11 +7,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
   ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Star, RefreshCw, Megaphone, Bell,
-  MapPin, Clock
+  MapPin, Clock, FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
@@ -406,6 +409,37 @@ export default function Dashboard() {
   const OWNER_DRIVERS_PAGE_SIZE = 10;
   const [ownerDriversPage, setOwnerDriversPage] = useState(1);
 
+  // Nearby Driver detail modal — deliberately separate state from
+  // selectedDriver/ProfileDetailPanel above (which is shared by Active
+  // Assignments etc. and has no contract-sending capability). This mirrors
+  // FindDrivers.jsx's own driver-detail + "Send Rental Contract" flow so the
+  // two surfaces behave identically, reusing the same contract-generation
+  // helpers and the owner's own `vehicles` (no separate fetch needed here).
+  const [nearbyDriverDetail,      setNearbyDriverDetail]      = useState(null);
+  const [nearbyDriverLightboxSrc, setNearbyDriverLightboxSrc] = useState(null);
+  const [showNearbyContractForm,  setShowNearbyContractForm]  = useState(false);
+  const [nearbyContractForm,      setNearbyContractForm]      = useState({
+    vehicle_id:     '',
+    start_date:     new Date().toISOString().split('T')[0],
+    end_date:       new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    price_per_week: '',
+    deposit:        '',
+    message:        '',
+  });
+  const [nearbyContractSections,       setNearbyContractSections]       = useState([]);
+  const [showNearbyContractPreview,    setShowNearbyContractPreview]    = useState(false);
+  const [sendingNearbyContract,        setSendingNearbyContract]        = useState(false);
+
+  const openNearbyDriverDetail = (driver) => {
+    setNearbyDriverDetail(driver);
+    setShowNearbyContractForm(false);
+    setNearbyContractForm({
+      vehicle_id: '', price_per_week: '', deposit: '', message: '',
+      start_date: new Date().toISOString().split('T')[0],
+      end_date:   new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    });
+  };
+
   const [bothTab, setBothTab] = useState('owner');
 
   // Counterparty names cache: { [userId]: displayName }
@@ -590,6 +624,75 @@ export default function Dashboard() {
   // Same visibility rule as FindDrivers.jsx — a driver who's hidden their
   // profile from search shouldn't surface here either.
   const nearbyDrivers = nearbyDriversRaw.filter(d => d.profile_visible !== false);
+
+  const nearbySelectedVehicle = vehicles.find(v => String(v.id) === String(nearbyContractForm.vehicle_id)) || null;
+
+  const nearbyContractEstimate = (() => {
+    if (!nearbySelectedVehicle || !nearbyContractForm.start_date || !nearbyContractForm.end_date) return null;
+    const days  = Math.max(1, Math.ceil((new Date(nearbyContractForm.end_date) - new Date(nearbyContractForm.start_date)) / (1000 * 60 * 60 * 24)));
+    const weeks = Math.ceil(days / 7);
+    const rate  = parseFloat(nearbyContractForm.price_per_week) || nearbySelectedVehicle.price_per_week || 0;
+    return { weeks, total: weeks * rate };
+  })();
+
+  const handlePreviewNearbyContract = () => {
+    if (!nearbyContractForm.vehicle_id)                                  { toast.error('Please select a vehicle'); return; }
+    if (!nearbyContractForm.start_date || !nearbyContractForm.end_date)  { toast.error('Please set the rental dates'); return; }
+    if (!nearbyContractForm.price_per_week)                              { toast.error('Please enter the weekly rate'); return; }
+
+    const vehicle = vehicles.find(v => String(v.id) === String(nearbyContractForm.vehicle_id));
+    // Same draft-preference logic as openContractModal below and
+    // FindDrivers.jsx's handlePreviewContract — prefer the vehicle's saved
+    // Briefcase contract draft if it has one, otherwise generate fresh.
+    let sections;
+    if (Array.isArray(vehicle?.draft_contract_sections) && vehicle.draft_contract_sections.length > 0) {
+      sections = mergeDriverIntoDraft(vehicle.draft_contract_sections, nearbyContractForm, nearbyDriverDetail);
+    } else {
+      sections = generateContractSections(nearbyContractForm, vehicle, nearbyDriverDetail, user);
+    }
+    setNearbyContractSections(sections);
+    setShowNearbyContractPreview(true);
+  };
+
+  const handleSendNearbyContract = async () => {
+    if (!nearbyDriverDetail || !user) return;
+    setSendingNearbyContract(true);
+    try {
+      const { error } = await supabase.from('rentals').insert([{
+        vehicle_id:     nearbyContractForm.vehicle_id,
+        owner_id:       user.id,
+        driver_id:      nearbyDriverDetail.id,
+        start_date:     nearbyContractForm.start_date,
+        end_date:       nearbyContractForm.end_date,
+        status:         'awaiting_driver_confirmation',
+        price_per_week: parseFloat(nearbyContractForm.price_per_week),
+        deposit:        parseFloat(nearbyContractForm.deposit) || 0,
+        message:        nearbyContractForm.message || '',
+        contract_sections: nearbyContractSections,
+        contract_text:  flattenContractSections(nearbyContractSections),
+      }]);
+      if (error) throw error;
+
+      try {
+        await notify(
+          nearbyDriverDetail.id,
+          'rental_contract',
+          'New Rental Contract',
+          `${user?.full_name?.split(' ')[0] || 'An owner'} has sent you a rental contract. Open your dashboard to review and confirm.`,
+          { owner_id: user?.id }
+        );
+      } catch { /* notification failure must never block the main flow */ }
+
+      toast.success(`Contract sent to ${nearbyDriverDetail.full_name?.split(' ')[0] || 'driver'}! They'll confirm on their dashboard.`);
+      setNearbyDriverDetail(null);
+      setShowNearbyContractForm(false);
+      setShowNearbyContractPreview(false);
+    } catch (err) {
+      toast.error('Failed to send contract: ' + (err.message || 'please try again'));
+    } finally {
+      setSendingNearbyContract(false);
+    }
+  };
 
   // All vehicles regardless of status — used to look up vehicle details on active/completed rental cards
   const { data: allVehiclesLookup = [] } = useQuery({
@@ -1323,11 +1426,14 @@ export default function Dashboard() {
                   <Card
                     key={d.id}
                     className="p-4 border border-border/50 cursor-pointer hover:bg-accent/50 transition-colors"
-                    onClick={() => fetchDriverDetails(d.id)}
+                    onClick={() => openNearbyDriverDetail(d)}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary shrink-0 overflow-hidden">
+                        <div
+                          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary shrink-0 overflow-hidden ${d.avatar_visible !== false && d.avatar_url ? 'cursor-zoom-in' : ''}`}
+                          onClick={(e) => { if (d.avatar_visible !== false && d.avatar_url) { e.stopPropagation(); setNearbyDriverLightboxSrc(d.avatar_url); } }}
+                        >
                           {d.avatar_visible !== false && d.avatar_url
                             ? <img src={d.avatar_url} alt="" className="w-full h-full object-cover pointer-events-none" />
                             : (d.full_name?.[0] || '?')}
@@ -1353,10 +1459,9 @@ export default function Dashboard() {
                         size="sm"
                         variant="outline"
                         className="shrink-0 text-xs px-2.5 py-1.5"
-                        disabled={loadingDriverId === d.id}
-                        onClick={(e) => { e.stopPropagation(); fetchDriverDetails(d.id); }}
+                        onClick={(e) => { e.stopPropagation(); openNearbyDriverDetail(d); }}
                       >
-                        {loadingDriverId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <><UserIcon className="w-3 h-3 mr-1" /> Details</>}
+                        <UserIcon className="w-3 h-3 mr-1" /> Details
                       </Button>
                     </div>
                   </Card>
@@ -1888,6 +1993,241 @@ export default function Dashboard() {
           canMessage={true}
           onMessageBlocked={() => toast.warning('Please upgrade your account to send messages')}
         />,
+        document.body
+      )}
+
+      {/* Nearby Driver detail modal — same shape as FindDrivers.jsx's driver
+          detail + Send Rental Contract flow, so the two surfaces match. */}
+      {nearbyDriverDetail && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 pt-8 sm:pt-4 bg-black/40 overflow-y-auto"
+          onClick={() => { setNearbyDriverDetail(null); setShowNearbyContractForm(false); }}
+        >
+          <div
+            className="bg-card rounded-2xl shadow-xl w-full max-w-md border border-border flex flex-col max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 pb-4 shrink-0 border-b border-border">
+              <h2 className="text-xl font-bold truncate">Driver Profile</h2>
+              <button
+                onClick={() => { setNearbyDriverDetail(null); setShowNearbyContractForm(false); }}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-6 pt-4 flex-1">
+              <div className="flex items-center gap-4 mb-4">
+                <div
+                  className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0 overflow-hidden ${nearbyDriverDetail.avatar_visible !== false && nearbyDriverDetail.avatar_url ? 'cursor-zoom-in' : ''}`}
+                  onClick={() => { if (nearbyDriverDetail.avatar_visible !== false && nearbyDriverDetail.avatar_url) setNearbyDriverLightboxSrc(nearbyDriverDetail.avatar_url); }}
+                >
+                  {nearbyDriverDetail.avatar_visible !== false && nearbyDriverDetail.avatar_url
+                    ? <img src={nearbyDriverDetail.avatar_url} alt="" className="w-full h-full object-cover pointer-events-none" />
+                    : (nearbyDriverDetail.full_name?.[0] || '?')}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-lg truncate">{nearbyDriverDetail.full_name || 'Driver'}</p>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                    {(nearbyDriverDetail.verification_badge === 'fully_verified' || nearbyDriverDetail.verification_badge === 'id_verified') && (
+                      <span className="text-xs text-green-600 font-medium">✅ ID Verified</span>
+                    )}
+                    {(nearbyDriverDetail.verification_badge === 'fully_verified' || nearbyDriverDetail.verification_badge === 'dl_verified' || nearbyDriverDetail.verification_badge === 'licence_only') && (
+                      <span className="text-xs text-blue-600 font-medium">🛡️ DL Verified</span>
+                    )}
+                    {!nearbyDriverDetail.verification_badge && nearbyDriverDetail.verified && (
+                      <span className="text-xs text-green-600 font-medium">✅ Verified</span>
+                    )}
+                    {!nearbyDriverDetail.verification_badge && !nearbyDriverDetail.verified && (
+                      <span className="text-xs text-amber-600 font-medium">⏳ Pending verification</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                {nearbyDriverDetail.location && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Location</span>
+                    <span className="font-medium truncate ml-4">{nearbyDriverDetail.location}</span>
+                  </div>
+                )}
+                {nearbyDriverDetail.license_year && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Experience</span>
+                    <span className="font-medium">{currentYear - nearbyDriverDetail.license_year} years</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Rating</span>
+                  <span><StarRating value={Math.round(nearbyDriverDetail.rating || 0)} size="sm" showValue /></span>
+                </div>
+              </div>
+
+              <div className="mt-5 border-t border-border pt-4">
+                <button
+                  className="flex items-center justify-between w-full text-sm font-semibold text-foreground hover:text-primary transition-colors"
+                  onClick={() => setShowNearbyContractForm(v => !v)}
+                >
+                  <span className="flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Send Rental Contract
+                  </span>
+                  {showNearbyContractForm ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                </button>
+
+                {showNearbyContractForm && (
+                  <div className="mt-4 space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      Use this after agreeing on terms via Messages. The driver will see the contract on their dashboard and confirm to activate the rental.
+                    </p>
+
+                    {vehicles.length === 0 ? (
+                      <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
+                        You have no vehicles listed. Add a vehicle first to send a contract.
+                      </p>
+                    ) : (
+                      <div>
+                        <Label className="text-xs">Vehicle</Label>
+                        <Select
+                          value={nearbyContractForm.vehicle_id}
+                          onValueChange={v => {
+                            const veh = vehicles.find(x => String(x.id) === v);
+                            setNearbyContractForm(f => ({
+                              ...f,
+                              vehicle_id:     v,
+                              price_per_week: veh?.price_per_week ? String(veh.price_per_week) : f.price_per_week,
+                              deposit:        veh?.deposit ? String(veh.deposit) : f.deposit,
+                            }));
+                          }}
+                        >
+                          <SelectTrigger className="mt-1"><SelectValue placeholder="Select a vehicle" /></SelectTrigger>
+                          <SelectContent>
+                            {vehicles.map(v => (
+                              <SelectItem key={v.id} value={String(v.id)}>
+                                {v.make} {v.model} {v.year ? `(${v.year})` : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs">Start Date</Label>
+                        <Input className="mt-1" type="date" value={nearbyContractForm.start_date} onChange={e => setNearbyContractForm(f => ({ ...f, start_date: e.target.value }))} />
+                      </div>
+                      <div>
+                        <Label className="text-xs">End Date</Label>
+                        <Input className="mt-1" type="date" value={nearbyContractForm.end_date} onChange={e => setNearbyContractForm(f => ({ ...f, end_date: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs">Weekly Rate (R)</Label>
+                        <Input className="mt-1" type="number" min="0" placeholder="e.g. 1200" value={nearbyContractForm.price_per_week} onChange={e => setNearbyContractForm(f => ({ ...f, price_per_week: e.target.value }))} />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Deposit (R)</Label>
+                        <Input className="mt-1" type="number" min="0" placeholder="e.g. 500" value={nearbyContractForm.deposit} onChange={e => setNearbyContractForm(f => ({ ...f, deposit: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    {nearbyContractEstimate && nearbyContractForm.price_per_week && (
+                      <div className="bg-muted rounded-lg p-3 text-xs">
+                        {nearbyContractEstimate.weeks} week{nearbyContractEstimate.weeks !== 1 ? 's' : ''} × R {nearbyContractForm.price_per_week} = <span className="font-bold text-foreground">R {nearbyContractEstimate.total}</span>
+                        {nearbyContractForm.deposit ? <span className="text-muted-foreground"> + R {nearbyContractForm.deposit} deposit</span> : null}
+                      </div>
+                    )}
+
+                    <div>
+                      <Label className="text-xs">Note to Driver (optional)</Label>
+                      <textarea
+                        className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                        rows={2}
+                        placeholder="Any final notes or conditions agreed in your chat..."
+                        value={nearbyContractForm.message}
+                        onChange={e => setNearbyContractForm(f => ({ ...f, message: e.target.value }))}
+                      />
+                    </div>
+
+                    <Button
+                      className="w-full gap-2"
+                      disabled={vehicles.length === 0}
+                      onClick={handlePreviewNearbyContract}
+                    >
+                      <FileText className="w-4 h-4" /> Preview Contract Before Sending
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 pb-6 shrink-0">
+              <Button
+                className="w-full gap-2"
+                variant="outline"
+                onClick={() => {
+                  setNearbyDriverDetail(null);
+                  setShowNearbyContractForm(false);
+                  navigate(`/messages?userId=${nearbyDriverDetail.id}`);
+                }}
+              >
+                <MessageCircle className="w-4 h-4" /> Message {nearbyDriverDetail.full_name?.split(' ')[0] || 'Driver'}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      <ImageLightbox src={nearbyDriverLightboxSrc} onClose={() => setNearbyDriverLightboxSrc(null)} />
+
+      {/* Nearby Driver — Contract Preview Modal */}
+      {showNearbyContractPreview && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-start sm:items-center justify-center p-4 pt-8 sm:pt-4 bg-black/40 overflow-y-auto"
+          onClick={() => setShowNearbyContractPreview(false)}
+        >
+          <div
+            className="bg-card rounded-2xl shadow-xl max-w-4xl w-full p-4 sm:p-6 border border-border flex flex-col max-h-[92vh]"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-1 shrink-0">
+              <h2 className="text-xl font-bold">Draft & Send Contract</h2>
+              <button onClick={() => setShowNearbyContractPreview(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-muted-foreground mb-3 shrink-0">
+              Review and edit the contract below before sending to {nearbyDriverDetail?.full_name?.split(' ')[0] || 'the driver'}. Once sent, the driver will review and accept.
+            </p>
+
+            <div className="bg-background border-2 border-primary/30 rounded-xl p-2 sm:p-3 flex-1 overflow-y-auto mb-4 min-h-0">
+              <p className="text-[10px] text-primary font-medium mb-2 uppercase tracking-wide">✏️ Editable — tap to make changes</p>
+              <ContractSectionsList sections={nearbyContractSections} onChange={setNearbyContractSections} />
+            </div>
+
+            <div className="flex gap-3 shrink-0">
+              <Button variant="outline" className="flex-1" onClick={() => setShowNearbyContractPreview(false)}>
+                Back to Edit
+              </Button>
+              <Button
+                className="flex-1 gap-2"
+                disabled={sendingNearbyContract}
+                onClick={handleSendNearbyContract}
+              >
+                {sendingNearbyContract
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
+                  : <><FileText className="w-4 h-4" /> Send to {nearbyDriverDetail?.full_name?.split(' ')[0] || 'Driver'}</>}
+              </Button>
+            </div>
+          </div>
+        </div>,
         document.body
       )}
 
