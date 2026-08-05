@@ -1451,7 +1451,7 @@ export default function Dashboard() {
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted-foreground">
                             {d.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{d.location}</span>}
                             {exp > 0 && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{exp}y exp</span>}
-                            {d.rating > 0 && <StarRating value={Math.round(d.rating)} size="sm" showValue />}
+                            <StarRating value={Math.round(d.rating || 0)} size="sm" showValue />
                           </div>
                         </div>
                       </div>

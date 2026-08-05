@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { User, auth, Vehicle, fetchProfilesByIds } from '@/api/supabaseData';
+import { User, auth, Vehicle } from '@/api/supabaseData';
 import { useQuery } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,7 +34,6 @@ export default function FindDrivers() {
   const [hasSearched,      setHasSearchedState] = useState(false);
 
   const [selectedDriver,   setSelectedDriver]   = useState(null);
-  const [avatarMap,        setAvatarMap]        = useState({});
   const [lightboxSrc,      setLightboxSrc]      = useState(null);
 
   // Proximity state
@@ -74,17 +73,6 @@ export default function FindDrivers() {
     queryFn:  () => User.list(),
     enabled:  hasSearched,
   });
-
-  useEffect(() => {
-    if (!users.length) return;
-    fetchProfilesByIds(users.map(u => u.id))
-      .then(enriched => {
-        const map = {};
-        enriched.forEach(p => { map[p.id] = p; });
-        setAvatarMap(map);
-      })
-      .catch(() => {});
-  }, [users]);
 
   const handleSelectProvince = (province) => {
     setSelectedProvince(province);
@@ -473,12 +461,12 @@ export default function FindDrivers() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div
-                      className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary shrink-0 overflow-hidden cursor-zoom-in"
-                      onClick={(e) => { const av = avatarMap[d.id]; if (av?.avatar_visible !== false && av?.avatar_url) { e.stopPropagation(); setLightboxSrc(av.avatar_url); } }}
+                      className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary shrink-0 overflow-hidden ${d.avatar_visible !== false && d.avatar_url ? 'cursor-zoom-in' : ''}`}
+                      onClick={(e) => { if (d.avatar_visible !== false && d.avatar_url) { e.stopPropagation(); setLightboxSrc(d.avatar_url); } }}
                     >
-                      {(() => { const av = avatarMap[d.id]; return av?.avatar_visible !== false && av?.avatar_url
-                        ? <img src={av.avatar_url} alt="" className="w-full h-full object-cover pointer-events-none" />
-                        : (d.full_name?.[0] || '?'); })()}
+                      {d.avatar_visible !== false && d.avatar_url
+                        ? <img src={d.avatar_url} alt="" className="w-full h-full object-cover pointer-events-none" />
+                        : (d.full_name?.[0] || '?')}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -580,12 +568,12 @@ export default function FindDrivers() {
 
               <div className="flex items-center gap-4 mb-4">
                 <div
-                  className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0 overflow-hidden cursor-zoom-in"
-                  onClick={() => { const av = avatarMap[selectedDriver.id]; if (av?.avatar_visible !== false && av?.avatar_url) setLightboxSrc(av.avatar_url); }}
+                  className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0 overflow-hidden ${selectedDriver.avatar_visible !== false && selectedDriver.avatar_url ? 'cursor-zoom-in' : ''}`}
+                  onClick={() => { if (selectedDriver.avatar_visible !== false && selectedDriver.avatar_url) setLightboxSrc(selectedDriver.avatar_url); }}
                 >
-                  {(() => { const av = avatarMap[selectedDriver.id]; return av?.avatar_visible !== false && av?.avatar_url
-                    ? <img src={av.avatar_url} alt="" className="w-full h-full object-cover pointer-events-none" />
-                    : (selectedDriver.full_name?.[0] || '?'); })()}
+                  {selectedDriver.avatar_visible !== false && selectedDriver.avatar_url
+                    ? <img src={selectedDriver.avatar_url} alt="" className="w-full h-full object-cover pointer-events-none" />
+                    : (selectedDriver.full_name?.[0] || '?')}
                 </div>
                 <div className="min-w-0">
                   <p className="font-semibold text-lg truncate">{selectedDriver.full_name || 'Driver'}</p>
