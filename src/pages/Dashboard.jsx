@@ -10,7 +10,8 @@ import { Card } from '@/components/ui/card';
 import {
   Plus, Search, Bike, Users, Car, ShieldCheck, AlertTriangle,
   Check, X, User as UserIcon, MessageCircle, Loader2, StopCircle, Coins,
-  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Star, RefreshCw, Megaphone, Bell
+  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Star, RefreshCw, Megaphone, Bell,
+  MapPin, Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '@/lib/notify';
@@ -393,6 +394,7 @@ export default function Dashboard() {
 
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
+  const ownerNearbyDriversRef = useRef(null);
   const driverAvailableRef = useRef(null);
   const driverActiveRentalsRef = useRef(null);
   const reviewsSectionRef = useRef(null);
@@ -400,6 +402,9 @@ export default function Dashboard() {
 
   const DRIVER_VEHICLES_PAGE_SIZE = 10;
   const [driverVehiclesPage, setDriverVehiclesPage] = useState(1);
+
+  const OWNER_DRIVERS_PAGE_SIZE = 10;
+  const [ownerDriversPage, setOwnerDriversPage] = useState(1);
 
   const [bothTab, setBothTab] = useState('owner');
 
@@ -567,6 +572,25 @@ export default function Dashboard() {
     enabled: !!user?.id,
   });
 
+  // Distance-filtered drivers for the owner's "Nearby Drivers" list — same
+  // pattern as nearbyVehicles above, fixed at 20km per the feature spec.
+  const { data: nearbyDriversRaw = [] } = useQuery({
+    queryKey: ['nearby-drivers', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_nearby_drivers', {
+        p_user_id: user.id,
+        p_radius_meters: 20000,
+      });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user?.id,
+  });
+
+  // Same visibility rule as FindDrivers.jsx — a driver who's hidden their
+  // profile from search shouldn't surface here either.
+  const nearbyDrivers = nearbyDriversRaw.filter(d => d.profile_visible !== false);
+
   // All vehicles regardless of status — used to look up vehicle details on active/completed rental cards
   const { data: allVehiclesLookup = [] } = useQuery({
     queryKey: ['all-vehicles-lookup'],
@@ -650,6 +674,11 @@ export default function Dashboard() {
   useEffect(() => {
     setDriverVehiclesPage(1);
   }, [availableForMe.length]);
+
+  useEffect(() => {
+    setOwnerDriversPage(1);
+  }, [nearbyDrivers.length]);
+
 
   const completedRentals = rentals
     .filter(r => r.status === 'completed')
@@ -929,26 +958,31 @@ export default function Dashboard() {
   };
 
   // Opens the driver details panel.
+  // Never displays the raw email as a name — if the real profile fetch
+  // fails, fall back to a generic label ('Driver') rather than leaking
+  // contact info into the UI. Users are meant to connect via in-app
+  // messaging first, not see each other's email addresses.
   const fetchDriverDetails = async (driverId, fallbackEmail = '') => {
     setLoadingDriverId(driverId);
     try {
       const data = await fetchFullProfile(driverId);
-      setSelectedDriver(data || { id: driverId, email: fallbackEmail, full_name: fallbackEmail || 'Driver' });
+      setSelectedDriver(data || { id: driverId, email: fallbackEmail, full_name: 'Driver' });
     } catch {
-      setSelectedDriver({ id: driverId, email: fallbackEmail, full_name: fallbackEmail || 'Driver' });
+      setSelectedDriver({ id: driverId, email: fallbackEmail, full_name: 'Driver' });
     } finally {
       setLoadingDriverId(null);
     }
   };
 
-  // Opens the owner details panel for the driver's view.
+  // Opens the owner details panel for the driver's view. Same no-email-
+  // as-name-fallback rule as fetchDriverDetails above.
   const fetchOwnerDetails = async (ownerId, fallbackEmail = '') => {
     setLoadingOwnerId(ownerId);
     try {
       const data = await fetchFullProfile(ownerId);
-      setSelectedOwner(data || { id: ownerId, email: fallbackEmail, full_name: fallbackEmail || 'Owner' });
+      setSelectedOwner(data || { id: ownerId, email: fallbackEmail, full_name: 'Owner' });
     } catch {
-      setSelectedOwner({ id: ownerId, email: fallbackEmail, full_name: fallbackEmail || 'Owner' });
+      setSelectedOwner({ id: ownerId, email: fallbackEmail, full_name: 'Owner' });
     } finally {
       setLoadingOwnerId(null);
     }
@@ -1117,7 +1151,7 @@ export default function Dashboard() {
             {ownerPendingRentals.map(r => {
               if (!r || !r.vehicle_id) return null;
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const driverName = getCounterpartyName(r.driver_id) || r.driver_email || 'Driver';
+              const driverName = getCounterpartyName(r.driver_id) || 'Driver';
               return (
                 <Card key={r.id} className="p-4 border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
                   {/* Vehicle + driver info */}
@@ -1162,11 +1196,12 @@ export default function Dashboard() {
           <div className="space-y-3">
             {ownerAwaitingRentals.map(r => {
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
+              const driverName = getCounterpartyName(r.driver_id) || 'Driver';
               return (
                 <Card key={r.id} className="p-4 border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800">
                   <div className="mb-3">
                     <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
-                    <p className="text-xs text-muted-foreground">Driver: {r.driver_email || 'Driver'}</p>
+                    <p className="text-xs text-muted-foreground">Driver: {driverName}</p>
                     <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
                     <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                   </div>
@@ -1194,7 +1229,7 @@ export default function Dashboard() {
           <div className="space-y-3">
             {ownerDriverAcceptedRentals.map(r => {
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const driverName = getCounterpartyName(r.driver_id) || r.driver_email || 'Driver';
+              const driverName = getCounterpartyName(r.driver_id) || 'Driver';
               return (
                 <Card key={r.id} className="p-4 border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800">
                   <div className="mb-3">
@@ -1226,7 +1261,7 @@ export default function Dashboard() {
           <div className="space-y-3">
             {ownerActiveRentals.map(r => {
               const vehicle = vehicles.find(v => v.id === r.vehicle_id) || allVehiclesLookup.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const driverName = getCounterpartyName(r.driver_id) || r.driver_email || 'Driver';
+              const driverName = getCounterpartyName(r.driver_id) || 'Driver';
               const isEnding = endingRentalId === r.id;
               return (
                 <Card key={r.id} className="p-4 border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800">
@@ -1275,6 +1310,98 @@ export default function Dashboard() {
           <EmptyState icon="📋" title="No active assignments" description="When drivers rent your vehicles, they'll appear here" />
         )
       )}
+
+      <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerNearbyDriversRef}>Nearby Drivers</h3>
+      {nearbyDrivers.length > 0 ? (
+        <>
+          <div className="space-y-3">
+            {nearbyDrivers
+              .slice((ownerDriversPage - 1) * OWNER_DRIVERS_PAGE_SIZE, ownerDriversPage * OWNER_DRIVERS_PAGE_SIZE)
+              .map(d => {
+                const exp = d.license_year ? currentYear - d.license_year : 0;
+                return (
+                  <Card
+                    key={d.id}
+                    className="p-4 border border-border/50 cursor-pointer hover:bg-accent/50 transition-colors"
+                    onClick={() => fetchDriverDetails(d.id)}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary shrink-0 overflow-hidden">
+                          {d.avatar_visible !== false && d.avatar_url
+                            ? <img src={d.avatar_url} alt="" className="w-full h-full object-cover pointer-events-none" />
+                            : (d.full_name?.[0] || '?')}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-semibold text-foreground text-sm truncate">{d.full_name || 'Driver'}</h4>
+                            {(d.verification_badge === 'fully_verified' || d.verification_badge === 'id_verified') && (
+                              <span className="text-xs text-green-600 font-medium leading-none">✅ ID</span>
+                            )}
+                            {(d.verification_badge === 'fully_verified' || d.verification_badge === 'dl_verified' || d.verification_badge === 'licence_only') && (
+                              <span className="text-xs text-blue-600 font-medium leading-none">🛡️ DL</span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted-foreground">
+                            {d.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{d.location}</span>}
+                            {exp > 0 && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{exp}y exp</span>}
+                            {d.rating > 0 && <StarRating value={Math.round(d.rating)} size="sm" showValue />}
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0 text-xs px-2.5 py-1.5"
+                        disabled={loadingDriverId === d.id}
+                        onClick={(e) => { e.stopPropagation(); fetchDriverDetails(d.id); }}
+                      >
+                        {loadingDriverId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <><UserIcon className="w-3 h-3 mr-1" /> Details</>}
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })}
+          </div>
+
+          {nearbyDrivers.length > OWNER_DRIVERS_PAGE_SIZE && (() => {
+            const totalPages = Math.ceil(nearbyDrivers.length / OWNER_DRIVERS_PAGE_SIZE);
+            return (
+              <div className="flex items-center justify-center gap-4 mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={ownerDriversPage === 1}
+                  onClick={() => {
+                    setOwnerDriversPage(p => Math.max(1, p - 1));
+                    ownerNearbyDriversRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  <ChevronLeft className="w-4 h-4" /> Prev
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {ownerDriversPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={ownerDriversPage === totalPages}
+                  onClick={() => {
+                    setOwnerDriversPage(p => Math.min(totalPages, p + 1));
+                    ownerNearbyDriversRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  Next <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            );
+          })()}
+        </>
+      ) : (
+        <EmptyState icon="🔍" title="No nearby drivers" description="Check back later as more drivers join" />
+      )}
     </>
   );
 
@@ -1286,7 +1413,7 @@ export default function Dashboard() {
           <div className="space-y-3">
             {driverPendingConfRentals.map(r => {
               const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const ownerName = getCounterpartyName(r.owner_id) || r.owner_email || 'Owner';
+              const ownerName = getCounterpartyName(r.owner_id) || 'Owner';
               return (
                 <Card key={r.id} className="p-4 border border-primary/30 bg-primary/5">
                   <div className="mb-3">
@@ -1319,7 +1446,7 @@ export default function Dashboard() {
           <div className="space-y-3">
             {driverAcceptedRentals.map(r => {
               const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-              const ownerName = getCounterpartyName(r.owner_id) || r.owner_email || 'Owner';
+              const ownerName = getCounterpartyName(r.owner_id) || 'Owner';
               return (
                 <Card key={r.id} className="p-4 border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
                   <p className="font-semibold">{vehicle ? `${vehicle.make} ${vehicle.model}` : `Vehicle #${r.vehicle_id}`}</p>
@@ -1341,7 +1468,7 @@ export default function Dashboard() {
         <div className="space-y-3">
           {driverActiveRentals.map(r => {
             const vehicle = allVehiclesLookup.find(v => v.id === r.vehicle_id) || vehicles.find(v => v.id === r.vehicle_id) || allVehicles.find(v => v.id === r.vehicle_id);
-            const ownerName = getCounterpartyName(r.owner_id) || r.owner_email || 'Owner';
+            const ownerName = getCounterpartyName(r.owner_id) || 'Owner';
             const isEnding = endingRentalId === r.id;
             return (
               <Card key={r.id} className="p-4 border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800">
@@ -1464,18 +1591,20 @@ export default function Dashboard() {
     }
     if (accountType === 'both') {
       return (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-6">
           <div onClick={() => navigateToBothSection('owner', ownerVehiclesRef)} className="cursor-pointer"><StatCard icon={Car} label="My Vehicles" value={vehicles.length} /></div>
           <div onClick={() => navigateToBothSection('driver', driverAvailableRef)} className="cursor-pointer"><StatCard icon={Search} label="Available" value={availableForMe.length} subtitle="Vehicles near you" /></div>
           <div onClick={() => navigateToBothSection('owner', ownerAssignmentsRef)} className="cursor-pointer"><StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} /></div>
+          <div onClick={() => navigateToBothSection('owner', ownerNearbyDriversRef)} className="cursor-pointer"><StatCard icon={Users} label="Nearby Drivers" value={nearbyDrivers.length} subtitle="Within 20km" /></div>
           <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer"><StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} /></div>
         </div>
       );
     }
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
         <div onClick={() => scrollToSection(ownerVehiclesRef)} className="cursor-pointer"><StatCard icon={Car} label="My Vehicles" value={vehicles.length} /></div>
         <div onClick={() => scrollToSection(ownerAssignmentsRef)} className="cursor-pointer"><StatCard icon={Bike} label="Active Rentals" value={ownerActiveRentals.length} /></div>
+        <div onClick={() => scrollToSection(ownerNearbyDriversRef)} className="cursor-pointer"><StatCard icon={Users} label="Nearby Drivers" value={nearbyDrivers.length} subtitle="Within 20km" /></div>
         <div onClick={() => scrollToSection(reviewsSectionRef)} className="cursor-pointer"><StatCard icon={Users} label="Rating" value={user?.rating ? `${user.rating.toFixed(1)} ⭐` : 'N/A'} /></div>
       </div>
     );
@@ -1707,7 +1836,7 @@ export default function Dashboard() {
                       setReviewModal({
                         rental: r,
                         targetEmail,
-                        targetName: targetEmail,
+                        targetName,
                         targetType,
                         targetId
                       });
