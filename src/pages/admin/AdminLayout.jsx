@@ -3,7 +3,7 @@ import { Outlet, useNavigate, NavLink } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
 import {
   LayoutDashboard, Users, FileText, LogOut, ArrowLeft, Menu, Shield, X,
-  Loader2, Star, Coins, ShieldCheck, Flag, Megaphone, Bell, Radar,
+  Loader2, Star, Coins, ShieldCheck, Flag, Megaphone, Bell, Radar, Banknote,
 } from 'lucide-react';
 
 // Grouped the same way Crosssa's admin dashboard does — a flat 10-item list
@@ -28,8 +28,9 @@ const NAV_SECTIONS = [
   {
     label: 'Rentals & Money',
     items: [
-      { path: '/admin/rentals',       icon: FileText, label: 'Rentals' },
-      { path: '/admin/credit-grants', icon: Coins,    label: 'Signup Credit Grants' },
+      { path: '/admin/rentals',          icon: FileText,  label: 'Rentals' },
+      { path: '/admin/credit-grants',    icon: Coins,     label: 'Signup Credit Grants' },
+      { path: '/admin/refund-requests',  icon: Banknote,  label: 'Refund Requests' },
     ],
   },
   {
