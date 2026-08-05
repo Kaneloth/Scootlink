@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/api/supabaseClient';
-import { Loader2, Search, ChevronLeft, ChevronRight, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PAGE_SIZE = 20;
 
 const TYPE_STYLES = {
-  credit_purchase:       { label: 'Credit Purchase',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', direction: 'in' },
-  verification_payment:  { label: 'Verification Payment',  color: 'bg-emerald-50 text-emerald-700 border-emerald-200', direction: 'in' },
-  credit_refund:         { label: 'Credit Refund',         color: 'bg-amber-50 text-amber-700 border-amber-200',       direction: 'out' },
-  cash_refund:           { label: 'Cash Refund',           color: 'bg-amber-50 text-amber-700 border-amber-200',       direction: 'out' },
+  credit_purchase:       { label: 'Credit Purchase',      color: 'text-emerald-600' },
+  verification_payment:  { label: 'Verification Payment', color: 'text-emerald-600' },
+  credit_refund:         { label: 'Credit Refund',        color: 'text-amber-600' },
+  cash_refund:           { label: 'Cash Refund',          color: 'text-amber-600' },
 };
 
 export default function AdminTransactions() {
@@ -40,8 +40,18 @@ export default function AdminTransactions() {
 
   useEffect(() => { fetchTransactions(); }, []);
 
+  // Transaction numbers are assigned by chronological order (oldest = #1)
+  // from the full unfiltered list, so a number stays tied to that specific
+  // transaction — it doesn't shift around when you filter, search, or
+  // change page. Default display order is still newest-first below.
+  const numbered = useMemo(() => {
+    const ascending = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const numberMap = new Map(ascending.map((t, i) => [t.id, i + 1]));
+    return transactions.map(t => ({ ...t, seq: numberMap.get(t.id) }));
+  }, [transactions]);
+
   const filtered = useMemo(() => {
-    let rows = transactions;
+    let rows = numbered;
     if (typeFilter !== 'all') rows = rows.filter(t => t.type === typeFilter);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -52,8 +62,9 @@ export default function AdminTransactions() {
         t.detail?.toLowerCase().includes(q)
       );
     }
-    return rows;
-  }, [transactions, search, typeFilter]);
+    // Default sort: newest transaction first.
+    return [...rows].sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [numbered, search, typeFilter]);
 
   useEffect(() => { setPage(1); }, [search, typeFilter]);
 
@@ -97,71 +108,68 @@ export default function AdminTransactions() {
         </select>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
-      ) : filtered.length === 0 ? (
-        <p className="text-center text-sm text-muted-foreground py-8 border border-dashed border-border rounded-xl">
-          No transactions found.
-        </p>
-      ) : (
-        <>
-          <div className="space-y-2">
-            {pageRows.map(t => {
-              const style = TYPE_STYLES[t.type] || { label: t.label, color: 'bg-muted text-muted-foreground border-border', direction: 'in' };
-              return (
-                <div key={t.id} className="bg-card border border-border rounded-xl p-3 flex items-center gap-3 flex-wrap">
-                  {style.direction === 'in'
-                    ? <ArrowDownCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-                    : <ArrowUpCircle className="w-5 h-5 text-amber-600 shrink-0" />}
+      <div className="border border-border rounded-xl overflow-hidden bg-card">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted">
+              <tr>
+                <th className="p-3 text-left">#</th>
+                <th className="p-3 text-left">Type</th>
+                <th className="p-3 text-left">Customer Code</th>
+                <th className="p-3 text-left">User</th>
+                <th className="p-3 text-left">Detail</th>
+                <th className="p-3 text-right">Amount</th>
+                <th className="p-3 text-left">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={7} className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></td></tr>
+              ) : pageRows.length === 0 ? (
+                <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No transactions found.</td></tr>
+              ) : (
+                pageRows.map(t => {
+                  const style = TYPE_STYLES[t.type] || { label: t.label, color: 'text-foreground' };
+                  return (
+                    <tr key={t.id} className="border-t hover:bg-muted/50">
+                      <td className="p-3 text-muted-foreground font-mono">{t.seq}</td>
+                      <td className={`p-3 font-medium ${style.color}`}>{style.label}</td>
+                      <td className="p-3 font-mono text-muted-foreground">{t.profile?.customer_code || '—'}</td>
+                      <td className="p-3">{t.profile?.full_name || 'Unknown user'}</td>
+                      <td className="p-3 text-muted-foreground capitalize">{t.detail ? t.detail.replace(/_/g, ' ') : '—'}</td>
+                      <td className="p-3 text-right font-mono">
+                        {t.unit === 'ZAR' ? `R ${t.amount}` : `${t.amount} cr`}
+                      </td>
+                      <td className="p-3 text-muted-foreground">{new Date(t.date).toLocaleString('en-ZA')}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${style.color}`}>
-                        {style.label}
-                      </span>
-                      <span className="text-sm font-medium truncate">
-                        {t.profile?.full_name || 'Unknown user'}
-                      </span>
-                      {t.profile?.customer_code && (
-                        <span className="text-xs text-muted-foreground font-mono">{t.profile.customer_code}</span>
-                      )}
-                    </div>
-                    {t.detail && (
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate capitalize">{t.detail.replace(/_/g, ' ')}</p>
-                    )}
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-bold">
-                      {t.unit === 'ZAR' ? `R ${t.amount}` : `${t.amount} credits`}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{new Date(t.date).toLocaleString('en-ZA')}</p>
-                  </div>
-                </div>
-              );
-            })}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+          <div className="flex gap-2">
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage(p => p - 1)}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40"
+            >
+              <ChevronLeft className="w-4 h-4" /> Previous
+            </button>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => p + 1)}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40"
+            >
+              Next <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
-
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-4 pt-2">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="flex items-center gap-1 text-sm px-3 py-1.5 rounded-lg border disabled:opacity-50"
-              >
-                <ChevronLeft className="w-4 h-4" /> Prev
-              </button>
-              <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="flex items-center gap-1 text-sm px-3 py-1.5 rounded-lg border disabled:opacity-50"
-              >
-                Next <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </>
+        </div>
       )}
     </div>
   );
