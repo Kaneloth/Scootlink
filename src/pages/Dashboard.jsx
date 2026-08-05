@@ -594,7 +594,11 @@ export default function Dashboard() {
   // since it's also used as a general lookup fallback elsewhere (rental
   // cards need to find a vehicle's details even if it's far away).
   const { data: nearbyVehicles = [] } = useQuery({
-    queryKey: ['nearby-vehicles', user?.id],
+    // user.location is included so changing your location actually busts the
+    // cache and triggers a fresh fetch — previously this only keyed on
+    // user.id, which never changes, so the list silently kept showing
+    // results from your old location no matter how far you moved.
+    queryKey: ['nearby-vehicles', user?.id, user?.location],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_nearby_vehicles', {
         p_user_id: user.id,
@@ -609,7 +613,7 @@ export default function Dashboard() {
   // Distance-filtered drivers for the owner's "Nearby Drivers" list — same
   // pattern as nearbyVehicles above, fixed at 20km per the feature spec.
   const { data: nearbyDriversRaw = [] } = useQuery({
-    queryKey: ['nearby-drivers', user?.id],
+    queryKey: ['nearby-drivers', user?.id, user?.location],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_nearby_drivers', {
         p_user_id: user.id,
