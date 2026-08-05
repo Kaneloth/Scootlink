@@ -497,6 +497,15 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     // from before a price change (e.g. an old R15 SA ID payment that never
     // got marked `used`) must not silently satisfy a higher new price.
     //
+    // Uses a plain select (not .maybeSingle()) because a user can end up
+    // with more than one paid-and-unused row for the same service — e.g.
+    // a payment made right before a price change, or (in testing) several
+    // repeated payments. .maybeSingle() throws on more than one match, and
+    // since that error was never being checked, a second qualifying row
+    // silently made hasPaid() report "unpaid" and show the payment modal
+    // again despite a perfectly valid payment sitting right there. Any one
+    // row that covers the current price is enough.
+    //
     // retries > 1 is only used right after a payment completes — the ITN
     // webhook (PayFast → Hookdeck → this app → Supabase) can take a few
     // seconds to actually mark the row 'paid', and checking only once right
@@ -505,17 +514,20 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     // Verify" path stays a single immediate check, so genuinely-unpaid
     // users see the payment modal right away, not after a multi-second wait.
     for (let attempt = 0; attempt < retries; attempt++) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('verification_payments')
         .select('id, amount')
         .eq('user_id', user?.id)
         .eq('service_type', serviceType)
         .eq('status', 'paid')
         .eq('used', false)
-        .maybeSingle();
-      if (data) {
+        .order('amount', { ascending: false });
+      if (error) {
+        console.error('[VerificationPanel] hasPaid query failed:', error);
+      } else if (data && data.length > 0) {
         const requiredAmount = verificationPrices[serviceType] ?? 0;
-        if (data.amount == null || Number(data.amount) >= requiredAmount) return true;
+        const qualifies = data.some(row => row.amount == null || Number(row.amount) >= requiredAmount);
+        if (qualifies) return true;
       }
       if (attempt < retries - 1) await new Promise(r => setTimeout(r, delayMs));
     }
