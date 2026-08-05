@@ -6,6 +6,7 @@
  *   { action: 'get' }
  *   { action: 'toggle_profile_visibility', enabled: boolean }
  *   { action: 'update_signup_credits', driver_credits: number, owner_credits: number }
+ *   { action: 'update_verification_prices', sa_id: number, passport: number, licence: number }
  * Auth: Bearer token, verified to belong to an admin (user_metadata.is_admin === true)
  */
 import { createClient } from '@supabase/supabase-js';
@@ -35,13 +36,13 @@ export const handler = async (event) => {
   try { body = JSON.parse(event.body); }
   catch { return { statusCode: 400, body: 'Invalid JSON' }; }
 
-  const { action, enabled, driver_credits, owner_credits } = body;
+  const { action, enabled, driver_credits, owner_credits, sa_id, passport, licence } = body;
 
   try {
     if (action === 'get') {
       const { data, error } = await supabaseAdmin
         .from('app_settings')
-        .select('profile_visibility_toggle_enabled, signup_credits_driver, signup_credits_owner, updated_at')
+        .select('profile_visibility_toggle_enabled, signup_credits_driver, signup_credits_owner, verification_price_sa_id, verification_price_passport, verification_price_licence, updated_at')
         .eq('id', 1)
         .single();
       if (error) throw error;
@@ -80,6 +81,28 @@ export const handler = async (event) => {
         .eq('id', 1);
       if (error) throw error;
       return { statusCode: 200, body: JSON.stringify({ signup_credits_driver: driver_credits, signup_credits_owner: owner_credits }) };
+    }
+
+    if (action === 'update_verification_prices') {
+      // Prices are Rand amounts, e.g. 25 or 24.99 — must stay a positive
+      // number > 0 (PayFast won't process a R0 charge, and a free
+      // "verification" would defeat the point of this being a paid service).
+      const isValidPrice = (n) => typeof n === 'number' && isFinite(n) && n > 0;
+      if (!isValidPrice(sa_id) || !isValidPrice(passport) || !isValidPrice(licence)) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'sa_id, passport, and licence must each be a positive number' }) };
+      }
+      const { error } = await supabaseAdmin
+        .from('app_settings')
+        .update({
+          verification_price_sa_id:     sa_id,
+          verification_price_passport:  passport,
+          verification_price_licence:   licence,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        })
+        .eq('id', 1);
+      if (error) throw error;
+      return { statusCode: 200, body: JSON.stringify({ verification_price_sa_id: sa_id, verification_price_passport: passport, verification_price_licence: licence }) };
     }
 
     return { statusCode: 400, body: JSON.stringify({ error: 'Unknown action' }) };

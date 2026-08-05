@@ -17,14 +17,21 @@ const MERCHANT_ID  = process.env.PAYFAST_MERCHANT_ID;
 const MERCHANT_KEY = process.env.PAYFAST_MERCHANT_KEY;
 const PASSPHRASE   = process.env.PAYFAST_PASSPHRASE || '';
 
-// Keep in sync with PRICES in VerificationPanel.jsx — this is the server-side
-// source of truth for what PayFast actually charges, so a mismatch here means
-// the payment modal shows one price while PayFast (and verification_payments.amount)
-// silently charges another.
-const SERVICES = {
-  sa_id:    { label: 'RSA ID Verification',          price: 25 },
-  passport: { label: 'Passport Verification',         price: 25 },
-  licence:  { label: "Driver's Licence Verification", price: 25 },
+// Labels stay fixed here; prices are admin-configurable via app_settings
+// (see admin-app-settings.js's update_verification_prices action). The
+// FALLBACK_PRICES below are used only if that read fails, to keep this
+// function's behavior identical to what shipped before admin control
+// existed rather than ever risking a free/failed verification charge.
+const SERVICE_LABELS = {
+  sa_id:    'RSA ID Verification',
+  passport: 'Passport Verification',
+  licence:  "Driver's Licence Verification",
+};
+const FALLBACK_PRICES = { sa_id: 25, passport: 25, licence: 25 };
+const SETTINGS_COLUMN_BY_SERVICE = {
+  sa_id:    'verification_price_sa_id',
+  passport: 'verification_price_passport',
+  licence:  'verification_price_licence',
 };
 
 const HEADERS = {
@@ -55,10 +62,26 @@ export const handler = async (event) => {
   try { body = JSON.parse(event.body); }
   catch { return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
-  const service = SERVICES[body.service_type];
-  if (!service) {
+  const label = SERVICE_LABELS[body.service_type];
+  if (!label) {
     return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: `Unknown service "${body.service_type}"` }) };
   }
+
+  let price = FALLBACK_PRICES[body.service_type];
+  try {
+    const { data: settings, error: settingsErr } = await supabase
+      .from('app_settings')
+      .select('verification_price_sa_id, verification_price_passport, verification_price_licence')
+      .eq('id', 1)
+      .single();
+    if (settingsErr) throw settingsErr;
+    const fetched = settings?.[SETTINGS_COLUMN_BY_SERVICE[body.service_type]];
+    if (typeof fetched === 'number' && isFinite(fetched) && fetched > 0) price = fetched;
+  } catch (err) {
+    console.warn('[payfast-initiate-verification] Could not read app_settings, using fallback price:', err.message);
+  }
+
+  const service = { label, price };
 
   const m_payment_id = `skoot_verif_${body.service_type}_${user.id.slice(0, 8)}_${Date.now()}`;
   const firstName = (user.user_metadata?.full_name || 'Skootlink').split(' ')[0];

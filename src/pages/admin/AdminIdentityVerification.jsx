@@ -28,6 +28,11 @@ export default function AdminIdentityVerification() {
   const [rejectReason, setRejectReason] = useState('');
   const [rejectReasonOther, setRejectReasonOther] = useState('');
 
+  const [prices, setPrices] = useState({ sa_id: 25, passport: 25, licence: 25 });
+  const [priceInputs, setPriceInputs] = useState({ sa_id: '25', passport: '25', licence: '25' });
+  const [pricesLoading, setPricesLoading] = useState(true);
+  const [savingPrices, setSavingPrices] = useState(false);
+
   const fetchPending = async () => {
     setLoading(true);
     const { data: submissions, error } = await supabase
@@ -65,7 +70,60 @@ export default function AdminIdentityVerification() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchPending(); }, []);
+  useEffect(() => { fetchPending(); fetchPrices(); }, []);
+
+  const fetchPrices = async () => {
+    setPricesLoading(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'get' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to load prices');
+      const next = {
+        sa_id:    Number.isFinite(data.verification_price_sa_id)    ? data.verification_price_sa_id    : 25,
+        passport: Number.isFinite(data.verification_price_passport) ? data.verification_price_passport : 25,
+        licence:  Number.isFinite(data.verification_price_licence)  ? data.verification_price_licence  : 25,
+      };
+      setPrices(next);
+      setPriceInputs({ sa_id: String(next.sa_id), passport: String(next.passport), licence: String(next.licence) });
+    } catch (err) {
+      toast.error('Could not load verification prices: ' + err.message);
+    }
+    setPricesLoading(false);
+  };
+
+  const savePrices = async () => {
+    const sa_id    = parseFloat(priceInputs.sa_id);
+    const passport = parseFloat(priceInputs.passport);
+    const licence  = parseFloat(priceInputs.licence);
+    const isValid = (n) => Number.isFinite(n) && n > 0;
+    if (!isValid(sa_id) || !isValid(passport) || !isValid(licence)) {
+      toast.error('Enter a price greater than 0 for all three services.');
+      return;
+    }
+    setSavingPrices(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'update_verification_prices', sa_id, passport, licence }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to save prices');
+      setPrices({ sa_id, passport, licence });
+      toast.success('Verification prices updated ✓');
+    } catch (err) {
+      toast.error('Could not save: ' + err.message);
+    }
+    setSavingPrices(false);
+  };
 
   const review = async (submission, action, reason = null) => {
     setProcessingId(submission.id);
@@ -110,6 +168,41 @@ export default function AdminIdentityVerification() {
         <button onClick={fetchPending} disabled={loading} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border">
           {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '↻'} Refresh
         </button>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-4">
+        <p className="text-sm font-medium">Verification Prices</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          What users are charged via PayFast for each service. Refund-credit compensation (for a failed submission on our side) is calculated automatically from whatever price is set here.
+        </p>
+        <div className="flex flex-wrap items-end gap-4 mt-3">
+          {[
+            ['sa_id', 'RSA ID'],
+            ['passport', 'Passport'],
+            ['licence', "Driver's Licence"],
+          ].map(([key, label]) => (
+            <div key={key}>
+              <label className="text-xs text-muted-foreground block mb-1">{label} (R)</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                disabled={pricesLoading || savingPrices}
+                value={priceInputs[key]}
+                onChange={e => setPriceInputs(prev => ({ ...prev, [key]: e.target.value }))}
+                className="w-24 border rounded-lg px-2 py-1.5 text-sm disabled:opacity-50"
+              />
+            </div>
+          ))}
+          <button
+            onClick={savePrices}
+            disabled={pricesLoading || savingPrices}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
+          >
+            {savingPrices ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+            Save
+          </button>
+        </div>
       </div>
 
       {loading ? (

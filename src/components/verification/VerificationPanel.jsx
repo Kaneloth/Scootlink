@@ -2,7 +2,8 @@
  * VerificationPanel.jsx
  * Handles ID verification (RSA ID + Passport tabs) and Driver's Licence verification.
  * Verification is a paid service — NOT payable with free credits.
- * Prices: RSA ID = R25, Passport = R25, Driver's Licence = R25 (once-off each)
+ * Prices: admin-configurable per service (default R25 each) — see
+ * AdminIdentityVerification.jsx and app_settings.verification_price_*
  *
  * Documents are reviewed manually by an admin (no third-party verification
  * API) — see submit-verification.js and the admin Identity Verification
@@ -24,17 +25,19 @@ import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
-// All three are R25 flat, once-off — an admin manually reviews the uploaded
-// documents (see submit-verification.js), no third-party API cost anymore.
-const PRICES = {
-  sa_id:    { label: 'RSA ID Verification',       amount: 25 },
-  passport: { label: 'Passport Verification',      amount: 25 },
-  licence:  { label: "Driver's Licence Verification", amount: 25 },
+// Labels are fixed; prices are admin-configurable (see AdminIdentityVerification.jsx
+// and admin-app-settings.js's update_verification_prices action). FALLBACK_PRICES
+// below is used only until the real values load, or if that fetch ever fails.
+const SERVICE_LABELS = {
+  sa_id:    'RSA ID Verification',
+  passport: 'Passport Verification',
+  licence:  "Driver's Licence Verification",
 };
+const FALLBACK_PRICES = { sa_id: 25, passport: 25, licence: 25 };
 
-// Refund-credit conversion rate: R0.20/credit → R25 refund = exactly 125
-// credits. All three verification services are now the same R25 price, so
-// this always resolves cleanly regardless of which service is refunded.
+// Refund-credit conversion rate: R0.20/credit. Fixed, not admin-configurable —
+// only the verification prices themselves are. Since the divisor is applied
+// to whatever the current price is, this stays correct regardless of price.
 const PRICE_PER_CREDIT = 0.20;
 const creditsForRefund = (priceZar) => Math.floor(priceZar / PRICE_PER_CREDIT);
 
@@ -75,8 +78,7 @@ function ImageUpload({ label, hint, file, onChange }) {
 }
 
 // ── Payment modal ─────────────────────────────────────────────────────────────
-function PaymentModal({ service, onPay, onCancel, paying }) {
-  const price = PRICES[service];
+function PaymentModal({ service, price, onPay, onCancel, paying }) {
   if (!price) return null;
 
   const handlePayFast = async () => {
@@ -295,6 +297,34 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   const [paymentModal,       setPaymentModal]       = useState(null); // 'sa_id' | 'passport' | 'licence'
   const [pendingVerify,      setPendingVerify]      = useState(null); // function to call after payment confirmed
 
+  const [verificationPrices, setVerificationPrices] = useState(FALLBACK_PRICES);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('app_settings')
+      .select('verification_price_sa_id, verification_price_passport, verification_price_licence')
+      .eq('id', 1)
+      .single()
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return;
+        setVerificationPrices({
+          sa_id:    Number.isFinite(data.verification_price_sa_id)    ? data.verification_price_sa_id    : FALLBACK_PRICES.sa_id,
+          passport: Number.isFinite(data.verification_price_passport) ? data.verification_price_passport : FALLBACK_PRICES.passport,
+          licence:  Number.isFinite(data.verification_price_licence)  ? data.verification_price_licence  : FALLBACK_PRICES.licence,
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Resolves a service key into the { label, amount } shape PaymentModal
+  // and the price-display strings expect, using the live admin-set price.
+  const priceFor = (serviceType) => ({
+    label:  SERVICE_LABELS[serviceType],
+    amount: verificationPrices[serviceType] ?? FALLBACK_PRICES[serviceType],
+  });
+
   const isDriver = accountType === 'driver' || accountType === 'both';
 
   // Without this, idStatus/licStatus reset to blank on every mount — a
@@ -457,7 +487,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
         .eq('used', false)
         .maybeSingle();
       if (data) {
-        const requiredAmount = PRICES[serviceType]?.amount ?? 0;
+        const requiredAmount = verificationPrices[serviceType] ?? 0;
         if (data.amount == null || Number(data.amount) >= requiredAmount) return true;
       }
       if (attempt < retries - 1) await new Promise(r => setTimeout(r, delayMs));
@@ -466,14 +496,14 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   };
 
   const refundCredits = async (serviceType, setRefundCredits) => {
-    const price = PRICES[serviceType]?.amount || 0;
+    const price = verificationPrices[serviceType] || 0;
     const credits = creditsForRefund(price);
     if (credits > 0 && user?.id) {
       await supabase.rpc('add_credits', {
         p_user_id:     user.id,
         p_amount:      credits,
         p_type:        'refund',
-        p_description: `Verification refund — ${PRICES[serviceType]?.label}`,
+        p_description: `Verification refund — ${SERVICE_LABELS[serviceType]}`,
         p_ref_id:      null,
       });
       setRefundCredits(credits);
@@ -485,7 +515,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     await supabase.from('refund_requests').insert({
       user_id:      user?.id,
       service_type: serviceType,
-      amount:       PRICES[serviceType]?.amount,
+      amount:       verificationPrices[serviceType],
       reason:       'Verification failed',
       status:       'pending',
     }).catch(() => {});
@@ -635,6 +665,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
       {paymentModal && (
         <PaymentModal
           service={paymentModal}
+          price={priceFor(paymentModal)}
           onCancel={() => { setPaymentModal(null); setPendingVerify(null); }}
           onPay={() => {}}
         />
