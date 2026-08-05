@@ -1,216 +1,172 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/api/supabaseClient';
-import { Loader2, Search, ChevronLeft, ChevronRight, Download } from 'lucide-react';
-import { toast } from 'sonner';
+/**
+ * Netlify Function: admin-transactions
+ * Admin-only read access to a unified "real money" transaction ledger,
+ * combining three sources:
+ *   - credit_ledger (type IN 'purchase', 'refund' only — excludes
+ *     signup_bonus/admin grants (free, no money involved), spend
+ *     (credits being used, not money changing hands with us), and
+ *     adjustment (unclear provenance, not one of the three requested
+ *     categories — flagged for a follow-up if it turns out to matter))
+ *   - verification_payments (status = 'paid')
+ *   - refund_requests (status = 'refunded')
+ *
+ * This is read-only reporting — no action a click here can take moves any
+ * money. That already happens elsewhere (PayFast, or an admin's own manual
+ * refund process); this just shows what happened.
+ *
+ * POST body: { action: 'list' }
+ * Auth: Bearer token, verified to belong to an admin (user_metadata.is_admin === true)
+ */
+import { createClient } from '@supabase/supabase-js';
+import { PACKAGES } from './lib/packages.js';
 
-const PAGE_SIZE = 20;
+const supabaseAdmin = createClient(
+  process.env.VITE_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+);
 
-const TYPE_STYLES = {
-  credit_purchase:       { label: 'Credit Purchase',      color: 'text-emerald-600' },
-  verification_payment:  { label: 'Verification Payment', color: 'text-emerald-600' },
-  credit_refund:         { label: 'Credit Refund',        color: 'text-amber-600' },
-  cash_refund:           { label: 'Cash Refund',          color: 'text-amber-600' },
-};
+// Most recent N per source, before merging — plenty of headroom for a
+// reporting view; increase if this ever needs true full-history pagination.
+const LIST_LIMIT = 200;
 
-export default function AdminTransactions() {
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch]   = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [page, setPage] = useState(1);
+// Same fixed conversion rate as VerificationPanel.jsx's refund calculation —
+// not admin-configurable, so this stays historically accurate regardless of
+// when the original refund happened.
+const PRICE_PER_CREDIT = 0.20;
 
-  const fetchTransactions = async () => {
-    setLoading(true);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: 'list' }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Failed to load transactions');
-      setTransactions(data.transactions || []);
-    } catch (err) {
-      toast.error('Could not load transactions: ' + err.message);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchTransactions(); }, []);
-
-  // Transaction numbers are assigned by chronological order (oldest = #1)
-  // from the full unfiltered list, so a number stays tied to that specific
-  // transaction — it doesn't shift around when you filter, search, or
-  // change page. Default display order is still newest-first below.
-  const numbered = useMemo(() => {
-    const ascending = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-    const numberMap = new Map(ascending.map((t, i) => [t.id, i + 1]));
-    return transactions.map(t => ({ ...t, seq: numberMap.get(t.id) }));
-  }, [transactions]);
-
-  const filtered = useMemo(() => {
-    let rows = numbered;
-    if (typeFilter !== 'all') rows = rows.filter(t => t.type === typeFilter);
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      rows = rows.filter(t =>
-        t.profile?.full_name?.toLowerCase().includes(q) ||
-        t.profile?.email?.toLowerCase().includes(q) ||
-        t.profile?.customer_code?.toLowerCase().includes(q) ||
-        t.detail?.toLowerCase().includes(q)
-      );
-    }
-    // Default sort: newest transaction first.
-    return [...rows].sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [numbered, search, typeFilter]);
-
-  useEffect(() => { setPage(1); }, [search, typeFilter]);
-
-  const exportCsv = () => {
-    const headers = ['#', 'Type', 'Customer Code', 'User', 'Email', 'Detail', 'Amount', 'Unit', 'Date'];
-    const escapeCsv = (val) => {
-      const s = String(val ?? '');
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const rows = filtered.map(t => [
-      t.seq,
-      TYPE_STYLES[t.type]?.label || t.label,
-      t.profile?.customer_code || '',
-      t.profile?.full_name || '',
-      t.profile?.email || '',
-      t.detail || '',
-      t.amount,
-      t.unit === 'ZAR' ? 'ZAR' : 'credits',
-      new Date(t.date).toISOString(),
-    ]);
-    const csv = [headers, ...rows].map(r => r.map(escapeCsv).join(',')).join('\r\n');
-    // Leading BOM so Excel reliably detects UTF-8 rather than guessing wrong
-    // and mangling anything non-ASCII in a name.
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `skootlink-transactions-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Transactions</h2>
-          <p className="text-sm text-muted-foreground">
-            {loading ? 'Loading…' : `${filtered.length} transaction${filtered.length !== 1 ? 's' : ''}`}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={exportCsv}
-            disabled={loading || filtered.length === 0}
-            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border disabled:opacity-50"
-          >
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </button>
-          <button onClick={fetchTransactions} disabled={loading} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border">
-            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '↻'} Refresh
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-3">
-        <div className="relative max-w-sm flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            placeholder="Search name, email, customer code…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-9 pr-3 py-2 w-full border rounded-lg text-sm bg-background"
-          />
-        </div>
-        <select
-          value={typeFilter}
-          onChange={e => setTypeFilter(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm bg-background"
-        >
-          <option value="all">All types</option>
-          <option value="credit_purchase">Credit Purchases</option>
-          <option value="verification_payment">Verification Payments</option>
-          <option value="credit_refund">Credit Refunds</option>
-          <option value="cash_refund">Cash Refunds</option>
-        </select>
-      </div>
-
-      <div className="border border-border rounded-xl overflow-hidden bg-card">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-muted">
-              <tr>
-                <th className="p-3 text-left">#</th>
-                <th className="p-3 text-left">Type</th>
-                <th className="p-3 text-left">Customer Code</th>
-                <th className="p-3 text-left">User</th>
-                <th className="p-3 text-left">Detail</th>
-                <th className="p-3 text-right">Amount</th>
-                <th className="p-3 text-left">Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={7} className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></td></tr>
-              ) : pageRows.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No transactions found.</td></tr>
-              ) : (
-                pageRows.map(t => {
-                  const style = TYPE_STYLES[t.type] || { label: t.label, color: 'text-foreground' };
-                  return (
-                    <tr key={t.id} className="border-t hover:bg-muted/50">
-                      <td className="p-3 text-muted-foreground font-mono">{t.seq}</td>
-                      <td className={`p-3 font-medium ${style.color}`}>{style.label}</td>
-                      <td className="p-3 font-mono text-muted-foreground">{t.profile?.customer_code || '—'}</td>
-                      <td className="p-3">{t.profile?.full_name || 'Unknown user'}</td>
-                      <td className="p-3 text-muted-foreground capitalize">{t.detail ? t.detail.replace(/_/g, ' ') : '—'}</td>
-                      <td className="p-3 text-right font-mono">
-                        {t.unit === 'ZAR' ? `R ${t.amount}` : `${t.amount} cr`}
-                      </td>
-                      <td className="p-3 text-muted-foreground">{new Date(t.date).toLocaleString('en-ZA')}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
-          <div className="flex gap-2">
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage(p => p - 1)}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40"
-            >
-              <ChevronLeft className="w-4 h-4" /> Previous
-            </button>
-            <button
-              disabled={page >= totalPages}
-              onClick={() => setPage(p => p + 1)}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40"
-            >
-              Next <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+// credit_ledger only stores the credit count for a purchase, not the Rand
+// price paid — but payfast-webhook.js always writes the price into the
+// row's own description at the time of that specific transaction (e.g.
+// "Business Package via PayFast — R199"), which is a more historically
+// accurate source than looking up today's PACKAGES pricing, since prices
+// can change over time. Only falls back to a live PACKAGES lookup (by
+// matching credit count) if that description doesn't parse.
+function purchaseRandAmount(row) {
+  const match = row.description?.match(/R\s?([\d,]+(?:\.\d+)?)\s*$/);
+  if (match) return parseFloat(match[1].replace(/,/g, ''));
+  const pkg = Object.values(PACKAGES || {}).find(p => p.credits === row.amount);
+  return pkg ? pkg.price_zar : null;
 }
+
+export const handler = async (event) => {
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method Not Allowed' };
+  }
+
+  const authHeader = event.headers.authorization || '';
+  const token = authHeader.replace('Bearer ', '');
+  if (!token) {
+    return { statusCode: 401, body: JSON.stringify({ error: 'Missing authorization token' }) };
+  }
+
+  const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
+  if (authErr || !user || user.user_metadata?.is_admin !== true) {
+    return { statusCode: 403, body: JSON.stringify({ error: 'Admin access required' }) };
+  }
+
+  let body;
+  try { body = JSON.parse(event.body || '{}'); }
+  catch { return { statusCode: 400, body: 'Invalid JSON' }; }
+
+  if (body.action !== 'list') {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Unknown action' }) };
+  }
+
+  try {
+    const [creditRes, verifRes, refundRes] = await Promise.all([
+      supabaseAdmin
+        .from('credit_ledger')
+        .select('id, user_id, amount, type, description, ref_id, created_at')
+        .in('type', ['purchase', 'refund'])
+        .order('created_at', { ascending: false })
+        .limit(LIST_LIMIT),
+      supabaseAdmin
+        .from('verification_payments')
+        .select('id, user_id, service_type, amount, m_payment_id, paid_at, created_at')
+        .eq('status', 'paid')
+        .order('created_at', { ascending: false })
+        .limit(LIST_LIMIT),
+      supabaseAdmin
+        .from('refund_requests')
+        .select('id, user_id, service_type, amount, reason, processed_at, created_at')
+        .eq('status', 'refunded')
+        .order('created_at', { ascending: false })
+        .limit(LIST_LIMIT),
+    ]);
+
+    if (creditRes.error) throw creditRes.error;
+    if (verifRes.error) throw verifRes.error;
+    if (refundRes.error) throw refundRes.error;
+
+    // credit_ledger.amount is a credit count, not Rand — converted below so
+    // this stays a genuine money-flows ledger rather than mixing units.
+    const creditRows = (creditRes.data || []).map(r => {
+      if (r.type === 'purchase') {
+        const rand = purchaseRandAmount(r);
+        return {
+          id:      `credit_${r.id}`,
+          user_id: r.user_id,
+          type:    'credit_purchase',
+          label:   'Credit Purchase',
+          amount:  rand,
+          unit:    rand != null ? 'ZAR' : 'credits',
+          // Falls back to showing the raw credit count + description only in
+          // the rare case neither the description parse nor the PACKAGES
+          // lookup could resolve a Rand figure.
+          detail:  rand != null ? `${r.amount} credits` : (r.description || null),
+          date:    r.created_at,
+        };
+      }
+      // type === 'refund' — exact conversion, no parsing needed.
+      const rand = Math.round(r.amount * PRICE_PER_CREDIT * 100) / 100;
+      return {
+        id:      `credit_${r.id}`,
+        user_id: r.user_id,
+        type:    'credit_refund',
+        label:   'Credit Refund',
+        amount:  rand,
+        unit:    'ZAR',
+        detail:  `${r.amount} credits — ${r.description || 'Verification refund'}`,
+        date:    r.created_at,
+      };
+    });
+
+    const verifRows = (verifRes.data || []).map(r => ({
+      id:      `verif_${r.id}`,
+      user_id: r.user_id,
+      type:    'verification_payment',
+      label:   'Verification Payment',
+      amount:  Number(r.amount),
+      unit:    'ZAR',
+      detail:  r.service_type,
+      date:    r.paid_at || r.created_at,
+    }));
+
+    const refundRows = (refundRes.data || []).map(r => ({
+      id:      `cashrefund_${r.id}`,
+      user_id: r.user_id,
+      type:    'cash_refund',
+      label:   'Cash Refund',
+      amount:  Number(r.amount),
+      unit:    'ZAR',
+      detail:  [r.service_type, r.reason].filter(Boolean).join(' — ') || null,
+      date:    r.processed_at || r.created_at,
+    }));
+
+    const merged = [...creditRows, ...verifRows, ...refundRows]
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const userIds = [...new Set(merged.map(r => r.user_id).filter(Boolean))];
+    const { data: profiles } = userIds.length
+      ? await supabaseAdmin.from('profiles').select('id, full_name, email, customer_code').in('id', userIds)
+      : { data: [] };
+    const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
+
+    const transactions = merged.map(r => ({ ...r, profile: profileMap[r.user_id] || null }));
+
+    return { statusCode: 200, body: JSON.stringify({ transactions }) };
+  } catch (err) {
+    console.error('[admin-transactions] Error:', err);
+    return { statusCode: 500, body: JSON.stringify({ error: err.message || 'Internal error' }) };
+  }
+};
