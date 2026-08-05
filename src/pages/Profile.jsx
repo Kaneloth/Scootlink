@@ -547,7 +547,7 @@ export default function Profile() {
                   : <Camera className="w-3 h-3" />}
               </button>
               {showPhotoMenu && (
-                <div className="absolute top-full right-0 mt-1 z-20 bg-card border border-border rounded-xl shadow-lg overflow-hidden w-40">
+                <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border rounded-xl shadow-lg overflow-hidden w-40">
                   <button
                     onClick={() => { setShowPhotoMenu(false); cameraInputRef.current?.click(); }}
                     className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
