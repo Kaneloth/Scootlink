@@ -49,36 +49,21 @@ export default function LeaveReviewModal({
         throw new Error('Could not determine who to review. Please try again later.');
       }
 
-      // Ensure target profile exists
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert({ id: counterpartyId, email: targetEmail }, { onConflict: 'id' });
-      if (profileError) throw new Error('Profile upsert failed: ' + profileError.message);
-
-      // Insert review
-      const { error: reviewError } = await supabase.from('reviews').insert([{
-        rental_id: rental.id,
-        reviewer_id: currentUser.id,
-        target_id: counterpartyId,
-        target_type: targetType,
-        rating,
-        comment: comment.trim() || null,
-      }]);
-      if (reviewError) throw new Error('Review insert failed: ' + reviewError.message);
-
-      // Recalculate average rating
-      const { data: avgData, error: avgError } = await supabase
-        .from('reviews')
-        .select('rating')
-        .eq('target_id', counterpartyId);
-      if (avgError) throw new Error('Rating calculation failed: ' + avgError.message);
-
-      const total = avgData.reduce((sum, r) => sum + r.rating, 0);
-      const newAvg = total / avgData.length;
-      await supabase
-        .from('profiles')
-        .update({ rating: newAvg, total_reviews: avgData.length })
-        .eq('id', counterpartyId);
+      // All of this — inserting the review, recalculating the target's
+      // average rating, and updating their profile — now happens in one
+      // atomic, server-side RPC rather than as separate raw client writes.
+      // Those raw writes touched another user's profiles row directly,
+      // which a correctly-configured RLS policy should (and did) block;
+      // the RPC runs with elevated privileges but does its own
+      // authorization check internally instead of trusting the client.
+      const { error } = await supabase.rpc('submit_review', {
+        p_rental_id:   rental.id,
+        p_target_id:   counterpartyId,
+        p_target_type: targetType,
+        p_rating:      rating,
+        p_comment:     comment.trim() || null,
+      });
+      if (error) throw new Error(error.message);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reviews'] });
