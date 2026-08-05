@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
-import { ImagePlus, X } from 'lucide-react';
+import { ImagePlus, X, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
 import { geocodeLocation } from '@/lib/geocode';
@@ -54,6 +54,7 @@ export default function AddVehicle() {
     deposit:                '',
     storage_type:           'owner_address',
     pickup_return_location: '',
+    status:                 'available',
   });
   const [images,    setImages]    = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -82,6 +83,7 @@ export default function AddVehicle() {
           deposit:                data.deposit ? String(data.deposit) : '',
           storage_type:           data.storage_type || 'owner_address',
           pickup_return_location: data.pickup_return_location || '',
+          status:                 data.status || 'available',
         });
         setImages(data.images || []);
       } catch (err) {
@@ -216,6 +218,94 @@ export default function AddVehicle() {
         return;
       }
       toast.error('Failed to save vehicle: ' + (err?.message || 'Unknown error'));
+    },
+  });
+
+  // Converts a public Storage URL back into the raw path .remove() needs,
+  // e.g. "https://<project>.supabase.co/storage/v1/object/public/vehicle-images/<user_id>/<file>"
+  // → "<user_id>/<file>". Returns null if the URL doesn't match this bucket's
+  // shape, so a malformed/unexpected entry is skipped rather than passed
+  // through and rejected by the API.
+  function extractVehicleImagePath(publicUrl) {
+    const marker = '/vehicle-images/';
+    const idx = publicUrl?.indexOf(marker);
+    if (idx == null || idx === -1) return null;
+    return publicUrl.slice(idx + marker.length);
+  }
+
+  // Used when a full delete is blocked by rental history (see deleteMutation
+  // below) — removes the actual image files from Storage to free up space,
+  // and clears vehicles.images to []. That second part matters: without it,
+  // the row would still list URLs pointing at files that no longer exist,
+  // and every card showing this vehicle would render a broken image instead
+  // of just having none.
+  const deleteImagesMutation = useMutation({
+    mutationFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const paths = images.map(extractVehicleImagePath).filter(Boolean);
+      if (paths.length > 0) {
+        const { error: storageErr } = await supabase.storage.from('vehicle-images').remove(paths);
+        if (storageErr) throw storageErr;
+      }
+      const { error: dbErr } = await supabase
+        .from('vehicles')
+        .update({ images: [] })
+        .eq('id', editingId)
+        .eq('owner_id', user.id);
+      if (dbErr) throw dbErr;
+    },
+    onSuccess: () => {
+      setImages([]);
+      queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicle', editingId] });
+      toast.success('Photos removed to free up storage space. The listing itself remains, since it still has rental history.');
+    },
+    onError: (err) => {
+      console.error('Image cleanup error:', err);
+      toast.error('Failed to remove photos: ' + (err?.message || 'Unknown error'));
+    },
+  });
+
+  // Permanent hard delete — the vehicle row itself is removed, not just
+  // hidden/marked inactive. If it has any rental history (past or active),
+  // the vehicles→rentals foreign key will block this at the database level;
+  // surfaced here as a clear message rather than a generic error, since a
+  // silent/unclear failure here would look exactly like "nothing happened"
+  // to the owner.
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const { error } = await supabase
+        .from('vehicles')
+        .delete()
+        .eq('id', editingId)
+        .eq('owner_id', user.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
+      toast.success('Vehicle deleted.');
+      navigate('/briefcase');
+    },
+    onError: (err) => {
+      console.error('Vehicle delete error:', err);
+      const isRentalHistoryBlock = err?.code === '23503' || /foreign key/i.test(err?.message || '');
+      if (!isRentalHistoryBlock) {
+        toast.error('Failed to delete: ' + (err?.message || 'Unknown error'));
+        return;
+      }
+      toast.error('This vehicle can\'t be deleted because it has rental history attached to it. Set its status to Maintenance instead to hide it from search.');
+      // Deliberately a separate, explicit confirmation rather than an
+      // automatic side effect of the failed delete — this listing may
+      // still be live, and silently stripping its photos without the
+      // owner asking for that specifically would be a bad surprise.
+      if (images.length > 0 && window.confirm('The listing itself will stay (it has rental history), but would you like to remove its photos now to free up storage space?')) {
+        deleteImagesMutation.mutate();
+      }
     },
   });
 
@@ -395,6 +485,21 @@ export default function AddVehicle() {
               <Input className="mt-1" type="number" placeholder="1000" value={form.deposit} onChange={e => update('deposit', e.target.value)} />
             </div>
           </div>
+          {isEditMode && (
+            <div>
+              <Label>Listing Status</Label>
+              <p className="text-[10px] text-muted-foreground mb-1">
+                Set to Maintenance to temporarily hide this listing from search without deleting it — you can switch it back to Available anytime.
+              </p>
+              <Select value={form.status} onValueChange={v => update('status', v)}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="available">✅ Available</SelectItem>
+                  <SelectItem value="maintenance">🔧 Maintenance (hidden from search)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <Label>Photos (up to 3)</Label>
             <div className="mt-2 flex gap-3 flex-wrap">
@@ -424,11 +529,29 @@ export default function AddVehicle() {
               )}
             </div>
           </div>
-          <Button onClick={handleSubmit} className="w-full mt-2" disabled={mutation.isPending}>
-            {mutation.isPending
-              ? (isRelist ? 'Re-listing…' : isEditMode ? 'Saving…' : 'Listing…')
-              : (isRelist ? 'Re-list Vehicle' : isEditMode ? 'Save Changes' : 'List Vehicle')}
-          </Button>
+          <div className="flex gap-3 mt-2">
+            <Button onClick={handleSubmit} className="flex-1" disabled={mutation.isPending || deleteMutation.isPending || deleteImagesMutation.isPending}>
+              {mutation.isPending
+                ? (isRelist ? 'Re-listing…' : isEditMode ? 'Saving…' : 'Listing…')
+                : (isRelist ? 'Re-list Vehicle' : isEditMode ? 'Save Changes' : 'List Vehicle')}
+            </Button>
+            {isEditMode && (
+              <Button
+                variant="destructive"
+                size="icon"
+                disabled={mutation.isPending || deleteMutation.isPending || deleteImagesMutation.isPending}
+                onClick={() => {
+                  if (window.confirm('Permanently delete this vehicle? This cannot be undone — you\'ll need to re-add it from scratch if you change your mind.')) {
+                    deleteMutation.mutate();
+                  }
+                }}
+              >
+                {(deleteMutation.isPending || deleteImagesMutation.isPending)
+                  ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  : <Trash2 className="w-4 h-4" />}
+              </Button>
+            )}
+          </div>
         </div>
       </Card>
     </div>
