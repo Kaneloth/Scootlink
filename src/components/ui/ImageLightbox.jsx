@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export default function ImageLightbox({ src, alt = '', onClose }) {
@@ -11,7 +12,7 @@ export default function ImageLightbox({ src, alt = '', onClose }) {
 
   if (!src) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[500] flex items-center justify-center bg-black/90 p-4"
       onClick={onClose}
@@ -29,6 +30,7 @@ export default function ImageLightbox({ src, alt = '', onClose }) {
         className="max-w-full max-h-[90vh] rounded-xl object-contain shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
-    </div>
+    </div>,
+    document.body
   );
 }
