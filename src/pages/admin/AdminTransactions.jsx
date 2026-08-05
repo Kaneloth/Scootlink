@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/api/supabaseClient';
-import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Search, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PAGE_SIZE = 20;
@@ -68,6 +68,37 @@ export default function AdminTransactions() {
 
   useEffect(() => { setPage(1); }, [search, typeFilter]);
 
+  const exportCsv = () => {
+    const headers = ['#', 'Type', 'Customer Code', 'User', 'Email', 'Detail', 'Amount', 'Unit', 'Date'];
+    const escapeCsv = (val) => {
+      const s = String(val ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = filtered.map(t => [
+      t.seq,
+      TYPE_STYLES[t.type]?.label || t.label,
+      t.profile?.customer_code || '',
+      t.profile?.full_name || '',
+      t.profile?.email || '',
+      t.detail || '',
+      t.amount,
+      t.unit === 'ZAR' ? 'ZAR' : 'credits',
+      new Date(t.date).toISOString(),
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(escapeCsv).join(',')).join('\r\n');
+    // Leading BOM so Excel reliably detects UTF-8 rather than guessing wrong
+    // and mangling anything non-ASCII in a name.
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `skootlink-transactions-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -80,9 +111,18 @@ export default function AdminTransactions() {
             {loading ? 'Loading…' : `${filtered.length} transaction${filtered.length !== 1 ? 's' : ''}`}
           </p>
         </div>
-        <button onClick={fetchTransactions} disabled={loading} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border">
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '↻'} Refresh
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={exportCsv}
+            disabled={loading || filtered.length === 0}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5" /> Export CSV
+          </button>
+          <button onClick={fetchTransactions} disabled={loading} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border">
+            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '↻'} Refresh
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
