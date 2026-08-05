@@ -457,9 +457,9 @@ export default function Profile() {
         emailChangePending = true;
         toast.success('Confirmation email sent to ' + form.email + '. Click the link to activate your new address.');
       }
-      if (form.location) {
+      if (locationStr) {
         try {
-          const coords = await geocodeLocation(form.location);
+          const coords = await geocodeLocation(locationStr);
           if (coords) {
             const { error: rpcErr } = await supabase.rpc('set_user_geo_location', {
               p_user_id: user.id,
