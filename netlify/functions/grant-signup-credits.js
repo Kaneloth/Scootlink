@@ -35,6 +35,12 @@ const supabase = createClient(
 
 const IP_MAX_GRANTS = 2;
 
+const HEADERS = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+};
+
 // Used only if the app_settings read below fails — keeps behavior identical
 // to what shipped before admin control existed, rather than ever risking a
 // $0 grant because of a transient DB hiccup.
@@ -63,13 +69,16 @@ async function logAttempt({ user_id, email, ip, profile_type, granted, reason })
 }
 
 export const handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: HEADERS, body: '' };
+  }
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
+    return { statusCode: 405, headers: HEADERS, body: 'Method Not Allowed' };
   }
 
   let body;
   try { body = JSON.parse(event.body); }
-  catch { return { statusCode: 400, body: 'Invalid JSON' }; }
+  catch { return { statusCode: 400, headers: HEADERS, body: 'Invalid JSON' }; }
 
   const { user_id, email, phone, profile_type, vehicle_listed } = body;
   const ip = event.headers['x-forwarded-for']?.split(',')[0]?.trim()
@@ -77,7 +86,7 @@ export const handler = async (event) => {
            || 'unknown';
 
   if (!user_id) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'user_id required' }) };
+    return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'user_id required' }) };
   }
 
   // Driver → configurable base (default 350), Owner or Both → configurable
@@ -113,7 +122,7 @@ export const handler = async (event) => {
   if (profileErr || !profile) {
     console.warn(`[grant-signup-credits] Unknown user_id=${user_id}`);
     await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'invalid_user' });
-    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid user' }) };
+    return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'Invalid user' }) };
   }
 
   // ── Guard 0: Email fingerprint ────────────────────────────────────────────
@@ -127,7 +136,7 @@ export const handler = async (event) => {
     if (emailFp) {
       console.warn(`[grant-signup-credits] Denied ${cleanEmail} — email already received bonus`);
       await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'email_known' });
-      return { statusCode: 200, body: JSON.stringify({ granted: 0, reason: 'email_known' }) };
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ granted: 0, reason: 'email_known' }) };
     }
   }
 
@@ -140,7 +149,7 @@ export const handler = async (event) => {
     .maybeSingle();
   if (existing) {
     await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'already_granted' });
-    return { statusCode: 200, body: JSON.stringify({ granted: 0, reason: 'already_granted' }) };
+    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ granted: 0, reason: 'already_granted' }) };
   }
 
   // ── Guard 2: Phone fingerprint ────────────────────────────────────────────
@@ -154,7 +163,7 @@ export const handler = async (event) => {
     if (phoneFp?.credit_granted) {
       console.warn(`[grant-signup-credits] Denied user=${user_id} — phone already used`);
       await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'phone_known' });
-      return { statusCode: 200, body: JSON.stringify({ granted: 0, reason: 'phone_known' }) };
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ granted: 0, reason: 'phone_known' }) };
     }
     await supabase
       .from('phone_fingerprints')
@@ -171,7 +180,7 @@ export const handler = async (event) => {
     if ((count ?? 0) >= IP_MAX_GRANTS) {
       console.warn(`[grant-signup-credits] Denied user=${user_id} — IP limit reached (ip=${ip})`);
       await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'ip_limit' });
-      return { statusCode: 200, body: JSON.stringify({ granted: 0, reason: 'ip_limit' }) };
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ granted: 0, reason: 'ip_limit' }) };
     }
   }
 
@@ -196,13 +205,14 @@ export const handler = async (event) => {
   if (creditErr) {
     console.error('[grant-signup-credits] add_credits failed:', creditErr);
     await logAttempt({ user_id, email, ip, profile_type, granted: 0, reason: 'error' });
-    return { statusCode: 500, body: JSON.stringify({ error: creditErr.message }) };
+    return { statusCode: 500, headers: HEADERS, body: JSON.stringify({ error: creditErr.message }) };
   }
 
   console.log(`[grant-signup-credits] Granted ${freeCredits} credits to user=${user_id} type=${profile_type} vehicle_listed=${!!vehicle_listed} ip=${ip}`);
   await logAttempt({ user_id, email, ip, profile_type, granted: freeCredits, reason: 'clean_identity' });
   return {
     statusCode: 200,
+    headers: HEADERS,
     body: JSON.stringify({ granted: freeCredits, reason: 'clean_identity' }),
   };
 };
