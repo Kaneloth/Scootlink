@@ -34,52 +34,35 @@ export default function AdminCreditGrants() {
   const creditsForType = (profileType) =>
     (profileType === 'owner' || profileType === 'both') ? baseCredits.owner : baseCredits.driver;
 
+  // ── Shared helper for the new admin-signup-grants function ──────────────────
+  // signup_grant_attempts (and profiles/credit_ledger, read alongside it) have
+  // RLS enabled with zero policies — a direct client-side query silently
+  // returns nothing, no error thrown. This reads/writes everything server-side
+  // with the service role instead of ever loosening that table's RLS, since it
+  // holds other users' emails, IPs, and phone-based fraud signals.
+  const callFn = async (payload) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-signup-grants', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Request failed');
+    return data;
+  };
+
   const fetchDenied = async () => {
     setLoading(true);
-
-    const { data: denied, error } = await supabase
-      .from('signup_grant_attempts')
-      .select('*')
-      .eq('granted', 0)
-      .order('created_at', { ascending: false })
-      .limit(300);
-
-    if (error) {
-      toast.error('Could not load denied grants: ' + error.message);
-      setLoading(false);
-      return;
+    try {
+      const data = await callFn({ action: 'list' });
+      const merged = data.attempts || [];
+      setAttempts(merged);
+      setAmounts(Object.fromEntries(merged.map(r => [r.user_id, creditsForType(r.profile_type)])));
+    } catch (err) {
+      toast.error('Could not load denied grants: ' + err.message);
     }
-
-    // Keep only the most recent attempt per user — someone can trigger
-    // several denied attempts (e.g. retrying signup), we only need one row.
-    const latestByUser = new Map();
-    for (const a of denied || []) {
-      if (!a.user_id) continue;
-      if (!latestByUser.has(a.user_id)) latestByUser.set(a.user_id, a);
-    }
-    const rows = [...latestByUser.values()];
-
-    const userIds = rows.map(r => r.user_id);
-    const [{ data: profiles }, { data: existingGrants }] = await Promise.all([
-      userIds.length
-        ? supabase.from('profiles').select('id, full_name, email, phone, account_type, customer_code').in('id', userIds)
-        : Promise.resolve({ data: [] }),
-      userIds.length
-        ? supabase.from('credit_ledger').select('user_id').eq('type', 'signup_bonus').in('user_id', userIds)
-        : Promise.resolve({ data: [] }),
-    ]);
-
-    const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
-    const alreadyGranted = new Set((existingGrants || []).map(g => g.user_id));
-
-    const merged = rows.map(r => ({
-      ...r,
-      profile: profileMap[r.user_id] || null,
-      alreadyResolved: alreadyGranted.has(r.user_id),
-    }));
-
-    setAttempts(merged);
-    setAmounts(Object.fromEntries(merged.map(r => [r.user_id, creditsForType(r.profile_type)])));
     setLoading(false);
   };
 
@@ -141,7 +124,6 @@ export default function AdminCreditGrants() {
     })();
   }, []);
 
-
   const filtered = useMemo(() => {
     if (!search.trim()) return attempts;
     const q = search.trim().toLowerCase();
@@ -162,64 +144,21 @@ export default function AdminCreditGrants() {
     }
 
     setBusyId(userId);
-
-    // Re-check right before granting — someone else on the team, or the
-    // person themself via a later real signup retry, may have already
-    // resolved this since the page loaded.
-    const { data: dupe } = await supabase
-      .from('credit_ledger')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('type', 'signup_bonus')
-      .maybeSingle();
-    if (dupe) {
-      toast.error('Already granted — refreshing list.');
-      setAttempts(prev => prev.map(a => a.user_id === userId ? { ...a, alreadyResolved: true } : a));
-      setBusyId(null);
-      return;
-    }
-
     const amount = amounts[userId] || creditsForType(attempt.profile_type);
 
-    // Written with type: 'signup_bonus' — identical to what
-    // grant-signup-credits.js writes on a clean automatic grant, so this
-    // is indistinguishable from a real signup bonus in the ledger.
-    const { error: creditErr } = await supabase.rpc('add_credits', {
-      p_user_id: userId,
-      p_amount: amount,
-      p_type: 'signup_bonus',
-      p_description: `Welcome bonus — ${amount} free credits`,
-      p_ref_id: null,
-    });
-
-    if (creditErr) {
-      toast.error('Grant failed: ' + creditErr.message);
-      setBusyId(null);
-      return;
-    }
-
-    // Backfill the same fraud-guard records a clean automatic grant would
-    // have written, so future signup attempts on this email/phone are
-    // still correctly blocked — otherwise this override would quietly
-    // weaken the guards for next time.
-    if (profile.email) {
-      await supabase.from('email_grants').upsert(
-        { email: profile.email.toLowerCase().trim(), user_id: userId, granted_at: new Date().toISOString() },
-        { onConflict: 'email' }
-      );
-    }
-    if (profile.phone) {
-      const cleanPhone = profile.phone.replace(/\s+/g, '').replace(/[^+\d]/g, '');
-      if (cleanPhone) {
-        await supabase.from('phone_fingerprints').upsert(
-          { phone: cleanPhone, user_id: userId, credit_granted: true },
-          { onConflict: 'phone' }
-        );
+    try {
+      const data = await callFn({ action: 'grant', userId, amount });
+      if (data.alreadyResolved) {
+        toast.error('Already granted — refreshing list.');
+        setAttempts(prev => prev.map(a => a.user_id === userId ? { ...a, alreadyResolved: true } : a));
+        setBusyId(null);
+        return;
       }
+      setAttempts(prev => prev.map(a => a.user_id === userId ? { ...a, alreadyResolved: true } : a));
+      toast.success(`Granted ${amount} credits to ${profile.full_name || profile.email}`);
+    } catch (err) {
+      toast.error('Grant failed: ' + err.message);
     }
-
-    setAttempts(prev => prev.map(a => a.user_id === userId ? { ...a, alreadyResolved: true } : a));
-    toast.success(`Granted ${amount} credits to ${profile.full_name || profile.email}`);
     setBusyId(null);
   };
 
