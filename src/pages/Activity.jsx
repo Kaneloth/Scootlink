@@ -7,7 +7,8 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, FileText, MessageCircle, Star, Car, Check, AlertCircle, Bell, Loader2, ChevronRight } from 'lucide-react';
+import { Clock, FileText, MessageCircle, Star, Car, Check, AlertCircle, Bell, Loader2, ChevronRight, ChevronLeft, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import PageHeader from '@/components/layout/PageHeader';
@@ -176,6 +177,18 @@ export default function Activity() {
   const [loading,       setLoading]       = useState(true);
   const [userId,        setUserId]        = useState(null);
 
+  // Notification items are real rows and get truly deleted. Rental-derived
+  // items (proposals, reminders, active/ended banners) are computed fresh
+  // from live rental data on every load, not stored anywhere — there's no
+  // row to delete. Dismissing one of those instead records it in this set,
+  // fetched below, so the same synthetic item stays hidden on future loads
+  // without needing to touch (or fake-delete) the underlying rental record.
+  const [dismissedIds,  setDismissedIds]  = useState(new Set());
+  const [dismissingId,  setDismissingId]  = useState(null);
+
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(1);
+
   useEffect(() => {
     (async () => {
       try {
@@ -225,8 +238,17 @@ export default function Activity() {
           .order('created_at', { ascending: false })
           .limit(30);
 
+        // Fetch which synthetic (rental-derived) activity items this user
+        // has already dismissed, so they stay hidden across visits.
+        const { data: dismissalData, error: dismissalErr } = await supabase
+          .from('activity_dismissals')
+          .select('item_id')
+          .eq('user_id', uid);
+        if (dismissalErr) console.error('[Activity] dismissals fetch error:', dismissalErr);
+
         setRentals(rentalsWithVehicles);
         setNotifications(notifData || []);
+        setDismissedIds(new Set((dismissalData || []).map(d => d.item_id)));
       } catch (err) {
         console.error('[Activity] load error:', err);
       } finally {
@@ -256,8 +278,47 @@ export default function Activity() {
     return () => supabase.removeChannel(channel);
   }, [userId]);
 
-  const items = buildActivityItems(rentals, notifications, userId, accountType);
+  const allItems = buildActivityItems(rentals, notifications, userId, accountType);
+  const items = allItems.filter(i => !dismissedIds.has(i.id));
   const unreadCount = items.filter(i => !i.read).length;
+
+  // Clamp the current page if a dismissal shrinks the list below it —
+  // deliberately not a blanket "reset to page 1 on any change", since that
+  // would yank the user back to the top every time they dismiss something
+  // on a later page.
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+    if (page > totalPages) setPage(totalPages);
+  }, [items.length, page]);
+
+  const handleDismiss = async (item) => {
+    setDismissingId(item.id);
+    try {
+      if (item.id.startsWith('notif-')) {
+        const notifId = item.id.slice('notif-'.length);
+        const { error } = await supabase
+          .from('notifications')
+          .delete()
+          .eq('id', notifId)
+          .eq('user_id', userId);
+        if (error) throw error;
+        setNotifications(prev => prev.filter(n => String(n.id) !== notifId));
+      } else {
+        const { error } = await supabase
+          .from('activity_dismissals')
+          .insert({ user_id: userId, item_id: item.id });
+        // A unique-constraint conflict just means it was already dismissed
+        // (e.g. a double-tap) — same end state, not a real failure.
+        if (error && error.code !== '23505') throw error;
+        setDismissedIds(prev => new Set(prev).add(item.id));
+      }
+    } catch (err) {
+      console.error('[Activity] dismiss failed:', err);
+      toast.error('Could not remove this — please try again.');
+    } finally {
+      setDismissingId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -292,40 +353,83 @@ export default function Activity() {
           </Button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {items.map(item => (
-            <Card
-              key={item.id}
-              className={`p-4 border transition-colors ${!item.read ? 'border-primary/30 bg-primary/5' : 'border-border/50'}`}
-            >
-              <div className="flex items-start gap-3">
-                <ActivityIcon type={item.type} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className={`text-sm leading-snug ${!item.read ? 'font-semibold text-foreground' : 'font-medium text-foreground'}`}>
-                      {item.title}
-                    </p>
-                    {!item.read && (
-                      <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1.5" />
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{item.body}</p>
-                  <div className="flex items-center justify-between mt-2">
-                    <p className="text-[10px] text-muted-foreground">{timeAgo(item.ts)}</p>
-                    {item.action && (
-                      <button
-                        className="text-xs text-primary font-medium flex items-center gap-0.5 hover:underline"
-                        onClick={() => navigate(item.action.path)}
-                      >
-                        {item.action.label} <ChevronRight className="w-3 h-3" />
-                      </button>
-                    )}
+        <>
+          <div className="space-y-3">
+            {items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(item => (
+              <Card
+                key={item.id}
+                className={`p-4 border transition-colors ${!item.read ? 'border-primary/30 bg-primary/5' : 'border-border/50'}`}
+              >
+                <div className="flex items-start gap-3">
+                  <ActivityIcon type={item.type} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className={`text-sm leading-snug ${!item.read ? 'font-semibold text-foreground' : 'font-medium text-foreground'}`}>
+                        {item.title}
+                      </p>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {!item.read && (
+                          <span className="w-2 h-2 rounded-full bg-primary mt-1.5" />
+                        )}
+                        <button
+                          onClick={() => handleDismiss(item)}
+                          disabled={dismissingId === item.id}
+                          className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 p-0.5"
+                          aria-label="Remove this activity item"
+                        >
+                          {dismissingId === item.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <X className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{item.body}</p>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-[10px] text-muted-foreground">{timeAgo(item.ts)}</p>
+                      {item.action && (
+                        <button
+                          className="text-xs text-primary font-medium flex items-center gap-0.5 hover:underline"
+                          onClick={() => navigate(item.action.path)}
+                        >
+                          {item.action.label} <ChevronRight className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
+              </Card>
+            ))}
+          </div>
+
+          {items.length > PAGE_SIZE && (() => {
+            const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+            return (
+              <div className="flex items-center justify-center gap-4 mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={page === 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="w-4 h-4" /> Prev
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={page === totalPages}
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                >
+                  Next <ChevronRight className="w-4 h-4" />
+                </Button>
               </div>
-            </Card>
-          ))}
-        </div>
+            );
+          })()}
+        </>
       )}
     </div>
   );

@@ -25,11 +25,21 @@ export default function NotificationBell() {
     if (!userId) return;
     const { data } = await supabase
       .from('notifications')
-      .select('id, type, title, body, read, created_at')
+      .select('id, type, title, body, read, read_at, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(30);
-    setNotifications(data || []);
+
+    // Same info already lives on the Activity page — once something's been
+    // read here, there's no reason to keep it cluttering this dropdown
+    // indefinitely. Give it a day's grace period after being read, then
+    // drop it from view (the underlying row is untouched, just hidden here).
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    const visible = (data || []).filter(n =>
+      !n.read || !n.read_at || new Date(n.read_at).getTime() > dayAgo
+    );
+
+    setNotifications(visible);
   }, [userId]);
 
   useEffect(() => {
@@ -76,11 +86,12 @@ export default function NotificationBell() {
     setOpen(v => !v);
     const unread = notifications.filter(n => !n.read).map(n => n.id);
     if (unread.length > 0) {
+      const now = new Date().toISOString();
       await supabase
         .from('notifications')
-        .update({ read: true })
+        .update({ read: true, read_at: now })
         .in('id', unread);
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setNotifications(prev => prev.map(n => unread.includes(n.id) ? { ...n, read: true, read_at: now } : n));
     }
   };
 
@@ -130,8 +141,13 @@ export default function NotificationBell() {
               <button
                 className="text-xs text-muted-foreground hover:text-primary transition-colors"
                 onClick={async () => {
-                  await supabase.from('notifications').update({ read: true }).eq('user_id', userId);
-                  setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+                  const now = new Date().toISOString();
+                  await supabase
+                    .from('notifications')
+                    .update({ read: true, read_at: now })
+                    .eq('user_id', userId)
+                    .eq('read', false);
+                  setNotifications(prev => prev.map(n => n.read ? n : { ...n, read: true, read_at: now }));
                 }}
               >
                 Mark all read

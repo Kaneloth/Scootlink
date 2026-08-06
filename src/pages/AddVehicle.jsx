@@ -209,7 +209,7 @@ export default function AddVehicle() {
         isEditMode ? 'Vehicle details updated!' :
         'Vehicle listed successfully!'
       );
-      navigate(isEditMode ? '/briefcase' : '/home');
+      navigate(isEditMode ? '/home' : '/briefcase');
     },
     onError: (err) => {
       console.error('Vehicle save error:', err);
