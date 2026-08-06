@@ -3,6 +3,26 @@ import { supabase } from '@/api/supabaseClient';
 
 const openAuth = () => window.open("/auth", "_blank", "noopener,noreferrer");
 
+const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=co.za.skootlink.app";
+
+// Uses Google's own official badge artwork (from their badge generator at
+// play.google.com/intl/en_us/badges/), hosted at public/google-play-badge.png
+// — deliberately not a hand-recreated version, since Google's brand
+// guidelines require using their unmodified official assets for this.
+function PlayStoreBadge({ height = 54, style = {} }) {
+  return (
+    <a
+      href={PLAY_STORE_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Get Skootlink on Google Play"
+      style={{ display: "inline-block", lineHeight: 0, ...style }}
+    >
+      <img src="/google-play-badge.png" alt="Get it on Google Play" style={{ height, width: "auto" }} />
+    </a>
+  );
+}
+
 const PRIMARY = "#2563eb";
 const PRIMARY_DARK = "#1d4ed8";
 const DARK = "#18181b";
@@ -171,6 +191,9 @@ function Hero() {
           >
             Learn More
           </a>
+        </div>
+        <div style={{ marginTop: 20 }}>
+          <PlayStoreBadge height={46} />
         </div>
       </div>
     </section>
@@ -467,6 +490,9 @@ function DownloadCTA() {
       <div style={styles.container}>
         <h2 style={styles.ctaH2}>Ready to Get Started?</h2>
         <p style={styles.ctaP}>Join Skootlink and be part of the formal vehicle rental revolution in South Africa.</p>
+        <div style={{ ...styles.heroBtns, marginBottom: 24 }}>
+          <PlayStoreBadge />
+        </div>
         <div style={styles.heroBtns}>
           <button style={styles.ctaBtnWhite} onClick={openAuth}
             onMouseEnter={e => (e.currentTarget.style.opacity = "0.9")}
