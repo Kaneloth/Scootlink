@@ -18,7 +18,7 @@ function PlayStoreBadge({ height = 54, style = {} }) {
       aria-label="Get Skootlink on Google Play"
       style={{ display: "inline-block", lineHeight: 0, ...style }}
     >
-      <img src="/google-play-badge.png" alt="Get it on Google Play" style={{ height, width: "auto" }} />
+      <img src="/google-play-badge.svg" alt="Get it on Google Play" style={{ height, width: "auto" }} />
     </a>
   );
 }
