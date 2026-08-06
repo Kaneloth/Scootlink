@@ -298,10 +298,11 @@ function DemoSection() {
           <div className="sl-demo-features">
             <h3>What you'll see in the demo:</h3>
             <ul>
-              <li>🔍 Finding a vehicle near you</li>
-              <li>📝 Submitting a rental request</li>
-              <li>✍️ Signing a digital contract</li>
-              <li>💬 Messaging the owner directly</li>
+             <li>🚗 Listing a vehicle in under 60 seconds</li>
+             <li>💬 Secure in‑app messaging</li>
+             <li>📝 Sending a rental proposal that the owner can accept or decline</li>
+             <li>📄 Generating and signing a digital contract that protects both parties</li>
+             <li>📁 Storing signed contracts in your Briefcase</li>
             </ul>
             <button
               onClick={openAuth}
