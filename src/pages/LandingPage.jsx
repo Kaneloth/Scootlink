@@ -97,15 +97,13 @@ const styles = {
 };
 
 const demoCSS = `
-  .sl-demo-container { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; margin-top: 40px; }
-  .sl-demo-video-wrapper { background: #fff; border-radius: 32px; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.15); overflow: hidden; transition: transform 0.3s ease; }
+  .sl-demo-container { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; gap: 48px; align-items: center; margin-top: 40px; }
+  .sl-demo-video-wrapper { background: #fff; border-radius: 32px; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.15); overflow: hidden; transition: transform 0.3s ease; max-width: 300px; margin: 0 auto; }
   .sl-demo-video-wrapper:hover { transform: translateY(-5px); }
-  .sl-demo-mockup { background: #1e1e2f; border-radius: 28px; padding: 16px 12px 12px 12px; }
-  .sl-mockup-header { display: flex; gap: 8px; padding-bottom: 12px; padding-left: 8px; }
-  .sl-mockup-dot { width: 12px; height: 12px; border-radius: 50%; background: #ff5f56; }
-  .sl-mockup-dot:nth-child(2) { background: #ffbd2e; }
-  .sl-mockup-dot:nth-child(3) { background: #27c93f; }
-  .sl-mockup-screen { background: #fff; border-radius: 20px; overflow: hidden; aspect-ratio: 16/9; }
+  .sl-demo-mockup { background: #1e1e2f; border-radius: 36px; padding: 14px 10px; }
+  .sl-mockup-header { display: flex; justify-content: center; padding-bottom: 10px; }
+  .sl-mockup-notch { width: 60px; height: 6px; border-radius: 4px; background: #3f3f52; display: block; }
+  .sl-mockup-screen { background: #000; border-radius: 24px; overflow: hidden; aspect-ratio: 9/16; }
   .sl-demo-video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .sl-demo-features { background: rgba(37,99,235,0.04); padding: 32px; border-radius: 32px; }
   .sl-demo-features h3 { font-size: 24px; margin-bottom: 20px; color: #2563eb; }
@@ -252,7 +250,9 @@ function HowItWorks() {
 
 function DemoSection() {
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [demoPlaying, setDemoPlaying] = useState(false);
   const touchStartX = useRef(null);
+  const YOUTUBE_ID = "sspRrB_S2ks";
 
   const galleryItems = [
     { src: "/gallery/dashboard.png", emoji: "🏠", label: "Your Command Centre", desc: "See active rentals, vehicle stats, and quick actions at a glance." },
@@ -283,26 +283,46 @@ function DemoSection() {
           <div className="sl-demo-video-wrapper">
             <div className="sl-demo-mockup">
               <div className="sl-mockup-header">
-                <span className="sl-mockup-dot"></span>
-                <span className="sl-mockup-dot"></span>
-                <span className="sl-mockup-dot"></span>
+                <span className="sl-mockup-notch"></span>
               </div>
               <div className="sl-mockup-screen">
-                <video className="sl-demo-video" poster="https://placehold.co/800x500/2563eb/white?text=Skootlink+Demo+Preview" controls controlsList="nodownload">
-                  <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4" />
-                  Your browser does not support the video tag.
-                </video>
+                {demoPlaying ? (
+                  <iframe
+                    className="sl-demo-video"
+                    src={`https://www.youtube.com/embed/${YOUTUBE_ID}?autoplay=1&rel=0`}
+                    title="Skootlink demo video"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setDemoPlaying(true)}
+                    aria-label="Play Skootlink demo video"
+                    style={{
+                      position: "relative", width: "100%", height: "100%", padding: 0, border: "none",
+                      cursor: "pointer", display: "block",
+                      background: `url(https://i.ytimg.com/vi/${YOUTUBE_ID}/hqdefault.jpg) center/cover no-repeat`,
+                    }}
+                  >
+                    <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <span style={{ width: 68, height: 68, borderRadius: "50%", background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <span style={{ width: 0, height: 0, borderTop: "12px solid transparent", borderBottom: "12px solid transparent", borderLeft: "20px solid #fff", marginLeft: 4 }} />
+                      </span>
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
           <div className="sl-demo-features">
             <h3>What you'll see in the demo:</h3>
             <ul>
-             <li>🚗 Listing a vehicle in under 60 seconds</li>
-             <li>💬 Secure in‑app messaging</li>
-             <li>📝 Sending a rental proposal that the owner can accept or decline</li>
-             <li>📄 Generating and signing a digital contract that protects both parties</li>
-             <li>📁 Storing signed contracts in your Briefcase</li>
+              <li>🔍 Finding a vehicle near you</li>
+              <li>📝 Submitting a rental request</li>
+              <li>✍️ Signing a digital contract</li>
+              <li>💬 Messaging the owner directly</li>
             </ul>
             <button
               onClick={openAuth}
