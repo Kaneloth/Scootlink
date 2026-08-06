@@ -152,16 +152,15 @@ export default function AdminLayout() {
   if (!isAdmin) return null;
 
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Desktop sidebar — fixed, always visible on lg+. A completely
-          separate render path from the mobile version below, rather than
-          one shared element toggled with a CSS transform — avoids any
-          transform/positioning edge cases getting in the way of it simply
-          showing up when it's supposed to. */}
-      <aside className="hidden lg:block w-64 shrink-0 border-r border-border bg-card">
-        <div className="sticky top-0 h-screen">
-          <SidebarContent onLogout={handleLogout} />
-        </div>
+    <div className="h-screen bg-background flex overflow-hidden">
+      {/* Desktop sidebar — its own independent scroll region, genuinely
+          locked to the viewport height rather than relying on
+          position: sticky (which silently breaks if any ancestor between
+          it and the real scroll container has its own overflow set —
+          rather than chase down which ancestor that was, this layout just
+          doesn't depend on sticky working at all). */}
+      <aside className="hidden lg:block w-64 shrink-0 border-r border-border bg-card h-screen overflow-y-auto">
+        <SidebarContent onLogout={handleLogout} />
       </aside>
 
       {/* Mobile sidebar — slide-over, only rendered at all while open */}
@@ -183,10 +182,13 @@ export default function AdminLayout() {
         </div>
       )}
 
-      {/* Main content */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      {/* Main content — this whole column is height-locked to the viewport
+          too, so the header stays a fixed, non-scrolling sibling above the
+          one and only actual scroll region (<main>), instead of scrolling
+          away with page content. */}
+      <div className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden">
         {/* Mobile header */}
-        <div className="lg:hidden sticky top-0 z-40 bg-card border-b border-border px-4 py-3 flex items-center gap-3">
+        <div className="lg:hidden shrink-0 bg-card border-b border-border px-4 py-3 flex items-center gap-3">
           <button
             onClick={() => setMobileOpen(true)}
             className="p-1.5 -ml-1.5 rounded-lg hover:bg-muted transition-colors"
@@ -196,12 +198,16 @@ export default function AdminLayout() {
           <p className="text-sm font-bold text-foreground">Skootlink Admin</p>
         </div>
 
-        {/* Desktop header — unchanged from before */}
-        <header className="hidden lg:flex items-center justify-between p-4 border-b border-border bg-card sticky top-0 z-30">
+        {/* Desktop header */}
+        <header className="hidden lg:flex items-center justify-between p-4 border-b border-border bg-card shrink-0">
           <span className="text-sm text-muted-foreground">Admin Dashboard — Skootlink</span>
         </header>
 
-        <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
+        {/* The only element that actually scrolls. min-h-0 is required
+            here — without it, a flex child with overflow-y-auto won't
+            correctly constrain itself and just grows to fit its content
+            instead of scrolling, a common flexbox gotcha. */}
+        <main className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-6">
           <Outlet />
         </main>
       </div>
