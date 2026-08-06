@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, NavLink } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
 import {
-  LayoutDashboard, Users, FileText, LogOut, ArrowLeft, Menu, Shield, X,
+  LayoutDashboard, Users, FileText, LogOut, ArrowLeft, Menu, X,
   Loader2, Star, Coins, ShieldCheck, Flag, Megaphone, Bell, Radar, Banknote, List,
 } from 'lucide-react';
 
@@ -55,8 +55,10 @@ function SidebarContent({ onNavigate, onLogout }) {
     <div className="flex flex-col h-full">
       <div className="px-5 py-5 border-b border-border">
         <div className="flex items-center gap-2">
-          <Shield className="w-6 h-6 text-primary shrink-0" />
-          <span className="font-bold text-lg">Admin</span>
+          <img src="/skootlink-wordmark.png" alt="Skootlink" className="h-7 w-auto" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+            Admin
+          </span>
         </div>
       </div>
 
