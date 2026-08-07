@@ -152,8 +152,10 @@ main {
   flex-shrink: 0;
 }
 
-/* Push content below the native status bar (time/battery/notch) on Android.
-   Safe no-op on regular web/desktop since env() resolves to 0 there. */
+/* Push content below the native status bar (time/battery/notch) on Android,
+   and above the bottom gesture bar / nav buttons. Safe no-op on regular
+   web/desktop since env() resolves to 0 there. */
 body {
+  padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }

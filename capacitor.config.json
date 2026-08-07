@@ -9,13 +9,15 @@
     "Browser": {
       "presentationStyle": "popover"
     },
-    "StatusBar": {
-      "style": "DARK",
-      "backgroundColor": "#ffffff"
-    },
     "Keyboard": {
       "resize": "body",
-      "resizeOnFullScreen": true
+      "resizeOnFullScreen": false
+    },
+    "SafeArea": {
+      "statusBarStyle": "DARK"
+    },
+    "SystemBars": {
+      "insetsHandling": "disable"
     }
   }
 }
