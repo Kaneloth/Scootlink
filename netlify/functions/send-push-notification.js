@@ -142,6 +142,7 @@ export const handler = async (event) => {
   }
 
   if (!recipientId) {
+    console.warn('[send-push-notification] No recipient resolved for table:', table);
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no recipient' }) };
   }
 
@@ -150,6 +151,7 @@ export const handler = async (event) => {
     .select('token')
     .eq('user_id', recipientId);
   if (tokenErr || !tokens?.length) {
+    console.warn('[send-push-notification] No devices for recipient:', recipientId, tokenErr?.message || '');
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no devices' }) };
   }
 
@@ -157,6 +159,7 @@ export const handler = async (event) => {
   try {
     serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
   } catch (e) {
+    console.error('[send-push-notification] Invalid FIREBASE_SERVICE_ACCOUNT_KEY:', e.message);
     return { statusCode: 500, body: JSON.stringify({ error: 'Invalid FIREBASE_SERVICE_ACCOUNT_KEY: ' + e.message }) };
   }
 
@@ -164,6 +167,7 @@ export const handler = async (event) => {
   try {
     accessToken = await getAccessToken(serviceAccount);
   } catch (e) {
+    console.error('[send-push-notification] OAuth token exchange failed:', e.message);
     return { statusCode: 500, body: JSON.stringify({ error: e.message }) };
   }
 
@@ -191,6 +195,9 @@ export const handler = async (event) => {
     .map(r => ({ code: r.reason?.code, message: r.reason?.message }));
   if (failed > 0) {
     console.warn('[send-push-notification] Some sends failed:', failureReasons);
+  }
+  if (sent > 0) {
+    console.log('[send-push-notification] Sent to', sent, 'device(s) for recipient:', recipientId);
   }
 
   return { statusCode: 200, body: JSON.stringify({ sent, failed, failureReasons }) };
