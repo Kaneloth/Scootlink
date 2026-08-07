@@ -256,40 +256,24 @@ function App() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { alert('[DEBUG] Got push token but no user is signed in yet.'); return; }
 
-        const { data: { session } } = await supabase.auth.getSession();
-        let jwtSub = 'unable to decode';
-        try {
-          jwtSub = JSON.parse(atob(session.access_token.split('.')[1])).sub;
-        } catch (e) { jwtSub = 'decode error: ' + e.message; }
-        alert('[DEBUG] getUser().id = ' + user.id + ' | JWT sub claim = ' + jwtSub + ' | MATCH: ' + (user.id === jwtSub));
-
-        const doUpsert = () => supabase.from('device_push_tokens').upsert(
-          { user_id: user.id, token: tokenValue, platform: 'android', updated_at: new Date().toISOString() },
-          { onConflict: 'token' }
-        );
-
-        let { error: upsertErr } = await doUpsert();
-
-        if (upsertErr) {
-          alert('[DEBUG] First attempt FAILED: ' + upsertErr.message + ' | code: ' + upsertErr.code + ' — trying session refresh + retry...');
-          const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
-          if (refreshErr) {
-            alert('[DEBUG] Session refresh itself failed: ' + refreshErr.message);
-            return;
-          }
-          const retrySub = (() => {
-            try { return JSON.parse(atob(refreshData.session.access_token.split('.')[1])).sub; }
-            catch { return 'unknown'; }
-          })();
-          alert('[DEBUG] After refresh, new JWT sub = ' + retrySub + ' | retrying upsert...');
-
-          const retry = await doUpsert();
-          upsertErr = retry.error;
-          if (upsertErr) {
-            alert('[DEBUG] Retry AFTER refresh still FAILED: ' + upsertErr.message + ' | code: ' + upsertErr.code);
-            return;
-          }
-          alert('[DEBUG] Retry after refresh SUCCEEDED for user ' + user.id);
+        // Uses a SECURITY DEFINER RPC rather than a raw client-side upsert.
+        // The raw upsert (ON CONFLICT DO UPDATE) needs to actually see the
+        // pre-existing row to resolve the conflict, and that visibility is
+        // governed by the SELECT policy — which correctly stays restricted
+        // to your own rows. When a device's token still belongs to a
+        // previously-signed-in account (the normal case on a shared/test
+        // device, or anyone reinstalling), that row is invisible under
+        // SELECT, and the whole upsert fails with an RLS error even though
+        // the UPDATE policy itself allows it. Running this server-side
+        // with elevated privileges — while still deriving user_id from
+        // auth.uid() internally, never trusting client input — sidesteps
+        // the problem entirely rather than continuing to tune RLS policies.
+        const { error: rpcErr } = await supabase.rpc('save_push_token', {
+          p_token: tokenValue,
+          p_platform: 'android',
+        });
+        if (rpcErr) {
+          alert('[DEBUG] save_push_token RPC failed: ' + rpcErr.message + ' | code: ' + rpcErr.code);
           return;
         }
         alert('[DEBUG] Push token saved successfully for user ' + user.id);
