@@ -245,41 +245,34 @@ function App() {
   // resaving an already-known token just updates its owner rather than
   // duplicating anything.
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) {
-      alert('[DEBUG] Not running as native platform — push setup skipped entirely.');
-      return;
-    }
-    alert('[DEBUG] Native platform confirmed, starting push registration...');
+    if (!Capacitor.isNativePlatform()) return;
 
     const savePushToken = async (tokenValue) => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { alert('[DEBUG] Got push token but no user is signed in yet.'); return; }
+        if (!user) return;
 
         // Uses a SECURITY DEFINER RPC rather than a raw client-side upsert.
         // The raw upsert (ON CONFLICT DO UPDATE) needs to actually see the
         // pre-existing row to resolve the conflict, and that visibility is
         // governed by the SELECT policy — which correctly stays restricted
         // to your own rows. When a device's token still belongs to a
-        // previously-signed-in account (the normal case on a shared/test
-        // device, or anyone reinstalling), that row is invisible under
+        // previously-signed-in account (e.g. someone else signed in on the
+        // same device before, or a reinstall), that row is invisible under
         // SELECT, and the whole upsert fails with an RLS error even though
         // the UPDATE policy itself allows it. Running this server-side
         // with elevated privileges — while still deriving user_id from
         // auth.uid() internally, never trusting client input — sidesteps
-        // the problem entirely rather than continuing to tune RLS policies.
+        // the problem entirely rather than relying on RLS visibility here.
         const { error: rpcErr } = await supabase.rpc('save_push_token', {
           p_token: tokenValue,
           p_platform: 'android',
         });
         if (rpcErr) {
-          alert('[DEBUG] save_push_token RPC failed: ' + rpcErr.message + ' | code: ' + rpcErr.code);
-          return;
+          console.error('[App] save_push_token RPC failed:', rpcErr);
         }
-        alert('[DEBUG] Push token saved successfully for user ' + user.id);
       } catch (err) {
         console.error('[App] Failed to save push token:', err);
-        alert('[DEBUG] Failed to save push token: ' + (err?.message || JSON.stringify(err)));
       }
     };
 
@@ -302,25 +295,21 @@ function App() {
         }
         if (permStatus.receive !== 'granted') {
           console.warn('[App] Push notification permission not granted:', permStatus.receive);
-          alert('[DEBUG] Push permission not granted: ' + permStatus.receive);
           return;
         }
 
         await PushNotifications.addListener('registration', (token) => {
-          alert('[DEBUG] Got FCM token: ' + token.value.slice(0, 30) + '...');
           latestPushTokenRef.current = token.value;
           savePushToken(token.value);
         });
 
         await PushNotifications.addListener('registrationError', (err) => {
           console.error('[App] Push registration error:', err);
-          alert('[DEBUG] Push registration error: ' + JSON.stringify(err));
         });
 
         await PushNotifications.register();
       } catch (err) {
         console.error('[App] Push notification setup failed:', err);
-        alert('[DEBUG] Push notification setup failed: ' + (err?.message || JSON.stringify(err)));
       }
     })();
 
