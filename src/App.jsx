@@ -257,14 +257,39 @@ function App() {
         if (!user) { alert('[DEBUG] Got push token but no user is signed in yet.'); return; }
 
         const { data: { session } } = await supabase.auth.getSession();
-        alert('[DEBUG] About to upsert for user ' + user.id + ' | session exists: ' + !!session + ' | has access_token: ' + !!session?.access_token);
+        let jwtSub = 'unable to decode';
+        try {
+          jwtSub = JSON.parse(atob(session.access_token.split('.')[1])).sub;
+        } catch (e) { jwtSub = 'decode error: ' + e.message; }
+        alert('[DEBUG] getUser().id = ' + user.id + ' | JWT sub claim = ' + jwtSub + ' | MATCH: ' + (user.id === jwtSub));
 
-        const { error: upsertErr } = await supabase.from('device_push_tokens').upsert(
+        const doUpsert = () => supabase.from('device_push_tokens').upsert(
           { user_id: user.id, token: tokenValue, platform: 'android', updated_at: new Date().toISOString() },
           { onConflict: 'token' }
         );
+
+        let { error: upsertErr } = await doUpsert();
+
         if (upsertErr) {
-          alert('[DEBUG] Upsert FAILED for user ' + user.id + ': ' + upsertErr.message + ' | code: ' + upsertErr.code);
+          alert('[DEBUG] First attempt FAILED: ' + upsertErr.message + ' | code: ' + upsertErr.code + ' — trying session refresh + retry...');
+          const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+          if (refreshErr) {
+            alert('[DEBUG] Session refresh itself failed: ' + refreshErr.message);
+            return;
+          }
+          const retrySub = (() => {
+            try { return JSON.parse(atob(refreshData.session.access_token.split('.')[1])).sub; }
+            catch { return 'unknown'; }
+          })();
+          alert('[DEBUG] After refresh, new JWT sub = ' + retrySub + ' | retrying upsert...');
+
+          const retry = await doUpsert();
+          upsertErr = retry.error;
+          if (upsertErr) {
+            alert('[DEBUG] Retry AFTER refresh still FAILED: ' + upsertErr.message + ' | code: ' + upsertErr.code);
+            return;
+          }
+          alert('[DEBUG] Retry after refresh SUCCEEDED for user ' + user.id);
           return;
         }
         alert('[DEBUG] Push token saved successfully for user ' + user.id);
