@@ -255,12 +255,16 @@ function App() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { alert('[DEBUG] Got push token but no user is signed in yet.'); return; }
+
+        const { data: { session } } = await supabase.auth.getSession();
+        alert('[DEBUG] About to upsert for user ' + user.id + ' | session exists: ' + !!session + ' | has access_token: ' + !!session?.access_token);
+
         const { error: upsertErr } = await supabase.from('device_push_tokens').upsert(
           { user_id: user.id, token: tokenValue, platform: 'android', updated_at: new Date().toISOString() },
           { onConflict: 'token' }
         );
         if (upsertErr) {
-          alert('[DEBUG] Upsert returned an error (no exception thrown): ' + upsertErr.message + ' | code: ' + upsertErr.code);
+          alert('[DEBUG] Upsert FAILED for user ' + user.id + ': ' + upsertErr.message + ' | code: ' + upsertErr.code);
           return;
         }
         alert('[DEBUG] Push token saved successfully for user ' + user.id);
