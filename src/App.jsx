@@ -255,10 +255,14 @@ function App() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { alert('[DEBUG] Got push token but no user is signed in yet.'); return; }
-        await supabase.from('device_push_tokens').upsert(
+        const { error: upsertErr } = await supabase.from('device_push_tokens').upsert(
           { user_id: user.id, token: tokenValue, platform: 'android', updated_at: new Date().toISOString() },
           { onConflict: 'token' }
         );
+        if (upsertErr) {
+          alert('[DEBUG] Upsert returned an error (no exception thrown): ' + upsertErr.message + ' | code: ' + upsertErr.code);
+          return;
+        }
         alert('[DEBUG] Push token saved successfully for user ' + user.id);
       } catch (err) {
         console.error('[App] Failed to save push token:', err);
