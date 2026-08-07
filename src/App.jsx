@@ -245,18 +245,24 @@ function App() {
   // resaving an already-known token just updates its owner rather than
   // duplicating anything.
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
+    if (!Capacitor.isNativePlatform()) {
+      alert('[DEBUG] Not running as native platform — push setup skipped entirely.');
+      return;
+    }
+    alert('[DEBUG] Native platform confirmed, starting push registration...');
 
     const savePushToken = async (tokenValue) => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!user) { alert('[DEBUG] Got push token but no user is signed in yet.'); return; }
         await supabase.from('device_push_tokens').upsert(
           { user_id: user.id, token: tokenValue, platform: 'android', updated_at: new Date().toISOString() },
           { onConflict: 'token' }
         );
+        alert('[DEBUG] Push token saved successfully for user ' + user.id);
       } catch (err) {
         console.error('[App] Failed to save push token:', err);
+        alert('[DEBUG] Failed to save push token: ' + (err?.message || JSON.stringify(err)));
       }
     };
 
@@ -279,21 +285,25 @@ function App() {
         }
         if (permStatus.receive !== 'granted') {
           console.warn('[App] Push notification permission not granted:', permStatus.receive);
+          alert('[DEBUG] Push permission not granted: ' + permStatus.receive);
           return;
         }
 
         await PushNotifications.addListener('registration', (token) => {
+          alert('[DEBUG] Got FCM token: ' + token.value.slice(0, 30) + '...');
           latestPushTokenRef.current = token.value;
           savePushToken(token.value);
         });
 
         await PushNotifications.addListener('registrationError', (err) => {
           console.error('[App] Push registration error:', err);
+          alert('[DEBUG] Push registration error: ' + JSON.stringify(err));
         });
 
         await PushNotifications.register();
       } catch (err) {
         console.error('[App] Push notification setup failed:', err);
+        alert('[DEBUG] Push notification setup failed: ' + (err?.message || JSON.stringify(err)));
       }
     })();
 
