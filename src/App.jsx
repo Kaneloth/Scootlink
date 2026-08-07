@@ -6,7 +6,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
-import { StatusBar, Style } from '@capacitor/status-bar';
+import { SafeArea, SystemBarsStyle, SystemBarsType } from '@capacitor-community/safe-area';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
@@ -343,16 +343,22 @@ function App() {
     }
   }, []);
 
-  // Initialize the native status bar — a no-op on the website (guarded by
-  // isNativePlatform), but on Android this reserves the status bar's own
-  // space instead of letting the WebView draw underneath it, and sets the
-  // icon color to match the current theme so they're actually visible.
+  // Initialize the native status bar's content color to match the current
+  // theme so it's actually visible against the page background. Space
+  // reservation itself (previously setOverlaysWebView) is no longer needed
+  // here — @capacitor-community/safe-area handles that via proper edge-to-
+  // edge insets instead, and the plugin's own docs note setOverlaysWebView
+  // has no equivalent since it isn't applicable once insets are used.
+  // There's likewise no separate background-color call needed anymore: the
+  // status bar is transparent in edge-to-edge mode, so whatever's "behind"
+  // it is simply the page's own CSS background at that scroll position.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     const isDark = document.documentElement.classList.contains('dark');
-    StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
-    StatusBar.setStyle({ style: isDark ? Style.Dark : Style.Light }).catch(() => {});
-    StatusBar.setBackgroundColor({ color: isDark ? '#0f172a' : '#ffffff' }).catch(() => {});
+    SafeArea.setSystemBarsStyle({
+      style: isDark ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
+      type: SystemBarsType.StatusBar,
+    }).catch(() => {});
   }, []);
 
   // Initialize native Google Sign-In (Credential Manager on Android). Must
