@@ -193,8 +193,20 @@ function MobileHeader() {
       style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem' }}
     >
       {/* Logo */}
-      <Link to="/home" className="flex items-center gap-2">
-        <span className="text-xl font-bold text-foreground">Skootlink</span>
+      <Link
+        to="/home"
+        className="flex items-center gap-2"
+        draggable={false}
+        style={{ WebkitUserDrag: 'none', userSelect: 'none' }}
+      >
+        <img
+          src="/favicon.png"
+          alt="Skootlink"
+          className="w-11 h-11"
+          draggable={false}
+          style={{ WebkitUserDrag: 'none' }}
+        />
+        <span className="text-2xl font-bold text-foreground">Skootlink</span>
       </Link>
 
       {/* Notification bell + profile button + dropdown */}
