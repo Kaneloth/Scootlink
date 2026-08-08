@@ -10,7 +10,7 @@
       "presentationStyle": "popover"
     },
     "Keyboard": {
-      "resize": "body",
+      "resize": "none",
       "resizeOnFullScreen": false
     },
     "SafeArea": {

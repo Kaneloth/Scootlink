@@ -354,11 +354,24 @@ function App() {
   // it is simply the page's own CSS background at that scroll position.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    const isDark = document.documentElement.classList.contains('dark');
-    SafeArea.setSystemBarsStyle({
-      style: isDark ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
-      type: SystemBarsType.StatusBar,
-    }).catch(() => {});
+
+    const applyStatusBarStyle = () => {
+      const isDark = document.documentElement.classList.contains('dark');
+      SafeArea.setSystemBarsStyle({
+        style: isDark ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
+        type: SystemBarsType.StatusBar,
+      }).catch(() => {});
+    };
+
+    // Applied immediately, but also watched for changes rather than only
+    // checked once at mount — the theme class can be added asynchronously
+    // during hydration (a one-time check can read stale state before it
+    // settles), and the user can also switch Light/Dark mode later from
+    // Settings, which a mount-only effect would never react to at all.
+    applyStatusBarStyle();
+    const observer = new MutationObserver(applyStatusBarStyle);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
   }, []);
 
   // Initialize native Google Sign-In (Credential Manager on Android). Must
