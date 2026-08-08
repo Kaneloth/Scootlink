@@ -556,7 +556,7 @@ export default function AppLayout() {
         <NavigationProgressBar pathname={location.pathname} />
         <Sidebar />
 
-        <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-full min-h-0" style={{ height: '100%' }}>
+        <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-full min-h-0" style={{ height: '100dvh' }}>
           <MobileHeader />
 
           <div
