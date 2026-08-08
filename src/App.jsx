@@ -185,6 +185,15 @@ function App() {
   // in either order, with no guarantee which comes first.
   const latestPushTokenRef = useRef(null);
 
+  // The native WebView is edge-to-edge. Lock the document to the viewport so
+  // an interrupted touch cannot leave the whole app (including its header)
+  // scrolled behind the Android status bar.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return undefined;
+    document.documentElement.classList.add('native-app');
+    return () => document.documentElement.classList.remove('native-app');
+  }, []);
+
   // Radix's Select (and other Radix primitives) lock document.body with
   // pointer-events:none while their dropdown/portal is open, and release it
   // when it closes. Confirmed via on-device testing that this lock can get

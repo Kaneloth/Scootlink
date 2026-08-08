@@ -331,6 +331,7 @@ export default function AppLayout() {
   const tabIndex = isTabRoute ? getTabIndex(location.pathname) : 0;
   const [dragPercent, setDragPercent] = useState(0);
   const isDragging = dragPercent !== 0;
+  const dragPercentRef = useRef(0);
   const touchRef = useRef({ startX: 0, startY: 0, active: false, axisLocked: false, horizontal: false });
   const stripRef = useRef(null);
 
@@ -378,24 +379,83 @@ export default function AppLayout() {
     if (pct > 0 && tabIndex === 0) pct *= 0.15;
     if (pct < 0 && tabIndex === CANONICAL_PATHS.length - 1) pct *= 0.15;
 
-    setDragPercent(pct);
+    // Never let the strip leave the range from which it can be recovered.
+    // Android can cancel a touch when it reaches a system edge; without this
+    // clamp, the last rendered transform can remain outside the viewport.
+    const maxPull = 42;
+    const boundedPct = Math.max(-maxPull, Math.min(maxPull, pct));
+    dragPercentRef.current = boundedPct;
+    setDragPercent(boundedPct);
   }, [tabIndex]);
 
-  const onTouchEnd = useCallback(() => {
+  const finishTouch = useCallback((shouldNavigate) => {
     const t = touchRef.current;
-    t.active = false;
-    if (!t.horizontal) return;
+    const wasHorizontal = t.horizontal;
+    const currentDrag = dragPercentRef.current;
 
-    if (dragPercent < -(THRESHOLD * 100) && tabIndex < CANONICAL_PATHS.length - 1) {
-      navigate(CANONICAL_PATHS[tabIndex + 1]);
-    } else if (dragPercent > (THRESHOLD * 100) && tabIndex > 0) {
-      navigate(CANONICAL_PATHS[tabIndex - 1]);
+    // Reset the gesture synchronously before navigation. This also handles
+    // Android's touchcancel path, where there is no reliable final touchmove.
+    t.active = false;
+    t.axisLocked = false;
+    t.horizontal = false;
+    dragPercentRef.current = 0;
+
+    if (shouldNavigate && wasHorizontal) {
+      if (currentDrag < -(THRESHOLD * 100) && tabIndex < CANONICAL_PATHS.length - 1) {
+        navigate(CANONICAL_PATHS[tabIndex + 1]);
+      } else if (currentDrag > (THRESHOLD * 100) && tabIndex > 0) {
+        navigate(CANONICAL_PATHS[tabIndex - 1]);
+      }
     }
 
     setDragPercent(0);
-  }, [dragPercent, tabIndex, navigate]);
+  }, [tabIndex, navigate]);
+
+  const onTouchEnd = useCallback(() => {
+    finishTouch(true);
+  }, [finishTouch]);
+
+  const onTouchCancel = useCallback(() => {
+    finishTouch(false);
+  }, [finishTouch]);
 
   useEffect(() => {
+    // Android can dispatch cancellation at the window level when a finger
+    // reaches the system/status-bar edge. It can also interrupt the gesture
+    // during rotation, app switching, or a brief loss of focus.
+    const cancelInterruptedSwipe = () => {
+      const t = touchRef.current;
+      if (!t.active && dragPercentRef.current === 0) return;
+      t.active = false;
+      t.axisLocked = false;
+      t.horizontal = false;
+      dragPercentRef.current = 0;
+      setDragPercent(0);
+    };
+    const cancelWhenHidden = () => {
+      if (document.visibilityState !== 'visible') cancelInterruptedSwipe();
+    };
+
+    window.addEventListener('touchcancel', cancelInterruptedSwipe, { passive: true });
+    window.addEventListener('pointercancel', cancelInterruptedSwipe, { passive: true });
+    window.addEventListener('blur', cancelInterruptedSwipe);
+    window.addEventListener('pagehide', cancelInterruptedSwipe);
+    window.addEventListener('orientationchange', cancelInterruptedSwipe);
+    window.addEventListener('resize', cancelInterruptedSwipe);
+    document.addEventListener('visibilitychange', cancelWhenHidden);
+    return () => {
+      window.removeEventListener('touchcancel', cancelInterruptedSwipe);
+      window.removeEventListener('pointercancel', cancelInterruptedSwipe);
+      window.removeEventListener('blur', cancelInterruptedSwipe);
+      window.removeEventListener('pagehide', cancelInterruptedSwipe);
+      window.removeEventListener('orientationchange', cancelInterruptedSwipe);
+      window.removeEventListener('resize', cancelInterruptedSwipe);
+      document.removeEventListener('visibilitychange', cancelWhenHidden);
+    };
+  }, []);
+
+  useEffect(() => {
+    dragPercentRef.current = 0;
     setDragPercent(0);
   }, [location.pathname]);
 
@@ -492,11 +552,11 @@ export default function AppLayout() {
 
   return (
     <VerificationGate user={gateUser} userLoading={userLoading}>
-      <div className="flex min-h-screen bg-background">
+      <div className="native-app-shell flex min-h-screen bg-background">
         <NavigationProgressBar pathname={location.pathname} />
         <Sidebar />
 
-        <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-full" style={{ height: '100dvh' }}>
+        <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-full min-h-0" style={{ height: '100%' }}>
           <MobileHeader />
 
           <div
@@ -505,7 +565,8 @@ export default function AppLayout() {
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
-            style={{ touchAction: 'pan-y' }}
+            onTouchCancel={onTouchCancel}
+            style={{ touchAction: 'pan-y', overscrollBehavior: 'none' }}
           >
             {isTabRoute ? (
               <div
