@@ -367,9 +367,9 @@ export default function AppLayout() {
       // margin meant preventDefault() below could fire on what was
       // actually meant to be a normal vertical scroll, for the rest of
       // that entire touch gesture.
-      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
-      t.axisLocked = true;
-      t.horizontal = Math.abs(dx) > Math.abs(dy) * 1.5;
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+t.axisLocked = true;
+t.horizontal = Math.abs(dx) > Math.abs(dy) * 1.2;
     }
 
     if (!t.horizontal) return;
