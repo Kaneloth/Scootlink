@@ -133,7 +133,8 @@ export default function NotificationBell() {
 
       {open && (
         <div
-          className="fixed top-16 right-4 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-card shadow-xl z-[999] overflow-hidden"
+          className="fixed right-4 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-card shadow-xl z-[999] overflow-hidden"
+          style={{ top: 'calc(4rem + env(safe-area-inset-top, 0px))' }}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <p className="text-sm font-semibold text-foreground">Notifications</p>
