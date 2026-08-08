@@ -5,6 +5,7 @@ import NotificationBell from '@/components/layout/NotificationBell';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
+import IncomingGigOfferOverlay from '@/components/gigs/IncomingGigOfferOverlay';
 
 // ─── Page components for the five main tabs ────────────────────────────────
 import HomePage    from '@/pages/Dashboard';
@@ -599,7 +600,10 @@ t.horizontal = Math.abs(dx) > Math.abs(dy);
           </div>
         </div>
 
-        <MobileNav />
+        <MobileNav /> 
+         {(accountType === 'driver' || accountType === 'both') && (
+          <IncomingGigOfferOverlay driverId={gateUser?.id} />
+        )}
       </div>
     </VerificationGate>
   );
