@@ -194,20 +194,11 @@ function MobileHeader() {
     >
       {/* Logo */}
       <Link to="/home" className="flex items-center gap-2">
-        <img src="/favicon.png" alt="Skootlink" className="w-8 h-8" />
-        <span className="text-base font-bold text-foreground">Skootlink</span>
+        <span className="text-xl font-bold text-foreground">Skootlink</span>
       </Link>
 
       {/* Notification bell + profile button + dropdown */}
       <div className="flex items-center gap-2">
-        <button
-          onClick={() => navigate('/contact')}
-          aria-label="Contact Support"
-          className="w-9 h-9 rounded-full flex items-center justify-center border border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors font-bold text-sm"
-          style={{ touchAction: 'manipulation' }}
-        >
-          ?
-        </button>
         <NotificationBell />
         <div className="relative" ref={dropdownRef}>
           <button
@@ -355,9 +346,17 @@ export default function AppLayout() {
     const dy = e.touches[0].clientY - t.startY;
 
     if (!t.axisLocked) {
-      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      // Require more initial movement, and a clear horizontal bias (not
+      // just "very slightly more horizontal than vertical") before
+      // committing to a horizontal swipe. A near-vertical scroll attempt
+      // can easily have a marginally larger dx than dy in its very first
+      // few pixels purely by chance — locking "horizontal" on that thin a
+      // margin meant preventDefault() below could fire on what was
+      // actually meant to be a normal vertical scroll, for the rest of
+      // that entire touch gesture.
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
       t.axisLocked = true;
-      t.horizontal = Math.abs(dx) > Math.abs(dy);
+      t.horizontal = Math.abs(dx) > Math.abs(dy) * 1.5;
     }
 
     if (!t.horizontal) return;

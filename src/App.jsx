@@ -332,11 +332,12 @@ function App() {
     return subscription;
   }, []);
 
-  // Apply saved theme on initial load
+  // Apply saved theme on initial load — defaults to light when the user
+  // hasn't made an explicit choice yet (a fresh install/update), rather
+  // than falling back to the device's system theme.
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+    if (savedTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
