@@ -81,7 +81,7 @@ export default function AdminUserManagement() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+      const res = await fetch('/.netlify/functions/admin-app-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'get' }),
@@ -103,7 +103,7 @@ export default function AdminUserManagement() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+      const res = await fetch('/.netlify/functions/admin-app-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'toggle_profile_visibility', enabled: next }),
@@ -199,7 +199,7 @@ export default function AdminUserManagement() {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
       if (token) {
-        await fetch('https://skootlink.co.za/.netlify/functions/admin-set-role', {
+        await fetch('/.netlify/functions/admin-set-role', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ userId: u.id, is_admin: granting }),
@@ -242,7 +242,7 @@ export default function AdminUserManagement() {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
       if (token) {
-        await fetch('https://skootlink.co.za/.netlify/functions/admin-ban-user', {
+        await fetch('/.netlify/functions/admin-ban-user', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

@@ -43,7 +43,7 @@ export default function AdminCreditGrants() {
   const callFn = async (payload) => {
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData?.session?.access_token;
-    const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-signup-grants', {
+    const res = await fetch('/.netlify/functions/admin-signup-grants', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(payload),
@@ -71,7 +71,7 @@ export default function AdminCreditGrants() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+      const res = await fetch('/.netlify/functions/admin-app-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'get' }),
@@ -99,7 +99,7 @@ export default function AdminCreditGrants() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+      const res = await fetch('/.netlify/functions/admin-app-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'update_signup_credits', driver_credits: driver, owner_credits: owner }),

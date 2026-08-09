@@ -77,7 +77,7 @@ export default function AdminIdentityVerification() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+      const res = await fetch('/.netlify/functions/admin-app-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'get' }),
@@ -110,7 +110,7 @@ export default function AdminIdentityVerification() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+      const res = await fetch('/.netlify/functions/admin-app-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'update_verification_prices', sa_id, passport, licence }),
@@ -128,7 +128,7 @@ export default function AdminIdentityVerification() {
   const review = async (submission, action, reason = null) => {
     setProcessingId(submission.id);
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-review-identity-verification', {
+    const res = await fetch('/.netlify/functions/admin-review-identity-verification', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

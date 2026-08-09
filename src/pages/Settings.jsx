@@ -163,14 +163,14 @@ async function verifyBiometric() {
 }
 
 async function clearTokenCookie() {
-  await fetch('https://skootlink.co.za/.netlify/functions/auth-clear-token', {
+  await fetch('/.netlify/functions/auth-clear-token', {
     method: 'POST',
     credentials: 'include',
   }).catch(() => {});
 }
 
 async function deleteAccount(accessToken) {
-  const res = await fetch('https://skootlink.co.za/.netlify/functions/auth-delete-account', {
+  const res = await fetch('/.netlify/functions/auth-delete-account', {
     method: 'POST',
     credentials: 'include',
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -270,7 +270,7 @@ function CreditBalanceWidget() {
     const isNative = Capacitor.isNativePlatform();
 
     try {
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate', {
+      const res = await fetch('/.netlify/functions/payfast-initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ package_id: pkg.id, is_native: isNative }),
@@ -1009,7 +1009,7 @@ export default function Settings() {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       if (accessToken) {
-        await fetch('https://skootlink.co.za/.netlify/functions/admin-set-role', {
+        await fetch('/.netlify/functions/admin-set-role', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
           body: JSON.stringify({ userId, is_admin: granting }),
@@ -1055,7 +1055,7 @@ export default function Settings() {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       if (accessToken) {
-        await fetch('https://skootlink.co.za/.netlify/functions/admin-ban-user', {
+        await fetch('/.netlify/functions/admin-ban-user', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },

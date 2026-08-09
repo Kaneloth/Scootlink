@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 async function callProximityFunction(action, extra = {}) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new Error('Not authenticated');
-  const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-run-proximity-scan', {
+  const res = await fetch('/.netlify/functions/admin-run-proximity-scan', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -12,7 +12,7 @@ export default function AdminRefundRequests() {
   const callFn = async (payload) => {
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData?.session?.access_token;
-    const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-refund-requests', {
+    const res = await fetch('/.netlify/functions/admin-refund-requests', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(payload),
