@@ -26,6 +26,13 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: 'Gigs',
+    items: [
+      { path: '/admin/gig-verification',    icon: ShieldCheck, label: 'Gig Verification' },
+      { path: '/admin/vehicle-ride-ready',   icon: Star,        label: 'Vehicle Ride-Ready' },
+    ],
+  },
+  {
     label: 'Rentals & Money',
     items: [
       { path: '/admin/rentals',          icon: FileText,  label: 'Rentals' },

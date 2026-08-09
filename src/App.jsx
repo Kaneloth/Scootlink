@@ -31,6 +31,10 @@ import Onboarding from '@/pages/Onboarding';
 
 import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
+import RequestGig from '@/pages/RequestGig';
+import GigStatus from '@/pages/GigStatus';
+import DriverGigVerification from '@/pages/DriverGigVerification';
+import VehicleRideReadySubmit from '@/pages/VehicleRideReadySubmit';
 
 // Web client ID from Google Cloud Console (Supabase Dashboard → Authentication
 // → Providers → Google → Client ID). Must be the Web client ID on every
@@ -56,6 +60,8 @@ const AdminProximityAlerts = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/page
 const AdminCreditGrants = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminCreditGrants')) : null;
 const AdminRefundRequests = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminRefundRequests')) : null;
 const AdminTransactions = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminTransactions')) : null;
+const AdminGigVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminGigVerification')) : null;
+const AdminVehicleRideReady = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminVehicleRideReady')) : null;
 
 function AdminLoadingScreen() {
   return (
@@ -141,6 +147,10 @@ const AuthenticatedApp = () => {
         <Route path="/mysearch" element={<SearchPage />} />
         <Route path="/messages" element={<Messages />} />
         <Route path="/contact" element={<ContactUs />} />
+        <Route path="/request-gig" element={<RequestGig />} />
+        <Route path="/gig-status/:gigId" element={<GigStatus />} />
+        <Route path="/gig-verification" element={<DriverGigVerification />} />
+        <Route path="/vehicle-ride-ready/:vehicleId" element={<VehicleRideReadySubmit />} />
       </Route>
 
       {/* Admin dashboard — reachable as a normal web URL (skootlink.co.za/admin),
@@ -168,6 +178,8 @@ const AuthenticatedApp = () => {
           <Route path="credit-grants" element={<AdminCreditGrants />} />
           <Route path="refund-requests" element={<AdminRefundRequests />} />
           <Route path="transactions" element={<AdminTransactions />} />
+          <Route path="gig-verification" element={<AdminGigVerification />} />
+          <Route path="vehicle-ride-ready" element={<AdminVehicleRideReady />} />
         </Route>
       )}
 

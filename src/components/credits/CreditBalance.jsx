@@ -105,7 +105,7 @@ function PurchaseModal({ balance, loading, onClose }) {
     setPurchasing(pkg.id);
 
     try {
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate', {
+      const res = await fetch('/.netlify/functions/payfast-initiate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

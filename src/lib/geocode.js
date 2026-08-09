@@ -160,3 +160,45 @@ export async function geocodeLocation(query) {
   console.error('[geocode] All geocoders failed for query:', query);
   return null;
 }
+
+// ── Live-typing suggestions (NEW) ─────────────────────────────────────────────
+// Separate from geocodeLocation() above, which is deliberately kept
+// untouched — Onboarding.jsx and AddVehicle.jsx both depend on its current
+// single-best-match, 3-service-fallback behavior.
+//
+// This uses Photon ONLY, not the full 3-service fallback chain — a
+// debounced as-you-type dropdown needs one fast source, not a chain that
+// can take 1-3+ seconds per keystroke pause. Photon is the one of the
+// three actually suited to this (returns ranked multiple results;
+// Open-Meteo and Nominatim are reasonable single-shot fallbacks but
+// weren't built for rapid-fire suggestion queries).
+//
+// Returns [] (never throws) on any failure or empty query — callers
+// should treat an empty array as "no suggestions yet", not an error.
+export async function searchLocationSuggestions(query, limit = 5) {
+  if (!query || query.trim().length < 3) return [];
+
+  try {
+    const res = await fetch(
+      `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=${limit}&lang=en`
+    );
+    if (!res.ok) return [];
+
+    const geojson = await res.json();
+    const features = geojson?.features || [];
+
+    return features.map((feature) => {
+      const [longitude, latitude] = feature.geometry.coordinates;
+      const p = feature.properties;
+      return {
+        latitude,
+        longitude,
+        displayName: [p.name, p.city, p.state, p.country].filter(Boolean).join(', '),
+      };
+    });
+  } catch (err) {
+    console.error('[geocode] searchLocationSuggestions failed:', err);
+    return [];
+  }
+}
+

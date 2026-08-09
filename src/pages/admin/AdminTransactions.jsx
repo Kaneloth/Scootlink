@@ -24,7 +24,7 @@ export default function AdminTransactions() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-transactions', {
+      const res = await fetch('/.netlify/functions/admin-transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'list' }),

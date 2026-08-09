@@ -5,6 +5,7 @@ import NotificationBell from '@/components/layout/NotificationBell';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
+import IncomingGigOfferOverlay from '@/components/gigs/IncomingGigOfferOverlay';
 
 // ─── Page components for the five main tabs ────────────────────────────────
 import HomePage    from '@/pages/Dashboard';
@@ -498,7 +499,7 @@ t.horizontal = Math.abs(dx) > Math.abs(dy);
         session?.refresh_token &&
         localStorage.getItem('scootlink_signin_method') === 'biometric'
       ) {
-        fetch('https://skootlink.co.za/.netlify/functions/auth-set-token', {
+        fetch('/.netlify/functions/auth-set-token', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -599,7 +600,10 @@ t.horizontal = Math.abs(dx) > Math.abs(dy);
           </div>
         </div>
 
-        <MobileNav />
+        <MobileNav /> 
+         {(accountType === 'driver' || accountType === 'both') && (
+          <IncomingGigOfferOverlay driverId={gateUser?.id} />
+        )}
       </div>
     </VerificationGate>
   );

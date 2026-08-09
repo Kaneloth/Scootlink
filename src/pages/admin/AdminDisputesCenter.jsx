@@ -101,7 +101,7 @@ export default function AdminDisputesCenter() {
     setProcessingId(report.id);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-ban-user', {
+      const res = await fetch('/.netlify/functions/admin-ban-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({ userId: report.reported_id, reason: `Reported: ${report.details.slice(0, 100)}` }),
