@@ -35,6 +35,7 @@ import RequestGig from '@/pages/RequestGig';
 import GigStatus from '@/pages/GigStatus';
 import DriverGigVerification from '@/pages/DriverGigVerification';
 import VehicleRideReadySubmit from '@/pages/VehicleRideReadySubmit';
+import GigsHub from '@/pages/GigsHub';
 
 // Web client ID from Google Cloud Console (Supabase Dashboard → Authentication
 // → Providers → Google → Client ID). Must be the Web client ID on every
@@ -147,6 +148,7 @@ const AuthenticatedApp = () => {
         <Route path="/mysearch" element={<SearchPage />} />
         <Route path="/messages" element={<Messages />} />
         <Route path="/contact" element={<ContactUs />} />
+        <Route path="/gigs" element={<GigsHub />} />
         <Route path="/request-gig" element={<RequestGig />} />
         <Route path="/gig-status/:gigId" element={<GigStatus />} />
         <Route path="/gig-verification" element={<DriverGigVerification />} />

@@ -36,6 +36,7 @@ const supabase = createClient(
 const RETRY_AFTER_MS = 60 * 1000;       // expand radius after ~1 min unmatched
 const CANCEL_AFTER_MS = 2 * 60 * 1000;  // give up after ~2 min unmatched
 const EXPANDED_RADIUS_METERS = 7000;    // matches the 5km -> 7km precedent from planning notes
+const STALE_DRIVER_MS = 2 * 60 * 1000;     // drivers silent this long are flipped to unavailable
 
 async function notify(userId, type, title, body, data = null) {
   try {
@@ -98,9 +99,26 @@ async function broadcastToDrivers(gig, radiusMeters) {
 
 export const handler = async () => {
   const now = new Date();
-  const results = { rebroadcast: 0, cancelled: 0, errors: [] };
+  const results = { rebroadcast: 0, cancelled: 0, stale_drivers_cleared: 0, errors: [] };
 
   try {
+    // Backstop cleanup: a driver whose app closed or lost signal stops sending
+    // locations but would otherwise stay is_available = true. (Matching already
+    // ignores locations older than 2 min — see migration 006 — this just keeps
+    // the table honest.)
+    const staleCutoff = new Date(now.getTime() - STALE_DRIVER_MS).toISOString();
+    const { data: staleDrivers, error: staleErr } = await supabase
+      .from('driver_live_locations')
+      .update({ is_available: false })
+      .eq('is_available', true)
+      .lt('updated_at', staleCutoff)
+      .select('driver_id');
+    if (staleErr) {
+      console.error('[gig-expiry-check] Stale driver cleanup failed:', staleErr);
+    } else {
+      results.stale_drivers_cleared = staleDrivers?.length || 0;
+    }
+
     const { data: gigs, error } = await supabase
       .from('gig_requests')
       .select('id, gig_type, customer_id, pickup_address, dropoff_address, status, retry_count, search_radius_meters, created_at')
