@@ -89,7 +89,7 @@ export default function AdminVehicleRideReady() {
   const handleReview = async (vehicle, decision, reason = null) => {
     setProcessingId(vehicle.id);
     try {
-      await callAdminFn('review', { vehicleId: vehicle.id, decision, rejectionReason: reason });
+      await callAdminFn('review', { vehicleId: vehicle.id, decision, rejectionReason: reason, kind: vehicle.kind });
       toast.success(decision === 'approve' ? 'Vehicle approved as Ride-Ready' : 'Certification rejected');
       setPending((prev) => prev.filter((v) => v.id !== vehicle.id));
       setRejectingId(null);
@@ -152,6 +152,12 @@ export default function AdminVehicleRideReady() {
                 <p className="font-semibold text-sm">{v.make} {v.model} ({v.year})</p>
                 <p className="text-xs text-muted-foreground">{v.owner?.full_name} — {v.owner?.email}</p>
                 <p className="text-xs text-muted-foreground">Plate: {v.plate}</p>
+                {v.kind === 'renewal' && (
+                  <p className="text-xs font-semibold text-primary mt-1">
+                    Renewal — currently Ride-Ready{v.current_expiry_date ? ` until ${new Date(v.current_expiry_date).toLocaleDateString('en-ZA')}` : ''}
+                    {v.ride_ready_status === 'expired' ? ' (expired)' : ''}
+                  </p>
+                )}
               </div>
               {v.roadworthy_expiry_date && (
                 <span className={`text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${isExpired(v.roadworthy_expiry_date) ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>

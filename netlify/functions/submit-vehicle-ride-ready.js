@@ -69,7 +69,7 @@ export const handler = async (event) => {
     // ── Ownership check — the critical authorization step ────────────────────
     const { data: vehicle, error: vehicleErr } = await supabase
       .from('vehicles')
-      .select('id, owner_id, ride_ready_status')
+      .select('id, owner_id, ride_ready_status, renewal_status')
       .eq('id', vehicleId)
       .maybeSingle();
     if (vehicleErr) throw vehicleErr;
@@ -80,9 +80,13 @@ export const handler = async (event) => {
       console.warn(`[submit-vehicle-ride-ready] Ownership mismatch: user=${ownerId} tried vehicle=${vehicleId} owned by=${vehicle.owner_id}`);
       return { statusCode: 403, headers: HEADERS, body: JSON.stringify({ error: 'You do not own this vehicle' }) };
     }
-    if (vehicle.ride_ready_status === 'pending') {
+    if (vehicle.ride_ready_status === 'pending' || vehicle.renewal_status === 'pending') {
       return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ alreadyPending: true, message: 'A certificate for this vehicle is already under review.' }) };
     }
+    // An already Ride-Ready vehicle submits a RENEWAL (migration 016): it is
+    // reviewed beside the current certificate, so the vehicle stays usable for
+    // rides until the current certificate's own expiry date.
+    const isRenewal = vehicle.ride_ready_status === 'approved';
 
     // ── Upload certificate ────────────────────────────────────────────────────
     const path = `${ownerId}/${vehicleId}-${Date.now()}.jpg`;
@@ -92,21 +96,32 @@ export const handler = async (event) => {
     if (uploadErr) throw new Error(`Failed to upload certificate: ${uploadErr.message}`);
 
     // ── Update vehicle row ─────────────────────────────────────────────────────
+    const update = isRenewal
+      ? {
+          renewal_status: 'pending',
+          renewal_certificate_url: path,
+          renewal_expiry_date: expiryDate,
+          renewal_testing_station: testingStation.trim(),
+          renewal_rejection_reason: null,
+          renewal_requested_at: new Date().toISOString(),
+        }
+      : {
+          roadworthy_certificate_url: path,
+          roadworthy_expiry_date: expiryDate,
+          roadworthy_testing_station: testingStation.trim(),
+          ride_ready_status: 'pending',
+          ride_ready_rejection_reason: null,
+          ride_ready_verified_at: null,
+          ride_ready_verified_by: null,
+          renewal_status: null,
+        };
     const { error: updateErr } = await supabase
       .from('vehicles')
-      .update({
-        roadworthy_certificate_url: path,
-        roadworthy_expiry_date: expiryDate,
-        roadworthy_testing_station: testingStation.trim(),
-        ride_ready_status: 'pending',
-        ride_ready_rejection_reason: null,
-        ride_ready_verified_at: null,
-        ride_ready_verified_by: null,
-      })
+      .update(update)
       .eq('id', vehicleId);
     if (updateErr) throw updateErr;
 
-    console.log(`[submit-vehicle-ride-ready] Submitted: vehicle=${vehicleId} owner=${ownerId}`);
+    console.log(`[submit-vehicle-ride-ready] Submitted${isRenewal ? ' renewal' : ''}: vehicle=${vehicleId} owner=${ownerId}`);
     return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ pending: true, message: 'Submitted — awaiting review.' }) };
   } catch (err) {
     console.error('[submit-vehicle-ride-ready] Error:', err);

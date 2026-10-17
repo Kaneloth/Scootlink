@@ -108,7 +108,7 @@ export default function AdminGigVerification() {
   const handleReview = async (entry, decision, reason = null) => {
     setProcessingId(entry.id);
     try {
-      await callAdminFn('review', { verificationId: entry.id, decision, rejectionReason: reason });
+      await callAdminFn('review', { verificationId: entry.id, decision, rejectionReason: reason, kind: entry.kind });
       toast.success(decision === 'approve' ? 'Verification approved' : 'Verification rejected');
       setPending((prev) => prev.filter((p) => p.id !== entry.id));
       setRejectingId(null);
@@ -162,9 +162,25 @@ export default function AdminGigVerification() {
                 <p className="text-xs text-muted-foreground">{entry.profile?.email}</p>
               </div>
               <span className="text-xs font-semibold px-2 py-1 rounded-full bg-primary/10 text-primary">
-                {entry.tier === 'passenger_ready' ? 'Passenger-Ready' : 'Delivery-Ready'}
+                {entry.kind === 'upgrade'
+                  ? (entry.current_tier === 'passenger_ready' ? 'PDP renewal' : 'Upgrade to Passenger-Ready')
+                  : entry.tier === 'passenger_ready' ? 'Passenger-Ready' : 'Delivery-Ready'}
               </span>
             </div>
+
+            {entry.kind === 'upgrade' && (
+              <p className="text-xs text-muted-foreground mb-2">
+                Currently {entry.current_tier === 'passenger_ready' ? 'Passenger-Ready' : 'Delivery-Ready'} — only the new PDP and police clearance are shown. Approving makes them Passenger-Ready.
+              </p>
+            )}
+            {entry.pdp_expiry_date && (
+              <p className="text-xs mb-2">
+                <span className="text-muted-foreground">PDP expiry (as entered — check it matches the document):</span>{' '}
+                <span className={`font-semibold ${new Date(entry.pdp_expiry_date) < new Date() ? 'text-red-600' : ''}`}>
+                  {new Date(entry.pdp_expiry_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </span>
+              </p>
+            )}
 
             <div className="space-y-2 mb-3">
               {DOC_FIELDS.filter(({ key }) => entry[key]).map(({ key, label }) => (

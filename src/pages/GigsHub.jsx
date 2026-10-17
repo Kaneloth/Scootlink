@@ -27,6 +27,7 @@ const RIDE_READY_LABEL = {
   pending: { text: 'Under review', cls: 'bg-amber-100 text-amber-700' },
   approved: { text: 'Ride-Ready', cls: 'bg-green-100 text-green-700' },
   rejected: { text: 'Rejected — resubmit', cls: 'bg-red-100 text-red-700' },
+  expired: { text: 'Expired — renew', cls: 'bg-red-100 text-red-700' },
 };
 
 export default function GigsHub() {
@@ -63,7 +64,7 @@ export default function GigsHub() {
       if (isDriver) {
         const { data, error } = await supabase
           .from('driver_gig_verification')
-          .select('tier, status')
+          .select('tier, status, pdp_expiry_date, upgrade_status')
           .eq('driver_id', me.id)
           .maybeSingle();
         if (error) console.error('[GigsHub] verification fetch failed:', error);
@@ -74,7 +75,7 @@ export default function GigsHub() {
       if (isOwner) {
         const { data, error } = await supabase
           .from('vehicles')
-          .select('id, make, model, plate, ride_ready_status')
+          .select('id, make, model, plate, ride_ready_status, renewal_status, roadworthy_expiry_date')
           .eq('owner_id', me.id);
         if (error) console.error('[GigsHub] vehicles fetch failed:', error);
         setVehicles(data || []);
@@ -213,6 +214,36 @@ export default function GigsHub() {
               )}
 
               <button
+                onClick={() => navigate('/gig-verification')}
+                className="w-full flex items-center gap-3 text-left pt-3 border-t border-border/50"
+              >
+                <ShieldCheck className="w-5 h-5 text-primary shrink-0" />
+                <div className="flex-1">
+                  {verification?.upgrade_status === 'pending' ? (
+                    <>
+                      <p className="text-sm font-medium">{verification.tier === 'passenger_ready' ? 'PDP renewal' : 'Passenger-Ready upgrade'} under review</p>
+                      <p className="text-xs text-muted-foreground">You keep your current status meanwhile</p>
+                    </>
+                  ) : verification?.tier === 'passenger_ready' ? (
+                    <>
+                      <p className="text-sm font-medium">Renew your PDP</p>
+                      <p className="text-xs text-muted-foreground">
+                        {verification.pdp_expiry_date
+                          ? `On file until ${new Date(verification.pdp_expiry_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                          : 'Upload your renewed permit before it expires'}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium">Upgrade to Passenger-Ready</p>
+                      <p className="text-xs text-muted-foreground">Accept rides too — add your PDP and police clearance</p>
+                    </>
+                  )}
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </button>
+
+              <button
                 onClick={() => navigate('/earnings')}
                 className="w-full flex items-center gap-3 text-left pt-3 border-t border-border/50"
               >
@@ -244,7 +275,12 @@ export default function GigsHub() {
                 <Car className="w-4 h-4 text-muted-foreground shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{v.make} {v.model}</p>
-                  <p className="text-xs text-muted-foreground">{v.plate}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {v.plate}
+                    {v.ride_ready_status === 'approved' && v.roadworthy_expiry_date &&
+                      ` · until ${new Date(v.roadworthy_expiry_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                    {v.renewal_status === 'pending' && ' · new certificate under review'}
+                  </p>
                 </div>
                 <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${badge.cls}`}>{badge.text}</span>
               </button>

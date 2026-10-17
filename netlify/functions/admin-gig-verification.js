@@ -13,7 +13,11 @@
  *
  * POST body:
  *   { action: 'list' }
- *   { action: 'review', verificationId: string, decision: 'approve' | 'reject', rejectionReason?: string }
+ *   { action: 'review', verificationId: string, decision: 'approve' | 'reject', rejectionReason?: string,
+ *     kind?: 'new' | 'upgrade' }
+ * Upgrades / PDP renewals (migration 016) appear in 'list' with kind: 'upgrade' and
+ * the NEW documents in pdp_url / police_clearance_url; the driver keeps their
+ * current tier until an upgrade is approved.
  * Auth: Bearer token, verified to belong to an admin (user_metadata.is_admin === true)
  */
 import { createClient } from '@supabase/supabase-js';
@@ -55,12 +59,25 @@ export const handler = async (event) => {
 
   try {
     if (body.action === 'list') {
-      const { data: pending, error } = await supabaseAdmin
+      const { data: rows, error } = await supabaseAdmin
         .from('driver_gig_verification')
         .select('*')
-        .eq('status', 'pending')
+        .or('status.eq.pending,upgrade_status.eq.pending')
         .order('created_at', { ascending: true });
       if (error) throw error;
+      const pending = (rows || []).map((v) => (v.status === 'approved' && v.upgrade_status === 'pending'
+        ? {
+            id: v.id,
+            driver_id: v.driver_id,
+            kind: 'upgrade',
+            current_tier: v.tier,
+            tier: 'passenger_ready',
+            pdp_url: v.upgrade_pdp_url,
+            police_clearance_url: v.upgrade_police_clearance_url,
+            pdp_expiry_date: v.upgrade_pdp_expiry_date,
+            created_at: v.upgrade_requested_at || v.updated_at,
+          }
+        : { ...v, kind: 'new' }));
 
       const userIds = [...new Set((pending || []).map(v => v.driver_id).filter(Boolean))];
       const { data: profiles } = userIds.length
@@ -73,7 +90,7 @@ export const handler = async (event) => {
     }
 
     if (body.action === 'review') {
-      const { verificationId, decision, rejectionReason } = body;
+      const { verificationId, decision, rejectionReason, kind } = body;
       if (!verificationId || !['approve', 'reject'].includes(decision)) {
         return { statusCode: 400, body: JSON.stringify({ error: 'verificationId and a valid decision are required' }) };
       }
@@ -82,6 +99,62 @@ export const handler = async (event) => {
       // race-guard pattern in admin-refund-requests.js's mark_refunded.
       const now = new Date().toISOString();
       const newStatus = decision === 'approve' ? 'approved' : 'rejected';
+
+      if (kind === 'upgrade') {
+        const { data: cur, error: curErr } = await supabaseAdmin
+          .from('driver_gig_verification')
+          .select('id, driver_id, tier, upgrade_pdp_url, upgrade_police_clearance_url, upgrade_pdp_expiry_date')
+          .eq('id', verificationId)
+          .eq('upgrade_status', 'pending')
+          .maybeSingle();
+        if (curErr) throw curErr;
+        if (!cur) {
+          return { statusCode: 409, body: JSON.stringify({ error: 'This upgrade was already reviewed (or does not exist).' }) };
+        }
+        const wasPassenger = cur.tier === 'passenger_ready';
+        const patch = decision === 'approve'
+          ? {
+              tier: 'passenger_ready',
+              pdp_url: cur.upgrade_pdp_url,
+              police_clearance_url: cur.upgrade_police_clearance_url,
+              pdp_expiry_date: cur.upgrade_pdp_expiry_date,
+              pdp_reminded_for: null,
+              upgrade_status: null,
+              upgrade_pdp_url: null,
+              upgrade_police_clearance_url: null,
+              upgrade_pdp_expiry_date: null,
+              upgrade_rejection_reason: null,
+              verified_at: now,
+              verified_by: user.id,
+              updated_at: now,
+            }
+          : { upgrade_status: 'rejected', upgrade_rejection_reason: rejectionReason || null, updated_at: now };
+        const { data: up, error: upErr } = await supabaseAdmin
+          .from('driver_gig_verification')
+          .update(patch)
+          .eq('id', verificationId)
+          .eq('upgrade_status', 'pending')
+          .select()
+          .maybeSingle();
+        if (upErr) throw upErr;
+        if (!up) {
+          return { statusCode: 409, body: JSON.stringify({ error: 'This upgrade was already reviewed.' }) };
+        }
+        if (decision === 'approve') {
+          await notify(up.driver_id, 'gig_verification_approved',
+            wasPassenger ? 'PDP renewal approved' : "You're Passenger-Ready!",
+            wasPassenger ? 'Your renewed PDP was approved. You can keep accepting rides.' : 'Your upgrade was approved. You can now accept rides as well as deliveries.',
+            { verification_id: up.id });
+        } else {
+          await notify(up.driver_id, 'gig_verification_rejected',
+            wasPassenger ? 'PDP renewal not approved' : 'Passenger-Ready upgrade not approved',
+            (rejectionReason || 'Please review your documents and resubmit.')
+              + (wasPassenger ? ' Your current PDP stays on file until it expires.' : ' You can still accept deliveries.'),
+            { verification_id: up.id });
+        }
+        console.log(`[admin-gig-verification] upgrade ${newStatus}: verification=${verificationId} driver=${up.driver_id} admin=${user.id}`);
+        return { statusCode: 200, body: JSON.stringify({ submission: up }) };
+      }
 
       const { data: updated, error: updateErr } = await supabaseAdmin
         .from('driver_gig_verification')

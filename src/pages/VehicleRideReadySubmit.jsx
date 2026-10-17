@@ -40,7 +40,7 @@ export default function VehicleRideReadySubmit() {
       const user = await auth.me();
       const { data, error } = await supabase
         .from('vehicles')
-        .select('id, make, model, year, plate, owner_id, ride_ready_status, roadworthy_expiry_date, roadworthy_testing_station, ride_ready_rejection_reason')
+        .select('id, make, model, year, plate, owner_id, ride_ready_status, roadworthy_expiry_date, roadworthy_testing_station, ride_ready_rejection_reason, renewal_status, renewal_rejection_reason, renewal_expiry_date')
         .eq('id', vehicleId)
         .maybeSingle();
 
@@ -77,7 +77,10 @@ export default function VehicleRideReadySubmit() {
       if (!res.ok) throw new Error(data.error || 'Submission failed');
 
       toast.success(data.alreadyPending ? data.message : 'Submitted! We\'ll review your certificate shortly.');
-      setVehicle((prev) => ({ ...prev, ride_ready_status: 'pending' }));
+      // A Ride-Ready vehicle submits a renewal (stays Ride-Ready meanwhile).
+      setVehicle((prev) => (prev.ride_ready_status === 'approved'
+        ? { ...prev, renewal_status: 'pending', renewal_rejection_reason: null }
+        : { ...prev, ride_ready_status: 'pending' }));
       setCertFile(null);
     } catch (err) {
       console.error('[VehicleRideReadySubmit] submit error:', err);
@@ -106,7 +109,35 @@ export default function VehicleRideReadySubmit() {
       {vehicle.ride_ready_status === 'approved' && (
         <Card className="p-4 mb-4 border border-green-200 bg-green-50 flex items-center gap-2">
           <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-          <p className="text-sm text-green-800">This vehicle is Ride-Ready certified.</p>
+          <p className="text-sm text-green-800">
+            This vehicle is Ride-Ready certified
+            {vehicle.roadworthy_expiry_date ? ` until ${new Date(vehicle.roadworthy_expiry_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}.
+          </p>
+        </Card>
+      )}
+
+      {vehicle.ride_ready_status === 'expired' && (
+        <Card className="p-4 mb-4 border border-red-200 bg-red-50 flex items-start gap-2">
+          <XCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <p className="text-sm text-red-800">The roadworthy certificate has expired, so this vehicle can't be used for rides. Upload the new certificate below.</p>
+        </Card>
+      )}
+
+      {vehicle.renewal_status === 'pending' && (
+        <Card className="p-4 mb-4 border border-amber-200 bg-amber-50 flex items-center gap-2">
+          <Clock className="w-5 h-5 text-amber-600 shrink-0" />
+          <p className="text-sm text-amber-800">Your new certificate is under review. The vehicle stays Ride-Ready meanwhile.</p>
+        </Card>
+      )}
+
+      {vehicle.renewal_status === 'rejected' && (
+        <Card className="p-4 mb-4 border border-red-200 bg-red-50 flex items-start gap-2">
+          <XCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm text-red-800 font-medium">Your new certificate wasn't approved</p>
+            {vehicle.renewal_rejection_reason && <p className="text-xs text-red-700 mt-1">{vehicle.renewal_rejection_reason}</p>}
+            <p className="text-xs text-red-700 mt-1">Your current certificate stays valid until it expires. You can upload another below.</p>
+          </div>
         </Card>
       )}
 
@@ -128,9 +159,12 @@ export default function VehicleRideReadySubmit() {
         </Card>
       )}
 
-      {vehicle.ride_ready_status !== 'approved' && (
+      {vehicle.ride_ready_status !== 'pending' && vehicle.renewal_status !== 'pending' && (
         <Card className="p-6 border border-border/50">
           <div className="space-y-4">
+            {vehicle.ride_ready_status === 'approved' && (
+              <p className="text-sm font-medium">Renewing? Upload the new certificate here.</p>
+            )}
             <div>
               <Label>Roadworthy Certificate</Label>
               <div className="mt-1">

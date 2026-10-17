@@ -52,12 +52,25 @@ export const handler = async (event) => {
 
   try {
     if (body.action === 'list') {
-      const { data: pending, error } = await supabaseAdmin
+      // New submissions (status pending) and renewals of Ride-Ready vehicles
+      // (renewal_status pending, migration 016). A renewal is shown with the
+      // NEW certificate in the usual fields, marked kind: 'renewal'.
+      const { data: rows, error } = await supabaseAdmin
         .from('vehicles')
-        .select('id, owner_id, make, model, year, plate, roadworthy_certificate_url, roadworthy_expiry_date, roadworthy_testing_station, ride_ready_status')
-        .eq('ride_ready_status', 'pending')
+        .select('id, owner_id, make, model, year, plate, roadworthy_certificate_url, roadworthy_expiry_date, roadworthy_testing_station, ride_ready_status, renewal_status, renewal_certificate_url, renewal_expiry_date, renewal_testing_station')
+        .or('ride_ready_status.eq.pending,renewal_status.eq.pending')
         .order('listed_at', { ascending: true });
       if (error) throw error;
+      const pending = (rows || []).map((v) => (v.renewal_status === 'pending' && v.ride_ready_status !== 'pending'
+        ? {
+            ...v,
+            kind: 'renewal',
+            current_expiry_date: v.roadworthy_expiry_date,
+            roadworthy_certificate_url: v.renewal_certificate_url,
+            roadworthy_expiry_date: v.renewal_expiry_date,
+            roadworthy_testing_station: v.renewal_testing_station,
+          }
+        : { ...v, kind: 'new' }));
 
       const ownerIds = [...new Set((pending || []).map(v => v.owner_id).filter(Boolean))];
       const { data: profiles } = ownerIds.length
@@ -70,7 +83,7 @@ export const handler = async (event) => {
     }
 
     if (body.action === 'review') {
-      const { vehicleId, decision, rejectionReason } = body;
+      const { vehicleId, decision, rejectionReason, kind } = body;
       if (!vehicleId || !['approve', 'reject'].includes(decision)) {
         return { statusCode: 400, body: JSON.stringify({ error: 'vehicleId and a valid decision are required' }) };
       }
@@ -78,18 +91,57 @@ export const handler = async (event) => {
       const now = new Date().toISOString();
       const newStatus = decision === 'approve' ? 'approved' : 'rejected';
 
-      const { data: updated, error: updateErr } = await supabaseAdmin
-        .from('vehicles')
-        .update({
-          ride_ready_status: newStatus,
-          ride_ready_rejection_reason: decision === 'reject' ? (rejectionReason || null) : null,
-          ride_ready_verified_at: decision === 'approve' ? now : null,
-          ride_ready_verified_by: user.id,
-        })
-        .eq('id', vehicleId)
-        .eq('ride_ready_status', 'pending')
-        .select()
-        .maybeSingle();
+      let updated;
+      let updateErr;
+      if (kind === 'renewal') {
+        // Approve: the renewal becomes the live certificate (and an expired
+        // vehicle is Ride-Ready again). Reject: the current certificate stays.
+        const { data: v, error: readErr } = await supabaseAdmin
+          .from('vehicles')
+          .select('renewal_certificate_url, renewal_expiry_date, renewal_testing_station')
+          .eq('id', vehicleId)
+          .eq('renewal_status', 'pending')
+          .maybeSingle();
+        if (readErr) throw readErr;
+        if (v) {
+          const patch = decision === 'approve'
+            ? {
+                roadworthy_certificate_url: v.renewal_certificate_url,
+                roadworthy_expiry_date: v.renewal_expiry_date,
+                roadworthy_testing_station: v.renewal_testing_station,
+                ride_ready_status: 'approved',
+                ride_ready_rejection_reason: null,
+                ride_ready_verified_at: now,
+                ride_ready_verified_by: user.id,
+                renewal_status: null,
+                renewal_certificate_url: null,
+                renewal_expiry_date: null,
+                renewal_testing_station: null,
+                renewal_rejection_reason: null,
+              }
+            : { renewal_status: 'rejected', renewal_rejection_reason: rejectionReason || null };
+          ({ data: updated, error: updateErr } = await supabaseAdmin
+            .from('vehicles')
+            .update(patch)
+            .eq('id', vehicleId)
+            .eq('renewal_status', 'pending')
+            .select()
+            .maybeSingle());
+        }
+      } else {
+        ({ data: updated, error: updateErr } = await supabaseAdmin
+          .from('vehicles')
+          .update({
+            ride_ready_status: newStatus,
+            ride_ready_rejection_reason: decision === 'reject' ? (rejectionReason || null) : null,
+            ride_ready_verified_at: decision === 'approve' ? now : null,
+            ride_ready_verified_by: user.id,
+          })
+          .eq('id', vehicleId)
+          .eq('ride_ready_status', 'pending')
+          .select()
+          .maybeSingle());
+      }
 
       if (updateErr) throw updateErr;
       if (!updated) {
@@ -106,8 +158,9 @@ export const handler = async (event) => {
       } else {
         await notify(
           updated.owner_id, 'vehicle_ride_ready_rejected',
-          'Ride-Ready certification not approved',
-          rejectionReason || `Your ${updated.make} ${updated.model}'s roadworthy certificate was not approved. Please review and resubmit.`,
+          kind === 'renewal' ? 'New roadworthy certificate not approved' : 'Ride-Ready certification not approved',
+          (rejectionReason || `Your ${updated.make} ${updated.model}'s roadworthy certificate was not approved. Please review and resubmit.`)
+            + (kind === 'renewal' && updated.ride_ready_status === 'approved' ? ' Your current certificate remains valid until it expires.' : ''),
           { vehicle_id: updated.id },
         );
       }

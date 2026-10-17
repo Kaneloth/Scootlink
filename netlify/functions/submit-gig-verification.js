@@ -13,8 +13,15 @@
  *   {
  *     tier: 'delivery_ready' | 'passenger_ready',
  *     licenseImageBase64, idImageBase64, selfieImageBase64,
- *     pdpImageBase64?, policeClearanceImageBase64?   // required if tier = passenger_ready
+ *     pdpImageBase64?, policeClearanceImageBase64?, pdpExpiryDate?   // required if tier = passenger_ready
  *   }
+ *
+ * Already-approved drivers (migration 016):
+ *   - asking for passenger_ready again = UPGRADE (Delivery-Ready) or PDP
+ *     RENEWAL (Passenger-Ready): only pdp + police clearance + pdpExpiryDate
+ *     are needed, stored in upgrade_* columns and reviewed while the driver
+ *     keeps their current tier;
+ *   - asking for delivery_ready = already covered, nothing to do.
  * Auth: Bearer token — driver_id derived server-side, never trusted from client (§3.2)
  */
 import { createClient } from '@supabase/supabase-js';
@@ -60,17 +67,19 @@ export const handler = async (event) => {
 
   const {
     tier, licenseImageBase64, idImageBase64, selfieImageBase64,
-    pdpImageBase64, policeClearanceImageBase64,
+    pdpImageBase64, policeClearanceImageBase64, pdpExpiryDate,
   } = body;
 
   if (!['delivery_ready', 'passenger_ready'].includes(tier)) {
     return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: "tier must be 'delivery_ready' or 'passenger_ready'" }) };
   }
-  if (!licenseImageBase64 || !idImageBase64 || !selfieImageBase64) {
-    return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'License, ID, and selfie images are required' }) };
-  }
-  if (tier === 'passenger_ready' && (!pdpImageBase64 || !policeClearanceImageBase64)) {
-    return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'PDP and police clearance are required for Passenger-Ready' }) };
+  if (tier === 'passenger_ready') {
+    if (!pdpImageBase64 || !policeClearanceImageBase64 || !pdpExpiryDate) {
+      return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'PDP, police clearance and the PDP expiry date are required for Passenger-Ready' }) };
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(pdpExpiryDate) || new Date(pdpExpiryDate) < new Date(new Date().toDateString())) {
+      return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'The PDP expiry date must be a valid date that has not passed' }) };
+    }
   }
 
   // ── Verify JWT, derive driver_id server-side ──────────────────────────────
@@ -90,16 +99,46 @@ export const handler = async (event) => {
     // ── Check existing submission ───────────────────────────────────────────
     const { data: existing, error: existingErr } = await supabase
       .from('driver_gig_verification')
-      .select('id, tier, status')
+      .select('id, tier, status, upgrade_status')
       .eq('driver_id', driverId)
       .maybeSingle();
     if (existingErr) throw existingErr;
 
-    if (existing?.status === 'approved' && existing.tier === tier) {
-      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ alreadyVerified: true, message: `You're already ${tier === 'passenger_ready' ? 'Passenger-Ready' : 'Delivery-Ready'}.` }) };
-    }
-    if (existing?.status === 'pending') {
+    if (existing?.status === 'pending' || existing?.upgrade_status === 'pending') {
       return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ alreadyPending: true, message: 'Your previous submission is still under review.' }) };
+    }
+    if (existing?.status === 'approved' && tier === 'delivery_ready') {
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ alreadyVerified: true, message: "You're already approved for deliveries." }) };
+    }
+
+    // ── Upgrade / PDP renewal for an approved driver ─────────────────────────
+    if (existing?.status === 'approved' && tier === 'passenger_ready') {
+      const [upPdp, upPolice] = await Promise.all([
+        uploadDoc(driverId, 'pdp', pdpImageBase64),
+        uploadDoc(driverId, 'police-clearance', policeClearanceImageBase64),
+      ]);
+      const { error: upErr } = await supabase
+        .from('driver_gig_verification')
+        .update({
+          upgrade_status: 'pending',
+          upgrade_pdp_url: upPdp,
+          upgrade_police_clearance_url: upPolice,
+          upgrade_pdp_expiry_date: pdpExpiryDate,
+          upgrade_rejection_reason: null,
+          upgrade_requested_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('driver_id', driverId)
+        .eq('status', 'approved');
+      if (upErr) throw upErr;
+      const what = existing.tier === 'passenger_ready' ? 'PDP renewal' : 'Passenger-Ready upgrade';
+      console.log(`[submit-gig-verification] ${what} submitted: driver=${driverId}`);
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ upgradePending: true, message: `${what} submitted — you keep your current status while it's reviewed.` }) };
+    }
+
+    // ── New submission: licence, ID and selfie are required ──────────────────
+    if (!licenseImageBase64 || !idImageBase64 || !selfieImageBase64) {
+      return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'License, ID, and selfie images are required' }) };
     }
 
     // ── Upload documents ─────────────────────────────────────────────────────
@@ -128,6 +167,8 @@ export const handler = async (event) => {
         selfie_url: selfiePath,
         pdp_url: pdpPath,
         police_clearance_url: policeClearancePath,
+        pdp_expiry_date: tier === 'passenger_ready' ? pdpExpiryDate : null,
+        upgrade_status: null,
         status: 'pending',
         rejection_reason: null,
         verified_at: null,
