@@ -36,6 +36,7 @@ import GigStatus from '@/pages/GigStatus';
 import DriverActiveGig from '@/pages/DriverActiveGig';
 import GigOffer from '@/pages/GigOffer';
 import GigRedirect from '@/pages/GigRedirect';
+import DriverEarnings from '@/pages/DriverEarnings';
 import PushTapHandler from '@/components/PushTapHandler';
 import DriverGigVerification from '@/pages/DriverGigVerification';
 import VehicleRideReadySubmit from '@/pages/VehicleRideReadySubmit';
@@ -159,6 +160,7 @@ const AuthenticatedApp = () => {
         <Route path="/gig-drive/:gigId" element={<DriverActiveGig />} />
         <Route path="/gig-offer/:gigId" element={<GigOffer />} />
         <Route path="/gig/:gigId" element={<GigRedirect />} />
+        <Route path="/earnings" element={<DriverEarnings />} />
         <Route path="/gig-verification" element={<DriverGigVerification />} />
         <Route path="/vehicle-ride-ready/:vehicleId" element={<VehicleRideReadySubmit />} />
       </Route>

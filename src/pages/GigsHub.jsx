@@ -18,7 +18,7 @@ import {
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  Rocket, Car, Package, ShieldCheck, Clock, XCircle, Loader2, Power, AlertTriangle, ChevronRight,
+  Rocket, Car, Package, ShieldCheck, Clock, XCircle, Loader2, Power, AlertTriangle, ChevronRight, Wallet,
 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 
@@ -211,6 +211,18 @@ export default function GigsHub() {
                   Keep Skootlink open on screen while you're online — location updates pause if the app goes to the background.
                 </p>
               )}
+
+              <button
+                onClick={() => navigate('/earnings')}
+                className="w-full flex items-center gap-3 text-left pt-3 border-t border-border/50"
+              >
+                <Wallet className="w-5 h-5 text-primary shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Earnings</p>
+                  <p className="text-xs text-muted-foreground">Your completed gigs, fees and payouts</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </button>
             </>
           )}
         </Card>
