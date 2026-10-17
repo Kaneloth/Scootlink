@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label';
 import { ShieldCheck, Upload, Loader2, X, AlertTriangle, CheckCircle2, RefreshCw, Clock } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
+import { fnUrl } from '@/lib/functionsUrl';
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
 // Labels are fixed; prices are admin-configurable (see AdminIdentityVerification.jsx
@@ -89,7 +90,7 @@ function PaymentModal({ service, price, onPay, onCancel, paying }) {
     const isNative = Capacitor.isNativePlatform();
 
     try {
-      const res = await fetch('/.netlify/functions/payfast-initiate-verification', {
+      const res = await fetch(fnUrl('payfast-initiate-verification'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -622,7 +623,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
         compressImage(saIdFront), compressImage(saIdBack), compressImage(saIdSelfie),
       ]);
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/.netlify/functions/submit-verification', {
+      const res = await fetch(fnUrl('submit-verification'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
@@ -669,7 +670,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
         compressImage(passportFront), compressImage(passportBack), compressImage(passportSelfie),
       ]);
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/.netlify/functions/submit-verification', {
+      const res = await fetch(fnUrl('submit-verification'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
@@ -712,7 +713,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
         compressImage(licenceFront), compressImage(licenceBack), compressImage(licenceSelfie),
       ]);
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/.netlify/functions/submit-verification', {
+      const res = await fetch(fnUrl('submit-verification'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({

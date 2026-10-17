@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
 import { BiometricAuth, AndroidBiometryStrength } from '@aparajita/capacitor-biometric-auth';
 import { Capacitor } from '@capacitor/core';
+import { fnUrl } from '@/lib/functionsUrl';
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
 
@@ -23,7 +24,7 @@ function biometricError(code, message) {
 }
 
 async function setTokenCookie(refresh_token) {
-  await fetch('/.netlify/functions/auth-set-token', {
+  await fetch(fnUrl('auth-set-token'), {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -137,7 +138,7 @@ async function triggerBiometricLogin() {
 
   // Path 3: httpOnly cookie via Netlify function
   try {
-    const res = await fetch('/.netlify/functions/auth-refresh', {
+    const res = await fetch(fnUrl('auth-refresh'), {
       method: 'POST',
       credentials: 'include',
     });
@@ -158,7 +159,7 @@ async function triggerBiometricLogin() {
 async function fetchUserPhone(userId) {
   if (!userId) return null;
   try {
-    const res = await fetch('/.netlify/functions/get-profiles', {
+    const res = await fetch(fnUrl('get-profiles'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [userId] }),
@@ -549,7 +550,7 @@ export default function Auth() {
     if (!disputeMsg.trim()) return;
     setDisputeSending(true);
     try {
-      await fetch('/.netlify/functions/contact-support', {
+      await fetch(fnUrl('contact-support'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -576,7 +577,7 @@ export default function Auth() {
     if (!contactMsg.trim()) return;
     setContactSending(true);
     try {
-      await fetch('/.netlify/functions/contact-support', {
+      await fetch(fnUrl('contact-support'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: signupEmail, name: regName || 'New User', message: contactMsg }),

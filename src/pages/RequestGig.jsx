@@ -36,6 +36,7 @@ import { Car, Package, AlertTriangle, MapPin, Loader2, LocateFixed } from 'lucid
 import PageHeader from '@/components/layout/PageHeader';
 import AddressAutocompleteInput from '@/components/gigs/AddressAutocompleteInput';
 import { toast } from 'sonner';
+import { fnUrl } from '@/lib/functionsUrl';
 
 export default function RequestGig() {
   const navigate = useNavigate();
@@ -94,7 +95,7 @@ export default function RequestGig() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Not signed in');
 
-      const res = await fetch('/.netlify/functions/create-gig-request', {
+      const res = await fetch(fnUrl('create-gig-request'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

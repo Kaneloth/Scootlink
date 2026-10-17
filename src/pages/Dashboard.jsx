@@ -32,6 +32,7 @@ import EmptyState from '@/components/common/EmptyState';
 import LeaveReviewModal from '@/components/reviews/LeaveReviewModal';
 import StarRating from '@/components/reviews/StarRating';
 import ImageLightbox from '@/components/ui/ImageLightbox';
+import { fnUrl } from '@/lib/functionsUrl';
 
 // Skeleton for the stat cards row while user is loading
 function StatCardsSkeleton() {
@@ -95,7 +96,7 @@ function TopUpModal({ onClose }) {
     setPurchasing(pkg.id);
 
     try {
-      const res = await fetch('/.netlify/functions/payfast-initiate', {
+      const res = await fetch(fnUrl('payfast-initiate'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -722,7 +723,7 @@ export default function Dashboard() {
   const fetchProfilesViaFunction = async (ids) => {
     if (!ids || ids.length === 0) return [];
     try {
-      const res = await fetch('/.netlify/functions/get-profiles', {
+      const res = await fetch(fnUrl('get-profiles'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),

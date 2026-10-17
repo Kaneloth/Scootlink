@@ -8,6 +8,7 @@ import PageHeader from '@/components/layout/PageHeader';
 import { useCredits } from '@/hooks/useCredits';
 import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
+import { fnUrl } from '@/lib/functionsUrl';
 
 const PACKAGES = [
   { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 250  },
@@ -176,7 +177,7 @@ export default function Credits() {
     const isNative = Capacitor.isNativePlatform();
 
     try {
-      const res = await fetch('/.netlify/functions/payfast-initiate', {
+      const res = await fetch(fnUrl('payfast-initiate'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

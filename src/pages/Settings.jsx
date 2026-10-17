@@ -18,6 +18,7 @@ import { sendSMS } from '@/lib/sms';
 import { toast } from 'sonner';
 import { useCredits } from '@/hooks/useCredits';
 import { BiometricAuth, AndroidBiometryStrength } from '@aparajita/capacitor-biometric-auth';
+import { fnUrl } from '@/lib/functionsUrl';
 
 const TEXT_SIZES = [
   { label: 'Normal',   value: '16px' },
@@ -163,14 +164,14 @@ async function verifyBiometric() {
 }
 
 async function clearTokenCookie() {
-  await fetch('/.netlify/functions/auth-clear-token', {
+  await fetch(fnUrl('auth-clear-token'), {
     method: 'POST',
     credentials: 'include',
   }).catch(() => {});
 }
 
 async function deleteAccount(accessToken) {
-  const res = await fetch('/.netlify/functions/auth-delete-account', {
+  const res = await fetch(fnUrl('auth-delete-account'), {
     method: 'POST',
     credentials: 'include',
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -270,7 +271,7 @@ function CreditBalanceWidget() {
     const isNative = Capacitor.isNativePlatform();
 
     try {
-      const res = await fetch('/.netlify/functions/payfast-initiate', {
+      const res = await fetch(fnUrl('payfast-initiate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ package_id: pkg.id, is_native: isNative }),
@@ -1009,7 +1010,7 @@ export default function Settings() {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       if (accessToken) {
-        await fetch('/.netlify/functions/admin-set-role', {
+        await fetch(fnUrl('admin-set-role'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
           body: JSON.stringify({ userId, is_admin: granting }),
@@ -1055,7 +1056,7 @@ export default function Settings() {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       if (accessToken) {
-        await fetch('/.netlify/functions/admin-ban-user', {
+        await fetch(fnUrl('admin-ban-user'), {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },

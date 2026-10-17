@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label';
 import { Upload, Loader2, CheckCircle2, Clock, XCircle, X } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
+import { fnUrl } from '@/lib/functionsUrl';
 
 export default function VehicleRideReadySubmit() {
   const { vehicleId } = useParams();
@@ -62,7 +63,7 @@ export default function VehicleRideReadySubmit() {
       const certBase64 = await compressImage(certFile);
       const { data: { session } } = await supabase.auth.getSession();
 
-      const res = await fetch('/.netlify/functions/submit-vehicle-ride-ready', {
+      const res = await fetch(fnUrl('submit-vehicle-ride-ready'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({

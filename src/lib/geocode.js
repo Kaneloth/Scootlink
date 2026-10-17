@@ -15,6 +15,8 @@
  * Returns null only if everything fails.
  */
 
+import { fnUrl } from '@/lib/functionsUrl';
+
 // ── Known SA places for fuzzy correction ─────────────────────────────────────
 const SA_PLACES = [
   'Pretoria', 'Johannesburg', 'Cape Town', 'Durban', 'Bloemfontein',
@@ -116,7 +118,7 @@ async function _tryGeocode(query) {
   // 3. Nominatim via Netlify proxy
   try {
     const res = await fetch(
-      `/.netlify/functions/geocode?q=${encodeURIComponent(query)}`
+      `${fnUrl('geocode')}?q=${encodeURIComponent(query)}`
     );
     if (res.ok) {
       const data = await res.json();

@@ -13,6 +13,7 @@ import SearchPage  from '@/pages/SearchPage';
 import ActivityPage    from '@/pages/Activity';
 import BriefcasePage  from '@/pages/MyBriefcase';
 import MessagesPage   from '@/pages/Messages';
+import { fnUrl } from '@/lib/functionsUrl';
 
 // Must match bottom nav order exactly: Home → Search → Activity → Briefcase → Messages
 // ─── Search paths (dynamic based on account type) ───────────────────────────
@@ -499,7 +500,7 @@ t.horizontal = Math.abs(dx) > Math.abs(dy);
         session?.refresh_token &&
         localStorage.getItem('scootlink_signin_method') === 'biometric'
       ) {
-        fetch('/.netlify/functions/auth-set-token', {
+        fetch(fnUrl('auth-set-token'), {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },

@@ -4,6 +4,7 @@
  * The `profiles` table stores extended user data keyed by user id (uuid).
  */
 import { supabase } from './supabaseClient';
+import { fnUrl } from '@/lib/functionsUrl';
 export { supabase };
 
 // Key for the biometric session backup in localStorage — declared here so
@@ -352,7 +353,7 @@ supabase.auth.onAuthStateChange((event, session) => {
 export const fetchProfilesByIds = async (ids) => {
   if (!ids || ids.length === 0) return [];
   try {
-    const res = await fetch('/.netlify/functions/get-profiles', {
+    const res = await fetch(fnUrl('get-profiles'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),

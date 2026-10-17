@@ -21,15 +21,43 @@ import { Car, Package, MapPin, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useGigOffers } from '@/hooks/useGigOffers';
 
-// TODO: this needs to query the driver's currently-rented, Ride-Ready
-// vehicles — e.g. rentals joined to vehicles where driver_id = driverId,
-// vehicles.ride_ready_status = 'approved', and the rental is currently
-// ACTIVE. Left as a stub: I don't know your rentals.status enum value
-// for "active/ongoing" (RentalRequest.jsx only shows the 'pending' value
-// on insert). Confirm the value and this becomes a one-line useQuery.
+// The driver's vehicles that can carry passengers: vehicles they currently
+// rent (rentals.status = 'active', the value Activity.jsx and
+// AdminRentalsOversight.jsx use) whose owner got them Ride-Ready approved.
+//
+// Two plain queries instead of a PostgREST embed, so this doesn't depend on
+// a rentals.vehicle_id -> vehicles.id foreign key existing.
+// The server (accept_gig_request) must still re-check all of this; this list
+// is only what the driver gets to choose from.
 async function fetchDriversRideReadyVehicles(driverId) {
-  console.warn('[IncomingGigOfferOverlay] fetchDriversRideReadyVehicles not yet implemented — rentals.status active-value unconfirmed');
-  return [];
+  if (!driverId) return [];
+
+  const { data: rentals, error: rentalsError } = await supabase
+    .from('rentals')
+    .select('vehicle_id')
+    .eq('driver_id', driverId)
+    .eq('status', 'active');
+
+  if (rentalsError) {
+    console.error('[IncomingGigOfferOverlay] fetchDriversRideReadyVehicles rentals query failed:', rentalsError);
+    return [];
+  }
+
+  const vehicleIds = [...new Set((rentals || []).map((r) => r.vehicle_id).filter(Boolean))];
+  if (vehicleIds.length === 0) return [];
+
+  const { data: vehicles, error: vehiclesError } = await supabase
+    .from('vehicles')
+    .select('id, make, model, plate')
+    .in('id', vehicleIds)
+    .eq('ride_ready_status', 'approved');
+
+  if (vehiclesError) {
+    console.error('[IncomingGigOfferOverlay] fetchDriversRideReadyVehicles vehicles query failed:', vehiclesError);
+    return [];
+  }
+
+  return vehicles || [];
 }
 
 function OfferCard({ offer, driverId, onDismiss }) {

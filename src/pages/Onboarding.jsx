@@ -14,6 +14,7 @@ import {
   Star, Upload, X, Plus, Trash2, Camera, Image as ImageIcon, Car, ImagePlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { fnUrl } from '@/lib/functionsUrl';
 
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
@@ -558,7 +559,7 @@ export default function Onboarding() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser?.id) return;
       const { data: { session } } = await supabase.auth.getSession();
-      await fetch('/.netlify/functions/grant-signup-credits', {
+      await fetch(fnUrl('grant-signup-credits'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

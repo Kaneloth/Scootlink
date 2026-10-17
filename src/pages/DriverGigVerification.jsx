@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Upload, Loader2, CheckCircle2, Clock, XCircle, X } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
+import { fnUrl } from '@/lib/functionsUrl';
 
 const REQUIRED_DOCS_BY_TIER = {
   delivery_ready: ['license', 'id', 'selfie'],
@@ -98,7 +99,7 @@ export default function DriverGigVerification() {
       );
 
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/.netlify/functions/submit-gig-verification', {
+      const res = await fetch(fnUrl('submit-gig-verification'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({

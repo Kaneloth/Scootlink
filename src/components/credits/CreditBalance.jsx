@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useCredits } from '@/hooks/useCredits';
 import { supabase } from '@/api/supabaseClient';
 import { toast } from 'sonner';
+import { fnUrl } from '@/lib/functionsUrl';
 
 // ── Credit packages (Skootlink pricing) ─────────────────────────────────────
 const PACKAGES = [
@@ -105,7 +106,7 @@ function PurchaseModal({ balance, loading, onClose }) {
     setPurchasing(pkg.id);
 
     try {
-      const res = await fetch('/.netlify/functions/payfast-initiate', {
+      const res = await fetch(fnUrl('payfast-initiate'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
