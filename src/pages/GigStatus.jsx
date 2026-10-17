@@ -101,7 +101,9 @@ export default function GigStatus() {
     }
     if (row.status === 'cancelled' && prevStatus && prevStatus !== 'cancelled'
         && row.cancelled_by && row.cancelled_by !== row.customer_id) {
-      toast.error('Your driver cancelled. You can request again.');
+      toast.error(row.customer_no_show
+        ? 'Your driver waited but you didn\'t arrive, so the gig was cancelled.'
+        : 'Your driver cancelled. You can request again.');
     }
     if (prevStatus && row.driver_completed_at && !lastEndedRef.current && row.status === 'in_progress') {
       toast('Your driver ended the trip — please confirm');
@@ -162,7 +164,25 @@ export default function GigStatus() {
   };
 
   const handleCancel = async () => {
-    if (!window.confirm('Cancel this request?')) return;
+    // Ask the server what cancelling costs right now (migration 012), so the
+    // customer sees the exact fee before confirming.
+    let fee = 0;
+    {
+      const { data: quote, error: quoteErr } = await supabase.rpc('gig_cancellation_quote', { p_gig_id: gig.id });
+      if (quoteErr) {
+        console.error('[GigStatus] gig_cancellation_quote failed:', quoteErr);
+        toast.error('Could not check the cancellation fee. Please try again.');
+        return;
+      }
+      fee = Number(quote) || 0;
+    }
+    let message = 'Cancel this request?';
+    if (fee > 0) {
+      message = gig.driver_arrived_at
+        ? `Your driver is already at the pickup point. Cancelling now incurs a ${formatRand(fee)} cancellation fee. Cancel anyway?`
+        : `Your driver is on the way. Cancelling now incurs a ${formatRand(fee)} cancellation fee. Cancel anyway?`;
+    }
+    if (!window.confirm(message)) return;
     setCancelling(true);
     try {
       const { data, error } = await supabase.rpc('cancel_gig_request', { p_gig_id: gig.id, p_reason: null });
@@ -176,7 +196,9 @@ export default function GigStatus() {
       if (gig.driver_id) {
         notify(gig.driver_id, 'gig_cancelled', 'Gig cancelled', 'The customer cancelled this gig.', { gig_id: gig.id });
       }
-      toast('Request cancelled');
+      toast(data?.cancellation_fee > 0
+        ? `Request cancelled. Cancellation fee: ${formatRand(data.cancellation_fee)}`
+        : 'Request cancelled');
     } catch (err) {
       console.error('[GigStatus] cancel error:', err);
       toast.error('Something went wrong. Please try again.');
@@ -256,10 +278,10 @@ export default function GigStatus() {
       : { title: isRide ? 'On your way' : 'Delivery on its way', sub: null };
   }
   if (gig.status === 'cancelled') {
-    copy = {
-      title: 'Cancelled',
-      sub: gig.cancelled_by && gig.cancelled_by !== gig.customer_id ? 'Your driver cancelled' : 'You cancelled this request',
-    };
+    let sub = gig.cancelled_by && gig.cancelled_by !== gig.customer_id ? 'Your driver cancelled' : 'You cancelled this request';
+    if (gig.customer_no_show) sub = 'Your driver waited at the pickup point but you didn\'t arrive';
+    if (gig.cancellation_fee > 0) sub += ` · Cancellation fee ${formatRand(gig.cancellation_fee)}`;
+    copy = { title: 'Cancelled', sub };
   }
   const showDriver = (gig.status === 'accepted' || gig.status === 'in_progress') && driverProfile;
   const canCancel = gig.status === 'pending' || gig.status === 'accepted';

@@ -9,7 +9,8 @@
  *   { action: 'update_verification_prices', sa_id: number, passport: number, licence: number }
  *   { action: 'get_gig_pricing' }
  *   { action: 'update_gig_pricing', commission_percent, ride_minimum_fare, ride_per_km_rate,
- *       delivery_minimum_fare, delivery_per_km_rate }   (all numbers)
+ *       delivery_minimum_fare, delivery_per_km_rate,
+ *       cancellation_fee, cancel_grace_minutes, no_show_wait_minutes }   (all numbers)
  *   (Gig actions are separate from 'get' so the pages using 'get' are
  *   unaffected if migration 010 hasn't run yet.)
  * Auth: Bearer token, verified to belong to an admin (user_metadata.is_admin === true)
@@ -113,7 +114,7 @@ export const handler = async (event) => {
     if (action === 'get_gig_pricing') {
       const { data, error } = await supabaseAdmin
         .from('app_settings')
-        .select('gig_commission_percent, ride_minimum_fare, ride_per_km_rate, delivery_minimum_fare, delivery_per_km_rate, updated_at')
+        .select('gig_commission_percent, ride_minimum_fare, ride_per_km_rate, delivery_minimum_fare, delivery_per_km_rate, gig_cancellation_fee, gig_cancel_grace_minutes, gig_no_show_wait_minutes, updated_at')
         .eq('id', 1)
         .single();
       if (error) throw error;
@@ -124,6 +125,7 @@ export const handler = async (event) => {
       const {
         commission_percent, ride_minimum_fare, ride_per_km_rate,
         delivery_minimum_fare, delivery_per_km_rate,
+        cancellation_fee, cancel_grace_minutes, no_show_wait_minutes,
       } = body;
       const isNum = (n) => typeof n === 'number' && isFinite(n);
       if (!isNum(commission_percent) || commission_percent < 0 || commission_percent > 100) {
@@ -135,9 +137,21 @@ export const handler = async (event) => {
           return { statusCode: 400, body: JSON.stringify({ error: `${k} must be a positive number` }) };
         }
       }
+      if (!isNum(cancellation_fee) || cancellation_fee < 0) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Cancellation fee must be 0 or more' }) };
+      }
+      if (!Number.isInteger(cancel_grace_minutes) || cancel_grace_minutes < 0) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Grace period must be a whole number of minutes (0 or more)' }) };
+      }
+      if (!Number.isInteger(no_show_wait_minutes) || no_show_wait_minutes < 1) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'No-show wait must be a whole number of minutes (1 or more)' }) };
+      }
       const update = {
         gig_commission_percent: commission_percent,
         ...fares,
+        gig_cancellation_fee: cancellation_fee,
+        gig_cancel_grace_minutes: cancel_grace_minutes,
+        gig_no_show_wait_minutes: no_show_wait_minutes,
         updated_at: new Date().toISOString(),
         updated_by: user.id,
       };

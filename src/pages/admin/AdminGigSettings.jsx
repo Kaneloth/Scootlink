@@ -20,6 +20,9 @@ const FIELDS = [
   { key: 'ride_per_km_rate', column: 'ride_per_km_rate', label: 'Ride: per km after 2 km (R)', step: '0.1' },
   { key: 'delivery_minimum_fare', column: 'delivery_minimum_fare', label: 'Delivery: minimum fare (R, covers first 2 km)', step: '0.5' },
   { key: 'delivery_per_km_rate', column: 'delivery_per_km_rate', label: 'Delivery: per km after 2 km (R)', step: '0.1' },
+  { key: 'cancellation_fee', column: 'gig_cancellation_fee', label: 'Cancellation / no-show fee (R)', step: '0.5' },
+  { key: 'cancel_grace_minutes', column: 'gig_cancel_grace_minutes', label: 'Free cancellation after a driver accepts (minutes)', step: '1', integer: true },
+  { key: 'no_show_wait_minutes', column: 'gig_no_show_wait_minutes', label: 'Driver waits before marking a no-show (minutes)', step: '1', integer: true },
 ];
 
 async function callSettings(payload) {
@@ -62,6 +65,10 @@ export default function AdminGigSettings() {
         toast.error(`${f.label} must be a number`);
         return;
       }
+      if (f.integer && !Number.isInteger(n)) {
+        toast.error(`${f.label} must be a whole number`);
+        return;
+      }
       payload[f.key] = n;
     }
     setSaving(true);
@@ -88,7 +95,9 @@ export default function AdminGigSettings() {
       <div>
         <h2 className="text-2xl font-bold">Gig Settings</h2>
         <p className="text-sm text-muted-foreground">
-          Commission on completed gigs, and the rates used for fare estimates. Changes apply to new gigs.
+          Commission, fare rates and cancellation rules. Fare changes apply to new gigs; cancellation rules apply immediately.
+          A customer who cancels after the free period, or after the driver has arrived, pays the fee; so does a no-show.
+          The driver earns the fee minus commission.
         </p>
       </div>
 

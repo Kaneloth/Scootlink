@@ -33,7 +33,9 @@ export default function DriverActiveGig() {
   const [customer, setCustomer] = useState(null);
   const [vehicle, setVehicle] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(null); // 'arrived' | 'start' | 'end' | 'cancel' | null
+  const [busy, setBusy] = useState(null); // 'arrived' | 'start' | 'end' | 'cancel' | 'noshow' | null
+  const [noShowWaitMin, setNoShowWaitMin] = useState(null); // admin setting (migration 012)
+  const [now, setNow] = useState(Date.now());
   const loadedRef = useRef({ customerId: null, vehicleId: null });
   const lastStatusRef = useRef(null);
   const announcedRef = useRef(false); // first load shouldn't toast
@@ -65,7 +67,9 @@ export default function DriverActiveGig() {
     const prev = lastStatusRef.current;
     if (announcedRef.current && prev !== row.status) {
       if (row.status === 'cancelled' && row.cancelled_by === row.customer_id) {
-        toast.error('The customer cancelled this gig');
+        toast.error(row.cancellation_fee > 0
+          ? `The customer cancelled. You earn the cancellation fee (${formatRand(row.driver_payout_amount)} after commission).`
+          : 'The customer cancelled this gig');
       } else if (row.status === 'completed') {
         toast.success('Gig completed');
       } else if (row.status === 'disputed') {
@@ -107,6 +111,26 @@ export default function DriverActiveGig() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gigId]);
 
+  // How long the driver must wait at pickup before a no-show (admin setting).
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase.rpc('gig_no_show_wait_minutes');
+      if (error) {
+        console.error('[DriverActiveGig] gig_no_show_wait_minutes failed:', error);
+        return;
+      }
+      setNoShowWaitMin(Number(data) || 5);
+    })();
+  }, []);
+
+  // Tick once a second while waiting at pickup, for the no-show countdown.
+  const waitingAtPickup = gig?.status === 'accepted' && !!gig?.driver_arrived_at;
+  useEffect(() => {
+    if (!waitingAtPickup) return undefined;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [waitingAtPickup]);
+
   // Runs one of the trip-step RPCs, then tells the customer.
   const runStep = async (step, rpc, args, notice) => {
     setBusy(step);
@@ -142,6 +166,14 @@ export default function DriverActiveGig() {
     runStep('end', 'gig_end_trip', { p_gig_id: gig.id }, {
       type: 'gig_ended', title: 'Please confirm your gig',
       body: 'Your driver ended the trip. Confirm it is complete, or report an issue.',
+    });
+  };
+
+  const handleNoShow = () => {
+    if (!window.confirm('Mark the customer as a no-show? The gig will be cancelled and the cancellation fee applies to the customer.')) return;
+    runStep('noshow', 'gig_customer_no_show', { p_gig_id: gig.id }, {
+      type: 'gig_no_show', title: 'Gig cancelled — no-show',
+      body: 'Your driver waited at the pickup point but you didn\'t arrive, so the gig was cancelled and a cancellation fee applies.',
     });
   };
 
@@ -191,6 +223,13 @@ export default function DriverActiveGig() {
   else if (gig.status === 'completed') title = 'Completed';
   else if (gig.status === 'disputed') title = 'Under review';
   const awaitingConfirm = gig.status === 'in_progress' && !!gig.driver_completed_at;
+  // No-show countdown
+  let noShowSecondsLeft = null;
+  if (waitingAtPickup && noShowWaitMin != null) {
+    const readyAt = new Date(gig.driver_arrived_at).getTime() + noShowWaitMin * 60000;
+    noShowSecondsLeft = Math.max(0, Math.ceil((readyAt - now) / 1000));
+  }
+  const mmss = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 
   const contactPhone = !isRide && gig.status === 'in_progress' && gig.recipient_phone
     ? gig.recipient_phone
@@ -252,10 +291,21 @@ export default function DriverActiveGig() {
         </div>
 
         {gig.status === 'cancelled' && (
-          <p className="text-sm text-muted-foreground">
-            {gig.cancelled_by === gig.customer_id ? 'The customer cancelled this gig.' : 'You cancelled this gig.'}
-            {gig.cancellation_reason ? ` Reason: ${gig.cancellation_reason}` : ''}
-          </p>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              {gig.customer_no_show
+                ? 'You marked the customer as a no-show.'
+                : gig.cancelled_by === gig.customer_id ? 'The customer cancelled this gig.' : 'You cancelled this gig.'}
+              {gig.cancellation_reason && !gig.customer_no_show ? ` Reason: ${gig.cancellation_reason}` : ''}
+            </p>
+            {gig.cancellation_fee > 0 && (
+              <div className="rounded-xl bg-muted p-4 space-y-1 text-foreground">
+                <div className="flex justify-between"><span className="text-muted-foreground">Cancellation fee</span><span>{formatRand(gig.cancellation_fee)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Skootlink commission</span><span>− {formatRand(gig.commission_amount)}</span></div>
+                <div className="flex justify-between font-semibold"><span>Your earnings</span><span>{formatRand(gig.driver_payout_amount)}</span></div>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Actions */}
@@ -301,6 +351,17 @@ export default function DriverActiveGig() {
               <p className="text-xs text-center text-muted-foreground">
                 Trip ended. The customer has 24 hours to confirm; after that it confirms automatically.
               </p>
+            )}
+            {noShowSecondsLeft != null && noShowSecondsLeft > 0 && (
+              <p className="text-xs text-center text-muted-foreground">
+                If the customer doesn't arrive, you can mark a no-show in {mmss(noShowSecondsLeft)}.
+              </p>
+            )}
+            {noShowSecondsLeft === 0 && (
+              <Button variant="outline" className="w-full" onClick={handleNoShow} disabled={!!busy}>
+                {busy === 'noshow' && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Customer didn't show up
+              </Button>
             )}
             {gig.status === 'accepted' && (
               <Button variant="ghost" className="w-full text-destructive" onClick={handleCancel} disabled={!!busy}>
