@@ -15,9 +15,9 @@
 // case Realtime isn't wired up correctly, so this doesn't fail silently
 // if that dashboard setting turns out to be off.
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '@/api/supabaseData';
+import { supabase, fetchProfilesByIds } from '@/api/supabaseData';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, Car, Package, MapPin, Star } from 'lucide-react';
@@ -40,6 +40,36 @@ export default function GigStatus() {
   const [gig, setGig] = useState(null);
   const [driverProfile, setDriverProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Which driver's profile is loaded (or loading). A ref, not state, so the
+  // 5s poll and the Realtime handler always see the current value.
+  const loadedDriverIdRef = useRef(null);
+  // Last status we saw, so the "driver accepted" toast fires once, whether
+  // the poll or the Realtime event notices the change first.
+  const lastStatusRef = useRef(null);
+
+  // Other users' profiles are read through the get-profiles function
+  // (fetchProfilesByIds); a direct profiles query is blocked by RLS.
+  const loadDriverProfile = useCallback(async (driverId) => {
+    if (!driverId || loadedDriverIdRef.current === driverId) return;
+    loadedDriverIdRef.current = driverId;
+    try {
+      const [profile] = await fetchProfilesByIds([driverId]);
+      if (!profile) console.error('[GigStatus] no profile returned for driver', driverId);
+      setDriverProfile(profile || null);
+    } catch (err) {
+      console.error('[GigStatus] driver profile fetch failed:', err);
+      loadedDriverIdRef.current = null; // allow a retry on the next poll
+    }
+  }, []);
+
+  const applyGig = useCallback((row) => {
+    if (row.status === 'accepted' && lastStatusRef.current === 'pending') {
+      toast.success('A driver accepted your gig!');
+    }
+    lastStatusRef.current = row.status;
+    setGig(row);
+    loadDriverProfile(row.driver_id);
+  }, [loadDriverProfile]);
 
   const fetchGig = useCallback(async () => {
     const { data, error } = await supabase
@@ -47,22 +77,13 @@ export default function GigStatus() {
       .select('*')
       .eq('id', gigId)
       .single();
+    setLoading(false);
     if (error) {
       console.error('[GigStatus] fetch failed:', error);
       return;
     }
-    setGig(data);
-    setLoading(false);
-
-    if (data.driver_id && (!driverProfile || driverProfile.id !== data.driver_id)) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id, full_name, phone, rating, avatar_url')
-        .eq('id', data.driver_id)
-        .maybeSingle();
-      setDriverProfile(profile || null);
-    }
-  }, [gigId, driverProfile]);
+    applyGig(data);
+  }, [gigId, applyGig]);
 
   useEffect(() => {
     fetchGig();
@@ -73,10 +94,9 @@ export default function GigStatus() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'gig_requests', filter: `id=eq.${gigId}` },
         (payload) => {
-          setGig(payload.new);
-          if (payload.new.status === 'accepted' && payload.old.status === 'pending') {
-            toast.success('A driver accepted your gig!');
-          }
+          // payload.old only carries the primary key unless the table has
+          // REPLICA IDENTITY FULL, so compare against our previous state.
+          applyGig(payload.new);
         },
       )
       .subscribe();

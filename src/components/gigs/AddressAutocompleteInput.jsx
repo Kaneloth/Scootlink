@@ -24,6 +24,13 @@ export default function AddressAutocompleteInput({ value, onChange, onResolved, 
   const [resolving, setResolving] = useState(false);
   const debounceRef = useRef(null);
   const containerRef = useRef(null);
+  // True only when the user has typed since the value was last resolved.
+  // Picking a suggestion, or the parent setting the value itself (e.g.
+  // "Use current location" with GPS coords), leaves it false, so blur
+  // won't re-geocode and overwrite coordinates that are already right.
+  const typedSinceResolveRef = useRef(false);
+  // Latest text, so a slow lookup can tell whether the user kept typing.
+  const latestTextRef = useRef(value);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -38,6 +45,8 @@ export default function AddressAutocompleteInput({ value, onChange, onResolved, 
   const handleTextChange = (text) => {
     onChange(text);
     onResolved(null); // typing invalidates any previously-resolved coords
+    typedSinceResolveRef.current = true;
+    latestTextRef.current = text;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
@@ -49,14 +58,24 @@ export default function AddressAutocompleteInput({ value, onChange, onResolved, 
 
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
-      const results = await searchLocationSuggestions(text);
-      setSuggestions(results);
-      setShowDropdown(results.length > 0);
-      setSearching(false);
+      try {
+        const results = await searchLocationSuggestions(text);
+        // Ignore results for text the user has since changed or resolved.
+        if (latestTextRef.current !== text || !typedSinceResolveRef.current) return;
+        setSuggestions(results);
+        setShowDropdown(results.length > 0);
+      } catch (err) {
+        console.error('[AddressAutocompleteInput] suggestion search failed:', err);
+      } finally {
+        setSearching(false);
+      }
     }, 400);
   };
 
   const handleSelect = (suggestion) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    typedSinceResolveRef.current = false;
+    latestTextRef.current = suggestion.displayName;
     onChange(suggestion.displayName);
     onResolved(suggestion);
     setShowDropdown(false);
@@ -70,12 +89,18 @@ export default function AddressAutocompleteInput({ value, onChange, onResolved, 
     }, 150);
 
     if (!value || value.trim().length === 0) return;
-    // If a suggestion was already picked, don't re-resolve.
-    // (Parent tracks this via onResolved — if it's null, nothing was picked.)
+    // Nothing typed since the last resolve (suggestion picked, or coords set
+    // by the parent): keep the coordinates we already have.
+    if (!typedSinceResolveRef.current) return;
+    const text = value;
     setResolving(true);
     try {
-      const coords = await geocodeLocation(value);
-      if (coords) onResolved(coords);
+      const coords = await geocodeLocation(text);
+      // Only apply if the user hasn't typed something else meanwhile.
+      if (coords && latestTextRef.current === text) {
+        typedSinceResolveRef.current = false;
+        onResolved(coords);
+      }
     } catch (err) {
       console.error('[AddressAutocompleteInput] fallback geocode failed:', err);
     } finally {
