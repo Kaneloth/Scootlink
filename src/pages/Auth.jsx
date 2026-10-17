@@ -156,18 +156,24 @@ async function triggerBiometricLogin() {
 }
 
 // ── Fetch phone number via service-role Netlify function ─────────────────────
-async function fetchUserPhone(userId) {
-  if (!userId) return null;
+// get-profiles requires the caller's sign-in token; a user may always read
+// their own phone number.
+async function fetchUserPhone(userId, accessToken) {
+  if (!userId || !accessToken) return null;
   try {
     const res = await fetch(fnUrl('get-profiles'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ ids: [userId] }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error('[Auth] get-profiles failed:', res.status);
+      return null;
+    }
     const profiles = await res.json();
     return profiles?.[0]?.phone ?? null;
-  } catch {
+  } catch (err) {
+    console.error('[Auth] get-profiles error:', err);
     return null;
   }
 }
@@ -376,6 +382,10 @@ export default function Auth() {
       // is consumed by updateUser(), so getUser() returns null if called after.
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       const userId = currentUser?.id ?? null;
+      // Look up the phone number with the same session, also before
+      // updateUser(), for the same reason.
+      const { data: { session: recoverySession } } = await supabase.auth.getSession();
+      const phoneBeforeUpdate = await fetchUserPhone(userId, recoverySession?.access_token);
 
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
@@ -385,7 +395,7 @@ export default function Auth() {
         console.warn('[Auth] SMS skipped — could not get user ID before updateUser');
         toast.error('Password updated, but SMS skipped: could not identify user.');
       } else {
-        const phone = await fetchUserPhone(userId);
+        const phone = phoneBeforeUpdate;
         if (!phone) {
           console.warn('[Auth] SMS skipped — no phone number found for user:', userId);
           toast.error('Password updated, but no phone number found on your profile.');

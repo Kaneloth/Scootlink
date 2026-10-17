@@ -723,13 +723,20 @@ export default function Dashboard() {
   const fetchProfilesViaFunction = async (ids) => {
     if (!ids || ids.length === 0) return [];
     try {
-      const res = await fetch(fnUrl('get-profiles'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids }),
-      });
-      if (res.ok) return await res.json();
-    } catch { /* fall through to direct query */ }
+      // get-profiles requires the caller's sign-in token.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const res = await fetch(fnUrl('get-profiles'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({ ids }),
+        });
+        if (res.ok) return await res.json();
+        console.error('[Dashboard] get-profiles failed:', res.status);
+      }
+    } catch (err) {
+      console.error('[Dashboard] get-profiles error, using direct query:', err);
+    }
     // Fallback: direct Supabase query using only columns confirmed to exist.
     // Including unknown columns (avatar_url, etc.) silently kills the entire query.
     const { data } = await supabase

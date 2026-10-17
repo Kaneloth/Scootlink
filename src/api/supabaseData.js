@@ -353,9 +353,12 @@ supabase.auth.onAuthStateChange((event, session) => {
 export const fetchProfilesByIds = async (ids) => {
   if (!ids || ids.length === 0) return [];
   try {
+    // get-profiles requires the caller's sign-in token.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not signed in');
     const res = await fetch(fnUrl('get-profiles'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
       body: JSON.stringify({ ids }),
     });
     if (!res.ok) throw new Error('Function unavailable');
