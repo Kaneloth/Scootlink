@@ -53,23 +53,43 @@ const GOOGLE_WEB_CLIENT_ID = '777597551403-o1c521882a048uhk9luvgdpu8qluj0qm.apps
 // ternary below lets esbuild/Rollup prove the import() calls are dead code
 // and drop them entirely — the admin dashboard never ends up in the APK.
 // The regular web build (`npm run build`) keeps them as normal lazy chunks.
-const AdminLayout = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminLayout')) : null;
-const AdminOverview = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminOverview')) : null;
-const AdminUserManagement = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminUserManagement')) : null;
-const AdminRentalsOversight = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminRentalsOversight')) : null;
-const AdminPlatformVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminPlatformVerification')) : null;
-const AdminIdentityVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminIdentityVerification')) : null;
-const AdminDisputesCenter = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminDisputesCenter')) : null;
-const AdminAnnouncements = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminAnnouncements')) : null;
-const AdminReminders = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminReminders')) : null;
-const AdminProximityAlerts = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminProximityAlerts')) : null;
-const AdminCreditGrants = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminCreditGrants')) : null;
-const AdminRefundRequests = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminRefundRequests')) : null;
-const AdminTransactions = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminTransactions')) : null;
-const AdminGigVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminGigVerification')) : null;
-const AdminVehicleRideReady = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminVehicleRideReady')) : null;
-const AdminGigSettings = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminGigSettings')) : null;
-const AdminGigs = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminGigs')) : null;
+// Lazy-loads an admin page. If its file is gone because a new build was
+// deployed while this tab was open (the old file name no longer exists), reload
+// the page once to pick up the new build instead of showing an error screen.
+// The flag is cleared after any successful load, so it works again next deploy.
+const CHUNK_RELOAD_KEY = 'skootlink_chunk_reload';
+const lazyWithReload = (importer) => React.lazy(() =>
+  importer()
+    .then((mod) => { try { sessionStorage.removeItem(CHUNK_RELOAD_KEY); } catch { /* storage unavailable */ } return mod; })
+    .catch((err) => {
+      let alreadyReloaded = false;
+      try { alreadyReloaded = !!sessionStorage.getItem(CHUNK_RELOAD_KEY); } catch { /* storage unavailable */ }
+      if (!alreadyReloaded && /dynamically imported module|Importing a module script failed|Failed to fetch/i.test(String(err?.message || err))) {
+        console.warn('[App] Page file missing after a new deploy — reloading once:', err);
+        try { sessionStorage.setItem(CHUNK_RELOAD_KEY, '1'); } catch { /* storage unavailable */ }
+        window.location.reload();
+        return new Promise(() => {}); // keep the loading screen until the reload happens
+      }
+      throw err;
+    }));
+
+const AdminLayout = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminLayout')) : null;
+const AdminOverview = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminOverview')) : null;
+const AdminUserManagement = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminUserManagement')) : null;
+const AdminRentalsOversight = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminRentalsOversight')) : null;
+const AdminPlatformVerification = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminPlatformVerification')) : null;
+const AdminIdentityVerification = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminIdentityVerification')) : null;
+const AdminDisputesCenter = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminDisputesCenter')) : null;
+const AdminAnnouncements = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminAnnouncements')) : null;
+const AdminReminders = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminReminders')) : null;
+const AdminProximityAlerts = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminProximityAlerts')) : null;
+const AdminCreditGrants = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminCreditGrants')) : null;
+const AdminRefundRequests = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminRefundRequests')) : null;
+const AdminTransactions = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminTransactions')) : null;
+const AdminGigVerification = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminGigVerification')) : null;
+const AdminVehicleRideReady = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminVehicleRideReady')) : null;
+const AdminGigSettings = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminGigSettings')) : null;
+const AdminGigs = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminGigs')) : null;
 
 function AdminLoadingScreen() {
   return (
