@@ -61,12 +61,13 @@ export default function MobileNav() {
   const fetchUnreadCount = async (userId) => {
     if (!userId) return;
     const [{ data: unread, error }, { data: blockedRows }] = await Promise.all([
-      supabase.from('messages').select('id, sender_id').eq('receiver_id', userId).eq('read', false),
+      supabase.from('messages').select('id, sender_id, context_type').eq('receiver_id', userId).eq('read', false),
       supabase.from('blocked_users').select('blocked_id').eq('blocker_id', userId),
     ]);
     if (error) return;
     const blockedIds = new Set((blockedRows || []).map(r => r.blocked_id));
-    const count = (unread || []).filter(m => !blockedIds.has(m.sender_id)).length;
+    // Gig chat messages are shown on the trip screens, not in Messages.
+    const count = (unread || []).filter(m => !blockedIds.has(m.sender_id) && m.context_type !== 'gig').length;
     setUnreadCount(count);
   };
 

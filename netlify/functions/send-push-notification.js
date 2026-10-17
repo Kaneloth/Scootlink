@@ -146,7 +146,10 @@ export const handler = async (event) => {
       .eq('id', record.sender_id)
       .single();
     title = `New message from ${sender?.full_name?.split(' ')[0] || 'someone'}`;
-    data = { type: 'message', sender_id: record.sender_id };
+    // Gig chat messages open the trip screen (via /gig/:id); others open Messages.
+    data = record.context_type === 'gig' && record.context_id
+      ? { type: 'gig_message', sender_id: record.sender_id, gig_id: String(record.context_id) }
+      : { type: 'message', sender_id: record.sender_id };
   } else {
     return { statusCode: 400, body: JSON.stringify({ error: 'Unknown table: ' + table }) };
   }

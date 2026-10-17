@@ -23,6 +23,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import GigRatingCard from '@/components/gigs/GigRatingCard';
+import GigChat from '@/components/gigs/GigChat';
 import { Loader2, Car, Package, MapPin, Star, Phone, XCircle } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
@@ -348,9 +349,17 @@ export default function GigStatus() {
                 </Button>
               )}
             </div>
-            {/* Messaging link intentionally omitted — depends on the
-                context_type='gig' conversation-creation flow, which is a
-                separate piece of work (§5.9) not yet built. */}
+          </div>
+        )}
+
+        {gig.driver_id && (
+          <div className="mb-4">
+            <GigChat
+              gigId={gig.id}
+              meId={gig.customer_id}
+              otherLabel="your driver"
+              canSend={gig.status === 'accepted' || gig.status === 'in_progress'}
+            />
           </div>
         )}
 

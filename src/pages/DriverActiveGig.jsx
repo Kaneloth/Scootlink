@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import GigRatingCard from '@/components/gigs/GigRatingCard';
+import GigChat from '@/components/gigs/GigChat';
 import { toast } from 'sonner';
 
 const formatRand = (n) => (n == null ? null : `R ${Number(n).toFixed(2)}`);
@@ -289,6 +290,13 @@ export default function DriverActiveGig() {
             <p className="text-muted-foreground">Your vehicle: {vehicle.make} {vehicle.model} ({vehicle.plate})</p>
           )}
         </div>
+
+        <GigChat
+          gigId={gig.id}
+          meId={gig.driver_id}
+          otherLabel="the customer"
+          canSend={gig.status === 'accepted' || gig.status === 'in_progress'}
+        />
 
         {gig.status === 'cancelled' && (
           <div className="space-y-2 text-sm text-muted-foreground">

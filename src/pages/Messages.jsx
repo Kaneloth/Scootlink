@@ -214,7 +214,9 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         .order('created_at', { ascending: true });
       const hidden = await getHiddenMessageIds(user.id);
       setHiddenMsgs(hidden);
-      const filtered = (data || []).filter(m => !hidden.has(m.id));
+      // Gig chats (context_type 'gig') live on the trip screens, not here —
+      // so they never count as an existing conversation for credit purposes.
+      const filtered = (data || []).filter(m => !hidden.has(m.id) && m.context_type !== 'gig');
       setMessages(filtered);
 
       // Track whether user has already sent in this conversation —
@@ -229,7 +231,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
         if (capCheck && !capCheck.allowed) setChatCapReached(true);
       }
 
-      const unread = (data || []).filter(m => m.receiver_id === user.id && !m.read).map(m => m.id);
+      const unread = filtered.filter(m => m.receiver_id === user.id && !m.read).map(m => m.id);
       if (unread.length) await supabase.from('messages').update({ read: true }).in('id', unread);
       setLoading(false);
     })();
@@ -243,7 +245,7 @@ function ChatRoom({ user, partner, onClose, creditBalance, setCreditBalance }) {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages',
         filter: `receiver_id=eq.${user.id}` }, async (payload) => {
           const msg = payload.new;
-          if (msg.sender_id !== partner.id) return;
+          if (msg.sender_id !== partner.id || msg.context_type === 'gig') return;
           setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
           await supabase.from('messages').update({ read: true }).eq('id', msg.id);
         })
@@ -547,13 +549,15 @@ export default function Messages() {
   const fetchThreads = useCallback(async () => {
     if (!user) return;
     try {
-      const { data: msgs } = await supabase
+      const { data: allMsgs } = await supabase
         .from('messages')
         .select('*')
         .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
         .order('created_at', { ascending: false })
         .limit(200);
-      if (!msgs) { setThreads([]); return; }
+      if (!allMsgs) { setThreads([]); return; }
+      // Gig chats live on the trip screens, not in the Messages tab.
+      const msgs = allMsgs.filter(m => m.context_type !== 'gig');
       const [hidden, blocked] = await Promise.all([
         getHiddenChatPartnerIds(user.id),
         getBlockedPartnerIds(user.id),
