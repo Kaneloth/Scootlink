@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import { routeForNotification } from '@/lib/notificationLinks';
 
 export default function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
@@ -111,6 +112,7 @@ export default function NotificationBell() {
       case 'rental_accepted': return '✅';
       case 'rental_active':   return '🚀';
       case 'rental_ended':    return '🏁';
+      case 'gig_offer':       return '🚗';
       default:                return '🔔';
     }
   };
@@ -174,6 +176,17 @@ export default function NotificationBell() {
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
                     <p className="text-[10px] text-muted-foreground mt-1">{formatTime(n.created_at)}</p>
+                    {n.type?.startsWith('gig_') && routeForNotification(n.type, n.data) && (
+                      <button
+                        onClick={() => {
+                          setOpen(false);
+                          navigate(routeForNotification(n.type, n.data));
+                        }}
+                        className="mt-2 text-[11px] font-semibold text-primary hover:underline"
+                      >
+                        {n.type === 'gig_offer' ? 'View offer →' : 'View gig →'}
+                      </button>
+                    )}
                     {['listing_expiry_7d','listing_expiry_3d','listing_expiry_1d','listing_expired','listing_hidden'].includes(n.type) && n.data?.vehicle_id && (
                       <button
                         onClick={() => {

@@ -80,7 +80,9 @@ async function fetchDriversRideReadyVehicles(driverId) {
   return [...ownedUsable, ...rentedVehicles];
 }
 
-function OfferCard({ offer, driverId, onDismiss }) {
+// Exported so the push-notification offer screen (GigOffer.jsx) can show the
+// same card, with the same vehicle picker and accept logic.
+export function OfferCard({ offer, driverId, onDismiss }) {
   const navigate = useNavigate();
   const [accepting, setAccepting] = useState(false);
   const [vehicles, setVehicles] = useState(null); // null = not loaded, [] = loaded/empty
@@ -165,7 +167,8 @@ function OfferCard({ offer, driverId, onDismiss }) {
       </div>
 
       <p className="text-xs text-muted-foreground mb-3">
-        {(offer.distance_meters / 1000).toFixed(1)} km away
+        {(Number(offer.distance_meters || 0) / 1000).toFixed(1)} km away
+        {offer.fare_amount != null && ` · Estimated fare R ${Number(offer.fare_amount).toFixed(2)}`}
       </p>
 
       {isRide && vehicles !== null && vehicles.length > 0 && (

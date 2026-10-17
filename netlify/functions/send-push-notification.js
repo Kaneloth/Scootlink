@@ -126,7 +126,17 @@ export const handler = async (event) => {
     recipientId = record.user_id;
     title = record.title;
     body = record.body;
-    data = { type: record.type || '', notification_id: String(record.id) };
+    // Pass the notification's own data (e.g. gig_id) through to the device so
+    // tapping the push can open the right screen. FCM data values must be
+    // strings; nested values are JSON-encoded; reserved keys are skipped.
+    const extra = {};
+    if (record.data && typeof record.data === 'object') {
+      for (const [k, v] of Object.entries(record.data)) {
+        if (v == null || /^(from|notification|message_type|google|gcm)/i.test(k)) continue;
+        extra[k] = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      }
+    }
+    data = { ...extra, type: record.type || '', notification_id: String(record.id) };
   } else if (table === 'messages') {
     recipientId = record.receiver_id;
     body = record.body;

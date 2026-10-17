@@ -48,6 +48,45 @@ async function notify(userId, type, title, body, data = null) {
   }
 }
 
+// Records who was offered this gig (migration 013) and sends each NEWLY
+// offered driver an in-app notification. The notifications-table webhook
+// turns that into a phone push (send-push-notification), so drivers whose
+// app is closed still hear about the gig; tapping it opens /gig-offer/:id.
+// Drivers already offered (e.g. at 5 km, before the 7 km re-broadcast) are
+// skipped so nobody gets the same offer twice.
+async function recordOffersAndNotify(gig, drivers, logTag) {
+  const rows = drivers.map((d) => ({
+    gig_id: gig.id,
+    driver_id: d.driver_id,
+    distance_meters: d.distance_meters,
+  }));
+  const { data: inserted, error } = await supabase
+    .from('gig_offers')
+    .upsert(rows, { onConflict: 'gig_id,driver_id', ignoreDuplicates: true })
+    .select('driver_id, distance_meters');
+  if (error) {
+    console.error(`[${logTag}] Recording offers failed for gig=${gig.id}:`, error);
+    return 0;
+  }
+
+  const title = gig.gig_type === 'ride' ? 'New ride request nearby' : 'New delivery request nearby';
+  const fare = gig.fare_amount != null ? ` · R${Number(gig.fare_amount).toFixed(2)}` : '';
+  const results = await Promise.allSettled((inserted || []).map((d) =>
+    supabase.rpc('create_notification', {
+      p_user_id: d.driver_id,
+      p_type: 'gig_offer',
+      p_title: title,
+      p_body: `Pickup: ${gig.pickup_address}${fare} · ${(Number(d.distance_meters || 0) / 1000).toFixed(1)} km away`,
+      p_data: { gig_id: gig.id },
+    }).then(({ error: nErr }) => { if (nErr) throw nErr; }),
+  ));
+  const failed = results.filter((r) => r.status === 'rejected');
+  if (failed.length) {
+    console.error(`[${logTag}] ${failed.length} offer notification(s) failed for gig=${gig.id}:`, failed[0].reason);
+  }
+  return results.length - failed.length;
+}
+
 async function broadcastToDrivers(gig, radiusMeters) {
   const { data: nearbyDrivers, error: matchErr } = await supabase.rpc(
     'find_nearby_eligible_drivers',
@@ -71,6 +110,7 @@ async function broadcastToDrivers(gig, radiusMeters) {
       gig_type: gig.gig_type,
       pickup_address: gig.pickup_address,
       dropoff_address: gig.dropoff_address,
+      fare_amount: gig.fare_amount,
       distance_meters: d.distance_meters,
     },
   }));
@@ -94,6 +134,7 @@ async function broadcastToDrivers(gig, radiusMeters) {
     return 0;
   }
 
+  await recordOffersAndNotify(gig, nearbyDrivers, 'gig-expiry-check');
   return nearbyDrivers.length;
 }
 
@@ -121,7 +162,7 @@ export const handler = async () => {
 
     const { data: gigs, error } = await supabase
       .from('gig_requests')
-      .select('id, gig_type, customer_id, pickup_address, dropoff_address, status, retry_count, search_radius_meters, created_at')
+      .select('id, gig_type, customer_id, pickup_address, dropoff_address, fare_amount, status, retry_count, search_radius_meters, created_at')
       .eq('status', 'pending');
 
     if (error) throw error;
