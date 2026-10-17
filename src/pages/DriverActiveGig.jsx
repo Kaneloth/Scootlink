@@ -301,10 +301,14 @@ export default function DriverActiveGig() {
         {gig.status === 'cancelled' && (
           <div className="space-y-2 text-sm text-muted-foreground">
             <p>
-              {gig.customer_no_show
-                ? 'You marked the customer as a no-show.'
-                : gig.cancelled_by === gig.customer_id ? 'The customer cancelled this gig.' : 'You cancelled this gig.'}
-              {gig.cancellation_reason && !gig.customer_no_show ? ` Reason: ${gig.cancellation_reason}` : ''}
+              {gig.admin_resolution === 'admin_cancelled'
+                ? 'This gig was cancelled by Skootlink support.'
+                : gig.admin_resolution === 'voided'
+                  ? 'After reviewing the customer\'s report, Skootlink support voided this gig. No earnings were recorded.'
+                  : gig.customer_no_show
+                    ? 'You marked the customer as a no-show.'
+                    : gig.cancelled_by === gig.customer_id ? 'The customer cancelled this gig.' : 'You cancelled this gig.'}
+              {gig.cancellation_reason && !gig.customer_no_show && !gig.admin_resolution ? ` Reason: ${gig.cancellation_reason}` : ''}
             </p>
             {gig.cancellation_fee > 0 && (
               <div className="rounded-xl bg-muted p-4 space-y-1 text-foreground">

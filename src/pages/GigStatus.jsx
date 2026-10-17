@@ -102,9 +102,11 @@ export default function GigStatus() {
     }
     if (row.status === 'cancelled' && prevStatus && prevStatus !== 'cancelled'
         && row.cancelled_by && row.cancelled_by !== row.customer_id) {
-      toast.error(row.customer_no_show
-        ? 'Your driver waited but you didn\'t arrive, so the gig was cancelled.'
-        : 'Your driver cancelled. You can request again.');
+      toast.error(row.admin_resolution
+        ? 'This gig was closed by Skootlink support.'
+        : row.customer_no_show
+          ? 'Your driver waited but you didn\'t arrive, so the gig was cancelled.'
+          : 'Your driver cancelled. You can request again.');
     }
     if (prevStatus && row.driver_completed_at && !lastEndedRef.current && row.status === 'in_progress') {
       toast('Your driver ended the trip — please confirm');
@@ -281,6 +283,8 @@ export default function GigStatus() {
   if (gig.status === 'cancelled') {
     let sub = gig.cancelled_by && gig.cancelled_by !== gig.customer_id ? 'Your driver cancelled' : 'You cancelled this request';
     if (gig.customer_no_show) sub = 'Your driver waited at the pickup point but you didn\'t arrive';
+    if (gig.admin_resolution === 'admin_cancelled') sub = 'Cancelled by Skootlink support';
+    if (gig.admin_resolution === 'voided') sub = 'Your report was upheld and the gig was voided';
     if (gig.cancellation_fee > 0) sub += ` · Cancellation fee ${formatRand(gig.cancellation_fee)}`;
     copy = { title: 'Cancelled', sub };
   }
@@ -403,6 +407,9 @@ export default function GigStatus() {
           <div className="space-y-3 mb-2">
             {gig.auto_confirmed && (
               <p className="text-xs text-muted-foreground">Confirmed automatically after 24 hours.</p>
+            )}
+            {gig.admin_resolution === 'released' && (
+              <p className="text-xs text-muted-foreground">Your report was reviewed by Skootlink support and the gig was completed.</p>
             )}
             {gig.driver_id && <GigRatingCard gigId={gig.id} targetLabel="driver" />}
           </div>

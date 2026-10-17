@@ -28,6 +28,7 @@ const NAV_SECTIONS = [
   {
     label: 'Gigs',
     items: [
+      { path: '/admin/gigs',                icon: List,        label: 'All Gigs' },
       { path: '/admin/gig-verification',    icon: ShieldCheck, label: 'Gig Verification' },
       { path: '/admin/vehicle-ride-ready',   icon: Star,        label: 'Vehicle Ride-Ready' },
       { path: '/admin/gig-settings',         icon: Coins,       label: 'Gig Settings' },
