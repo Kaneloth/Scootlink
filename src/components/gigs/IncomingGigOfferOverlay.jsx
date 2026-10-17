@@ -21,43 +21,61 @@ import { Car, Package, MapPin, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useGigOffers } from '@/hooks/useGigOffers';
 
-// The driver's vehicles that can carry passengers: vehicles they currently
-// rent (rentals.status = 'active', the value Activity.jsx and
-// AdminRentalsOversight.jsx use) whose owner got them Ride-Ready approved.
+// The Ride-Ready approved vehicles this driver may use for a ride:
+//   - vehicles they currently rent (rentals.status = 'active'), and
+//   - vehicles they own, unless that vehicle is actively rented out to
+//     someone else (the renter has it).
+// Status 'active' is the value Activity.jsx and AdminRentalsOversight.jsx use.
 //
-// Two plain queries instead of a PostgREST embed, so this doesn't depend on
-// a rentals.vehicle_id -> vehicles.id foreign key existing.
-// The server (accept_gig_request) must still re-check all of this; this list
-// is only what the driver gets to choose from.
+// Plain queries instead of a PostgREST embed, so this doesn't depend on a
+// rentals.vehicle_id -> vehicles.id foreign key existing.
+// The server (accept_gig_request, migration 008) enforces the same rule;
+// this list is only what the driver gets to choose from.
 async function fetchDriversRideReadyVehicles(driverId) {
   if (!driverId) return [];
 
-  const { data: rentals, error: rentalsError } = await supabase
-    .from('rentals')
-    .select('vehicle_id')
-    .eq('driver_id', driverId)
-    .eq('status', 'active');
+  const [rentingRes, rentedOutRes, ownedRes] = await Promise.all([
+    // Vehicles this driver is renting
+    supabase.from('rentals').select('vehicle_id')
+      .eq('driver_id', driverId).eq('status', 'active'),
+    // This driver's own vehicles that someone else is renting right now
+    supabase.from('rentals').select('vehicle_id, driver_id')
+      .eq('owner_id', driverId).eq('status', 'active'),
+    // This driver's own Ride-Ready vehicles
+    supabase.from('vehicles').select('id, make, model, plate')
+      .eq('owner_id', driverId).eq('ride_ready_status', 'approved'),
+  ]);
 
-  if (rentalsError) {
-    console.error('[IncomingGigOfferOverlay] fetchDriversRideReadyVehicles rentals query failed:', rentalsError);
-    return [];
+  for (const [label, res] of [['renting', rentingRes], ['rented-out', rentedOutRes], ['owned', ownedRes]]) {
+    if (res.error) {
+      console.error(`[IncomingGigOfferOverlay] fetchDriversRideReadyVehicles ${label} query failed:`, res.error);
+      return [];
+    }
   }
 
-  const vehicleIds = [...new Set((rentals || []).map((r) => r.vehicle_id).filter(Boolean))];
-  if (vehicleIds.length === 0) return [];
+  const rentedOutToOthers = new Set(
+    (rentedOutRes.data || []).filter((r) => r.driver_id !== driverId).map((r) => r.vehicle_id),
+  );
+  const ownedUsable = (ownedRes.data || []).filter((v) => !rentedOutToOthers.has(v.id));
 
-  const { data: vehicles, error: vehiclesError } = await supabase
-    .from('vehicles')
-    .select('id, make, model, plate')
-    .in('id', vehicleIds)
-    .eq('ride_ready_status', 'approved');
+  const rentingIds = [...new Set((rentingRes.data || []).map((r) => r.vehicle_id).filter(Boolean))]
+    .filter((id) => !ownedUsable.some((v) => v.id === id));
 
-  if (vehiclesError) {
-    console.error('[IncomingGigOfferOverlay] fetchDriversRideReadyVehicles vehicles query failed:', vehiclesError);
-    return [];
+  let rentedVehicles = [];
+  if (rentingIds.length > 0) {
+    const { data, error } = await supabase
+      .from('vehicles')
+      .select('id, make, model, plate')
+      .in('id', rentingIds)
+      .eq('ride_ready_status', 'approved');
+    if (error) {
+      console.error('[IncomingGigOfferOverlay] fetchDriversRideReadyVehicles rented vehicles query failed:', error);
+      return ownedUsable;
+    }
+    rentedVehicles = data || [];
   }
 
-  return vehicles || [];
+  return [...ownedUsable, ...rentedVehicles];
 }
 
 function OfferCard({ offer, driverId, onDismiss }) {
@@ -75,7 +93,7 @@ function OfferCard({ offer, driverId, onDismiss }) {
       const list = await fetchDriversRideReadyVehicles(driverId);
       setVehicles(list);
       if (list.length === 0) {
-        toast.error('No Ride-Ready vehicle available — you need an active rental on a Ride-Ready vehicle to accept ride gigs.');
+        toast.error('No Ride-Ready vehicle available — to accept rides you need a Ride-Ready vehicle that you own (and isn\'t rented out) or are currently renting.');
       }
       return;
     }
