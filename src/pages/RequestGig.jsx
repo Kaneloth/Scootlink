@@ -118,6 +118,12 @@ export default function RequestGig() {
       });
 
       const data = await res.json();
+      if (res.status === 409 && data.open_gig_id) {
+        // Only one open request at a time: take them to the one they have.
+        toast('You already have an open gig request');
+        navigate(`/gig-status/${data.open_gig_id}`);
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'Failed to request gig');
 
       toast.success(

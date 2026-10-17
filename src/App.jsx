@@ -33,6 +33,7 @@ import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 import RequestGig from '@/pages/RequestGig';
 import GigStatus from '@/pages/GigStatus';
+import DriverActiveGig from '@/pages/DriverActiveGig';
 import DriverGigVerification from '@/pages/DriverGigVerification';
 import VehicleRideReadySubmit from '@/pages/VehicleRideReadySubmit';
 import GigsHub from '@/pages/GigsHub';
@@ -151,6 +152,7 @@ const AuthenticatedApp = () => {
         <Route path="/gigs" element={<GigsHub />} />
         <Route path="/request-gig" element={<RequestGig />} />
         <Route path="/gig-status/:gigId" element={<GigStatus />} />
+        <Route path="/gig-drive/:gigId" element={<DriverActiveGig />} />
         <Route path="/gig-verification" element={<DriverGigVerification />} />
         <Route path="/vehicle-ride-ready/:vehicleId" element={<VehicleRideReadySubmit />} />
       </Route>

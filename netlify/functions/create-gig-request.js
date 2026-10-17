@@ -107,6 +107,26 @@ export const handler = async (event) => {
   }
   const customerId = userData.user.id;
 
+  // ── One open request per customer ─────────────────────────────────────────
+  const { data: openGig, error: openGigErr } = await supabase
+    .from('gig_requests')
+    .select('id')
+    .eq('customer_id', customerId)
+    .in('status', ['pending', 'accepted', 'in_progress'])
+    .limit(1)
+    .maybeSingle();
+  if (openGigErr) {
+    console.error('[create-gig-request] Open-gig check failed:', openGigErr);
+    return { statusCode: 500, headers: HEADERS, body: JSON.stringify({ error: 'Failed to create gig request' }) };
+  }
+  if (openGig) {
+    return {
+      statusCode: 409,
+      headers: HEADERS,
+      body: JSON.stringify({ error: 'You already have an open gig request', open_gig_id: openGig.id }),
+    };
+  }
+
   // ── Compute fare estimate ──────────────────────────────────────────────────
   // Straight-line distance only (see haversineKm note above) — an upfront
   // estimate shown to the customer, not final billing.

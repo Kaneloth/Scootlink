@@ -14,12 +14,14 @@
 // confirmed in use.
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Car, Package, MapPin, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useGigOffers } from '@/hooks/useGigOffers';
+import { notify } from '@/lib/notify';
 
 // The Ride-Ready approved vehicles this driver may use for a ride:
 //   - vehicles they currently rent (rentals.status = 'active'), and
@@ -79,6 +81,7 @@ async function fetchDriversRideReadyVehicles(driverId) {
 }
 
 function OfferCard({ offer, driverId, onDismiss }) {
+  const navigate = useNavigate();
   const [accepting, setAccepting] = useState(false);
   const [vehicles, setVehicles] = useState(null); // null = not loaded, [] = loaded/empty
   const [selectedVehicleId, setSelectedVehicleId] = useState(null);
@@ -107,7 +110,7 @@ function OfferCard({ offer, driverId, onDismiss }) {
     }
     setAccepting(true);
     try {
-      const { error } = await supabase.rpc('accept_gig_request', {
+      const { data: acceptedGig, error } = await supabase.rpc('accept_gig_request', {
         p_gig_id: offer.gig_id,
         p_vehicle_id: isRide ? selectedVehicleId : null,
       });
@@ -127,8 +130,8 @@ function OfferCard({ offer, driverId, onDismiss }) {
 
       toast.success('Gig accepted!');
       onDismiss(offer.gig_id);
-      // TODO: navigate to an active-gig screen once that exists
-      // (out of scope for this component — accept flow only).
+      notify(acceptedGig?.customer_id, 'gig_accepted', 'Driver found', 'A driver accepted your gig and is on the way.', { gig_id: offer.gig_id });
+      navigate(`/gig-drive/${offer.gig_id}`);
     } catch (err) {
       console.error('[IncomingGigOfferOverlay] Unexpected accept error:', err);
       toast.error('Something went wrong. Please try again.');

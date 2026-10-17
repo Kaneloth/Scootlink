@@ -18,15 +18,16 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, fetchProfilesByIds } from '@/api/supabaseData';
+import { notify } from '@/lib/notify';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Car, Package, MapPin, Star } from 'lucide-react';
+import { Loader2, Car, Package, MapPin, Star, Phone, XCircle } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
 
 const STATUS_COPY = {
   pending: { title: 'Finding a driver...', sub: 'Searching nearby drivers' },
-  accepted: { title: 'Driver found!', sub: null },
+  accepted: { title: 'Driver found!', sub: 'Your driver is on the way' },
   in_progress: { title: 'Gig in progress', sub: null },
   completed: { title: 'Completed', sub: 'Thanks for using Skootlink' },
   no_drivers_available: { title: 'No drivers available', sub: 'No one nearby right now' },
@@ -34,12 +35,17 @@ const STATUS_COPY = {
   disputed: { title: 'Under review', sub: 'Our team is looking into this' },
 };
 
+const formatRand = (n) => (n == null ? null : `R ${Number(n).toFixed(2)}`);
+
 export default function GigStatus() {
   const { gigId } = useParams();
   const navigate = useNavigate();
   const [gig, setGig] = useState(null);
   const [driverProfile, setDriverProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [vehicle, setVehicle] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+  const loadedVehicleIdRef = useRef(null);
   // Which driver's profile is loaded (or loading). A ref, not state, so the
   // 5s poll and the Realtime handler always see the current value.
   const loadedDriverIdRef = useRef(null);
@@ -62,14 +68,64 @@ export default function GigStatus() {
     }
   }, []);
 
+  // The car, for rides (shown to the customer so they recognise it).
+  const loadVehicle = useCallback(async (vehicleId) => {
+    if (!vehicleId || loadedVehicleIdRef.current === vehicleId) return;
+    loadedVehicleIdRef.current = vehicleId;
+    const { data, error } = await supabase
+      .from('vehicles').select('id, make, model, plate').eq('id', vehicleId).maybeSingle();
+    if (error) {
+      console.error('[GigStatus] vehicle fetch failed:', error);
+      loadedVehicleIdRef.current = null;
+      return;
+    }
+    setVehicle(data || null);
+  }, []);
+
+  const lastArrivedRef = useRef(null);
+
   const applyGig = useCallback((row) => {
-    if (row.status === 'accepted' && lastStatusRef.current === 'pending') {
+    const prevStatus = lastStatusRef.current;
+    if (row.status === 'accepted' && prevStatus === 'pending') {
       toast.success('A driver accepted your gig!');
     }
+    if (prevStatus && row.driver_arrived_at && !lastArrivedRef.current) {
+      toast.success('Your driver has arrived');
+    }
+    if (row.status === 'cancelled' && prevStatus && prevStatus !== 'cancelled'
+        && row.cancelled_by && row.cancelled_by !== row.customer_id) {
+      toast.error('Your driver cancelled. You can request again.');
+    }
     lastStatusRef.current = row.status;
+    lastArrivedRef.current = row.driver_arrived_at;
     setGig(row);
     loadDriverProfile(row.driver_id);
-  }, [loadDriverProfile]);
+    loadVehicle(row.vehicle_id);
+  }, [loadDriverProfile, loadVehicle]);
+
+  const handleCancel = async () => {
+    if (!window.confirm('Cancel this request?')) return;
+    setCancelling(true);
+    try {
+      const { data, error } = await supabase.rpc('cancel_gig_request', { p_gig_id: gig.id, p_reason: null });
+      if (error) {
+        console.error('[GigStatus] cancel_gig_request failed:', error);
+        toast.error(error.message || 'Could not cancel');
+        fetchGig();
+        return;
+      }
+      if (data) applyGig(data);
+      if (gig.driver_id) {
+        notify(gig.driver_id, 'gig_cancelled', 'Gig cancelled', 'The customer cancelled this gig.', { gig_id: gig.id });
+      }
+      toast('Request cancelled');
+    } catch (err) {
+      console.error('[GigStatus] cancel error:', err);
+      toast.error('Something went wrong. Please try again.');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const fetchGig = useCallback(async () => {
     const { data, error } = await supabase
@@ -130,8 +186,22 @@ export default function GigStatus() {
     );
   }
 
-  const copy = STATUS_COPY[gig.status] || { title: gig.status, sub: null };
   const isRide = gig.gig_type === 'ride';
+  let copy = STATUS_COPY[gig.status] || { title: gig.status, sub: null };
+  if (gig.status === 'accepted' && gig.driver_arrived_at) {
+    copy = { title: 'Your driver has arrived', sub: 'Meet them at the pickup point' };
+  }
+  if (gig.status === 'in_progress') {
+    copy = { title: isRide ? 'On your way' : 'Delivery on its way', sub: null };
+  }
+  if (gig.status === 'cancelled') {
+    copy = {
+      title: 'Cancelled',
+      sub: gig.cancelled_by && gig.cancelled_by !== gig.customer_id ? 'Your driver cancelled' : 'You cancelled this request',
+    };
+  }
+  const showDriver = (gig.status === 'accepted' || gig.status === 'in_progress') && driverProfile;
+  const canCancel = gig.status === 'pending' || gig.status === 'accepted';
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
@@ -141,6 +211,8 @@ export default function GigStatus() {
         <div className="flex items-center gap-3 mb-4">
           {gig.status === 'pending' ? (
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          ) : gig.status === 'cancelled' ? (
+            <XCircle className="w-6 h-6 text-destructive" />
           ) : isRide ? (
             <Car className="w-6 h-6 text-primary" />
           ) : (
@@ -165,21 +237,33 @@ export default function GigStatus() {
 
         {gig.fare_amount != null && (
           <p className="text-sm mb-4">
-            Estimated fare: <span className="font-bold">R {gig.fare_amount}</span>
+            Estimated fare: <span className="font-bold">{formatRand(gig.fare_amount)}</span>
           </p>
         )}
 
-        {gig.status === 'accepted' && driverProfile && (
+        {showDriver && (
           <div className="bg-muted rounded-xl p-4 mb-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="font-semibold text-sm">{driverProfile.full_name}</p>
-                {driverProfile.rating != null && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Star className="w-3 h-3 fill-current" /> {driverProfile.rating}
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  {driverProfile.rating > 0
+                    ? <><Star className="w-3 h-3 fill-current" /> {Number(driverProfile.rating).toFixed(1)}</>
+                    : 'New driver'}
+                </p>
+                {isRide && vehicle && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {vehicle.make} {vehicle.model} · <span className="font-mono">{vehicle.plate}</span>
                   </p>
                 )}
               </div>
+              {driverProfile.phone && (
+                <Button asChild variant="outline" size="icon">
+                  <a href={`tel:${driverProfile.phone}`} aria-label="Call driver">
+                    <Phone className="w-4 h-4" />
+                  </a>
+                </Button>
+              )}
             </div>
             {/* Messaging link intentionally omitted — depends on the
                 context_type='gig' conversation-creation flow, which is a
@@ -187,9 +271,21 @@ export default function GigStatus() {
           </div>
         )}
 
-        {gig.status === 'no_drivers_available' && (
+        {(gig.status === 'no_drivers_available' || gig.status === 'cancelled') && (
           <Button onClick={() => navigate('/request-gig')} className="w-full">
-            Try Again
+            {gig.status === 'cancelled' ? 'Request again' : 'Try Again'}
+          </Button>
+        )}
+
+        {canCancel && (
+          <Button
+            variant="ghost"
+            className="w-full text-destructive mt-2"
+            onClick={handleCancel}
+            disabled={cancelling}
+          >
+            {cancelling && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Cancel request
           </Button>
         )}
       </Card>

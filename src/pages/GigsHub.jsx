@@ -36,6 +36,7 @@ export default function GigsHub() {
   const [user, setUser] = useState(null);
   const [verification, setVerification] = useState(null); // { tier, status } | null
   const [vehicles, setVehicles] = useState([]);
+  const [openGigs, setOpenGigs] = useState([]); // gigs I'm in that aren't finished
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -46,6 +47,18 @@ export default function GigsHub() {
 
       const isDriver = ['driver', 'both'].includes(me.account_type);
       const isOwner = ['owner', 'both'].includes(me.account_type);
+
+      // Any unfinished gig I'm part of, as customer or as driver
+      {
+        const { data, error } = await supabase
+          .from('gig_requests')
+          .select('id, gig_type, status, customer_id, driver_id, pickup_address, driver_arrived_at')
+          .or(`customer_id.eq.${me.id},driver_id.eq.${me.id}`)
+          .in('status', ['pending', 'accepted', 'in_progress'])
+          .order('created_at', { ascending: false });
+        if (error) console.error('[GigsHub] open gigs fetch failed:', error);
+        setOpenGigs(data || []);
+      }
 
       if (isDriver) {
         const { data, error } = await supabase
@@ -88,6 +101,38 @@ export default function GigsHub() {
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto space-y-4">
       <PageHeader title="Gigs" subtitle="Rides and deliveries" backTo="/home" />
+
+      {/* Unfinished gigs: get back to the trip screen */}
+      {openGigs.map((g) => {
+        const asDriver = g.driver_id === user?.id;
+        let label = 'Finding a driver';
+        if (g.status === 'accepted') {
+          label = asDriver
+            ? (g.driver_arrived_at ? 'Waiting at pickup' : 'Head to pickup')
+            : (g.driver_arrived_at ? 'Your driver has arrived' : 'Driver on the way');
+        } else if (g.status === 'in_progress') {
+          label = 'Trip in progress';
+        }
+        return (
+          <Card key={g.id} className="p-4 border-2 border-primary/40 bg-primary/5">
+            <button
+              onClick={() => navigate(asDriver ? `/gig-drive/${g.id}` : `/gig-status/${g.id}`)}
+              className="w-full flex items-center gap-3 text-left"
+            >
+              {g.gig_type === 'ride'
+                ? <Car className="w-6 h-6 text-primary shrink-0" />
+                : <Package className="w-6 h-6 text-primary shrink-0" />}
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm">
+                  {asDriver ? 'Your current gig' : 'Your current request'} · {label}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">{g.pickup_address}</p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </Card>
+        );
+      })}
 
       {/* Everyone can request a gig */}
       <Card className="p-4 border border-border/50">
