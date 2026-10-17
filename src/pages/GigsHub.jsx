@@ -52,7 +52,7 @@ export default function GigsHub() {
       {
         const { data, error } = await supabase
           .from('gig_requests')
-          .select('id, gig_type, status, customer_id, driver_id, pickup_address, driver_arrived_at')
+          .select('id, gig_type, status, customer_id, driver_id, pickup_address, driver_arrived_at, driver_completed_at')
           .or(`customer_id.eq.${me.id},driver_id.eq.${me.id}`)
           .in('status', ['pending', 'accepted', 'in_progress'])
           .order('created_at', { ascending: false });
@@ -111,7 +111,9 @@ export default function GigsHub() {
             ? (g.driver_arrived_at ? 'Waiting at pickup' : 'Head to pickup')
             : (g.driver_arrived_at ? 'Your driver has arrived' : 'Driver on the way');
         } else if (g.status === 'in_progress') {
-          label = 'Trip in progress';
+          label = g.driver_completed_at
+            ? (asDriver ? 'Waiting for confirmation' : 'Please confirm your gig')
+            : 'Trip in progress';
         }
         return (
           <Card key={g.id} className="p-4 border-2 border-primary/40 bg-primary/5">

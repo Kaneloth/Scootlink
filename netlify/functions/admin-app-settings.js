@@ -7,6 +7,11 @@
  *   { action: 'toggle_profile_visibility', enabled: boolean }
  *   { action: 'update_signup_credits', driver_credits: number, owner_credits: number }
  *   { action: 'update_verification_prices', sa_id: number, passport: number, licence: number }
+ *   { action: 'get_gig_pricing' }
+ *   { action: 'update_gig_pricing', commission_percent, ride_minimum_fare, ride_per_km_rate,
+ *       delivery_minimum_fare, delivery_per_km_rate }   (all numbers)
+ *   (Gig actions are separate from 'get' so the pages using 'get' are
+ *   unaffected if migration 010 hasn't run yet.)
  * Auth: Bearer token, verified to belong to an admin (user_metadata.is_admin === true)
  */
 import { createClient } from '@supabase/supabase-js';
@@ -103,6 +108,42 @@ export const handler = async (event) => {
         .eq('id', 1);
       if (error) throw error;
       return { statusCode: 200, body: JSON.stringify({ verification_price_sa_id: sa_id, verification_price_passport: passport, verification_price_licence: licence }) };
+    }
+
+    if (action === 'get_gig_pricing') {
+      const { data, error } = await supabaseAdmin
+        .from('app_settings')
+        .select('gig_commission_percent, ride_minimum_fare, ride_per_km_rate, delivery_minimum_fare, delivery_per_km_rate, updated_at')
+        .eq('id', 1)
+        .single();
+      if (error) throw error;
+      return { statusCode: 200, body: JSON.stringify(data) };
+    }
+
+    if (action === 'update_gig_pricing') {
+      const {
+        commission_percent, ride_minimum_fare, ride_per_km_rate,
+        delivery_minimum_fare, delivery_per_km_rate,
+      } = body;
+      const isNum = (n) => typeof n === 'number' && isFinite(n);
+      if (!isNum(commission_percent) || commission_percent < 0 || commission_percent > 100) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Commission must be a number from 0 to 100' }) };
+      }
+      const fares = { ride_minimum_fare, ride_per_km_rate, delivery_minimum_fare, delivery_per_km_rate };
+      for (const [k, v] of Object.entries(fares)) {
+        if (!isNum(v) || v <= 0) {
+          return { statusCode: 400, body: JSON.stringify({ error: `${k} must be a positive number` }) };
+        }
+      }
+      const update = {
+        gig_commission_percent: commission_percent,
+        ...fares,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id,
+      };
+      const { error } = await supabaseAdmin.from('app_settings').update(update).eq('id', 1);
+      if (error) throw error;
+      return { statusCode: 200, body: JSON.stringify(update) };
     }
 
     return { statusCode: 400, body: JSON.stringify({ error: 'Unknown action' }) };

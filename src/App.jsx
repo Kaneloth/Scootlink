@@ -64,6 +64,7 @@ const AdminRefundRequests = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages
 const AdminTransactions = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminTransactions')) : null;
 const AdminGigVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminGigVerification')) : null;
 const AdminVehicleRideReady = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminVehicleRideReady')) : null;
+const AdminGigSettings = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminGigSettings')) : null;
 
 function AdminLoadingScreen() {
   return (
@@ -184,6 +185,7 @@ const AuthenticatedApp = () => {
           <Route path="transactions" element={<AdminTransactions />} />
           <Route path="gig-verification" element={<AdminGigVerification />} />
           <Route path="vehicle-ride-ready" element={<AdminVehicleRideReady />} />
+          <Route path="gig-settings" element={<AdminGigSettings />} />
         </Route>
       )}
 

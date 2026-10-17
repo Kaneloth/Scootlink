@@ -99,7 +99,7 @@ async function broadcastToDrivers(gig, radiusMeters) {
 
 export const handler = async () => {
   const now = new Date();
-  const results = { rebroadcast: 0, cancelled: 0, stale_drivers_cleared: 0, errors: [] };
+  const results = { rebroadcast: 0, cancelled: 0, stale_drivers_cleared: 0, auto_confirmed: 0, errors: [] };
 
   try {
     // Backstop cleanup: a driver whose app closed or lost signal stops sending
@@ -135,7 +135,8 @@ export const handler = async () => {
         const { error: updateErr } = await supabase
           .from('gig_requests')
           .update({ retry_count: 1, search_radius_meters: EXPANDED_RADIUS_METERS, updated_at: now.toISOString() })
-          .eq('id', gig.id);
+          .eq('id', gig.id)
+          .eq('status', 'pending'); // a driver may have accepted since the select
 
         if (updateErr) {
           console.error(`[gig-expiry-check] Failed to update retry_count for gig=${gig.id}:`, updateErr);
@@ -146,16 +147,21 @@ export const handler = async () => {
         console.log(`[gig-expiry-check] gig=${gig.id} re-broadcast at ${EXPANDED_RADIUS_METERS}m, notified ${notified} driver(s)`);
         results.rebroadcast++;
       } else if (gig.retry_count >= 1 && elapsedMs >= CANCEL_AFTER_MS) {
-        const { error: cancelErr } = await supabase
+        // Only if still pending: never overwrite a gig a driver accepted
+        // between the select above and this update.
+        const { data: cancelledRows, error: cancelErr } = await supabase
           .from('gig_requests')
           .update({ status: 'no_drivers_available', updated_at: now.toISOString() })
-          .eq('id', gig.id);
+          .eq('id', gig.id)
+          .eq('status', 'pending')
+          .select('id');
 
         if (cancelErr) {
           console.error(`[gig-expiry-check] Failed to cancel gig=${gig.id}:`, cancelErr);
           results.errors.push(gig.id);
           continue;
         }
+        if (!cancelledRows || cancelledRows.length === 0) continue; // accepted meanwhile
 
         await notify(
           gig.customer_id, 'gig_no_drivers',
@@ -166,6 +172,21 @@ export const handler = async () => {
 
         console.log(`[gig-expiry-check] gig=${gig.id} cancelled — no drivers found after retry`);
         results.cancelled++;
+      }
+    }
+
+    // Completion: driver ended the trip 24h+ ago and the customer never
+    // answered -> confirm automatically (migration 010).
+    const { data: autoConfirmed, error: autoErr } = await supabase.rpc('auto_confirm_stale_gigs');
+    if (autoErr) {
+      console.error('[gig-expiry-check] auto_confirm_stale_gigs failed:', autoErr);
+    } else {
+      for (const g of autoConfirmed || []) {
+        results.auto_confirmed++;
+        await notify(g.customer_id, 'gig_completed', 'Gig completed',
+          'Your gig was confirmed automatically after 24 hours. You can still rate your driver.', { gig_id: g.gig_id });
+        await notify(g.driver_id, 'gig_completed', 'Gig completed',
+          'The customer did not respond within 24 hours, so your gig was confirmed automatically.', { gig_id: g.gig_id });
       }
     }
 

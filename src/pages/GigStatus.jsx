@@ -21,6 +21,8 @@ import { supabase, fetchProfilesByIds } from '@/api/supabaseData';
 import { notify } from '@/lib/notify';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import GigRatingCard from '@/components/gigs/GigRatingCard';
 import { Loader2, Car, Package, MapPin, Star, Phone, XCircle } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
@@ -45,6 +47,10 @@ export default function GigStatus() {
   const [loading, setLoading] = useState(true);
   const [vehicle, setVehicle] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [reporting, setReporting] = useState(false);
   const loadedVehicleIdRef = useRef(null);
   // Which driver's profile is loaded (or loading). A ref, not state, so the
   // 5s poll and the Realtime handler always see the current value.
@@ -83,6 +89,7 @@ export default function GigStatus() {
   }, []);
 
   const lastArrivedRef = useRef(null);
+  const lastEndedRef = useRef(null);
 
   const applyGig = useCallback((row) => {
     const prevStatus = lastStatusRef.current;
@@ -96,12 +103,63 @@ export default function GigStatus() {
         && row.cancelled_by && row.cancelled_by !== row.customer_id) {
       toast.error('Your driver cancelled. You can request again.');
     }
+    if (prevStatus && row.driver_completed_at && !lastEndedRef.current && row.status === 'in_progress') {
+      toast('Your driver ended the trip — please confirm');
+    }
+    lastEndedRef.current = row.driver_completed_at;
     lastStatusRef.current = row.status;
     lastArrivedRef.current = row.driver_arrived_at;
     setGig(row);
     loadDriverProfile(row.driver_id);
     loadVehicle(row.vehicle_id);
   }, [loadDriverProfile, loadVehicle]);
+
+  const handleConfirm = async () => {
+    setConfirming(true);
+    try {
+      const { data, error } = await supabase.rpc('confirm_gig_completion', { p_gig_id: gig.id });
+      if (error) {
+        console.error('[GigStatus] confirm_gig_completion failed:', error);
+        toast.error(error.message || 'Could not confirm');
+        fetchGig();
+        return;
+      }
+      if (data) applyGig(data);
+      notify(gig.driver_id, 'gig_completed', 'Gig completed', 'The customer confirmed your gig is complete.', { gig_id: gig.id });
+      toast.success('Thanks! Gig completed.');
+    } catch (err) {
+      console.error('[GigStatus] confirm error:', err);
+      toast.error('Something went wrong. Please try again.');
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const handleReport = async () => {
+    if (!reportText.trim()) {
+      toast.error('Please describe the issue');
+      return;
+    }
+    setReporting(true);
+    try {
+      const { data, error } = await supabase.rpc('report_gig_issue', { p_gig_id: gig.id, p_reason: reportText.trim() });
+      if (error) {
+        console.error('[GigStatus] report_gig_issue failed:', error);
+        toast.error(error.message || 'Could not send your report');
+        fetchGig();
+        return;
+      }
+      if (data) applyGig(data);
+      notify(gig.driver_id, 'gig_disputed', 'Issue reported', 'The customer reported an issue with your gig. Our team will review it.', { gig_id: gig.id });
+      setReportOpen(false);
+      toast.success('Report sent — our team will review it');
+    } catch (err) {
+      console.error('[GigStatus] report error:', err);
+      toast.error('Something went wrong. Please try again.');
+    } finally {
+      setReporting(false);
+    }
+  };
 
   const handleCancel = async () => {
     if (!window.confirm('Cancel this request?')) return;
@@ -191,8 +249,11 @@ export default function GigStatus() {
   if (gig.status === 'accepted' && gig.driver_arrived_at) {
     copy = { title: 'Your driver has arrived', sub: 'Meet them at the pickup point' };
   }
+  const awaitingConfirm = gig.status === 'in_progress' && !!gig.driver_completed_at;
   if (gig.status === 'in_progress') {
-    copy = { title: isRide ? 'On your way' : 'Delivery on its way', sub: null };
+    copy = awaitingConfirm
+      ? { title: 'Your driver ended the trip', sub: 'Please confirm it is complete' }
+      : { title: isRide ? 'On your way' : 'Delivery on its way', sub: null };
   }
   if (gig.status === 'cancelled') {
     copy = {
@@ -268,6 +329,51 @@ export default function GigStatus() {
             {/* Messaging link intentionally omitted — depends on the
                 context_type='gig' conversation-creation flow, which is a
                 separate piece of work (§5.9) not yet built. */}
+          </div>
+        )}
+
+        {awaitingConfirm && !reportOpen && (
+          <div className="space-y-2 mb-2">
+            <Button className="w-full" onClick={handleConfirm} disabled={confirming}>
+              {confirming && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Confirm complete
+            </Button>
+            <Button variant="outline" className="w-full" onClick={() => setReportOpen(true)} disabled={confirming}>
+              Report an issue
+            </Button>
+            <p className="text-xs text-center text-muted-foreground">
+              If you don't respond within 24 hours, the gig is confirmed automatically.
+            </p>
+          </div>
+        )}
+
+        {awaitingConfirm && reportOpen && (
+          <div className="space-y-2 mb-2">
+            <Textarea
+              value={reportText}
+              onChange={(e) => setReportText(e.target.value)}
+              placeholder="What went wrong?"
+              rows={3}
+              maxLength={1000}
+            />
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setReportOpen(false)} disabled={reporting}>
+                Back
+              </Button>
+              <Button variant="destructive" className="flex-1" onClick={handleReport} disabled={reporting}>
+                {reporting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Send report
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {gig.status === 'completed' && (
+          <div className="space-y-3 mb-2">
+            {gig.auto_confirmed && (
+              <p className="text-xs text-muted-foreground">Confirmed automatically after 24 hours.</p>
+            )}
+            {gig.driver_id && <GigRatingCard gigId={gig.id} targetLabel="driver" />}
           </div>
         )}
 
