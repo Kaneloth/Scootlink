@@ -146,10 +146,15 @@ export const handler = async (event) => {
       .eq('id', record.sender_id)
       .single();
     title = `New message from ${sender?.full_name?.split(' ')[0] || 'someone'}`;
-    // Gig chat messages open the trip screen (via /gig/:id); others open Messages.
-    data = record.context_type === 'gig' && record.context_id
-      ? { type: 'gig_message', sender_id: record.sender_id, gig_id: String(record.context_id) }
-      : { type: 'message', sender_id: record.sender_id };
+    // Every chat belongs to a gig or a rental: gig messages open the trip
+    // screen (via /gig/:id), rental messages open that rental's chat on Home.
+    if (record.context_type === 'gig' && record.context_id) {
+      data = { type: 'gig_message', sender_id: record.sender_id, gig_id: String(record.context_id) };
+    } else if (record.context_type === 'rental' && record.context_id) {
+      data = { type: 'rental_message', sender_id: record.sender_id, rental_id: String(record.context_id) };
+    } else {
+      data = { type: 'message', sender_id: record.sender_id };
+    }
   } else {
     return { statusCode: 400, body: JSON.stringify({ error: 'Unknown table: ' + table }) };
   }

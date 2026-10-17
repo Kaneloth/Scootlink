@@ -12,21 +12,19 @@ import HomePage    from '@/pages/Dashboard';
 import SearchPage  from '@/pages/SearchPage';
 import ActivityPage    from '@/pages/Activity';
 import BriefcasePage  from '@/pages/MyBriefcase';
-import MessagesPage   from '@/pages/Messages';
 import { fnUrl } from '@/lib/functionsUrl';
 
-// Must match bottom nav order exactly: Home → Search → Activity → Briefcase → Messages
+// Must match bottom nav order exactly: Home → Search → Activity → Briefcase
 // ─── Search paths (dynamic based on account type) ───────────────────────────
 const SEARCH_PATHS = ['/search-vehicles', '/find-drivers', '/mysearch'];
 const CANONICAL_SEARCH_PATH = '/search-vehicles';
-const CANONICAL_PATHS = ['/home', CANONICAL_SEARCH_PATH, '/activity', '/briefcase', '/messages'];
+const CANONICAL_PATHS = ['/home', CANONICAL_SEARCH_PATH, '/activity', '/briefcase'];
 
 const TABS = [
   { path: '/home',               component: HomePage,      icon: Bike, label: 'Home'      },
   { path: CANONICAL_SEARCH_PATH, component: SearchPage,    icon: Bike, label: 'Search'    },
   { path: '/activity',            component: ActivityPage,  icon: Bike, label: 'Activity'  },
   { path: '/briefcase',          component: BriefcasePage, icon: Bike, label: 'Briefcase' },
-  { path: '/messages',           component: MessagesPage,  icon: Bike, label: 'Messages'  },
 ];
 
 const TAB_PATHS = TABS.reduce((acc, tab) => {

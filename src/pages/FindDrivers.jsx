@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
 import { User, auth, Vehicle } from '@/api/supabaseData';
 import { useQuery } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
@@ -8,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
-import { MapPin, Clock, MessageCircle, ShieldCheck, SlidersHorizontal, X, User as UserIcon, FileText, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2, Check } from 'lucide-react';
+import { MapPin, Clock, ShieldCheck, SlidersHorizontal, X, User as UserIcon, FileText, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2, Check } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import StarRating from '@/components/reviews/StarRating';
 import PageHeader from '@/components/layout/PageHeader';
@@ -23,7 +22,6 @@ import ContractSectionsList from '@/components/contract/ContractSectionsList';
 import { notify } from '@/lib/notify';
 
 export default function FindDrivers() {
-  const navigate = useNavigate();
   const [driverReviews,    setDriverReviews]    = useState([]);
   const [loadingReviews,   setLoadingReviews]   = useState(false);
   const [showFilters,      setShowFilters]      = useState(false);
@@ -650,7 +648,7 @@ export default function FindDrivers() {
                   {showContractForm && (
                     <div className="mt-4 space-y-3">
                       <p className="text-xs text-muted-foreground">
-                        Use this after agreeing on terms via Messages. The driver will see the contract on their dashboard and confirm to activate the rental.
+                        The driver will see the contract on their dashboard and confirm to activate the rental. Once it's sent, you can message each other from the contract card.
                       </p>
 
                       {ownerVehicles.length === 0 ? (
@@ -737,19 +735,6 @@ export default function FindDrivers() {
               )}
             </div>
 
-            <div className="px-6 pb-6 shrink-0">
-              <Button
-                className="w-full gap-2"
-                variant="outline"
-                onClick={() => {
-                  setSelectedDriver(null);
-                  setShowContractForm(false);
-                  navigate(`/messages?userId=${selectedDriver.id}`);
-                }}
-              >
-                <MessageCircle className="w-4 h-4" /> Message {selectedDriver.full_name?.split(' ')[0] || 'Driver'}
-              </Button>
-            </div>
           </div>
         </div>,
         document.body

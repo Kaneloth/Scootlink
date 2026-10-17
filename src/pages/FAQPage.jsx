@@ -53,7 +53,7 @@ const CATEGORIES = [
         </>
       ) },
       { q: 'What is a Verified badge?', a: "Users who choose to verify their identity or driving licence get a badge on their profile (✅ ID Verified or 🛡️ Fully Verified). This lets others know their details have been checked by our team. Verification is optional and does not guarantee a person's trustworthiness, but it's a strong signal of good faith." },
-      { q: 'Can I block or report another user?', a: 'Yes. You can report inappropriate behaviour through the Messages page, and you can block a user from contacting you or renting your vehicle. Skootlink can also suspend or ban users who violate our Terms of Service.' },
+      { q: 'Can I block or report another user?', a: 'Yes. You can report or block someone from the ⋮ menu at the top of any chat, and manage the people you have blocked in Settings. Skootlink can also suspend or ban users who violate our Terms of Service.' },
     ],
   },
   {

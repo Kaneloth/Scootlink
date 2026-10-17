@@ -33,6 +33,8 @@ import LeaveReviewModal from '@/components/reviews/LeaveReviewModal';
 import StarRating from '@/components/reviews/StarRating';
 import ImageLightbox from '@/components/ui/ImageLightbox';
 import { fnUrl } from '@/lib/functionsUrl';
+import RentalChatSheet from '@/components/chat/RentalChatSheet';
+import useRentalUnread from '@/hooks/useRentalUnread';
 
 // Skeleton for the stat cards row while user is loading
 function StatCardsSkeleton() {
@@ -351,16 +353,19 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
             </div>
           )}
 
-          {/* Message button */}
-          <Button
-            className="w-full gap-2"
-            onClick={() => {
-              if (!canMessage) { onMessageBlocked(); return; }
-              onMessage(profile.id);
-            }}
-          >
-            <MessageCircle className="w-4 h-4" /> Message {profile.full_name?.split(' ')[0] || role}
-          </Button>
+          {/* Message button — only when the two of you share a rental (the chat
+              lives on that rental) */}
+          {onMessage && (
+            <Button
+              className="w-full gap-2"
+              onClick={() => {
+                if (!canMessage) { onMessageBlocked(); return; }
+                onMessage(profile.id);
+              }}
+            >
+              <MessageCircle className="w-4 h-4" /> Message {profile.full_name?.split(' ')[0] || role}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -381,6 +386,8 @@ export default function Dashboard() {
   const [selectedOwner,   setSelectedOwner]   = useState(null);
   const [loadingOwnerId,  setLoadingOwnerId]  = useState(null);
   const [endingRentalId,  setEndingRentalId]  = useState(null);
+  // Rental chat sheet: the rental whose chat is open (migration 017)
+  const [chatRental,      setChatRental]      = useState(null);
 
   // Contract modal states
   const [contractModal, setContractModal] = useState(false);
@@ -712,7 +719,9 @@ export default function Dashboard() {
   const { data: rentals = [] } = useQuery({
     queryKey: ['my-rentals'],
     queryFn: async () => {
-      const all = await Rental.list();
+      // Newest first: Rental.list() defaults to the OLDEST 50 rows, which
+      // would hide a user's recent rentals (and their chats) once they have more.
+      const all = await Rental.list('-created_at', 200);
       return all.filter(r => r.owner_id === user?.id || r.driver_id === user?.id);
     },
     enabled: !!user?.id,
@@ -808,6 +817,47 @@ export default function Dashboard() {
   const driverPendingConfRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'awaiting_driver_confirmation');
   const driverAcceptedRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'driver_accepted');
   const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
+  const driverRequestedRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'pending');
+
+  // ── Rental chats ─────────────────────────────────────────────────────────
+  // Every chat belongs to a rental: it opens from that rental's card, from a
+  // profile panel (latest rental with that person) or from a push
+  // notification (/home?chat=<rentalId>).
+  const rentalUnread = useRentalUnread(user?.id);
+
+  const vehicleTitle = (r) => {
+    const v = vehicles.find(x => x.id === r.vehicle_id) || allVehiclesLookup.find(x => x.id === r.vehicle_id) || allVehicles.find(x => x.id === r.vehicle_id);
+    return v ? `${v.make} ${v.model}` : `Vehicle #${r.vehicle_id}`;
+  };
+
+  const openRentalChat = (r) => {
+    if (!r || !user) return;
+    setChatRental(r);
+  };
+
+  // Latest rental between me and this person (any status), for profile panels
+  const latestRentalWith = (personId) => rentals
+    .filter(r => (r.owner_id === user?.id && r.driver_id === personId) || (r.driver_id === user?.id && r.owner_id === personId))
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0) || b.id - a.id)[0] || null;
+
+  const renderChatButton = (r, label, className = 'flex-1') => {
+    const n = rentalUnread.forRental(r.id);
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        className={`${className} gap-1.5 text-primary border-primary/30 hover:bg-primary/5`}
+        onClick={(e) => { e.stopPropagation(); openRentalChat(r); }}
+      >
+        <MessageCircle className="w-3.5 h-3.5" /> {label}
+        {n > 0 && (
+          <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+            {n > 99 ? '99+' : n}
+          </span>
+        )}
+      </Button>
+    );
+  };
 
   const scrollToSection = (ref) => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1172,6 +1222,20 @@ export default function Dashboard() {
     }, { replace: true });
   }, [ownerPendingRentals, searchParams]);
 
+  // Deep link from a chat push notification: /home?chat=<rental_id>
+  useEffect(() => {
+    const chatId = searchParams.get('chat');
+    if (!chatId || !user) return;
+    const rental = rentals.find(r => String(r.id) === String(chatId));
+    if (!rental) return; // rentals may still be loading; this re-runs when they arrive
+    setChatRental(rental);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('chat');
+      return next;
+    }, { replace: true });
+  }, [rentals, searchParams, user]);
+
   // Owner withdraws the contract they sent — cancelled removes it from both views
   const handleWithdrawContract = async (rental) => {
     if (!window.confirm('Withdraw this contract? It will be removed from both your dashboard and the driver\'s. You can send a new proposal at any time.')) return;
@@ -1189,7 +1253,7 @@ export default function Dashboard() {
     if (!window.confirm('Reject this contract? It will be removed from both your dashboard and the owner\'s. Message the owner if you want to renegotiate.')) return;
     try {
       await Rental.update(rental.id, { status: 'cancelled' });
-      toast.success('Contract rejected and removed from both dashboards. Use Messages to renegotiate.');
+      toast.success('Contract rejected and removed from both dashboards. Send a new proposal to renegotiate.');
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
     } catch (err) {
       toast.error(`Could not reject contract: ${err?.message || 'please try again.'}`);
@@ -1289,6 +1353,8 @@ export default function Dashboard() {
                     </button>
                   )}
 
+                  {r.driver_id && <div className="mb-3">{renderChatButton(r, 'Message Driver', 'w-full')}</div>}
+
                   {/* Accept / Reject — separated by a visible divider */}
                   <div className="flex gap-2 pt-2 border-t border-amber-200 dark:border-amber-800">
                     <Button size="sm" variant="default" className="flex-1 gap-1" onClick={(e) => { e.stopPropagation(); openContractModal(r, 'accept'); }}>
@@ -1321,8 +1387,9 @@ export default function Dashboard() {
                     <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                   </div>
                   <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
-                    Contract sent — waiting for driver to review. Edit if changes were agreed via Messages, or withdraw to cancel.
+                    Contract sent — waiting for driver to review. Edit if you agreed changes in the chat, or withdraw to cancel.
                   </p>
+                  {r.driver_id && <div className="mb-2">{renderChatButton(r, 'Message Driver', 'w-full')}</div>}
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" className="flex-1 gap-1.5" onClick={() => openContractModal(r, 'edit')}>
                       ✏️ Edit Contract
@@ -1356,6 +1423,7 @@ export default function Dashboard() {
                   <p className="text-xs text-emerald-700 dark:text-emerald-300 mb-3">
                     ✅ Driver has accepted the contract. Review it and confirm to activate the rental.
                   </p>
+                  {r.driver_id && <div className="mb-2">{renderChatButton(r, 'Message Driver', 'w-full')}</div>}
                   <div className="flex gap-2">
                     <Button size="sm" className="flex-1 gap-1" onClick={() => openContractModal(r, 'finalise')}>
                       <Check className="w-3.5 h-3.5" /> Confirm & Finalise
@@ -1396,16 +1464,7 @@ export default function Dashboard() {
                     </button>
                   )}
                   <div className="flex gap-2 pt-2 border-t border-green-200 dark:border-green-800">
-                    {r.driver_id && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 gap-1.5 text-primary border-primary/30 hover:bg-primary/5"
-                        onClick={() => navigate(`/messages?userId=${r.driver_id}`)}
-                      >
-                        <MessageCircle className="w-3.5 h-3.5" /> Message Driver
-                      </Button>
-                    )}
+                    {r.driver_id && renderChatButton(r, 'Message Driver')}
                     <Button
                       variant="outline"
                       size="sm"
@@ -1524,6 +1583,26 @@ export default function Dashboard() {
 
   const renderDriverContent = () => (
     <>
+      {driverRequestedRentals.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold mb-3">Requests You Sent</h3>
+          <div className="space-y-3">
+            {driverRequestedRentals.map(r => {
+              const ownerName = getCounterpartyName(r.owner_id) || 'Owner';
+              return (
+                <Card key={r.id} className="p-4 border border-border/50">
+                  <p className="font-semibold">{vehicleTitle(r)}</p>
+                  <p className="text-xs text-muted-foreground">Owner: {ownerName}</p>
+                  <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
+                  <p className="text-xs text-muted-foreground mt-2">Waiting for the owner to respond.</p>
+                  {r.owner_id && <div className="mt-3">{renderChatButton(r, 'Message Owner', 'w-full')}</div>}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {driverPendingConfRentals.length > 0 && (
         <div className="mb-6">
           <h3 className="text-lg font-semibold mb-3">Contract Pending Your Review</h3>
@@ -1540,8 +1619,9 @@ export default function Dashboard() {
                     <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Review the contract carefully. If you need changes, use Messages to discuss with the owner first.
+                    Review the contract carefully. If you need changes, message the owner first.
                   </p>
+                  {r.owner_id && <div className="mb-2">{renderChatButton(r, 'Message Owner', 'w-full')}</div>}
                   <div className="flex gap-2">
                     <Button size="sm" className="flex-1 gap-1" onClick={() => openContractModal(r, 'review')}>
                       <Check className="w-3.5 h-3.5" /> Review & Accept
@@ -1573,6 +1653,7 @@ export default function Dashboard() {
                   <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
                     ✅ You accepted the contract. Waiting for the owner to confirm and activate the rental.
                   </p>
+                  {r.owner_id && <div className="mt-3">{renderChatButton(r, 'Message Owner', 'w-full')}</div>}
                 </Card>
               );
             })}
@@ -1605,16 +1686,7 @@ export default function Dashboard() {
                   </button>
                 )}
                 <div className="flex gap-2 pt-2 border-t border-green-200 dark:border-green-800">
-                  {r.owner_id && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 gap-1.5 text-primary border-primary/30 hover:bg-primary/5"
-                      onClick={() => navigate(`/messages?userId=${r.owner_id}`)}
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" /> Message Owner
-                    </Button>
-                  )}
+                  {r.owner_id && renderChatButton(r, 'Message Owner')}
                   <Button
                     variant="outline"
                     size="sm"
@@ -1982,6 +2054,18 @@ export default function Dashboard() {
         />
       )}
 
+      {chatRental && user && (
+        <RentalChatSheet
+          rentalId={chatRental.id}
+          meId={user.id}
+          otherId={chatRental.owner_id === user.id ? chatRental.driver_id : chatRental.owner_id}
+          otherName={getCounterpartyName(chatRental.owner_id === user.id ? chatRental.driver_id : chatRental.owner_id)
+            || (chatRental.owner_id === user.id ? 'Driver' : 'Owner')}
+          subtitle={vehicleTitle(chatRental)}
+          onClose={() => setChatRental(null)}
+        />
+      )}
+
       {/* Driver & Owner profile detail panels — two explicit portals (never use .map for portals) */}
       {selectedDriver && createPortal(
         <ProfileDetailPanel
@@ -1989,7 +2073,7 @@ export default function Dashboard() {
           role="Driver"
           currentYear={currentYear}
           onClose={() => setSelectedDriver(null)}
-          onMessage={(id) => { setSelectedDriver(null); navigate(`/messages?userId=${id}`); }}
+          onMessage={latestRentalWith(selectedDriver.id) ? () => { const r = latestRentalWith(selectedDriver.id); setSelectedDriver(null); openRentalChat(r); } : null}
           canMessage={true}
           onMessageBlocked={() => toast.warning('Please upgrade your account to send messages')}
         />,
@@ -2001,7 +2085,7 @@ export default function Dashboard() {
           role="Owner"
           currentYear={currentYear}
           onClose={() => setSelectedOwner(null)}
-          onMessage={(id) => { setSelectedOwner(null); navigate(`/messages?userId=${id}`); }}
+          onMessage={latestRentalWith(selectedOwner.id) ? () => { const r = latestRentalWith(selectedOwner.id); setSelectedOwner(null); openRentalChat(r); } : null}
           canMessage={true}
           onMessageBlocked={() => toast.warning('Please upgrade your account to send messages')}
         />,
@@ -2092,7 +2176,7 @@ export default function Dashboard() {
                 {showNearbyContractForm && (
                   <div className="mt-4 space-y-3">
                     <p className="text-xs text-muted-foreground">
-                      Use this after agreeing on terms via Messages. The driver will see the contract on their dashboard and confirm to activate the rental.
+                      The driver will see the contract on their dashboard and confirm to activate the rental.
                     </p>
 
                     {vehicles.length === 0 ? (
@@ -2178,19 +2262,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="px-6 pb-6 shrink-0">
-              <Button
-                className="w-full gap-2"
-                variant="outline"
-                onClick={() => {
-                  setNearbyDriverDetail(null);
-                  setShowNearbyContractForm(false);
-                  navigate(`/messages?userId=${nearbyDriverDetail.id}`);
-                }}
-              >
-                <MessageCircle className="w-4 h-4" /> Message {nearbyDriverDetail.full_name?.split(' ')[0] || 'Driver'}
-              </Button>
-            </div>
           </div>
         </div>,
         document.body
@@ -2259,9 +2330,9 @@ export default function Dashboard() {
 
             <p className="text-xs text-muted-foreground mb-3 shrink-0">
               {contractEditMode === 'review'
-                ? 'Read the full agreement carefully. If you need changes, close this and discuss with the owner via Messages. Accept only when fully satisfied.'
+                ? 'Read the full agreement carefully. If you need changes, close this and message the owner from the contract card. Accept only when fully satisfied.'
                 : contractEditMode === 'edit'
-                  ? 'Edit the contract to reflect changes agreed via Messages, then save. The driver will see the updated version.'
+                  ? 'Edit the contract to reflect the changes you agreed, then save. The driver will see the updated version.'
                   : contractEditMode === 'finalise'
                     ? 'The driver has accepted this contract. Review it one final time, then confirm to activate the rental.'
                     : 'Edit the contract below — fill in all details, dates and terms. When ready, send it to the driver to review and accept.'}

@@ -294,6 +294,7 @@ export default function DriverActiveGig() {
         <GigChat
           gigId={gig.id}
           meId={gig.driver_id}
+          otherId={gig.customer_id}
           otherLabel="the customer"
           canSend={gig.status === 'accepted' || gig.status === 'in_progress'}
         />

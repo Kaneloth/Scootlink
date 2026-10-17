@@ -29,7 +29,6 @@ import FAQPage from '@/pages/FAQPage';
 import ContractBuilderTest from '@/pages/ContractBuilderTest'; // TEMPORARY — Phase 1 test only
 import Onboarding from '@/pages/Onboarding';
 
-import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
 import RequestGig from '@/pages/RequestGig';
 import GigStatus from '@/pages/GigStatus';
@@ -173,7 +172,8 @@ const AuthenticatedApp = () => {
         <Route path="/faq" element={<FAQPage />} />
         <Route path="/contract-builder-test" element={<ContractBuilderTest />} />
         <Route path="/mysearch" element={<SearchPage />} />
-        <Route path="/messages" element={<Messages />} />
+        {/* No inbox: chats open from their rental or gig. Old links land on Home. */}
+        <Route path="/messages" element={<Navigate to="/home" replace />} />
         <Route path="/contact" element={<ContactUs />} />
         <Route path="/gigs" element={<GigsHub />} />
         <Route path="/request-gig" element={<RequestGig />} />

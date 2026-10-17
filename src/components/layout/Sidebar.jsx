@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Search, Clock, Briefcase, Settings, LogOut, Users, Plus, MessageCircle
+  LayoutDashboard, Search, Clock, Briefcase, Settings, LogOut, Users, Plus
 } from 'lucide-react';
 import { auth } from '@/api/supabaseData';
 
 const navItems = [
   { label: 'Dashboard',       icon: LayoutDashboard, path: '/home'           },
   { label: 'Search Vehicles', icon: Search,          path: '/search-vehicles' },
-  { label: 'Messages',        icon: MessageCircle,   path: '/messages'        },
   { label: 'Find Drivers',    icon: Users,           path: '/find-drivers'    },
   { label: 'Add Vehicle',     icon: Plus,            path: '/add-vehicle'     },
   { label: 'Activity',        icon: Clock,           path: '/activity'        },
