@@ -82,7 +82,6 @@ const AdminDisputesCenter = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/p
 const AdminAnnouncements = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminAnnouncements')) : null;
 const AdminReminders = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminReminders')) : null;
 const AdminProximityAlerts = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminProximityAlerts')) : null;
-const AdminCreditGrants = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminCreditGrants')) : null;
 const AdminRefundRequests = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminRefundRequests')) : null;
 const AdminTransactions = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminTransactions')) : null;
 const AdminGigVerification = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminGigVerification')) : null;
@@ -211,7 +210,6 @@ const AuthenticatedApp = () => {
           <Route path="announcements" element={<AdminAnnouncements />} />
           <Route path="reminders" element={<AdminReminders />} />
           <Route path="proximity-alerts" element={<AdminProximityAlerts />} />
-          <Route path="credit-grants" element={<AdminCreditGrants />} />
           <Route path="refund-requests" element={<AdminRefundRequests />} />
           <Route path="transactions" element={<AdminTransactions />} />
           <Route path="gig-verification" element={<AdminGigVerification />} />
