@@ -13,6 +13,8 @@ import SearchPage  from '@/pages/SearchPage';
 import ActivityPage    from '@/pages/Activity';
 import BriefcasePage  from '@/pages/MyBriefcase';
 import { fnUrl } from '@/lib/functionsUrl';
+import { playBillingAvailable, finishUnfinishedPurchases } from '@/lib/playBilling';
+import { toast } from 'sonner';
 
 // Must match bottom nav order exactly: Home → Search → Activity → Briefcase
 // ─── Search paths (dynamic based on account type) ───────────────────────────
@@ -458,6 +460,18 @@ t.horizontal = Math.abs(dx) > Math.abs(dy);
     dragPercentRef.current = 0;
     setDragPercent(0);
   }, [location.pathname]);
+
+  // Android: a listing paid in Google Play but not finished (app closed, no
+  // signal, a pending payment that has since gone through) is finished here,
+  // before Google refunds it as unacknowledged (migration 022).
+  useEffect(() => {
+    if (!playBillingAvailable()) return undefined;
+    const t = setTimeout(async () => {
+      const done = await finishUnfinishedPurchases();
+      if (done.some((d) => d.status === 'activated')) toast.success('Listing payment received — your vehicle is listed');
+    }, 4000);
+    return () => clearTimeout(t);
+  }, []);
 
   // ── Strip translation ──────────────────────────────────────────────────
   const N = CANONICAL_PATHS.length;

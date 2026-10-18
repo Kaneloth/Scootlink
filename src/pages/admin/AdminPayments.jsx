@@ -171,6 +171,30 @@ function PayoutRow({ p, onDone }) {
   );
 }
 
+function UnlistedFeeRow({ p, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const play = p.provider === 'google_play';
+  const markRefunded = async () => {
+    if (!window.confirm(`Mark the ${rand(p.amount)} listing fee as refunded? Do this after refunding it in ${play ? 'Play Console' : 'PayFast'}.`)) return;
+    setBusy(true);
+    try { await callAdminPayments({ action: 'mark_listing_refunded', paymentId: p.id }); toast.success('Done ✓'); onDone(); }
+    catch (err) { toast.error(err.message); }
+    setBusy(false);
+  };
+  return (
+    <div className="rounded-xl border border-border p-3 bg-card flex items-start justify-between gap-3 text-sm">
+      <div>
+        <p className="font-semibold">{play ? 'Google Play' : rand(p.amount)} · vehicle #{p.vehicle_id}{p.play_test_purchase ? ' · test purchase' : ''}</p>
+        <p className="text-xs text-muted-foreground">{who(p.owner)} · paid {when(p.paid_at)}</p>
+        <p className="text-xs text-muted-foreground font-mono">{play ? `order ${p.play_order_id || '—'}` : `PayFast ${p.pf_payment_id || '—'}`}</p>
+      </div>
+      <Button size="sm" variant="outline" disabled={busy} onClick={markRefunded}>
+        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Mark refunded'}
+      </Button>
+    </div>
+  );
+}
+
 export default function AdminPayments() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -319,6 +343,19 @@ export default function AdminPayments() {
             {refunds.length === 0 && <p className="text-sm text-muted-foreground">No refunds yet.</p>}
             {refunds.map((r) => <RefundRow key={r.id} r={r} mode={data.mode} onDone={load} />)}
           </section>
+
+          {(data.unlistedListingFees || []).length > 0 && (
+            <section className="space-y-3">
+              <h2 className="font-semibold">Listing fees to refund</h2>
+              <p className="text-xs text-muted-foreground">
+                Paid, but nothing was listed (the vehicle was removed or changed to gigs only first, or too little was paid).
+                Refund in PayFast or Play Console (Order management), then mark it here. Google Play refunds are picked up by the daily job.
+              </p>
+              {data.unlistedListingFees.map((p) => (
+                <UnlistedFeeRow key={p.id} p={p} onDone={load} />
+              ))}
+            </section>
+          )}
 
           <section className="space-y-3">
             <h2 className="font-semibold">Drivers owing commission (cash gigs)</h2>

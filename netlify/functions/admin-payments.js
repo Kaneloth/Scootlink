@@ -11,7 +11,11 @@
  *                                                      note = EFT reference (paid) or reason (rejected)
  *   { action: 'update_settings', gig_auto_refunds?, gig_min_payout?, gig_payment_window_minutes?, gig_cash_debt_limit?,
  *     listing_fee?, listing_period_months? }
- * The overview also lists drivers who owe commission from cash gigs (migration 020).
+ *   { action: 'mark_listing_refunded', paymentId }     a listing fee that activated nothing, refunded by hand
+ * The overview also lists drivers who owe commission from cash gigs (migration 020)
+ * and listing fees that were paid but listed nothing (vehicle removed or changed to
+ * gigs-only before the payment arrived, or paid too little) — refund those by hand
+ * in PayFast or Play Console (migration 022).
  * Auth: Bearer token of an admin (user_metadata.is_admin === true), as in the other admin-* functions.
  */
 import { createClient } from '@supabase/supabase-js';
@@ -57,7 +61,7 @@ export const handler = async (event) => {
 
   try {
     if (body.action === 'overview') {
-      const [refundsRes, payoutsRes, settingsRes, paidRes, ledgerRes] = await Promise.all([
+      const [refundsRes, payoutsRes, settingsRes, paidRes, ledgerRes, unlistedRes] = await Promise.all([
         supabaseAdmin.from('gig_refunds')
           .select('id, gig_id, customer_id, amount, status, attempts, last_error, provider_reference, refund_method, funding_type, created_at, processed_at')
           .order('created_at', { ascending: false }).limit(100),
@@ -72,8 +76,14 @@ export const handler = async (event) => {
         // Every driver's balance (cash gigs make it negative = owes Skootlink)
         supabaseAdmin.from('gig_earnings_ledger')
           .select('driver_id, amount').eq('status', 'available').is('withdrawal_id', null).limit(10000),
+        supabaseAdmin.from('platform_payments')
+          .select('id, user_id, vehicle_id, amount, provider, m_payment_id, pf_payment_id, play_order_id, play_test_purchase, paid_at, listing_periods(id)')
+          .eq('kind', 'listing_fee').eq('status', 'paid')
+          .order('paid_at', { ascending: false }).limit(500),
       ]);
-      for (const r of [refundsRes, payoutsRes, settingsRes, paidRes, ledgerRes]) if (r.error) throw r.error;
+      for (const r of [refundsRes, payoutsRes, settingsRes, paidRes, ledgerRes, unlistedRes]) if (r.error) throw r.error;
+      const unlisted = (unlistedRes.data || []).filter((p) => !(p.listing_periods || []).length)
+        .map(({ listing_periods: _lp, ...p }) => p);
 
       const balances = {};
       for (const l of ledgerRes.data || []) balances[l.driver_id] = (balances[l.driver_id] || 0) + Number(l.amount);
@@ -86,6 +96,7 @@ export const handler = async (event) => {
         ...(refundsRes.data || []).map((r) => r.customer_id),
         ...(payoutsRes.data || []).map((p) => p.driver_id),
         ...debtors.map((d) => d.driver_id),
+        ...unlisted.map((p) => p.user_id),
       ]);
       return reply(200, {
         mode: PAYFAST_MODE,
@@ -95,6 +106,7 @@ export const handler = async (event) => {
         refunds: (refundsRes.data || []).map((r) => ({ ...r, customer: names[r.customer_id] || null })),
         payouts: (payoutsRes.data || []).map((p) => ({ ...p, driver: names[p.driver_id] || null })),
         debtors: debtors.map((d) => ({ ...d, driver: names[d.driver_id] || null })),
+        unlistedListingFees: unlisted.map((p) => ({ ...p, owner: names[p.user_id] || null })),
       });
     }
 
@@ -115,6 +127,16 @@ export const handler = async (event) => {
       if (error) return reply(400, { error: error.message });
       await notify(ref.customer_id, 'gig_refund', 'Refund sent',
         `R${Number(ref.amount).toFixed(2)} has been refunded to you. Your bank may take a few days to show it.`, { gig_id: ref.gig_id });
+      return reply(200, { ok: true });
+    }
+
+    if (body.action === 'mark_listing_refunded') {
+      const { data: rows, error } = await supabaseAdmin.from('platform_payments')
+        .update({ status: 'refunded', refunded_at: new Date().toISOString() })
+        .eq('id', Number(body.paymentId)).eq('kind', 'listing_fee').eq('status', 'paid')
+        .select('id');
+      if (error) throw error;
+      if (!rows?.length) return reply(400, { error: 'Payment not found or already refunded' });
       return reply(200, { ok: true });
     }
 

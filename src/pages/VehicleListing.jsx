@@ -7,8 +7,9 @@
 //     fee is paid through PayFast (listing-checkout) — or the owner's first
 //     listing ever, which is free (start_free_listing). Each payment covers
 //     app_settings.listing_period_months; paying before the end extends it.
-//     Not offered in the Android app until Google Play Billing is added
-//     (Play requires it for this purchase and forbids pointing elsewhere).
+//     In the Android app the fee is paid with Google Play Billing instead
+//     (migration 022, lib/playBilling) — Play requires it for this purchase
+//     and forbids pointing elsewhere; Google sets the in-app price.
 //   Gigs (purpose gigs / both): the roadworthy certificate, reviewed by
 //     Skootlink (VehicleRideReadySubmit).
 //   A new vehicle that completes neither within 7 days is removed.
@@ -20,6 +21,7 @@ import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/api/supabaseData';
 import { fnUrl } from '@/lib/functionsUrl';
 import { openPayfastCheckout } from '@/lib/payfastCheckout';
+import { playBillingAvailable, getListingProduct, buyListingPeriod, finishUnfinishedPurchases } from '@/lib/playBilling';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import PageHeader from '@/components/layout/PageHeader';
@@ -43,6 +45,8 @@ export default function VehicleListing() {
   const [busy, setBusy] = useState(null); // 'free' | 'pay' | 'purpose'
   const [waitingForPayment, setWaitingForPayment] = useState(false);
   const isNative = Capacitor.isNativePlatform();
+  const usePlay = playBillingAvailable();
+  const [playProduct, setPlayProduct] = useState(undefined); // undefined = loading, null = unavailable
 
   const load = useCallback(async () => {
     const [{ data: v, error: vErr }, { data: o, error: oErr }] = await Promise.all([
@@ -60,6 +64,17 @@ export default function VehicleListing() {
   }, [vehicleId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Android: the Google Play price, and any paid-but-unfinished listing purchase
+  useEffect(() => {
+    if (!usePlay) return;
+    let alive = true;
+    getListingProduct().then((p) => { if (alive) setPlayProduct(p); });
+    finishUnfinishedPurchases().then((done) => {
+      if (alive && done.some((d) => d.status === 'activated')) { toast.success('Payment received — your vehicle is listed'); load(); }
+    });
+    return () => { alive = false; };
+  }, [usePlay, load]);
 
   // Back from PayFast: wait for the ITN to activate the listing
   useEffect(() => {
@@ -109,6 +124,27 @@ export default function VehicleListing() {
       await openPayfastCheckout(data.payment);
     } catch (err) {
       console.error('[VehicleListing] pay failed:', err);
+      toast.error(err.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const payWithGooglePlay = async () => {
+    setBusy('pay');
+    try {
+      const out = await buyListingPeriod(Number(vehicleId));
+      if (out.status === 'activated' || out.status === 'already_done') {
+        toast.success('Payment received — your vehicle is listed');
+        await load();
+      } else if (out.status === 'pending') {
+        toast('Your payment is pending in Google Play. The listing starts as soon as it goes through.');
+      } else if (out.status === 'refund_due') {
+        toast.error('Payment received, but this vehicle can no longer be listed for rental. Skootlink will refund you.');
+        await load();
+      }
+    } catch (err) {
+      console.error('[VehicleListing] Google Play payment failed:', err);
       toast.error(err.message);
     } finally {
       setBusy(null);
@@ -216,7 +252,24 @@ export default function VehicleListing() {
           )}
 
           {!waitingForPayment && !(offer?.free_available && !active) && (
-            isNative ? (
+            usePlay ? (
+              playProduct === undefined ? (
+                <p className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Loading price…</p>
+              ) : playProduct === null ? (
+                <p className="text-xs text-muted-foreground">Paid listings aren't available on this device right now. Check that you are signed in to the Play Store.</p>
+              ) : (
+                <>
+                  <Button className="w-full gap-2" variant={active ? 'outline' : 'default'} onClick={payWithGooglePlay} disabled={!!busy}>
+                    {busy === 'pay' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                    {active ? `Extend by ${months} months — ${playProduct.priceString}` : `${vehicle.listing_state === 'expired' ? 'Relist' : 'List'} for ${months} months — ${playProduct.priceString}`}
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">
+                    Includes the rental agreement with drivers. Paid through Google Play.
+                    {active && ' Extending adds the time to the end of your current listing.'}
+                  </p>
+                </>
+              )
+            ) : isNative ? (
               <p className="text-xs text-muted-foreground">Paid listings aren't available in the app yet.</p>
             ) : (
               <>

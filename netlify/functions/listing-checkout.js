@@ -8,8 +8,8 @@
  * ITN (payfast-webhook): custom_str3 = 'listing_fee' -> mark_listing_fee_paid()
  * activates the listing (or extends it, if paid before it ends).
  *
- * Not offered in the Android app: Google Play requires its own billing for
- * this kind of purchase, and the app may not point people elsewhere to pay.
+ * Web only: the Android app pays the same fee with Google Play Billing
+ * (play-listing, migration 022), as Play requires for this purchase.
  *
  * POST body: { vehicle_id: number }
  * Auth: Bearer token — the vehicle's owner.

@@ -11,6 +11,9 @@
  *   4. Drafts (migration 021): a new vehicle that completed no step (listing
  *      paid/free, or roadworthy submitted) is reminded 2 days before its
  *      7-day deadline, then deleted with its photos if it has no history.
+ *   0. Google Play refunds (migration 022): listing fees refunded or charged
+ *      back in Google Play in the last 3 days lose their listing time. Runs
+ *      first, so a listing that ends this way is hidden straight away.
  *
  * Schedule in netlify.toml:
  *   [[scheduled.functions]]
@@ -20,6 +23,7 @@
  * Place at: netlify/functions/vehicle-expiry-check.js
  */
 import { createClient } from '@supabase/supabase-js';
+import { isPlayConfigured, listVoidedPurchases } from './lib/googlePlay.js';
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -46,11 +50,43 @@ async function notify(userId, type, title, body, data = null) {
   }
 }
 
+// Google keeps voided purchases for 30 days; look back 3 so a missed run is covered
+async function applyPlayRefunds(results) {
+  if (!isPlayConfigured()) return;
+  let voided;
+  try {
+    voided = await listVoidedPurchases(Date.now() - 3 * DAY_MS);
+  } catch (err) {
+    console.error('[vehicle-expiry-check] Google Play voided purchases failed:', err.message);
+    results.errors.push('play_voided');
+    return;
+  }
+  for (const v of voided) {
+    const { data: rows, error } = await supabase.rpc('record_play_voided', { p_purchase_token: v.purchaseToken });
+    if (error) {
+      console.error(`[vehicle-expiry-check] record_play_voided failed order=${v.orderId}:`, error.message);
+      results.errors.push('record_play_voided');
+      continue;
+    }
+    const r = (rows && rows[0]) || {};
+    if (r.action !== 'refunded') continue;
+    results.play_refunds++;
+    console.log(`[vehicle-expiry-check] Google Play refund order=${v.orderId} vehicle=${r.vehicle_id} listing_ended=${r.listing_ended}`);
+    await notify(r.owner_id, 'listing_refunded', 'Listing payment refunded',
+      r.listing_ended
+        ? 'Your listing payment was refunded through Google Play, so the vehicle is no longer listed. You can relist it any time.'
+        : 'Your listing payment was refunded through Google Play, so that period has been taken off your listing.',
+      { vehicle_id: r.vehicle_id });
+  }
+}
+
 export const handler = async () => {
   const now = new Date();
-  const results = { reminders_7d: 0, reminders_3d: 0, reminders_1d: 0, expired_hidden: 0, draft_reminders: 0, drafts_deleted: 0, photos_removed: 0, errors: [] };
+  const results = { reminders_7d: 0, reminders_3d: 0, reminders_1d: 0, expired_hidden: 0, draft_reminders: 0, drafts_deleted: 0, photos_removed: 0, play_refunds: 0, errors: [] };
 
   try {
+    await applyPlayRefunds(results);
+
     const { data: vehicles, error } = await supabase
       .from('vehicles')
       .select('id, owner_id, make, model, listing_state, expires_at, reminder_7d_sent, reminder_3d_sent, reminder_1d_sent')
