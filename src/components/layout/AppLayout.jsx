@@ -14,6 +14,11 @@ import BriefcasePage  from '@/pages/MyBriefcase';
 import { fnUrl } from '@/lib/functionsUrl';
 import { playBillingAvailable, finishUnfinishedPurchases } from '@/lib/playBilling';
 import { toast } from 'sonner';
+import PullToRefresh from './PullToRefresh';
+
+// Pull-to-refresh: the tab pages, plus these pages (prefix match). Pages
+// with forms are left out so a pull can't wipe what someone is typing.
+const PULL_TO_REFRESH_PAGES = ['/gigs', '/earnings', '/vehicle-listing/', '/gig-status/', '/gig-drive/'];
 
 // Must match bottom nav order exactly: Home → Search → Activity → Briefcase
 // ─── Search paths (dynamic based on account type) ───────────────────────────
@@ -479,20 +484,25 @@ t.horizontal = Math.abs(dx) > Math.abs(dy);
                 {TABS.map(({ path, component: Page }, i) => {
                   const isVisible = Math.abs(i - tabIndex) <= 1;
                   return (
-                    <div
+                    <PullToRefresh
                       key={path}
+                      enabled={i === tabIndex}
                       className="h-full overflow-y-auto overscroll-none pb-28 lg:pb-0"
                       style={{ width: `${100 / N}%`, flexShrink: 0, minHeight: '100%' }}
                     >
                       {isVisible ? <Page /> : null}
-                    </div>
+                    </PullToRefresh>
                   );
                 })}
               </div>
             ) : (
-              <div className="scroll-container h-full overflow-y-auto overscroll-none pb-28 lg:pb-0">
+              <PullToRefresh
+                key={location.pathname}
+                enabled={PULL_TO_REFRESH_PAGES.some((p) => location.pathname.startsWith(p))}
+                className="scroll-container h-full overflow-y-auto overscroll-none pb-28 lg:pb-0"
+              >
                 <Outlet />
-              </div>
+              </PullToRefresh>
             )}
           </div>
         </div>

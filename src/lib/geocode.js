@@ -204,3 +204,26 @@ export async function searchLocationSuggestions(query, limit = 5) {
   }
 }
 
+
+// ── Reverse geocoding (coordinates -> short place name) ───────────────────────
+// Photon (OpenStreetMap), same source as the live suggestions. Returns
+// { short, full } — short is "Suburb, City" for compact display (Home header),
+// full is a street-level address (pickup field) — or null on any failure.
+export async function reverseGeocode(latitude, longitude) {
+  try {
+    const res = await fetch(`https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}&lang=en`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const p = data?.features?.[0]?.properties;
+    if (!p) return null;
+    const area = p.district || p.locality || p.suburb || p.name;
+    const city = p.city || p.town || p.county || p.state;
+    const short = [area, city].filter((v, i, a) => v && a.indexOf(v) === i).join(', ');
+    const street = p.street ? `${p.housenumber ? `${p.housenumber} ` : ''}${p.street}` : (p.name && p.name !== area ? p.name : null);
+    const full = [street, area, city].filter((v, i, a) => v && a.indexOf(v) === i).join(', ');
+    return short ? { short, full: full || short } : null;
+  } catch (err) {
+    console.warn('[geocode] reverse geocode failed:', err.message);
+    return null;
+  }
+}

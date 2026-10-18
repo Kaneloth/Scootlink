@@ -34,7 +34,7 @@ export default function CustomerTrips() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-5">
+      <div className="sticky top-0 z-30 -mx-4 -mt-4 px-4 pt-4 pb-3 mb-4 lg:-mx-8 lg:-mt-8 lg:px-8 lg:pt-8 bg-background/95 backdrop-blur border-b border-border/60 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Trips</h1>
         <Button size="sm" className="gap-1.5" onClick={() => navigate('/request-gig')}>
           <Plus className="w-4 h-4" /> New

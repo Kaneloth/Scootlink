@@ -743,7 +743,7 @@ export default function MyBriefcase() {
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
       {/* Header — back arrow + title, matching SearchPage layout */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="sticky top-0 z-30 -mx-4 -mt-4 px-4 pt-4 pb-3 mb-4 lg:-mx-8 lg:-mt-8 lg:px-8 lg:pt-8 bg-background/95 backdrop-blur border-b border-border/60 flex items-center gap-3">
         <button
           onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/app'); }}
           className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg p-2 -ml-2"

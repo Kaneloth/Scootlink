@@ -2,28 +2,23 @@
 //
 // Top of every Home screen. Replaces the app-wide header bar (logo + bell +
 // account menu) that sat above every page: Home now carries the greeting,
-// notifications and the account menu, and other pages keep only their own
-// title bar.
+// the user's current area, notifications and the account menu, and other
+// pages keep only their own title bar. Stays pinned while the page scrolls
+// under it (pull down anywhere on the page to refresh — see PullToRefresh).
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Settings, LogOut, LifeBuoy, RefreshCw } from 'lucide-react';
+import { User, Settings, LogOut, LifeBuoy, MapPin } from 'lucide-react';
 import NotificationBell from '@/components/layout/NotificationBell';
 import { logout } from '@/lib/logout';
-
-const ROLE_LINE = {
-  customer: 'Where are you going today?',
-  driver: 'Ready to drive?',
-  owner: 'Your vehicles at a glance',
-  both: 'Your vehicles and drives',
-};
+import useCurrentPlace from '@/hooks/useCurrentPlace';
 
 function greeting() {
   const h = new Date().getHours();
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 }
 
-export default function HomeTopBar({ user, role, onRefresh, refreshing = false }) {
+export default function HomeTopBar({ user }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
@@ -38,21 +33,20 @@ export default function HomeTopBar({ user, role, onRefresh, refreshing = false }
 
   const first = user?.full_name?.trim().split(' ')[0];
   const go = (path) => { setOpen(false); navigate(path); };
+  const place = useCurrentPlace(user?.location);
 
   return (
-    <div className="flex items-center justify-between gap-3 mb-5">
+    <div className="sticky top-0 z-30 -mx-4 -mt-4 px-4 pt-4 pb-3 mb-4 lg:-mx-8 lg:-mt-8 lg:px-8 lg:pt-8 bg-background/95 backdrop-blur border-b border-border/60 flex items-center justify-between gap-3">
       <div className="min-w-0">
         <p className="text-sm text-muted-foreground">{greeting()}</p>
         <h1 className="text-2xl font-bold text-foreground tracking-tight truncate">{first || 'Welcome'}</h1>
-        <p className="text-sm text-muted-foreground truncate">{ROLE_LINE[role] || ROLE_LINE.both}</p>
+        <p className="text-sm text-muted-foreground truncate flex items-center gap-1">
+          <MapPin className={`w-3.5 h-3.5 shrink-0 ${place.isLive ? 'text-primary' : ''}`} />
+          <span className="truncate">{place.label || (place.locating ? 'Finding your location…' : 'Location unavailable')}</span>
+        </p>
       </div>
 
       <div className="flex items-center gap-1.5 shrink-0">
-        {onRefresh && (
-          <button onClick={onRefresh} className="p-2 rounded-full hover:bg-muted transition-colors" aria-label="Refresh">
-            <RefreshCw className={`w-4 h-4 text-primary ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
-        )}
         <NotificationBell />
         <div className="relative" ref={menuRef}>
           <button

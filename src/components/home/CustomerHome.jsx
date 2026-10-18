@@ -14,8 +14,6 @@ import { gigStateLabel, rand, shortDate, OPEN_GIG_STATUSES } from './gigLabels';
 export default function CustomerHome({ user }) {
   const navigate = useNavigate();
   const [recent, setRecent] = useState(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
 
   const loadRecent = useCallback(async () => {
     if (!user?.id) return;
@@ -30,20 +28,13 @@ export default function CustomerHome({ user }) {
     setRecent(data || []);
   }, [user?.id]);
 
-  useEffect(() => { loadRecent(); }, [loadRecent, refreshKey]);
-
-  const refresh = async () => {
-    setRefreshing(true);
-    setRefreshKey((k) => k + 1);
-    await loadRecent();
-    setRefreshing(false);
-  };
+  useEffect(() => { loadRecent(); }, [loadRecent]);
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <HomeTopBar user={user} role="customer" onRefresh={refresh} refreshing={refreshing} />
+      <HomeTopBar user={user} />
 
-      <OpenGigCards key={refreshKey} userId={user?.id} />
+      <OpenGigCards userId={user?.id} />
 
       {/* Where to? */}
       <div className="rounded-2xl border border-border bg-card shadow-sm p-4 space-y-3">

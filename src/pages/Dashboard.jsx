@@ -1652,19 +1652,7 @@ export default function Dashboard() {
 
   const currentYear = new Date().getFullYear();
 
-  const [refreshing, setRefreshing] = useState(false);
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['my-vehicles'] }),
-      queryClient.invalidateQueries({ queryKey: ['all-vehicles'] }),
-      queryClient.invalidateQueries({ queryKey: ['nearby-vehicles'] }),
-      queryClient.invalidateQueries({ queryKey: ['all-vehicles-lookup'] }),
-      queryClient.invalidateQueries({ queryKey: ['my-rentals'] }),
-      queryClient.invalidateQueries({ queryKey: ['my-reviews'] }),
-    ]);
-    setRefreshing(false);
-  };
+  // Refreshing is pull-to-refresh on the whole page (AppLayout's PullToRefresh)
 
   // Customers (rides and deliveries only) get their own Home
   if (user && accountType === 'customer') return <CustomerHome user={user} />;
@@ -1674,7 +1662,7 @@ export default function Dashboard() {
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      <HomeTopBar user={user} role={accountType} onRefresh={handleRefresh} refreshing={refreshing} />
+      <HomeTopBar user={user} />
 
       {/* A live trip comes first, for every role */}
       {user?.id && <OpenGigCards userId={user.id} />}

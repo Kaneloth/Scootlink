@@ -35,6 +35,7 @@ import { Card } from '@/components/ui/card';
 import { Car, Package, AlertTriangle, MapPin, Loader2, LocateFixed } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import AddressAutocompleteInput from '@/components/gigs/AddressAutocompleteInput';
+import { reverseGeocode } from '@/lib/geocode';
 import { toast } from 'sonner';
 import { fnUrl } from '@/lib/functionsUrl';
 
@@ -64,12 +65,11 @@ export default function RequestGig() {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
-        // Reverse-geocode not wired up here (geocodeLocation only does
-        // forward geocoding) — show raw coordinates as the display text
-        // rather than guessing at a reverse-geocode integration that
-        // doesn't exist yet.
-        setPickupCoords({ latitude, longitude, displayName: 'Current location' });
-        setPickupText('Current location');
+        // Show the street address when it can be looked up; the coordinates are what's sent
+        const place = await reverseGeocode(latitude, longitude);
+        const label = place?.full || 'Current location';
+        setPickupCoords({ latitude, longitude, displayName: label });
+        setPickupText(label);
         setLocatingDevice(false);
       },
       (err) => {

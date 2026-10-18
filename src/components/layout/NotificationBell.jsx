@@ -4,6 +4,7 @@
  * Place at: src/components/layout/NotificationBell.jsx
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { useNavigate } from 'react-router-dom';
@@ -13,7 +14,9 @@ export default function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
   const [open, setOpen]                   = useState(false);
   const [userId, setUserId]               = useState(null);
-  const panelRef                          = useRef(null);
+  const panelRef                          = useRef(null); // the bell
+  const dropRef                           = useRef(null); // the open panel (portalled)
+  const [panelTop, setPanelTop]           = useState(64);
   const navigate                          = useNavigate();
 
   useEffect(() => {
@@ -75,15 +78,17 @@ export default function NotificationBell() {
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
-      if (panelRef.current && !panelRef.current.contains(e.target)) {
-        setOpen(false);
-      }
+      if (panelRef.current?.contains(e.target) || dropRef.current?.contains(e.target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
   const handleOpen = async () => {
+    // Sit the panel just under the bell, wherever the bell is on screen
+    const r = panelRef.current?.getBoundingClientRect();
+    if (r) setPanelTop(Math.round(r.bottom + 8));
     setOpen(v => !v);
     const unread = notifications.filter(n => !n.read).map(n => n.id);
     if (unread.length > 0) {
@@ -133,10 +138,13 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {open && (
+      {/* Portalled to <body>: inside the swipeable tab strip (a CSS transform),
+          position:fixed is relative to the strip, which put the panel off-screen */}
+      {open && createPortal(
         <div
+          ref={dropRef}
           className="fixed right-4 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-card shadow-xl z-[999] overflow-hidden"
-          style={{ top: 'calc(4rem + env(safe-area-inset-top, 0px))' }}
+          style={{ top: panelTop }}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <p className="text-sm font-semibold text-foreground">Notifications</p>
@@ -206,7 +214,8 @@ export default function NotificationBell() {
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

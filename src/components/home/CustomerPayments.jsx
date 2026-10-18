@@ -43,8 +43,10 @@ export default function CustomerPayments() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold tracking-tight mb-1">Payments</h1>
-      <p className="text-sm text-muted-foreground mb-5">Card payments for your rides and deliveries. Cash trips are paid to the driver.</p>
+      <div className="sticky top-0 z-30 -mx-4 -mt-4 px-4 pt-4 pb-3 mb-4 lg:-mx-8 lg:-mt-8 lg:px-8 lg:pt-8 bg-background/95 backdrop-blur border-b border-border/60">
+        <h1 className="text-2xl font-bold tracking-tight">Payments</h1>
+        <p className="text-sm text-muted-foreground">Card payments for your rides and deliveries. Cash trips are paid to the driver.</p>
+      </div>
 
       {rows === null && <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>}
       {rows?.length === 0 && <p className="text-sm text-muted-foreground text-center py-12">No card payments yet.</p>}
