@@ -6,8 +6,8 @@
  * is switched on, by gig-expiry-check.
  *
  * PayFast decides per payment how a refund is paid, so (as its docs require)
- * we ask first: GET /refunds/:pf_payment_id returns a method for a full and a
- * partial refund:
+ * we ask first: GET /refunds/query/:pf_payment_id returns a method for a full
+ * and a partial refund:
  *   PAYMENT_SOURCE -> POST the refund; it goes back to the card
  *   BANK_PAYOUT    -> needs the customer's bank details (refund_bank_accounts).
  *                     If they haven't given them, the refund waits as
@@ -68,12 +68,17 @@ export async function sendGigRefund(supabase, refundId, adminId = null) {
     await record('failed', { p_error: msg, ...extra });
     return { ok: false, error: msg };
   };
-  const pfPath = `refunds/${encodeURIComponent(payment.pf_payment_id)}`;
+  const pfId = encodeURIComponent(payment.pf_payment_id);
+  // GET refunds/query/:id = how a refund can be paid (methods, bank list).
+  // Not GET refunds/:id — that only returns the refund balance and history
+  // (seen live 2026-10-18: { available_balance, transactions }).
+  const queryPath = `refunds/query/${pfId}`;
+  const pfPath = `refunds/${pfId}`;
   const cents = Math.round(Number(refund.amount) * 100);
 
   // ── 1. Ask PayFast how this refund can be paid ────────────────────────────
   let q;
-  try { q = await payfastApiRequest('GET', pfPath); }
+  try { q = await payfastApiRequest('GET', queryPath); }
   catch (err) { return fail(`PayFast refund query failed: ${err.message}`); }
   if (!q.ok) return fail(`PayFast refund query ${q.status}: ${JSON.stringify(q.body).slice(0, 500)}`);
   const info = payload(q.body);
