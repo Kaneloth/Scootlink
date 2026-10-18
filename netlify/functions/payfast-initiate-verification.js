@@ -86,10 +86,8 @@ export const handler = async (event) => {
   const m_payment_id = `skoot_verif_${body.service_type}_${user.id.slice(0, 8)}_${Date.now()}`;
   const firstName = (user.user_metadata?.full_name || 'Skootlink').split(' ')[0];
 
-  // See payfast-initiate.js for why this always uses the https bridge page
-  // instead of branching on is_native.
-  // See payfast-initiate.js for why native uses a real server-side redirect
-  // (payment-redirect function) instead of the old client-side JS bridge page.
+  // Native apps return through the payment-redirect function (a real
+  // server-side redirect into the app), not a client-side JS bridge page.
   const isNative = body.is_native === true;
   const return_url = isNative
     ? `${SITE_URL}/.netlify/functions/payment-redirect?status=success&category=verification&service=${body.service_type}`

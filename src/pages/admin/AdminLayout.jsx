@@ -39,7 +39,6 @@ const NAV_SECTIONS = [
     label: 'Rentals & Money',
     items: [
       { path: '/admin/rentals',          icon: FileText,  label: 'Rentals' },
-      { path: '/admin/credit-grants',    icon: Coins,     label: 'Signup Credit Grants' },
       { path: '/admin/refund-requests',  icon: Banknote,  label: 'Refund Requests' },
       { path: '/admin/transactions',     icon: List,      label: 'Transactions' },
     ],

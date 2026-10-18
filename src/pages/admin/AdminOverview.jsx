@@ -16,7 +16,6 @@ export default function AdminOverview() {
         { count: verifiedUsers },
         { count: activeRentals },
         { count: pendingRentals },
-        { data: ledgerRows },
       ] = await Promise.all([
         supabase.from('profiles').select('id', { count: 'exact', head: true }),
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('banned', true),
@@ -24,18 +23,8 @@ export default function AdminOverview() {
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('id_verified', true),
         supabase.from('rentals').select('id', { count: 'exact', head: true }).eq('status', 'active'),
         supabase.from('rentals').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-        // NOTE: for an MVP this pulls the ledger client-side and sums in JS.
-        // If this table grows large, swap this for a small Postgres RPC that
-        // does SUM(...) server-side instead of shipping every row down.
-        supabase.from('credit_ledger').select('type, amount').limit(5000),
       ]);
-
-      const purchased = (ledgerRows || [])
-        .filter(r => r.type === 'purchase')
-        .reduce((sum, r) => sum + (r.amount || 0), 0);
-      const consumed = (ledgerRows || [])
-        .filter(r => r.amount < 0)
-        .reduce((sum, r) => sum + Math.abs(r.amount), 0);
+      // Money (gig fares, listing fees, refunds, payouts): Gigs → Refunds & Payouts.
 
       setStats({
         totalUsers: totalUsers ?? 0,
@@ -44,8 +33,6 @@ export default function AdminOverview() {
         verifiedUsers: verifiedUsers ?? 0,
         activeRentals: activeRentals ?? 0,
         pendingRentals: pendingRentals ?? 0,
-        creditsPurchased: purchased,
-        creditsConsumed: consumed,
       });
       setLoading(false);
     })();
@@ -66,8 +53,6 @@ export default function AdminOverview() {
     { label: 'Suspended',         value: stats.suspendedUsers,   icon: UserX,       color: 'text-amber-600' },
     { label: 'Active Rentals',    value: stats.activeRentals,    icon: FileText,    color: 'text-purple-600' },
     { label: 'Pending Rentals',   value: stats.pendingRentals,   icon: Clock,       color: 'text-amber-600' },
-    { label: 'Credits Purchased', value: stats.creditsPurchased.toLocaleString(), icon: Coins, color: 'text-teal-600' },
-    { label: 'Credits Consumed',  value: stats.creditsConsumed.toLocaleString(),  icon: Coins, color: 'text-orange-600' },
   ];
 
   return (

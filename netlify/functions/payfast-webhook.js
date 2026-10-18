@@ -8,7 +8,7 @@
  *   'driver_settlement' -> mark_driver_settlement_paid() (a driver paying
  *                     commission owed on cash gigs, migration 020)
  *   'verification' -> mark_verification_paid()
- *   (none)         -> credit package purchase
+ *   (none / other) -> ignored (credit packages were retired 2026-10-18)
  * Set Notify URL in PayFast to: https://skootlink.co.za/.netlify/functions/payfast-webhook
  *
  * NOTE ON custom_str4 (app tag): Skootlink and Crosssa share one PayFast
@@ -23,7 +23,6 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { generateITNSignature, PAYFAST_VALIDATE_URL } from './lib/payfast.js';
-import { PACKAGES } from './lib/packages.js';
 import { offerGigToDrivers, DEFAULT_RADIUS_METERS } from './lib/gigMatching.js';
 
 const supabase = createClient(
@@ -210,47 +209,7 @@ export const handler = async (event) => {
     return { statusCode: 200, body: 'OK' };
   }
 
-  // ── Handle credit package payments (existing flow) ──────────────────────────
-  const pkg = PACKAGES[package_id];
-  if (!pkg) {
-    console.error('[payfast-webhook] unknown package:', package_id);
-    return { statusCode: 200, body: 'OK' };
-  }
-
-  // ── 5. Amount sanity check ──────────────────────────────────────────────
-  const paidAmount = parseFloat(fields.amount_gross || fields.amount || '0');
-  if (Math.abs(paidAmount - pkg.price_zar) > 0.5) {
-    console.error(`[payfast-webhook] amount mismatch: expected ${pkg.price_zar}, got ${paidAmount}`);
-    return { statusCode: 200, body: 'OK' };
-  }
-
-  // ── 6. Idempotency check ────────────────────────────────────────────────
-  const { data: existing } = await supabase
-    .from('credit_ledger')
-    .select('id')
-    .eq('ref_id', fields.pf_payment_id)
-    .eq('type', 'purchase')
-    .maybeSingle();
-
-  if (existing) {
-    console.log(`[payfast-webhook] pf_payment_id=${fields.pf_payment_id} already processed`);
-    return { statusCode: 200, body: 'OK' };
-  }
-
-  // ── 7. Grant credits ────────────────────────────────────────────────────
-  const { error: creditErr } = await supabase.rpc('add_credits', {
-    p_user_id:     user_id,
-    p_amount:      pkg.credits,
-    p_type:        'purchase',
-    p_description: `${pkg.label} via PayFast — R${pkg.price_zar}`,
-    p_ref_id:      fields.pf_payment_id,
-  });
-
-  if (creditErr) {
-    console.error('[payfast-webhook] add_credits failed:', creditErr);
-    return { statusCode: 500, body: 'Error' };
-  }
-
-  console.log(`[payfast-webhook] Granted ${pkg.credits} credits to user=${user_id}`);
+  // Credit packages were retired (2026-10-18): nothing creates them any more.
+  console.warn(`[payfast-webhook] ITN with no known payment category ignored: category=${payment_category || '(none)'} m_payment_id=${fields.m_payment_id}`);
   return { statusCode: 200, body: 'OK' };
 };

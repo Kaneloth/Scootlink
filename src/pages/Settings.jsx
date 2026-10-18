@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { sendSMS } from '@/lib/sms';
 import { toast } from 'sonner';
-import { useCredits } from '@/hooks/useCredits';
 import { BiometricAuth, AndroidBiometryStrength } from '@aparajita/capacitor-biometric-auth';
 import { fnUrl } from '@/lib/functionsUrl';
 
@@ -27,13 +26,6 @@ const TEXT_SIZES = [
 ];
 
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
-
-const CREDIT_PACKAGES = [
-  { id: 'starter',  credits: 250,  price: 49  },
-  { id: 'standard', credits: 450,  price: 79,  popular: true },
-  { id: 'pro',      credits: 750,  price: 129 },
-  { id: 'business', credits: 1250, price: 199 },
-];
 
 async function registerBiometric(user) {
   if (Capacitor.isNativePlatform()) {
@@ -182,219 +174,6 @@ async function deleteAccount(accessToken) {
     const detail = body.detail ? ` — ${body.detail}` : '';
     throw new Error(reason + detail);
   }
-}
-
-const CREDIT_COSTS = [
-  { icon: '💬', action: 'Start a chat',                    cost: '50 credits'  },
-  { icon: '🚗', action: 'List a vehicle (1st)',             cost: '250 credits' },
-  { icon: '🚗', action: 'List a vehicle (2nd)',             cost: '200 credits' },
-  { icon: '🚗', action: 'List a vehicle (3rd+)',            cost: '175 credits' },
-  { icon: '📝', action: 'Sign a rental contract',           cost: '200 credits' },
-];
-
-function CreditBalanceWidget() {
-  const { balance, loading, refetch } = useCredits();
-  const [purchasing,  setPurchasing]  = React.useState(null);
-  const [selectedPkg, setSelectedPkg] = React.useState(
-    CREDIT_PACKAGES.find(p => p.popular)?.id || CREDIT_PACKAGES[1].id
-  );
-  const [showCosts, setShowCosts] = React.useState(false);
-
-  const handlePaymentResult = React.useCallback((result) => {
-    setPurchasing(null);
-    if (!result || result.category !== 'credits') {
-      return; // not ours — e.g. a verification payment
-    }
-
-    if (result.status === 'success') {
-      toast.success('Payment received! Your credits have been added.');
-      refetch();
-    } else if (result.status === 'cancelled') {
-      toast.info('Payment cancelled.');
-    }
-  }, [refetch]);
-
-  const checkStoredResult = React.useCallback(() => {
-    const raw = sessionStorage.getItem('skootlink_payment_result');
-    if (!raw) return;
-    sessionStorage.removeItem('skootlink_payment_result');
-    try { handlePaymentResult(JSON.parse(raw)); } catch (e) { }
-  }, [handlePaymentResult]);
-
-  React.useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-
-    checkStoredResult();
-
-    const onEvent = (e) => handlePaymentResult(e.detail);
-    window.addEventListener('skootlink:payment-result', onEvent);
-
-    // Second, independent trigger: fires whenever the OS brings the app
-    // back to the foreground, for any reason.
-    let appListener;
-    (async () => {
-      try {
-        const { App: CapApp } = await import('@capacitor/app');
-        appListener = await CapApp.addListener('appStateChange', ({ isActive }) => {
-          if (isActive) checkStoredResult();
-        });
-      } catch (e) { }
-    })();
-
-    // Third, independent safety net: guarantees the button never stays
-    // stuck on "Processing" even in the worst case where the deep link
-    // genuinely never fires.
-    let browserListener;
-    (async () => {
-      try {
-        const { Browser } = await import('@capacitor/browser');
-        browserListener = await Browser.addListener('browserFinished', () => {
-          setPurchasing(null);
-        });
-      } catch (e) { }
-    })();
-
-    return () => {
-      window.removeEventListener('skootlink:payment-result', onEvent);
-      if (appListener) appListener.remove().catch(() => {});
-      if (browserListener) browserListener.remove().catch(() => {});
-    };
-  }, [handlePaymentResult, checkStoredResult]);
-
-  const handlePurchase = async () => {
-    const pkg = CREDIT_PACKAGES.find(p => p.id === selectedPkg);
-    if (!pkg) return;
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) { toast.error('Please sign in first.'); return; }
-    setPurchasing(pkg.id);
-
-    const isNative = Capacitor.isNativePlatform();
-
-    try {
-      const res = await fetch(fnUrl('payfast-initiate'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ package_id: pkg.id, is_native: isNative }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not start payment');
-
-      if (isNative) {
-        // Open in a Custom Tab, not this WebView — return_url is a real
-        // server-side redirect (payment-redirect function) straight to
-        // co.za.skootlink.app://payment-result, the same mechanism the
-        // Google sign-in flow already uses successfully.
-        const qs = new URLSearchParams(data.fields).toString();
-        const { Browser } = await import('@capacitor/browser');
-        await Browser.open({ url: `${data.action_url}?${qs}`, presentationStyle: 'popover' });
-        return;
-      }
-
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = data.action_url;
-      Object.entries(data.fields).forEach(([key, value]) => {
-        const input = document.createElement('input');
-        input.type = 'hidden'; input.name = key; input.value = value;
-        form.appendChild(input);
-      });
-      document.body.appendChild(form);
-      form.submit();
-    } catch (err) {
-      toast.error(err.message || 'Could not start payment.');
-      setPurchasing(null);
-    }
-  };
-
-  const selected = CREDIT_PACKAGES.find(p => p.id === selectedPkg);
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20">
-        <div>
-          <p className="text-xs text-muted-foreground">Your credit balance</p>
-          {loading
-            ? <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin mt-1" />
-            : <p className="text-3xl font-bold text-primary">{balance}</p>}
-          <p className="text-xs text-muted-foreground mt-0.5">credits · never expire</p>
-        </div>
-        <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-          <Coins className="w-6 h-6 text-primary" />
-        </div>
-      </div>
-
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Choose a package</p>
-        <div className="space-y-2.5">
-          {CREDIT_PACKAGES.map(pkg => {
-            const isSelected = selectedPkg === pkg.id;
-            return (
-              <button
-                key={pkg.id}
-                onClick={() => setSelectedPkg(pkg.id)}
-                disabled={purchasing !== null}
-                className={`w-full text-left rounded-2xl border-2 px-4 py-3.5 transition-all disabled:opacity-60 ${
-                  isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-card hover:border-primary/40'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary' : 'border-muted-foreground/40'}`}>
-                      {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
-                    </div>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className={`text-xl font-extrabold ${isSelected ? 'text-primary' : 'text-foreground'}`}>
-                        {pkg.credits.toLocaleString()}
-                      </span>
-                      <span className="text-sm text-muted-foreground font-medium">credits</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {pkg.popular && (
-                      <span className="text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">🔥 POPULAR</span>
-                    )}
-                    <span className={`text-base font-bold ${isSelected ? 'text-primary' : 'text-foreground'}`}>R{pkg.price}</span>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <Button onClick={handlePurchase} disabled={purchasing !== null} className="w-full h-12 text-base font-bold rounded-2xl gap-2">
-        {purchasing
-          ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
-          : <>Pay R{selected?.price} — Get {selected?.credits.toLocaleString()} credits</>}
-      </Button>
-      <p className="text-center text-[11px] text-muted-foreground -mt-3">
-        Secure payment via card or EFT · Credits added instantly
-      </p>
-
-      <div className="border border-border rounded-2xl overflow-hidden">
-        <button onClick={() => setShowCosts(v => !v)} className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-muted/40 transition-colors">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">How far your credits go</p>
-          {showCosts ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-        </button>
-        {showCosts && (
-          <div className="px-4 pb-4 space-y-2 border-t border-border pt-3">
-            {CREDIT_COSTS.map(({ icon, action, cost }) => (
-              <div key={action} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">{icon}</span>
-                  <p className="text-xs text-muted-foreground">{action}</p>
-                </div>
-                <span className="text-xs font-semibold text-foreground shrink-0 ml-2">{cost}</span>
-              </div>
-            ))}
-            <div className="pt-2 border-t border-border">
-              <p className="text-[11px] text-muted-foreground text-center">Credits never expire · Sign-up bonus included</p>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 function PlatformVerificationQueue() {
@@ -608,7 +387,6 @@ export default function Settings() {
   const [fontSize, setFontSize] = useState('16px');
   const [signInMethod, setSignInMethod] = useState('password');
   const [user, setUser] = useState(null);
-  const [hasPurchasedCredits, setHasPurchasedCredits] = useState(false);
   const [notifications, setNotifications] = useState(() =>
     localStorage.getItem('scootlink_notifications') !== 'false'
   );
@@ -734,18 +512,6 @@ export default function Settings() {
     setSignInMethod(localStorage.getItem('scootlink_signin_method') || 'password');
     setNotifications(localStorage.getItem('scootlink_notifications') !== 'false');
     loadUser().then(setUser).catch(() => {});
-    supabase.auth.getUser().then(async ({ data: { user: authUser } }) => {
-      if (!authUser) return;
-      const { data } = await supabase
-        .from('credit_ledger')
-        .select('id')
-        .eq('user_id', authUser.id)
-        .eq('type', 'purchase')
-        .limit(1)
-        .maybeSingle();
-      setHasPurchasedCredits(!!data);
-      if (!data && activeTab === 'credits') setActiveTab('general');
-    });
     supabase.auth.getUser().then(({ data: { user: authUser } }) => {
       const identities = authUser?.identities ?? [];
       const isGoogle = identities.some(i => i.provider === 'google') &&
@@ -896,19 +662,7 @@ export default function Settings() {
       .select('id, email, full_name, verified, id_verified, licence_verified, license_pending, verification_badge, account_type, customer_code, phone, location, residential_address, license_number, license_year, blacklisted, banned, suspended_until, ban_reason, suspension_reason, id_document_number, id_document_type, created_at')
       .order('created_at', { ascending: false });
     if (!error) {
-      const userIds = (data || []).map(u => u.id);
-      let creditMap = {};
-      if (userIds.length > 0) {
-        const results = await Promise.all(
-          userIds.map(async (id) => {
-            const { data: bal, error: balErr } = await supabase.rpc('get_credit_balance', { p_user_id: id });
-            return [id, balErr ? 0 : (bal ?? 0)];
-          })
-        );
-        results.forEach(([id, bal]) => { creditMap[id] = bal; });
-      }
-      const filtered = (data || []).filter(u => u.id !== user?.id);
-      setAdminUsers(filtered.map(u => ({ ...u, credit_balance: creditMap[u.id] ?? 0 })));
+      setAdminUsers((data || []).filter(u => u.id !== user?.id));
     } else {
       toast.error('Could not load users: ' + (error.message || 'unknown error'));
     }
@@ -964,40 +718,6 @@ export default function Settings() {
       setAdminSelectedUser(p => ({ ...p, licence_verified: enabling, verification_badge: badge }));
     }
     toast.success(enabling ? 'Licence verified ✓' : 'Licence verification removed');
-    setTogglingId(null);
-  };
-
-  const addAdminCredits = async (userId, amount) => {
-    setTogglingId(userId + '_sub');
-    const { error } = await supabase.rpc('add_credits', {
-      p_user_id:     userId,
-      p_amount:      amount,
-      p_type:        'adjustment',
-      p_description: `Admin credit adjustment`,
-      p_ref_id:      `admin:${userId}`,
-    });
-    if (!error) {
-      toast.success(`Added ${amount} credits to user`);
-    } else {
-      toast.error('Failed to add credits: ' + error.message);
-    }
-    setTogglingId(null);
-  };
-
-  const subtractAdminCredits = async (userId, amount) => {
-    setTogglingId(userId + '_subtract');
-    const { error } = await supabase.rpc('add_credits', {
-      p_user_id:     userId,
-      p_amount:      -amount,
-      p_type:        'adjustment',
-      p_description: `Admin credit adjustment`,
-      p_ref_id:      `admin:${userId}`,
-    });
-    if (!error) {
-      toast.success(`Subtracted ${amount} credits from user`);
-    } else {
-      toast.error('Failed to subtract credits: ' + error.message);
-    }
     setTogglingId(null);
   };
 
@@ -1182,7 +902,7 @@ export default function Settings() {
       <h2 className="text-2xl font-bold text-foreground mb-8">Settings</h2>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: `repeat(${2 + (hasPurchasedCredits ? 1 : 0) + (isAdmin ? 1 : 0)}, minmax(0, 1fr))` }}>
+        <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: `repeat(${2 + (isAdmin ? 1 : 0)}, minmax(0, 1fr))` }}>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           {isAdmin && <TabsTrigger value="admin" onClick={fetchAdminUsers}>Admin</TabsTrigger>}
@@ -1316,12 +1036,6 @@ export default function Settings() {
             >
               <LogOut className="w-4 h-4" /> Logout
             </button>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="credits">
-          <div className="space-y-4">
-            <CreditBalanceWidget />
           </div>
         </TabsContent>
 
@@ -1649,9 +1363,6 @@ export default function Settings() {
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${u.licence_verified ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : u.license_pending ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
                               {u.licence_verified ? '🛡️ Licence' : u.license_pending ? '⏳ Lic Pending' : '— Licence'}
                             </span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-primary/10 text-primary">
-                              <Coins className="w-2.5 h-2.5 inline mr-0.5" />{u.credit_balance ?? 0} cr
-                            </span>
                             <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 capitalize">
                               {u.account_type || 'n/a'}
                             </span>
@@ -1667,7 +1378,7 @@ export default function Settings() {
                         </Button>
                       </div>
                       <div className="flex flex-col gap-1.5 pt-1 border-t border-border/50">
-                        <div className="grid grid-cols-4 gap-1.5">
+                        <div className="grid grid-cols-2 gap-1.5">
                           <Button
                             size="sm"
                             variant={u.verified ? 'outline' : 'default'}
@@ -1691,30 +1402,6 @@ export default function Settings() {
                               ? <Loader2 className="w-3 h-3 animate-spin" />
                               : <FileText className="w-3 h-3" />}
                             {u.licence_verified ? 'Un-Lic' : u.license_pending ? '⏳ Approve' : '🛡️ Lic'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-[10px] gap-0.5 px-1"
-                            disabled={togglingId === u.id + '_sub'}
-                            onClick={() => addAdminCredits(u.id, 50)}
-                          >
-                            {togglingId === u.id + '_sub'
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <Coins className="w-3 h-3" />}
-                            +50 Cr
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-[10px] gap-0.5 px-1"
-                            disabled={togglingId === u.id + '_subtract'}
-                            onClick={() => subtractAdminCredits(u.id, 50)}
-                          >
-                            {togglingId === u.id + '_subtract'
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <Coins className="w-3 h-3" />}
-                            -50 Cr
                           </Button>
                         </div>
                         <div className="flex gap-1.5">

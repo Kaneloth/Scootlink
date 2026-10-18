@@ -14,20 +14,7 @@ const baseItems = [
 export default function MobileNav() {
   const location                          = useLocation();
   const [accountType, setAccountType]     = useState('driver');
-  const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [userId, setUserId]               = useState(null);
-
-  // Hide nav when the credit purchase modal is open
-  useEffect(() => {
-    const onOpen  = () => setCreditModalOpen(true);
-    const onClose = () => setCreditModalOpen(false);
-    window.addEventListener('skootlink:credit-modal-open',  onOpen);
-    window.addEventListener('skootlink:credit-modal-close', onClose);
-    return () => {
-      window.removeEventListener('skootlink:credit-modal-open',  onOpen);
-      window.removeEventListener('skootlink:credit-modal-close', onClose);
-    };
-  }, []);
 
   // ── Resolve user ID and account type from Supabase auth directly ──────────
   // Resolve effective account type from profile
@@ -70,8 +57,6 @@ export default function MobileNav() {
   const navItems = baseItems.map(item =>
     item.label === 'Search' ? { ...item, path: searchPath } : item
   );
-
-  if (creditModalOpen) return null;
 
   return (
     <nav

@@ -33,7 +33,7 @@ const supabase = createClient(
 const DEFAULT_RADIUS_METERS = 5000; // first search radius (see lib/gigMatching.js)
 
 // Used only if the app_settings read below fails — same rationale as
-// grant-signup-credits.js's FALLBACK_* constants: never risk a null/zero
+// the other functions' FALLBACK_* constants: never risk a null/zero
 // fare because of a transient DB hiccup. These are also the values
 // app_settings itself defaults to (see 003_gig_pricing_and_expiry.sql) —
 // starting estimates, not researched/verified pricing.

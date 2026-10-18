@@ -302,7 +302,6 @@ export default function FindDrivers() {
       setSelectedDriver(null);
       setShowContractForm(false);
       setShowContractPreview(false);
-      setContractPreviewText('');
     } catch (err) {
       toast.error('Failed to send contract: ' + (err.message || 'please try again'));
     } finally {

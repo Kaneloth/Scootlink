@@ -1,7 +1,7 @@
 /**
  * VerificationPanel.jsx
  * Handles ID verification (RSA ID + Passport tabs) and Driver's Licence verification.
- * Verification is a paid service — NOT payable with free credits.
+ * Verification is a paid service (PayFast).
  * Prices: admin-configurable per service (default R25 each) — see
  * AdminIdentityVerification.jsx and app_settings.verification_price_*
  *
@@ -9,7 +9,7 @@
  * API) — see submit-verification.js and the admin Identity Verification
  * queue. On approval the badge is granted; on rejection the user can
  * re-submit once for free. If our own upload/submission fails before ever
- * reaching the review queue, the user is credited back in usage credits.
+ * reaching the review queue, the user can try again or request a cash refund.
  *
  * Place at: src/components/verification/VerificationPanel.jsx
  */
@@ -36,12 +36,6 @@ const SERVICE_LABELS = {
   licence:  "Driver's Licence Verification",
 };
 const FALLBACK_PRICES = { sa_id: 25, passport: 25, licence: 25 };
-
-// Refund-credit conversion rate: R0.20/credit. Fixed, not admin-configurable —
-// only the verification prices themselves are. Since the divisor is applied
-// to whatever the current price is, this stays correct regardless of price.
-const PRICE_PER_CREDIT = 0.20;
-const creditsForRefund = (priceZar) => Math.floor(priceZar / PRICE_PER_CREDIT);
 
 // ── Image uploader sub-component ──────────────────────────────────────────────
 function ImageUpload({ label, hint, file, onChange }) {
@@ -154,10 +148,9 @@ function PaymentModal({ service, price, onPay, onCancel, paying }) {
 
         <div className="bg-muted rounded-xl p-4 mb-4 space-y-2">
           <p className="text-[10px] text-muted-foreground">
-            This is a direct payment — free credits cannot be used for verification services.
             Your documents are reviewed manually by our team. If our system fails to accept
-            your submission due to a technical issue on our side, you can choose to try again,
-            get usage credits equivalent to your payment, or request a cash refund. If your
+            your submission due to a technical issue on our side, you can choose to try again
+            or request a cash refund. If your
             submission is reviewed and rejected, you may re-submit once for free — no
             additional payment required.
           </p>
@@ -176,7 +169,7 @@ function PaymentModal({ service, price, onPay, onCancel, paying }) {
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
-function StatusBadge({ status, message, credits, resolution, onTryAgain, onRefundCredits, onRequestCashRefund, resolving }) {
+function StatusBadge({ status, message, resolution, onTryAgain, onRequestCashRefund, resolving }) {
   if (!status) return null;
   if (status === 'verifying') return (
     <div className="flex items-center gap-2 p-3 rounded-xl bg-muted text-muted-foreground text-sm">
@@ -211,11 +204,6 @@ function StatusBadge({ status, message, credits, resolution, onTryAgain, onRefun
         <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
         <div>
           <p>{message || 'Something went wrong on our side while submitting your documents.'}</p>
-          {resolution === 'credits' && (
-            <p className="text-xs mt-1 opacity-80">
-              {credits} usage credits have been added to your account as compensation.
-            </p>
-          )}
           {resolution === 'cash' && (
             <p className="text-xs mt-1 opacity-80">
               Your cash refund request has been submitted — our team will process it within 3–5 business days.
@@ -231,13 +219,6 @@ function StatusBadge({ status, message, credits, resolution, onTryAgain, onRefun
             className="flex-1 min-w-[100px] text-xs font-medium px-3 py-2 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50"
           >
             Try Again
-          </button>
-          <button
-            disabled={resolving}
-            onClick={onRefundCredits}
-            className="flex-1 min-w-[100px] text-xs font-medium px-3 py-2 rounded-lg border border-primary/30 text-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
-          >
-            Get Credits Back
           </button>
           <button
             disabled={resolving}
@@ -306,9 +287,8 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   const [passportSelfie,     setPassportSelfie]     = useState(null);
   const [idStatus,           setIdStatus]           = useState('');
   const [idMsg,              setIdMsg]              = useState('');
-  const [idRefundCredits,    setIdRefundCredits]    = useState(0);
-  // null = failure not yet resolved, shows the Try Again / Credits / Cash
-  // choice buttons. 'credits' | 'cash' = user has chosen and it's done.
+  // null = failure not yet resolved, shows the Try Again / Cash refund
+  // choice buttons. 'cash' = user has chosen and it's done.
   const [idResolution,       setIdResolution]       = useState(null);
 
   // Licence verification state
@@ -318,7 +298,6 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   const [licenceSelfie,      setLicenceSelfie]      = useState(null);
   const [licStatus,          setLicStatus]          = useState('');
   const [licMsg,             setLicMsg]             = useState('');
-  const [licRefundCredits,   setLicRefundCredits]   = useState(0);
   const [licResolution,      setLicResolution]      = useState(null);
 
   // Payment modal
@@ -399,7 +378,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
   // unmounts while the Custom Tab is open.
   const handlePaymentResult = React.useCallback((result) => {
     if (!result || result.category !== 'verification') {
-      return; // not ours — e.g. a credits purchase
+      return; // not ours — e.g. a different payment
     }
 
     setPaymentModal(null);
@@ -535,27 +514,6 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     return false;
   };
 
-  const refundCredits = async (serviceType, setRefundCredits) => {
-    const price = verificationPrices[serviceType] || 0;
-    const credits = creditsForRefund(price);
-    if (credits > 0 && user?.id) {
-      const { error } = await supabase.rpc('add_credits', {
-        p_user_id:     user.id,
-        p_amount:      credits,
-        p_type:        'refund',
-        p_description: `Verification refund — ${SERVICE_LABELS[serviceType]}`,
-        p_ref_id:      null,
-      });
-      if (error) {
-        console.error('[VerificationPanel] add_credits failed:', error);
-        return false;
-      }
-      setRefundCredits(credits);
-      return true;
-    }
-    return false;
-  };
-
   // Previously this always showed a "submitted" toast and swallowed the
   // insert's error entirely — meaning a failed insert (bad columns, RLS,
   // table missing, etc.) looked identical to success to the user, with no
@@ -578,7 +536,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     return true;
   };
 
-  // ── Failure resolution (Try Again / Credits / Cash) ─────────────────────────
+  // ── Failure resolution (Try Again / Cash refund) ────────────────────────────
   const [idResolving,  setIdResolving]  = useState(false);
   const [licResolving, setLicResolving] = useState(false);
 
@@ -586,14 +544,6 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
     setStatus(''); setMsg(''); setResolution(null);
     // Deliberately does not touch verification_payments — it's still
     // `used: false`, so hasPaid() will pass again without charging twice.
-  };
-
-  const handleChooseCreditsRefund = async (serviceType, setRefundCreditsState, setResolution, setResolving) => {
-    setResolving(true);
-    const ok = await refundCredits(serviceType, setRefundCreditsState);
-    if (ok) setResolution('credits');
-    else toast.error('Could not process your credit refund. Please contact support directly.');
-    setResolving(false);
   };
 
   const handleChooseCashRefund = async (serviceType, setResolution, setResolving) => {
@@ -648,7 +598,7 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
       }
     } catch (err) {
       // Our side failed before the submission was ever saved — let the user
-      // choose how to be made whole (Try Again / Credits / Cash) via the
+      // choose how to be made whole (Try Again / Cash refund) via the
       // StatusBadge buttons below, rather than deciding for them.
       setIdStatus('failed'); setIdMsg('Something went wrong submitting your documents.');
       setIdResolution(null);
@@ -803,11 +753,9 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
             <StatusBadge
               status={idStatus}
               message={idMsg}
-              credits={idRefundCredits}
               resolution={idResolution}
               resolving={idResolving}
               onTryAgain={() => handleTryAgain(setIdStatus, setIdMsg, setIdResolution)}
-              onRefundCredits={() => handleChooseCreditsRefund('sa_id', setIdRefundCredits, setIdResolution, setIdResolving)}
               onRequestCashRefund={() => handleChooseCashRefund('sa_id', setIdResolution, setIdResolving)}
             />
             <Button
@@ -850,11 +798,9 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
             <StatusBadge
               status={idStatus}
               message={idMsg}
-              credits={idRefundCredits}
               resolution={idResolution}
               resolving={idResolving}
               onTryAgain={() => handleTryAgain(setIdStatus, setIdMsg, setIdResolution)}
-              onRefundCredits={() => handleChooseCreditsRefund('passport', setIdRefundCredits, setIdResolution, setIdResolving)}
               onRequestCashRefund={() => handleChooseCashRefund('passport', setIdResolution, setIdResolving)}
             />
             <Button
@@ -910,11 +856,9 @@ export default function VerificationPanel({ user, accountType, onUserUpdated }) 
             <StatusBadge
               status={licStatus}
               message={licMsg}
-              credits={licRefundCredits}
               resolution={licResolution}
               resolving={licResolving}
               onTryAgain={() => handleTryAgain(setLicStatus, setLicMsg, setLicResolution)}
-              onRefundCredits={() => handleChooseCreditsRefund('licence', setLicRefundCredits, setLicResolution, setLicResolving)}
               onRequestCashRefund={() => handleChooseCashRefund('licence', setLicResolution, setLicResolving)}
             />
             <Button

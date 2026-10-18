@@ -89,7 +89,7 @@ function NavigationProgressBar({ pathname }) {
 
 // ─── Verification gate ────────────────────────────────────────────────────────
 // Routes the user can always reach even before verification is complete.
-const GATE_EXEMPT = ['/onboarding', '/settings', '/profile', '/credits'];
+const GATE_EXEMPT = ['/onboarding', '/settings', '/profile'];
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
 function VerificationGate({ user, userLoading, children }) {
