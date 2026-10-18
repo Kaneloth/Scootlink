@@ -191,7 +191,7 @@ export default function NotificationBell() {
                       <button
                         onClick={() => {
                           setOpen(false);
-                          navigate(`/edit-vehicle?id=${n.data.vehicle_id}&relist=1`);
+                          navigate(`/vehicle-listing/${n.data.vehicle_id}`);
                         }}
                         className="mt-2 text-[11px] font-semibold text-primary hover:underline"
                       >

@@ -971,28 +971,11 @@ export default function Dashboard() {
     }
   };
 
-  // Owner's final confirm — deducts 200 credits, activates rental, downloads PDF
+  // Owner's final confirm — activates the rental and downloads the PDF. The
+  // rental agreement is included in the vehicle's listing fee (migration 021);
+  // credits are retired.
   const handleOwnerFinalise = async () => {
     if (!selectedProposal) return;
-
-    // Deduct 200 credits from the owner for accessing the rental agreement
-    // — admins are exempt from all credit gates.
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    const isAdminUser = currentUser?.user_metadata?.is_admin === true
-      || ['kaneloth@skootlink.co.za'].includes(currentUser?.email);
-    if (currentUser && !isAdminUser) {
-      const { error: creditErr } = await supabase.rpc('deduct_credits', {
-        p_user_id:     currentUser.id,
-        p_amount:      200,
-        p_type:        'spend',
-        p_description: 'Access rental agreement',
-        p_ref_id:      selectedProposal.id,
-      });
-      if (creditErr?.message?.includes('insufficient_credits')) {
-        setShowCreditsNeededModal(true);
-        return;
-      }
-    }
 
     try {
       const rental = rentals.find(r => r.id === selectedProposal.id);

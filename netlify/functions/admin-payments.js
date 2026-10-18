@@ -9,7 +9,8 @@
  *   { action: 'mark_refunded', refundId, reference }   refund done by hand in the PayFast dashboard
  *   { action: 'settle_payout', withdrawalId, outcome: 'processing' | 'paid' | 'rejected', note }
  *                                                      note = EFT reference (paid) or reason (rejected)
- *   { action: 'update_settings', gig_auto_refunds?, gig_min_payout?, gig_payment_window_minutes?, gig_cash_debt_limit? }
+ *   { action: 'update_settings', gig_auto_refunds?, gig_min_payout?, gig_payment_window_minutes?, gig_cash_debt_limit?,
+ *     listing_fee?, listing_period_months? }
  * The overview also lists drivers who owe commission from cash gigs (migration 020).
  * Auth: Bearer token of an admin (user_metadata.is_admin === true), as in the other admin-* functions.
  */
@@ -64,9 +65,9 @@ export const handler = async (event) => {
           .select('id, driver_id, amount, status, bank_account_holder, bank_name, bank_account_number, bank_branch_code, bank_account_type, requested_at, processed_at, payment_reference, rejection_reason')
           .order('requested_at', { ascending: false }).limit(100),
         supabaseAdmin.from('app_settings')
-          .select('gig_auto_refunds, gig_min_payout, gig_payment_window_minutes, gig_cash_debt_limit').eq('id', 1).single(),
+          .select('gig_auto_refunds, gig_min_payout, gig_payment_window_minutes, gig_cash_debt_limit, listing_fee, listing_period_months').eq('id', 1).single(),
         supabaseAdmin.from('platform_payments')
-          .select('amount').eq('kind', 'gig_fare').eq('status', 'paid')
+          .select('amount, kind').in('kind', ['gig_fare', 'listing_fee']).eq('status', 'paid')
           .gte('paid_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()),
         // Every driver's balance (cash gigs make it negative = owes Skootlink)
         supabaseAdmin.from('gig_earnings_ledger')
@@ -89,7 +90,8 @@ export const handler = async (event) => {
       return reply(200, {
         mode: PAYFAST_MODE,
         settings: settingsRes.data,
-        gigFaresLast30Days: (paidRes.data || []).reduce((t, p) => t + Number(p.amount), 0),
+        gigFaresLast30Days: (paidRes.data || []).filter((p) => p.kind === 'gig_fare').reduce((t, p) => t + Number(p.amount), 0),
+        listingFeesLast30Days: (paidRes.data || []).filter((p) => p.kind === 'listing_fee').reduce((t, p) => t + Number(p.amount), 0),
         refunds: (refundsRes.data || []).map((r) => ({ ...r, customer: names[r.customer_id] || null })),
         payouts: (payoutsRes.data || []).map((p) => ({ ...p, driver: names[p.driver_id] || null })),
         debtors: debtors.map((d) => ({ ...d, driver: names[d.driver_id] || null })),
@@ -143,6 +145,16 @@ export const handler = async (event) => {
         const v = Number(body.gig_payment_window_minutes);
         if (!(Number.isInteger(v) && v >= 5 && v <= 240)) return reply(400, { error: 'Payment window must be 5 to 240 minutes' });
         patch.gig_payment_window_minutes = v;
+      }
+      if (body.listing_fee != null) {
+        const v = Number(body.listing_fee);
+        if (!(v >= 5 && v <= 100000)) return reply(400, { error: 'Listing fee must be between R5 (PayFast minimum) and R100 000' });
+        patch.listing_fee = Math.round(v * 100) / 100;
+      }
+      if (body.listing_period_months != null) {
+        const v = Number(body.listing_period_months);
+        if (!(Number.isInteger(v) && v >= 1 && v <= 24)) return reply(400, { error: 'Listing period must be 1 to 24 months' });
+        patch.listing_period_months = v;
       }
       if (body.gig_cash_debt_limit != null) {
         const v = Number(body.gig_cash_debt_limit);

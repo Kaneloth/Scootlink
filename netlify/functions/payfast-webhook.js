@@ -3,6 +3,8 @@
  * Verifies PayFast payment, then by custom_str3 (payment category):
  *   'gig_fare'     -> mark_gig_fare_paid() (migration 018) and, if the gig was
  *                     waiting for it, offer the gig to nearby drivers
+ *   'listing_fee'  -> mark_listing_fee_paid() (an owner's rental listing,
+ *                     migration 021)
  *   'driver_settlement' -> mark_driver_settlement_paid() (a driver paying
  *                     commission owed on cash gigs, migration 020)
  *   'verification' -> mark_verification_paid()
@@ -136,6 +138,34 @@ export const handler = async (event) => {
       }).then(({ error: nErr }) => { if (nErr) console.error('[payfast-webhook] notify failed:', nErr); });
     } else if (action === 'amount_mismatch') {
       console.error(`[payfast-webhook] AMOUNT MISMATCH for gig fare m_payment_id=${fields.m_payment_id}: paid ${paid}`);
+    }
+    return { statusCode: 200, body: 'OK' };
+  }
+
+  // ── Listing fee for a rental listing (migration 021) ─────────────────────
+  if (payment_category === 'listing_fee') {
+    const paid = parseFloat(fields.amount_gross || fields.amount || '0');
+    const { data: rows, error } = await supabase.rpc('mark_listing_fee_paid', {
+      p_m_payment_id: fields.m_payment_id,
+      p_pf_payment_id: fields.pf_payment_id,
+      p_amount: paid,
+    });
+    if (error) {
+      console.error('[payfast-webhook] mark_listing_fee_paid failed:', error);
+      return { statusCode: 500, body: 'Error' }; // PayFast retries the ITN
+    }
+    const { vehicle_id: vehicleId, owner_id: ownerId, action } = (rows && rows[0]) || {};
+    console.log(`[payfast-webhook] listing fee m_payment_id=${fields.m_payment_id} vehicle=${vehicleId} action=${action} amount=${paid}`);
+    if (action === 'activated') {
+      await supabase.rpc('create_notification', {
+        p_user_id: ownerId,
+        p_type: 'listing_active',
+        p_title: 'Your vehicle is listed',
+        p_body: 'Payment received — your vehicle is now visible to drivers.',
+        p_data: { vehicle_id: vehicleId },
+      }).then(({ error: nErr }) => { if (nErr) console.error('[payfast-webhook] notify failed:', nErr); });
+    } else if (action === 'amount_mismatch' || action === 'vehicle_missing') {
+      console.error(`[payfast-webhook] LISTING FEE NEEDS A MANUAL REFUND: ${action} m_payment_id=${fields.m_payment_id} paid R${paid}`);
     }
     return { statusCode: 200, body: 'OK' };
   }

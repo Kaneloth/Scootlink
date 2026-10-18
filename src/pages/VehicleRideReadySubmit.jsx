@@ -103,7 +103,7 @@ export default function VehicleRideReadySubmit() {
       <PageHeader
         title="Ride-Ready Certification"
         subtitle={`${vehicle.make} ${vehicle.model} (${vehicle.plate})`}
-        backTo="/briefcase"
+        backTo={`/vehicle-listing/${vehicleId}`}
       />
 
       {vehicle.ride_ready_status === 'approved' && (

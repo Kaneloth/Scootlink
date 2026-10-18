@@ -1184,7 +1184,6 @@ export default function Settings() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: `repeat(${2 + (hasPurchasedCredits ? 1 : 0) + (isAdmin ? 1 : 0)}, minmax(0, 1fr))` }}>
           <TabsTrigger value="general">General</TabsTrigger>
-          {hasPurchasedCredits && <TabsTrigger value="credits">Credits</TabsTrigger>}
           <TabsTrigger value="security">Security</TabsTrigger>
           {isAdmin && <TabsTrigger value="admin" onClick={fetchAdminUsers}>Admin</TabsTrigger>}
         </TabsList>

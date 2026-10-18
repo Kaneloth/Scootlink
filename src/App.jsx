@@ -13,7 +13,6 @@ import { supabase } from '@/api/supabaseClient';
 
 import Auth from '@/pages/Auth';
 import LandingPage from '@/pages/LandingPage';
-import Credits from '@/pages/Credits';
 import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/Dashboard';
 import SearchVehicles from '@/pages/SearchVehicles';
@@ -39,6 +38,7 @@ import DriverEarnings from '@/pages/DriverEarnings';
 import PushTapHandler from '@/components/PushTapHandler';
 import DriverGigVerification from '@/pages/DriverGigVerification';
 import VehicleRideReadySubmit from '@/pages/VehicleRideReadySubmit';
+import VehicleListing from '@/pages/VehicleListing';
 import GigsHub from '@/pages/GigsHub';
 
 // Web client ID from Google Cloud Console (Supabase Dashboard → Authentication
@@ -156,7 +156,8 @@ const AuthenticatedApp = () => {
 
       {/* Full-screen flows (no sidebar) */}
       <Route path="/onboarding" element={<Onboarding />} />
-      <Route path="/credits" element={<Credits />} />
+      {/* Credits are retired (listing fee + commission model); old links land on Home */}
+      <Route path="/credits" element={<Navigate to="/home" replace />} />
 
       {/* Main app with layout */}
       <Route element={<AppLayout />}>
@@ -185,6 +186,7 @@ const AuthenticatedApp = () => {
         <Route path="/earnings" element={<DriverEarnings />} />
         <Route path="/gig-verification" element={<DriverGigVerification />} />
         <Route path="/vehicle-ride-ready/:vehicleId" element={<VehicleRideReadySubmit />} />
+        <Route path="/vehicle-listing/:vehicleId" element={<VehicleListing />} />
       </Route>
 
       {/* Admin dashboard — reachable as a normal web URL (skootlink.co.za/admin),

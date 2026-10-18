@@ -177,6 +177,8 @@ export default function AdminPayments() {
   const [minPayout, setMinPayout] = useState('');
   const [windowMins, setWindowMins] = useState('');
   const [debtLimit, setDebtLimit] = useState('');
+  const [listingFee, setListingFee] = useState('');
+  const [listingMonths, setListingMonths] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -187,6 +189,8 @@ export default function AdminPayments() {
       setMinPayout(String(d.settings?.gig_min_payout ?? ''));
       setWindowMins(String(d.settings?.gig_payment_window_minutes ?? ''));
       setDebtLimit(String(d.settings?.gig_cash_debt_limit ?? ''));
+      setListingFee(String(d.settings?.listing_fee ?? ''));
+      setListingMonths(String(d.settings?.listing_period_months ?? ''));
     } catch (err) {
       console.error('[AdminPayments] load failed:', err);
       toast.error(err.message);
@@ -230,8 +234,9 @@ export default function AdminPayments() {
               <p className={`font-semibold ${data.mode === 'live' ? 'text-green-700' : 'text-amber-700'}`}>{data.mode}</p>
             </div>
             <div className="rounded-xl border border-border p-3 bg-card">
-              <p className="text-xs text-muted-foreground">Gig fares, last 30 days</p>
-              <p className="font-semibold">{rand(data.gigFaresLast30Days)}</p>
+              <p className="text-xs text-muted-foreground">Last 30 days</p>
+              <p className="font-semibold text-sm">Gig fares {rand(data.gigFaresLast30Days)}</p>
+              <p className="font-semibold text-sm">Listing fees {rand(data.listingFeesLast30Days)}</p>
             </div>
             <div className="rounded-xl border border-border p-3 bg-card">
               <p className="text-xs text-muted-foreground">Refunds owed</p>
@@ -266,6 +271,23 @@ export default function AdminPayments() {
                 </span>
               </span>
             </label>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="listing-fee">Rental listing fee (R)</Label>
+                <div className="flex gap-2 mt-1">
+                  <Input id="listing-fee" type="number" min="5" step="1" value={listingFee} onChange={(e) => setListingFee(e.target.value)} />
+                  <Button size="sm" variant="outline" disabled={saving} onClick={() => saveSettings({ listing_fee: Number(listingFee) })}>Save</Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">Per vehicle, per listing period. Includes the rental agreement. An owner's first listing is free.</p>
+              </div>
+              <div>
+                <Label htmlFor="listing-months">Listing period (months)</Label>
+                <div className="flex gap-2 mt-1">
+                  <Input id="listing-months" type="number" min="1" max="24" step="1" value={listingMonths} onChange={(e) => setListingMonths(e.target.value)} />
+                  <Button size="sm" variant="outline" disabled={saving} onClick={() => saveSettings({ listing_period_months: Number(listingMonths) })}>Save</Button>
+                </div>
+              </div>
+            </div>
             <div className="grid sm:grid-cols-3 gap-3">
               <div>
                 <Label htmlFor="debt-limit">Cash debt limit (R)</Label>
