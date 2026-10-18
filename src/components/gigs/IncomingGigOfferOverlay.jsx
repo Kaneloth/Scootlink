@@ -168,8 +168,15 @@ export function OfferCard({ offer, driverId, onDismiss }) {
 
       <p className="text-xs text-muted-foreground mb-3">
         {(Number(offer.distance_meters || 0) / 1000).toFixed(1)} km away
-        {offer.fare_amount != null && ` · Estimated fare R ${Number(offer.fare_amount).toFixed(2)}`}
+        {offer.fare_amount != null && ` · Fare R ${Number(offer.fare_amount).toFixed(2)}`}
       </p>
+      {offer.payment_method === 'cash' ? (
+        <p className="text-xs font-medium mb-3 rounded-lg bg-amber-50 text-amber-900 px-2 py-1.5">
+          Cash gig — collect R {Number(offer.fare_amount || 0).toFixed(2)} from the customer. The commission is taken from your earnings balance.
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground mb-3">Paid by card in the app.</p>
+      )}
 
       {isRide && vehicles !== null && vehicles.length > 0 && (
         <div className="mb-3 space-y-1">

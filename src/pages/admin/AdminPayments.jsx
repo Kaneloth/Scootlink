@@ -176,6 +176,7 @@ export default function AdminPayments() {
   const [loading, setLoading] = useState(true);
   const [minPayout, setMinPayout] = useState('');
   const [windowMins, setWindowMins] = useState('');
+  const [debtLimit, setDebtLimit] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -185,6 +186,7 @@ export default function AdminPayments() {
       setData(d);
       setMinPayout(String(d.settings?.gig_min_payout ?? ''));
       setWindowMins(String(d.settings?.gig_payment_window_minutes ?? ''));
+      setDebtLimit(String(d.settings?.gig_cash_debt_limit ?? ''));
     } catch (err) {
       console.error('[AdminPayments] load failed:', err);
       toast.error(err.message);
@@ -264,7 +266,15 @@ export default function AdminPayments() {
                 </span>
               </span>
             </label>
-            <div className="grid sm:grid-cols-2 gap-3">
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div>
+                <Label htmlFor="debt-limit">Cash debt limit (R)</Label>
+                <div className="flex gap-2 mt-1">
+                  <Input id="debt-limit" type="number" min="0" step="1" value={debtLimit} onChange={(e) => setDebtLimit(e.target.value)} />
+                  <Button size="sm" variant="outline" disabled={saving} onClick={() => saveSettings({ gig_cash_debt_limit: Number(debtLimit) })}>Save</Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">Drivers who owe more than this get no cash gigs.</p>
+              </div>
               <div>
                 <Label htmlFor="min-payout">Minimum payout (R)</Label>
                 <div className="flex gap-2 mt-1">
@@ -286,6 +296,19 @@ export default function AdminPayments() {
             <h2 className="font-semibold">Refunds</h2>
             {refunds.length === 0 && <p className="text-sm text-muted-foreground">No refunds yet.</p>}
             {refunds.map((r) => <RefundRow key={r.id} r={r} mode={data.mode} onDone={load} />)}
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="font-semibold">Drivers owing commission (cash gigs)</h2>
+            {(data.debtors || []).length === 0 && <p className="text-sm text-muted-foreground">Nobody owes anything.</p>}
+            {(data.debtors || []).map((d) => (
+              <div key={d.driver_id} className="rounded-xl border border-border p-3 bg-card flex items-center justify-between gap-3 text-sm">
+                <span>{who(d.driver)}</span>
+                <span className={`font-semibold ${d.owes > Number(data.settings?.gig_cash_debt_limit ?? 200) ? 'text-red-700' : ''}`}>
+                  owes {rand(d.owes)}{d.owes > Number(data.settings?.gig_cash_debt_limit ?? 200) ? ' · over limit' : ''}
+                </span>
+              </div>
+            ))}
           </section>
 
           <section className="space-y-3">

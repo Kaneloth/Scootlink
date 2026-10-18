@@ -9,7 +9,8 @@
  *   { action: 'mark_refunded', refundId, reference }   refund done by hand in the PayFast dashboard
  *   { action: 'settle_payout', withdrawalId, outcome: 'processing' | 'paid' | 'rejected', note }
  *                                                      note = EFT reference (paid) or reason (rejected)
- *   { action: 'update_settings', gig_auto_refunds?, gig_min_payout?, gig_payment_window_minutes? }
+ *   { action: 'update_settings', gig_auto_refunds?, gig_min_payout?, gig_payment_window_minutes?, gig_cash_debt_limit? }
+ * The overview also lists drivers who owe commission from cash gigs (migration 020).
  * Auth: Bearer token of an admin (user_metadata.is_admin === true), as in the other admin-* functions.
  */
 import { createClient } from '@supabase/supabase-js';
@@ -55,7 +56,7 @@ export const handler = async (event) => {
 
   try {
     if (body.action === 'overview') {
-      const [refundsRes, payoutsRes, settingsRes, paidRes] = await Promise.all([
+      const [refundsRes, payoutsRes, settingsRes, paidRes, ledgerRes] = await Promise.all([
         supabaseAdmin.from('gig_refunds')
           .select('id, gig_id, customer_id, amount, status, attempts, last_error, provider_reference, refund_method, funding_type, created_at, processed_at')
           .order('created_at', { ascending: false }).limit(100),
@@ -63,16 +64,27 @@ export const handler = async (event) => {
           .select('id, driver_id, amount, status, bank_account_holder, bank_name, bank_account_number, bank_branch_code, bank_account_type, requested_at, processed_at, payment_reference, rejection_reason')
           .order('requested_at', { ascending: false }).limit(100),
         supabaseAdmin.from('app_settings')
-          .select('gig_auto_refunds, gig_min_payout, gig_payment_window_minutes').eq('id', 1).single(),
+          .select('gig_auto_refunds, gig_min_payout, gig_payment_window_minutes, gig_cash_debt_limit').eq('id', 1).single(),
         supabaseAdmin.from('platform_payments')
           .select('amount').eq('kind', 'gig_fare').eq('status', 'paid')
           .gte('paid_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()),
+        // Every driver's balance (cash gigs make it negative = owes Skootlink)
+        supabaseAdmin.from('gig_earnings_ledger')
+          .select('driver_id, amount').eq('status', 'available').is('withdrawal_id', null).limit(10000),
       ]);
-      for (const r of [refundsRes, payoutsRes, settingsRes, paidRes]) if (r.error) throw r.error;
+      for (const r of [refundsRes, payoutsRes, settingsRes, paidRes, ledgerRes]) if (r.error) throw r.error;
+
+      const balances = {};
+      for (const l of ledgerRes.data || []) balances[l.driver_id] = (balances[l.driver_id] || 0) + Number(l.amount);
+      const debtors = Object.entries(balances)
+        .filter(([, b]) => b < -0.005)
+        .map(([driverId, b]) => ({ driver_id: driverId, owes: Math.round(-b * 100) / 100 }))
+        .sort((a, b) => b.owes - a.owes);
 
       const names = await namesFor([
         ...(refundsRes.data || []).map((r) => r.customer_id),
         ...(payoutsRes.data || []).map((p) => p.driver_id),
+        ...debtors.map((d) => d.driver_id),
       ]);
       return reply(200, {
         mode: PAYFAST_MODE,
@@ -80,6 +92,7 @@ export const handler = async (event) => {
         gigFaresLast30Days: (paidRes.data || []).reduce((t, p) => t + Number(p.amount), 0),
         refunds: (refundsRes.data || []).map((r) => ({ ...r, customer: names[r.customer_id] || null })),
         payouts: (payoutsRes.data || []).map((p) => ({ ...p, driver: names[p.driver_id] || null })),
+        debtors: debtors.map((d) => ({ ...d, driver: names[d.driver_id] || null })),
       });
     }
 
@@ -130,6 +143,11 @@ export const handler = async (event) => {
         const v = Number(body.gig_payment_window_minutes);
         if (!(Number.isInteger(v) && v >= 5 && v <= 240)) return reply(400, { error: 'Payment window must be 5 to 240 minutes' });
         patch.gig_payment_window_minutes = v;
+      }
+      if (body.gig_cash_debt_limit != null) {
+        const v = Number(body.gig_cash_debt_limit);
+        if (!(v >= 0 && v <= 100000)) return reply(400, { error: 'Cash debt limit must be between R0 and R100 000' });
+        patch.gig_cash_debt_limit = Math.round(v * 100) / 100;
       }
       if (!Object.keys(patch).length) return reply(400, { error: 'Nothing to update' });
       if (patch.gig_auto_refunds === true && PAYFAST_MODE !== 'live') {

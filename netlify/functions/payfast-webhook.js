@@ -3,6 +3,8 @@
  * Verifies PayFast payment, then by custom_str3 (payment category):
  *   'gig_fare'     -> mark_gig_fare_paid() (migration 018) and, if the gig was
  *                     waiting for it, offer the gig to nearby drivers
+ *   'driver_settlement' -> mark_driver_settlement_paid() (a driver paying
+ *                     commission owed on cash gigs, migration 020)
  *   'verification' -> mark_verification_paid()
  *   (none)         -> credit package purchase
  * Set Notify URL in PayFast to: https://skootlink.co.za/.netlify/functions/payfast-webhook
@@ -115,7 +117,7 @@ export const handler = async (event) => {
     if (action === 'start_matching') {
       const { data: gig, error: gErr } = await supabase
         .from('gig_requests')
-        .select('id, gig_type, pickup_address, dropoff_address, fare_amount')
+        .select('id, gig_type, pickup_address, dropoff_address, fare_amount, payment_method')
         .eq('id', gigId)
         .single();
       if (gErr) {
@@ -134,6 +136,33 @@ export const handler = async (event) => {
       }).then(({ error: nErr }) => { if (nErr) console.error('[payfast-webhook] notify failed:', nErr); });
     } else if (action === 'amount_mismatch') {
       console.error(`[payfast-webhook] AMOUNT MISMATCH for gig fare m_payment_id=${fields.m_payment_id}: paid ${paid}`);
+    }
+    return { statusCode: 200, body: 'OK' };
+  }
+
+  // ── Driver pays commission owed on cash gigs (migration 020) ─────────────
+  if (payment_category === 'driver_settlement') {
+    const paid = parseFloat(fields.amount_gross || fields.amount || '0');
+    const { data: rows, error } = await supabase.rpc('mark_driver_settlement_paid', {
+      p_m_payment_id: fields.m_payment_id,
+      p_pf_payment_id: fields.pf_payment_id,
+      p_amount: paid,
+    });
+    if (error) {
+      console.error('[payfast-webhook] mark_driver_settlement_paid failed:', error);
+      return { statusCode: 500, body: 'Error' }; // PayFast retries the ITN
+    }
+    const { driver_id: driverId, action } = (rows && rows[0]) || {};
+    console.log(`[payfast-webhook] settlement m_payment_id=${fields.m_payment_id} driver=${driverId} action=${action} amount=${paid}`);
+    if (action === 'credited' || action === 'amount_mismatch') {
+      if (action === 'amount_mismatch') console.error(`[payfast-webhook] settlement amount differs from what was asked; credited R${paid}`);
+      await supabase.rpc('create_notification', {
+        p_user_id: driverId,
+        p_type: 'payout_settlement',
+        p_title: 'Payment received',
+        p_body: `Thanks — R${paid.toFixed(2)} has been taken off what you owe Skootlink.`,
+        p_data: null,
+      }).then(({ error: nErr }) => { if (nErr) console.error('[payfast-webhook] notify failed:', nErr); });
     }
     return { statusCode: 200, body: 'OK' };
   }

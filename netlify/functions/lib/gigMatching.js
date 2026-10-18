@@ -34,7 +34,9 @@ async function recordOffersAndNotify(supabase, gig, drivers, logTag) {
   }
 
   const title = gig.gig_type === 'ride' ? 'New ride request nearby' : 'New delivery request nearby';
-  const fare = gig.fare_amount != null ? ` · R${Number(gig.fare_amount).toFixed(2)}` : '';
+  const fare = gig.fare_amount != null
+    ? ` · R${Number(gig.fare_amount).toFixed(2)}${gig.payment_method === 'cash' ? ' cash' : ''}`
+    : '';
   const results = await Promise.allSettled((inserted || []).map((d) =>
     supabase.rpc('create_notification', {
       p_user_id: d.driver_id,
@@ -53,7 +55,8 @@ async function recordOffersAndNotify(supabase, gig, drivers, logTag) {
 
 /**
  * Offers `gig` to eligible drivers within `radiusMeters`.
- * `gig` needs: id, gig_type, pickup_address, dropoff_address, fare_amount.
+ * `gig` needs: id, gig_type, pickup_address, dropoff_address, fare_amount,
+ * payment_method (cash gigs are labelled as such to drivers).
  * Returns { notified, pushed, error } — never throws.
  */
 export async function offerGigToDrivers(supabase, gig, radiusMeters, logTag) {
@@ -79,6 +82,7 @@ export async function offerGigToDrivers(supabase, gig, radiusMeters, logTag) {
       pickup_address: gig.pickup_address,
       dropoff_address: gig.dropoff_address,
       fare_amount: gig.fare_amount,
+      payment_method: gig.payment_method || 'card',
       distance_meters: d.distance_meters,
     },
   }));

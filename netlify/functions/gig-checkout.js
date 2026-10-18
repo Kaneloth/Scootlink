@@ -10,16 +10,19 @@
  * Skootlink PayFast's fee (about R2.30 on a R15 fare, seen live 2026-10-18).
  * If the check itself fails, payment goes ahead (the normal refund covers it).
  *
- * { check_only: true } runs just that check and returns { drivers_available }
- * (a count, nothing about who or where), so the status page can show
- * "N drivers nearby" before the Pay button is offered.
+ * { check_only: true } runs just that check and returns counts
+ * { drivers_available, cash_drivers_available } (nothing about who or where),
+ * so the status page can show "N drivers nearby" before offering payment.
  *
- * POST body: { gig_id: number, is_native?: boolean, check_only?: boolean }
+ * { method: 'cash' } (migration 020): no PayFast. If a driver who takes cash
+ * is online, the gig switches to cash and is offered to those drivers only.
+ *
+ * POST body: { gig_id: number, is_native?: boolean, check_only?: boolean, method?: 'card' | 'cash' }
  * Auth: Bearer token — must be the gig's customer.
  */
 import { createClient } from '@supabase/supabase-js';
 import { createGigCheckout } from './lib/gigCheckout.js';
-import { EXPANDED_RADIUS_METERS } from './lib/gigMatching.js';
+import { EXPANDED_RADIUS_METERS, DEFAULT_RADIUS_METERS, offerGigToDrivers } from './lib/gigMatching.js';
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -61,20 +64,42 @@ export const handler = async (event) => {
       return reply(409, { error: 'This request is no longer waiting for payment', status: gig.status });
     }
 
-    // Anyone able to take it right now? (same rules as the real search)
-    const { data: drivers, error: matchErr } = await supabase.rpc('find_nearby_eligible_drivers', {
+    // Anyone able to take it right now? (same rules as the real search, by method)
+    const { data: countRows, error: matchErr } = await supabase.rpc('gig_driver_counts', {
       p_gig_id: gig.id, p_radius_meters: EXPANDED_RADIUS_METERS,
     });
+    const counts = (countRows && countRows[0]) || null;
+
     if (body.check_only === true) {
-      if (matchErr) {
+      if (matchErr || !counts) {
         console.error(`[gig-checkout] availability check failed for gig=${gig.id}:`, matchErr);
-        return reply(200, { drivers_available: null }); // unknown: the page still lets them pay
+        return reply(200, { drivers_available: null, cash_drivers_available: null }); // unknown: card payment still allowed
       }
-      return reply(200, { drivers_available: (drivers || []).length });
+      return reply(200, { drivers_available: counts.card_drivers, cash_drivers_available: counts.cash_drivers });
     }
-    if (matchErr) {
+
+    // ── Cash: no PayFast; start searching among drivers who take cash ──────
+    if (body.method === 'cash') {
+      if (matchErr || !counts) {
+        console.error(`[gig-checkout] cash driver check failed for gig=${gig.id}:`, matchErr);
+        return reply(503, { error: 'Could not check for drivers. Please try again.' });
+      }
+      if (counts.cash_drivers === 0) {
+        return reply(409, {
+          no_drivers: true,
+          error: 'No drivers who take cash are available near your pickup right now. Try again shortly, or pay by card.',
+        });
+      }
+      const { data: started, error: startErr } = await supabase.rpc('start_cash_gig', { p_gig_id: gig.id, p_customer: user.id });
+      if (startErr) return reply(409, { error: startErr.message });
+      const { notified, pushed } = await offerGigToDrivers(supabase, started, DEFAULT_RADIUS_METERS, 'gig-checkout');
+      console.log(`[gig-checkout] gig=${gig.id} cash; offered to ${notified} driver(s), ${pushed} push(es)`);
+      return reply(200, { cash: true, gig: started });
+    }
+
+    if (matchErr || !counts) {
       console.error(`[gig-checkout] driver check failed for gig=${gig.id}; letting payment proceed:`, matchErr);
-    } else if (!drivers || drivers.length === 0) {
+    } else if (counts.card_drivers === 0) {
       console.log(`[gig-checkout] gig=${gig.id}: no eligible drivers online within ${EXPANDED_RADIUS_METERS}m; not charging`);
       return reply(409, {
         no_drivers: true,

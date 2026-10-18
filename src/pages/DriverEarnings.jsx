@@ -13,21 +13,29 @@
 // "Request payout" (request_gig_payout: everything available, one request at
 // a time, minimum set by admin). Skootlink pays by EFT and marks it paid.
 //
+// Cash gigs (migration 020): the driver keeps the cash fare, so each one adds
+// a NEGATIVE entry for the commission owed. The balance shown is the net of
+// everything. In debt, the driver can pay it off through PayFast
+// (driver-settle). Over the admin's debt limit, no cash gigs are offered.
+//
 // Data: gig_earnings_ledger, withdrawal_requests and driver_payout_accounts
 // (RLS: own rows only) and the gigs behind the earnings (RLS: assigned driver).
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
+import { fnUrl } from '@/lib/functionsUrl';
+import { openPayfastCheckout, PAYMENT_RESULT_EVENT } from '@/lib/payfastCheckout';
 import { auth, supabase } from '@/api/supabaseData';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Car, Package, XCircle, ChevronRight, Landmark, Pencil } from 'lucide-react';
+import { Loader2, Car, Package, XCircle, ChevronRight, Landmark, Pencil, Banknote, Wallet } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
 
-const formatRand = (n) => `R ${Number(n || 0).toFixed(2)}`;
+const formatRand = (n) => (Number(n) < 0 ? `− R ${Math.abs(Number(n)).toFixed(2)}` : `R ${Number(n || 0).toFixed(2)}`);
 const shortDate = (d) => new Date(d).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
 
 const STATUS_LABEL = {
@@ -140,6 +148,10 @@ export default function DriverEarnings() {
   const [editingBank, setEditingBank] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState(null);
+  const [cash, setCash] = useState(null); // my_cash_status()
+  const [togglingCash, setTogglingCash] = useState(false);
+  const [settling, setSettling] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const load = useCallback(async () => {
     try {
@@ -147,7 +159,7 @@ export default function DriverEarnings() {
       if (!user?.id) throw new Error('Not signed in');
       setMe(user);
 
-      const [ledgerRes, balanceRes, payoutsRes, bankRes] = await Promise.all([
+      const [ledgerRes, balanceRes, payoutsRes, bankRes, cashRes] = await Promise.all([
         supabase.from('gig_earnings_ledger')
           .select('id, gig_request_id, amount, status, entry_type, withdrawal_id, created_at, available_at, withdrawn_at')
           .eq('driver_id', user.id).order('created_at', { ascending: false }).limit(200),
@@ -156,11 +168,13 @@ export default function DriverEarnings() {
           .select('id, amount, status, requested_at, processed_at, payment_reference, rejection_reason, bank_name, bank_account_number')
           .eq('driver_id', user.id).order('requested_at', { ascending: false }).limit(50),
         supabase.from('driver_payout_accounts').select('*').eq('driver_id', user.id).maybeSingle(),
+        supabase.rpc('my_cash_status'),
       ]);
-      for (const r of [ledgerRes, balanceRes, payoutsRes, bankRes]) if (r.error) throw r.error;
+      for (const r of [ledgerRes, balanceRes, payoutsRes, bankRes, cashRes]) if (r.error) throw r.error;
+      setCash((cashRes.data || [])[0] || null);
 
       const ledger = ledgerRes.data || [];
-      const gigIds = [...new Set(ledger.map((l) => l.gig_request_id))];
+      const gigIds = [...new Set(ledger.map((l) => l.gig_request_id).filter(Boolean))];
       let gigsById = {};
       if (gigIds.length > 0) {
         const { data: gigs, error: gigsErr } = await supabase
@@ -184,6 +198,54 @@ export default function DriverEarnings() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Back from PayFast after paying what's owed (web query param / native event)
+  useEffect(() => {
+    const result = searchParams.get('payment');
+    if (result) {
+      if (result === 'success') toast.success('Payment received — your balance updates in a few seconds.');
+      else toast('Payment cancelled');
+      setSearchParams((prev) => { const n = new URLSearchParams(prev); n.delete('payment'); return n; }, { replace: true });
+      setTimeout(load, 4000);
+    }
+    const onResult = (e) => {
+      if (e.detail?.category !== 'settlement') return;
+      try { sessionStorage.removeItem('skootlink_payment_result'); } catch { /* ignore */ }
+      if (e.detail.status === 'success') { toast.success('Payment received — your balance updates in a few seconds.'); setTimeout(load, 4000); }
+    };
+    window.addEventListener(PAYMENT_RESULT_EVENT, onResult);
+    return () => window.removeEventListener(PAYMENT_RESULT_EVENT, onResult);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleCash = async (on) => {
+    setTogglingCash(true);
+    const { error: rpcErr } = await supabase.rpc('set_accepts_cash', { p_on: on });
+    setTogglingCash(false);
+    if (rpcErr) { toast.error(rpcErr.message || 'Could not change this setting'); return; }
+    toast.success(on ? 'You will now get cash gigs too' : 'Cash gigs turned off');
+    load();
+  };
+
+  const settleDebt = async () => {
+    setSettling(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(fnUrl('driver-settle'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ is_native: Capacitor.isNativePlatform() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.payment) throw new Error(data.error || 'Payment could not be started');
+      await openPayfastCheckout(data.payment);
+    } catch (err) {
+      console.error('[DriverEarnings] settle failed:', err);
+      toast.error(err.message);
+    } finally {
+      setSettling(false);
+    }
+  };
 
   const requestPayout = async () => {
     if (!window.confirm(`Request a payout of ${formatRand(balance?.available)} to ${bank?.bank_name} ••••${String(bank?.account_number || '').slice(-4)}?`)) return;
@@ -211,6 +273,8 @@ export default function DriverEarnings() {
   const thisWeekRows = rows.filter((r) => new Date(r.ledger.created_at) >= weekStart);
   const thisWeek = thisWeekRows.reduce((t, r) => t + Number(r.ledger.amount || 0), 0);
   const available = Number(balance?.available || 0);
+  const owes = available < 0 ? -available : 0;
+  const debtLimit = Number(cash?.debt_limit ?? 200);
   const minPayout = Number(balance?.min_payout ?? 100);
   const openRequest = payouts.find((p) => p.id === balance?.open_request_id);
 
@@ -230,9 +294,9 @@ export default function DriverEarnings() {
         </p>
 
         <div className="grid grid-cols-2 gap-3 mt-4">
-          <div className="rounded-xl bg-muted p-3">
-            <p className="text-xs text-muted-foreground">Available to pay out</p>
-            <p className="font-semibold">{formatRand(available)}</p>
+          <div className={`rounded-xl p-3 ${owes > 0 ? 'bg-red-50' : 'bg-muted'}`}>
+            <p className="text-xs text-muted-foreground">{owes > 0 ? 'You owe Skootlink' : 'Available to pay out'}</p>
+            <p className={`font-semibold ${owes > 0 ? 'text-red-700' : ''}`}>{formatRand(owes > 0 ? owes : available)}</p>
           </div>
           <div className="rounded-xl bg-muted p-3">
             <p className="text-xs text-muted-foreground">In a payout</p>
@@ -245,7 +309,20 @@ export default function DriverEarnings() {
           </p>
         )}
 
-        {openRequest ? (
+        {owes > 0 && (
+          <div className="mt-4 rounded-lg bg-red-50 text-red-900 p-3 text-sm space-y-2">
+            <p>
+              This is commission from your cash gigs. It comes off your card earnings automatically, or you can pay it now.
+              {owes > debtLimit && ` You owe more than ${formatRand(debtLimit)}, so you won't get cash gigs until it's back under that.`}
+            </p>
+            <Button size="sm" className="gap-2" onClick={settleDebt} disabled={settling || owes < 5}>
+              {settling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
+              Pay {formatRand(owes)} now
+            </Button>
+          </div>
+        )}
+
+        {owes > 0 ? null : openRequest ? (
           <p className="text-sm mt-4 rounded-lg bg-blue-50 text-blue-800 p-3">
             Payout of {formatRand(openRequest.amount)} requested on {shortDate(openRequest.requested_at)}. We'll let you know when it's paid.
           </p>
@@ -263,6 +340,30 @@ export default function DriverEarnings() {
           </>
         ) : null}
       </Card>
+
+      {cash && (
+        <Card className="p-5 border border-border/50">
+          <label className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={!!cash.accepts_cash}
+              disabled={togglingCash}
+              onChange={(e) => toggleCash(e.target.checked)}
+            />
+            <span className="text-sm">
+              <span className="font-semibold flex items-center gap-1.5"><Banknote className="w-4 h-4" /> Take cash gigs</span>
+              <span className="block text-xs text-muted-foreground mt-0.5">
+                The customer pays you the fare in cash. The commission is then owed to Skootlink
+                and comes off your card earnings (or you pay it here). Above {formatRand(debtLimit)} owed, cash gigs pause.
+              </span>
+              {cash.accepts_cash && !cash.can_take_cash && (
+                <span className="block text-xs text-red-700 mt-1">Paused: you owe more than {formatRand(debtLimit)}.</span>
+              )}
+            </span>
+          </label>
+        </Card>
+      )}
 
       <Card className="p-5 border border-border/50">
         <div className="flex items-center justify-between mb-3">
@@ -323,10 +424,14 @@ export default function DriverEarnings() {
         )}
         {rows.map(({ ledger, gig }) => {
           const isFee = ledger.entry_type === 'cancellation_fee';
+          const isCashCommission = ledger.entry_type === 'cash_commission';
+          const isSettlement = ledger.entry_type === 'settlement';
           const gross = isFee ? gig?.cancellation_fee : gig?.fare_amount;
-          const Icon = isFee ? XCircle : gig?.gig_type === 'delivery' ? Package : Car;
-          const label = isFee
-            ? (gig?.customer_no_show ? 'No-show fee' : 'Cancellation fee')
+          const Icon = isSettlement ? Wallet : isCashCommission ? Banknote : isFee ? XCircle : gig?.gig_type === 'delivery' ? Package : Car;
+          const kind = gig?.gig_type === 'delivery' ? 'delivery' : 'ride';
+          const label = isSettlement ? 'You paid Skootlink'
+            : isCashCommission ? `Cash ${kind} — commission owed`
+            : isFee ? (gig?.customer_no_show ? 'No-show fee' : 'Cancellation fee')
             : gig?.gig_type === 'delivery' ? 'Delivery' : 'Ride';
           const state = ledger.status === 'available' && ledger.withdrawal_id ? 'in_payout' : ledger.status;
           const badge = STATUS_LABEL[state] || STATUS_LABEL.pending;
@@ -342,11 +447,14 @@ export default function DriverEarnings() {
                     <p className="text-sm font-medium">{label}</p>
                     <p className="text-sm font-semibold">{formatRand(ledger.amount)}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">{gig?.pickup_address || `Gig #${ledger.gig_request_id}`}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {isSettlement ? 'Payment through PayFast' : gig?.pickup_address || `Gig #${ledger.gig_request_id}`}
+                  </p>
                   <div className="flex items-center justify-between gap-2 mt-1">
                     <p className="text-[11px] text-muted-foreground">
                       {shortDate(ledger.created_at)}
-                      {gross != null && ` · ${formatRand(gross)} − ${formatRand(gig?.commission_amount)} commission`}
+                      {isCashCommission && gross != null && ` · you collected ${formatRand(gross)} cash`}
+                      {!isCashCommission && !isSettlement && gross != null && ` · ${formatRand(gross)} − ${formatRand(gig?.commission_amount)} commission`}
                     </p>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full ${badge.cls}`}>{badge.text}</span>
                   </div>

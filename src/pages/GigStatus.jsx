@@ -34,7 +34,7 @@ import { Textarea } from '@/components/ui/textarea';
 import GigRatingCard from '@/components/gigs/GigRatingCard';
 import GigChat from '@/components/gigs/GigChat';
 import RefundBankDetails from '@/components/gigs/RefundBankDetails';
-import { Loader2, Car, Package, MapPin, Star, Phone, XCircle, CreditCard, ShieldCheck } from 'lucide-react';
+import { Loader2, Car, Package, MapPin, Star, Phone, XCircle, CreditCard, ShieldCheck, Banknote } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
 
@@ -70,6 +70,8 @@ export default function GigStatus() {
   // Before paying: how many eligible drivers are online nearby right now.
   // undefined = checking, null = couldn't tell (still allowed to pay), number = count
   const [driversAvailable, setDriversAvailable] = useState(undefined);
+  const [cashDriversAvailable, setCashDriversAvailable] = useState(undefined);
+  const [choosingCash, setChoosingCash] = useState(false);
   // Set when the customer comes back from PayFast; cleared once the ITN has
   // moved the gig on (or after 2 minutes, in case the payment never arrives)
   const [confirmingPayment, setConfirmingPayment] = useState(false);
@@ -250,12 +252,44 @@ export default function GigStatus() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return; // e.g. no longer awaiting payment; the gig poll moves the page on
       setDriversAvailable(data.drivers_available ?? null);
+      setCashDriversAvailable(data.cash_drivers_available ?? null);
       if (data.drivers_available > 0) setNoDriversNow(false);
     } catch (err) {
       console.error('[GigStatus] availability check failed:', err);
       setDriversAvailable(null);
+      setCashDriversAvailable(null);
     }
   }, [gigId]);
+
+  // Cash (migration 020): no PayFast; the gig is offered to drivers who take cash
+  const handleCash = async () => {
+    if (!window.confirm(`Pay your driver ${formatRand(gig.fare_amount)} in cash at the end of the trip?`)) return;
+    setChoosingCash(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Please sign in again');
+      const res = await fetch(fnUrl('gig-checkout'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ gig_id: gig.id, method: 'cash' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409 && data.no_drivers) {
+        setCashDriversAvailable(0);
+        toast(data.error);
+        return;
+      }
+      if (!res.ok) throw new Error(data.error || 'Could not start your request');
+      if (data.gig) applyGig(data.gig);
+      toast.success('Looking for a driver — pay them in cash at the end');
+    } catch (err) {
+      console.error('[GigStatus] cash choice failed:', err);
+      toast.error(err.message || 'Something went wrong. Please try again.');
+      fetchGig();
+    } finally {
+      setChoosingCash(false);
+    }
+  };
 
   const handlePay = async () => {
     setPaying(true);
@@ -423,7 +457,8 @@ export default function GigStatus() {
       : null;
   const showDriver = (gig.status === 'accepted' || gig.status === 'in_progress') && driverProfile;
   const canCancel = gig.status === 'awaiting_payment' || gig.status === 'pending' || gig.status === 'accepted';
-  const payLabel = { paid: 'Paid', refund_due: 'Refund due', refunded: 'Refunded', kept: 'Paid' }[gig.payment_status];
+  const payLabel = { paid: 'Paid', refund_due: 'Refund due', refunded: 'Refunded', kept: 'Paid', cash: 'Cash' }[gig.payment_status];
+  const isCash = gig.payment_method === 'cash';
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
@@ -464,6 +499,12 @@ export default function GigStatus() {
           </p>
         )}
 
+        {isCash && ['pending', 'accepted', 'in_progress'].includes(gig.status) && (
+          <p className="text-sm mb-4 rounded-lg bg-muted p-3">
+            Pay your driver <span className="font-semibold">{formatRand(gig.fare_amount)}</span> in cash at the end of the trip.
+          </p>
+        )}
+
         {refundNote && (
           <p className="text-sm mb-4 rounded-lg bg-muted p-3">{refundNote}</p>
         )}
@@ -480,8 +521,9 @@ export default function GigStatus() {
             )}
             {driversAvailable > 0 && (
               <p className="text-sm rounded-lg bg-green-50 text-green-900 p-3">
-                {driversAvailable === 1 ? '1 driver is' : `${driversAvailable} drivers are`} available near you.
-                Pay to send them your request.
+                {driversAvailable === 1 ? '1 driver is' : `${driversAvailable} drivers are`} available near you
+                {cashDriversAvailable > 0 && cashDriversAvailable < driversAvailable ? ` (${cashDriversAvailable} take${cashDriversAvailable === 1 ? 's' : ''} cash)` : ''}.
+                Choose how you'll pay to send them your request.
               </p>
             )}
             {(driversAvailable === 0 || noDriversNow) && (
@@ -493,15 +535,27 @@ export default function GigStatus() {
             <Button
               className="w-full gap-2"
               onClick={handlePay}
-              disabled={paying || driversAvailable === undefined || driversAvailable === 0}
+              disabled={paying || choosingCash || driversAvailable === undefined || driversAvailable === 0}
             >
               {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-              Pay {formatRand(gig.fare_amount)}
+              Pay {formatRand(gig.fare_amount)} by card
             </Button>
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={handleCash}
+              disabled={paying || choosingCash || !(cashDriversAvailable > 0)}
+            >
+              {choosingCash ? <Loader2 className="w-4 h-4 animate-spin" /> : <Banknote className="w-4 h-4" />}
+              Pay {formatRand(gig.fare_amount)} in cash to the driver
+            </Button>
+            {driversAvailable > 0 && cashDriversAvailable === 0 && (
+              <p className="text-[11px] text-muted-foreground">None of the drivers nearby take cash right now.</p>
+            )}
             <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-px" />
-              Secure payment through PayFast. If no driver is found you get a full refund.
-              Cancelling after a driver has been on the way for a while incurs a cancellation fee.
+              Card payments go securely through PayFast; if no driver is found you get a full refund.
+              Cancelling a card gig after the driver has been on the way for a while incurs a cancellation fee.
             </p>
           </div>
         )}

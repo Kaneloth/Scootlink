@@ -76,7 +76,7 @@ export const handler = async () => {
 
     const { data: gigs, error } = await supabase
       .from('gig_requests')
-      .select('id, gig_type, customer_id, pickup_address, dropoff_address, fare_amount, status, payment_status, retry_count, search_radius_meters, created_at, searching_since')
+      .select('id, gig_type, customer_id, pickup_address, dropoff_address, fare_amount, payment_method, status, payment_status, retry_count, search_radius_meters, created_at, searching_since')
       .eq('status', 'pending');
 
     if (error) throw error;

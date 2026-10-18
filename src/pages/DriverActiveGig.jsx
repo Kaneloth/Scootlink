@@ -171,10 +171,15 @@ export default function DriverActiveGig() {
   };
 
   const handleNoShow = () => {
-    if (!window.confirm('Mark the customer as a no-show? The gig will be cancelled and the cancellation fee applies to the customer.')) return;
+    const cash = gig.payment_method === 'cash';
+    if (!window.confirm(cash
+      ? 'Mark the customer as a no-show? The gig will be cancelled. (Cash gigs have no cancellation fee.)'
+      : 'Mark the customer as a no-show? The gig will be cancelled and the cancellation fee applies to the customer.')) return;
     runStep('noshow', 'gig_customer_no_show', { p_gig_id: gig.id }, {
       type: 'gig_no_show', title: 'Gig cancelled — no-show',
-      body: 'Your driver waited at the pickup point but you didn\'t arrive, so the gig was cancelled and a cancellation fee applies.',
+      body: cash
+        ? 'Your driver waited at the pickup point but you didn\'t arrive, so the gig was cancelled.'
+        : 'Your driver waited at the pickup point but you didn\'t arrive, so the gig was cancelled and a cancellation fee applies.',
     });
   };
 
@@ -250,7 +255,14 @@ export default function DriverActiveGig() {
           <div className="flex-1">
             <h3 className="font-semibold">{title}</h3>
             {gig.fare_amount != null && (
-              <p className="text-sm text-muted-foreground">Estimated fare {formatRand(gig.fare_amount)}</p>
+              <p className="text-sm text-muted-foreground">
+                Fare {formatRand(gig.fare_amount)} · {gig.payment_method === 'cash' ? 'cash' : 'paid by card'}
+              </p>
+            )}
+            {gig.payment_method === 'cash' && ['accepted', 'in_progress'].includes(gig.status) && (
+              <p className="text-sm font-medium mt-1 rounded-lg bg-amber-50 text-amber-900 px-2 py-1.5">
+                Collect {formatRand(gig.fare_amount)} in cash from the customer at the end of the trip.
+              </p>
             )}
           </div>
         </div>
@@ -392,7 +404,11 @@ export default function DriverActiveGig() {
               <div className="flex justify-between"><span className="text-muted-foreground">Skootlink commission</span><span>− {formatRand(gig.commission_amount)}</span></div>
               <div className="flex justify-between font-semibold"><span>Your earnings</span><span>{formatRand(gig.driver_payout_amount)}</span></div>
               <p className="text-xs text-muted-foreground pt-1">
-                Recorded as pending. Withdrawals open once in-app payments go live.
+                {gig.payment_method === 'cash'
+                  ? `You collected ${formatRand(gig.fare_amount)} in cash. The ${formatRand(gig.commission_amount)} commission is taken from your earnings balance.`
+                  : gig.payment_status === 'paid'
+                    ? 'Added to your earnings — available to pay out.'
+                    : 'This gig was not paid in the app, so these earnings can\'t be paid out.'}
               </p>
             </div>
             <GigRatingCard gigId={gig.id} targetLabel="customer" />
