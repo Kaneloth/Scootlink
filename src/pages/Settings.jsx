@@ -1794,6 +1794,7 @@ export default function Settings() {
                           value={adminEditForm.account_type}
                           onChange={e => setAdminEditForm(f => ({ ...f, account_type: e.target.value }))}
                         >
+                          <option value="customer">Customer</option>
                           <option value="driver">Driver</option>
                           <option value="owner">Owner</option>
                           <option value="both">Fleet Pro (Both)</option>

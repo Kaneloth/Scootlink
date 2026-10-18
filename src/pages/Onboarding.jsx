@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import {
-  User, Users, Crown, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Bike, Info,
+  User, Users, Crown, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Bike, Info, MapPin,
   Star, Upload, X, Plus, Trash2, Camera, Image as ImageIcon, Car, ImagePlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -94,9 +94,18 @@ const PLATFORM_OPTIONS = ['Uber', 'Bolt', 'Uber Eats', 'Mr D Food', 'Bolt Food',
 // ── Role options ──────────────────────────────────────────────────────────────
 const ROLES = [
   {
+    id: 'customer',
+    name: 'Customer',
+    description: 'Request rides and deliveries. Quick sign-up, no documents needed.',
+    icon: MapPin,
+    bg:   'bg-emerald-50',
+    border: 'border-emerald-200',
+    iconColor: 'text-emerald-600',
+  },
+  {
     id: 'driver',
     name: 'Driver',
-    description: 'Search for and rent vehicles listed by owners on Skootlink.',
+    description: 'Rent a vehicle from an owner, and earn from rides and deliveries once verified.',
     icon: Bike,
     bg:   'bg-blue-50',
     border: 'border-blue-200',
@@ -105,7 +114,7 @@ const ROLES = [
   {
     id: 'owner',
     name: 'Owner',
-    description: 'List your vehicles and connect with verified drivers.',
+    description: 'List your vehicles for rent, or for rides and deliveries.',
     icon: Crown,
     bg:   'bg-amber-50',
     border: 'border-amber-200',
@@ -203,7 +212,7 @@ export default function Onboarding() {
   }, []);
 
   const [form, setForm] = useState({
-    role:                'driver',
+    role:                'customer',
     phone:               '',
     gender:              '',
     date_of_birth:       '',
@@ -225,11 +234,13 @@ export default function Onboarding() {
   // accounts get an extra step to list their first vehicle right here,
   // since deferring it to after onboarding is exactly what causes people to
   // never actually get around to it.
+  // Customers only request rides and deliveries: no driving history, no vehicle.
   const canListVehicles = form.role === 'owner' || form.role === 'both';
+  const drives = form.role === 'driver' || form.role === 'both';
   const STEPS = [
     ...BASE_STEPS,
     PHOTO_STEP,
-    ...(form.role === 'owner' ? [] : [PLATFORM_STEP]),
+    ...(drives ? [PLATFORM_STEP] : []),
     ...(canListVehicles ? [VEHICLE_STEP] : []),
   ];
 
@@ -526,7 +537,7 @@ export default function Onboarding() {
     phone:                normalisePhone(form.phone),
     gender:               form.gender,
     date_of_birth:        form.date_of_birth || null,
-    driving_experience:   form.role !== 'owner' ? (form.driving_experience || null) : null,
+    driving_experience:   drives ? (form.driving_experience || null) : null,
     location:             buildLocation(),
     residential_address:  form.residential_address,
     onboarding_completed: true,
@@ -789,7 +800,7 @@ export default function Onboarding() {
                 </div>
 
                 {/* Driving Experience — driver/both only */}
-                {form.role !== 'owner' && (
+                {drives && (
                   <div className="col-span-2">
                     <Label className="text-xs font-medium">Driving Experience</Label>
                     <Select value={form.driving_experience} onValueChange={v => update('driving_experience', v)}>

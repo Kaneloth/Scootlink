@@ -23,6 +23,11 @@ import { generateContractSections, flattenContractSections, mergeDriverIntoDraft
 import ContractSectionsList from '@/components/contract/ContractSectionsList';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
+import HomeTopBar from '@/components/home/HomeTopBar';
+import OpenGigCards from '@/components/home/OpenGigCards';
+import DriverGigsPanel from '@/components/home/DriverGigsPanel';
+import OwnerAttention from '@/components/home/OwnerAttention';
+import CustomerHome from '@/components/home/CustomerHome';
 
 import VehicleCard from '@/components/vehicles/VehicleCard';
 import RentalCard from '@/components/dashboard/RentalCard';
@@ -1111,19 +1116,7 @@ export default function Dashboard() {
 
   const renderOwnerContent = () => (
     <>
-      <h3 className="text-lg font-semibold mb-3" ref={ownerVehiclesRef}>My Listed Vehicles</h3>
-      {vehicles.length > 0 ? (
-        <div className="space-y-3">
-          {vehicles.map(v => (
-            <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/edit-vehicle?id=${v.id}`)} />
-          ))}
-        </div>
-      ) : (
-        <EmptyState icon="🚗" title="No vehicles listed" description="Add your first vehicle to start earning"
-          action={<Link to="/add-vehicle"><Button size="sm"><Plus className="w-4 h-4 mr-1" />Add Vehicle</Button></Link>} />
-      )}
-
-      <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerAssignmentsRef}>Active Assignments</h3>
+      <h3 className="text-lg font-semibold mb-3" ref={ownerAssignmentsRef}>Rental Requests & Assignments</h3>
 
       {ownerPendingRentals.length > 0 && (
         <div className="mb-6">
@@ -1285,6 +1278,18 @@ export default function Dashboard() {
         ) : (
           <EmptyState icon="📋" title="No active assignments" description="When drivers rent your vehicles, they'll appear here" />
         )
+      )}
+
+      <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerVehiclesRef}>My Listed Vehicles</h3>
+      {vehicles.length > 0 ? (
+        <div className="space-y-3">
+          {vehicles.map(v => (
+            <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/edit-vehicle?id=${v.id}`)} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState icon="🚗" title="No vehicles listed" description="Add your first vehicle to start earning"
+          action={<Link to="/add-vehicle"><Button size="sm"><Plus className="w-4 h-4 mr-1" />Add Vehicle</Button></Link>} />
       )}
 
       <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerNearbyDriversRef}>Nearby Drivers</h3>
@@ -1661,17 +1666,22 @@ export default function Dashboard() {
     setRefreshing(false);
   };
 
+  // Customers (rides and deliveries only) get their own Home
+  if (user && accountType === 'customer') return <CustomerHome user={user} />;
+
+  const drivesGigs = accountType === 'driver' || accountType === 'both';
+  const ownsVehicles = accountType === 'owner' || accountType === 'both';
+
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      <PageHeader
-        title={`Welcome${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`}
-        subtitle="Manage your vehicles and rentals"
-        action={
-          <button onClick={handleRefresh} className="p-1.5 rounded-full hover:bg-muted transition-colors" aria-label="Refresh">
-            <RefreshCw className={`w-4 h-4 text-primary ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
-        }
-      />
+      <HomeTopBar user={user} role={accountType} onRefresh={handleRefresh} refreshing={refreshing} />
+
+      {/* A live trip comes first, for every role */}
+      {user?.id && <OpenGigCards userId={user.id} />}
+
+      {/* Then the role's own controls: gigs for drivers, vehicles needing action for owners */}
+      {user?.id && drivesGigs && <DriverGigsPanel userId={user.id} />}
+      {user?.id && ownsVehicles && <OwnerAttention userId={user.id} />}
 
       {/* Automated reminder banner (condition-triggered, not manually sent) */}
       {reminder && (() => {
@@ -1780,8 +1790,8 @@ export default function Dashboard() {
 
      
 
-      {renderStatCards()}
       {renderActionButtons()}
+      {renderStatCards()}
 
       <div className="mt-8" ref={tabsRef}>
         {/* Don't render tabs until user is loaded — avoids flashing wrong tab content */}

@@ -25,7 +25,7 @@
 // is denied.
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, supabase } from '@/api/supabaseData';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,7 +41,9 @@ import { fnUrl } from '@/lib/functionsUrl';
 export default function RequestGig() {
   const navigate = useNavigate();
 
-  const [gigType, setGigType] = useState(null); // 'ride' | 'delivery'
+  const [searchParams] = useSearchParams();
+  // ?type=ride|delivery (from Home) preselects the service
+  const [gigType, setGigType] = useState(() => (['ride', 'delivery'].includes(searchParams.get('type')) ? searchParams.get('type') : null)); // 'ride' | 'delivery'
   const [pickupText, setPickupText] = useState('');
   const [dropoffText, setDropoffText] = useState('');
   const [pickupCoords, setPickupCoords] = useState(null);   // { latitude, longitude, displayName }
@@ -139,7 +141,7 @@ export default function RequestGig() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <PageHeader title="Request a Gig" subtitle="Get a ride or send a delivery" backTo="/home" />
+      <PageHeader title="Request a ride or delivery" subtitle="Pay by card or cash" backTo="/home" />
 
       {/* Ride / Delivery selector — single tap, per planning notes §5.3 */}
       <div className="grid grid-cols-2 gap-3 mb-4">

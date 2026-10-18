@@ -734,9 +734,10 @@ export default function Profile() {
                 <div>
                   <Label>Account Role</Label>
                   <p className="text-xs text-muted-foreground mb-2">Switch your role if your needs have changed. Your dashboard will update immediately.</p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {[
-                      { id: 'driver', label: '🏍️ Driver',    desc: 'Rent vehicles' },
+                      { id: 'customer', label: '📍 Customer', desc: 'Request rides & deliveries' },
+                      { id: 'driver', label: '🏍️ Driver',    desc: 'Rent vehicles, do gigs' },
                       { id: 'owner',  label: '🚗 Owner',     desc: 'List vehicles' },
                       { id: 'both',   label: '🔄 Both',      desc: 'Driver & owner' },
                     ].map(r => (

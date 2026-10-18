@@ -1,19 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Search, Clock, Briefcase, Settings, LogOut, Users, Plus
+  LayoutDashboard, Search, Clock, Briefcase, Settings, LogOut, Users, Plus, Route, Wallet, Rocket, MapPin,
 } from 'lucide-react';
 import { auth } from '@/api/supabaseData';
 
-const navItems = [
-  { label: 'Dashboard',       icon: LayoutDashboard, path: '/home'           },
-  { label: 'Search Vehicles', icon: Search,          path: '/search-vehicles' },
-  { label: 'Find Drivers',    icon: Users,           path: '/find-drivers'    },
-  { label: 'Add Vehicle',     icon: Plus,            path: '/add-vehicle'     },
-  { label: 'Activity',        icon: Clock,           path: '/activity'        },
-  { label: 'Briefcase',       icon: Briefcase,       path: '/briefcase'       },
-  { label: 'Settings',        icon: Settings,        path: '/settings'        },
-];
+// Each role sees the pages it uses, most-used first
+const ITEMS = {
+  home:      { label: 'Home',            icon: LayoutDashboard, path: '/home'            },
+  ride:      { label: 'Request a ride',  icon: MapPin,          path: '/request-gig'     },
+  trips:     { label: 'Trips',           icon: Route,           path: '/mysearch'        },
+  payments:  { label: 'Payments',        icon: Wallet,          path: '/briefcase'       },
+  gigs:      { label: 'Gigs',            icon: Rocket,          path: '/gigs'            },
+  earnings:  { label: 'Earnings',        icon: Wallet,          path: '/earnings'        },
+  vehicles:  { label: 'Search Vehicles', icon: Search,          path: '/search-vehicles' },
+  drivers:   { label: 'Find Drivers',    icon: Users,           path: '/find-drivers'    },
+  add:       { label: 'Add Vehicle',     icon: Plus,            path: '/add-vehicle'     },
+  activity:  { label: 'Activity',        icon: Clock,           path: '/activity'        },
+  briefcase: { label: 'Briefcase',       icon: Briefcase,       path: '/briefcase'       },
+  settings:  { label: 'Settings',        icon: Settings,        path: '/settings'        },
+};
+const NAV_BY_ROLE = {
+  customer: ['home', 'ride', 'trips', 'activity', 'payments', 'settings'],
+  driver:   ['home', 'gigs', 'earnings', 'vehicles', 'activity', 'briefcase', 'settings'],
+  owner:    ['home', 'add', 'drivers', 'gigs', 'activity', 'briefcase', 'settings'],
+  both:     ['home', 'gigs', 'earnings', 'vehicles', 'drivers', 'add', 'activity', 'briefcase', 'settings'],
+};
 
 export default function Sidebar() {
   const location = useLocation();
@@ -22,6 +34,7 @@ export default function Sidebar() {
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
   }, []);
+  const navItems = (NAV_BY_ROLE[user?.account_type] || NAV_BY_ROLE.both).map((k) => ITEMS[k]);
 
   return (
     <aside className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-card border-r border-border z-40">

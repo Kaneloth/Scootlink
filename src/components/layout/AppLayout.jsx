@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
-import { Bike, User, Settings, LogOut, Send, Loader2 } from 'lucide-react';
-import NotificationBell from '@/components/layout/NotificationBell';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Bike, Send, Loader2 } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
-import { auth, supabase, saveBiometricRefreshToken } from '@/api/supabaseData';
+import { auth, supabase } from '@/api/supabaseData';
 import IncomingGigOfferOverlay from '@/components/gigs/IncomingGigOfferOverlay';
 
 // ─── Page components for the five main tabs ────────────────────────────────
@@ -141,120 +140,6 @@ function VerificationGate({ user, userLoading, children }) {
 
   // Unverified users have full app access — messaging enforces its own verified check.
   return children;
-}
-
-// ─── Shared biometric-aware logout ───────────────────────────────────────────
-// All logout buttons in the layout must go through this helper so that
-// biometric users keep their refresh token alive on the server.
-async function layoutLogout(navigate) {
-  if (localStorage.getItem('scootlink_signin_method') === 'biometric') {
-    // Save the current session without calling signOut — signOut (even
-    // scope:'local') sends a server-side revocation that invalidates the
-    // refresh token, breaking biometric restoration on next login.
-    try {
-      const { data } = await supabase.auth.getSession();
-      if (data?.session) saveBiometricRefreshToken(data.session);
-    } catch { /* non-fatal */ }
-    // The Supabase session is still valid on purpose (see above) — without
-    // this flag, Auth.jsx would see that valid session on mount and
-    // immediately navigate straight back into the app, making logout look
-    // broken. Cleared the moment the user explicitly signs back in.
-    sessionStorage.setItem('skootlink_biometric_locked', '1');
-    navigate('/auth');
-  } else {
-    await supabase.auth.signOut();
-    navigate('/auth');
-  }
-}
-
-// ─── Mobile header with profile dropdown ─────────────────────────────────────
-function MobileHeader() {
-  const navigate               = useNavigate();
-  const [open, setOpen]        = useState(false);
-  const dropdownRef            = useRef(null);
-
-  // Close on outside click
-  useEffect(() => {
-    const handler = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setOpen(false);
-      }
-    };
-    if (open) document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const handleLogout = async () => {
-    setOpen(false);
-    await layoutLogout(navigate);
-  };
-
-  return (
-    <div
-      className="lg:hidden flex items-center justify-between px-4 border-b border-border bg-card z-30 shrink-0"
-      style={{ paddingTop: '0.75rem', paddingBottom: '0.75rem' }}
-    >
-      {/* Logo */}
-      <Link
-        to="/home"
-        className="flex items-center gap-2"
-        draggable={false}
-        style={{ WebkitUserDrag: 'none', userSelect: 'none' }}
-      >
-        <img
-          src="/favicon.png"
-          alt="Skootlink"
-          className="w-11 h-11"
-          draggable={false}
-          style={{ WebkitUserDrag: 'none' }}
-        />
-        <span className="text-2xl font-bold text-foreground">Skootlink</span>
-      </Link>
-
-      {/* Notification bell + profile button + dropdown */}
-      <div className="flex items-center gap-2">
-        <NotificationBell />
-        <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setOpen(v => !v)}
-            className={`w-11 h-11 rounded-full flex items-center justify-center border-2 transition-colors ${open ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground hover:border-primary/50 hover:text-foreground'}`}
-            style={{ touchAction: 'manipulation' }}
-            aria-label="Account menu"
-          >
-            <User className="w-5 h-5" />
-          </button>
-
-          {open && (
-            <div className="absolute right-0 mt-2 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden z-50">
-              <button
-                onClick={() => { setOpen(false); navigate('/profile'); }}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
-              >
-                <User className="w-4 h-4 text-muted-foreground" />
-                Profile
-              </button>
-              <div className="border-t border-border" />
-              <button
-                onClick={() => { setOpen(false); navigate('/settings'); }}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
-              >
-                <Settings className="w-4 h-4 text-muted-foreground" />
-                Settings
-              </button>
-              <div className="border-t border-border" />
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium hover:bg-destructive/10 text-destructive transition-colors text-left"
-              >
-                <LogOut className="w-4 h-4" />
-                Logout
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ─── Main layout ──────────────────────────────────────────────────────────────
@@ -571,7 +456,6 @@ t.horizontal = Math.abs(dx) > Math.abs(dy);
         <Sidebar />
 
         <div className="relative flex-1 lg:ml-64 overflow-hidden flex flex-col h-full min-h-0" style={{ height: '100dvh' }}>
-          <MobileHeader />
 
           <div
             ref={stripRef}

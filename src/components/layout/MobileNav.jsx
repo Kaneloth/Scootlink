@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Search, Clock, Briefcase } from 'lucide-react';
+import { LayoutDashboard, Search, Clock, Briefcase, Route, Wallet } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import useRentalUnread from '@/hooks/useRentalUnread';
 
@@ -54,9 +54,17 @@ export default function MobileNav() {
     accountType === 'both'  ? '/mysearch'     :
     '/search-vehicles';
 
-  const navItems = baseItems.map(item =>
-    item.label === 'Search' ? { ...item, path: searchPath } : item
-  );
+  // Customers (rides and deliveries only): the Search slot holds their trips
+  // and the Briefcase slot their payments — same tab positions, so swiping
+  // between tabs works the same for every role.
+  const navItems = accountType === 'customer'
+    ? baseItems.map(item =>
+        item.label === 'Search'    ? { label: 'Trips',    icon: Route,  path: '/mysearch' } :
+        item.label === 'Briefcase' ? { label: 'Payments', icon: Wallet, path: '/briefcase' } :
+        item)
+    : baseItems.map(item =>
+        item.label === 'Search' ? { ...item, path: searchPath } : item
+      );
 
   return (
     <nav

@@ -1,3 +1,4 @@
+import CustomerPayments from '@/components/home/CustomerPayments';
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -711,6 +712,9 @@ export default function MyBriefcase() {
       </div>
     );
   }
+
+  // Customer — this tab is their payments
+  if (role === 'customer') return <CustomerPayments />;
 
   const isDriver = role === 'driver';
   const isOwner  = role === 'owner';

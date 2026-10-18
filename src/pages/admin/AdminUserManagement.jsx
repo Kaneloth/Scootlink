@@ -354,6 +354,7 @@ export default function AdminUserManagement() {
             className="border rounded-lg px-3 py-2 text-sm bg-background"
           >
             <option value="all">All Users</option>
+            <option value="customer">Customers</option>
             <option value="driver">Drivers</option>
             <option value="owner">Owners</option>
             <option value="both">Fleet Pro</option>
@@ -507,6 +508,7 @@ export default function AdminUserManagement() {
                     value={editForm.account_type}
                     onChange={e => setEditForm(f => ({ ...f, account_type: e.target.value }))}
                   >
+                    <option value="customer">Customer</option>
                     <option value="driver">Driver</option>
                     <option value="owner">Owner</option>
                     <option value="both">Fleet Pro</option>

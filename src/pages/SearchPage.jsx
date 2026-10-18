@@ -31,6 +31,8 @@ function SearchSkeleton() {
   );
 }
 
+import CustomerTrips from '@/components/home/CustomerTrips';
+
 export default function SearchPage() {
   const [mounted, setMounted]   = useState(false);
   const [role, setRole]         = useState(null); // null = loading
@@ -93,6 +95,9 @@ export default function SearchPage() {
   const isDriver = role === 'driver';
   const isOwner  = role === 'owner';
   const isBoth   = role === 'both';
+
+  // Customer — this tab is their trips
+  if (role === 'customer') return <CustomerTrips />;
 
   // Driver — only vehicle search, no tabs needed
   if (isDriver) {
