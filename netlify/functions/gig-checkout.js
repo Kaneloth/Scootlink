@@ -10,7 +10,11 @@
  * Skootlink PayFast's fee (about R2.30 on a R15 fare, seen live 2026-10-18).
  * If the check itself fails, payment goes ahead (the normal refund covers it).
  *
- * POST body: { gig_id: number, is_native?: boolean }
+ * { check_only: true } runs just that check and returns { drivers_available }
+ * (a count, nothing about who or where), so the status page can show
+ * "N drivers nearby" before the Pay button is offered.
+ *
+ * POST body: { gig_id: number, is_native?: boolean, check_only?: boolean }
  * Auth: Bearer token — must be the gig's customer.
  */
 import { createClient } from '@supabase/supabase-js';
@@ -61,6 +65,13 @@ export const handler = async (event) => {
     const { data: drivers, error: matchErr } = await supabase.rpc('find_nearby_eligible_drivers', {
       p_gig_id: gig.id, p_radius_meters: EXPANDED_RADIUS_METERS,
     });
+    if (body.check_only === true) {
+      if (matchErr) {
+        console.error(`[gig-checkout] availability check failed for gig=${gig.id}:`, matchErr);
+        return reply(200, { drivers_available: null }); // unknown: the page still lets them pay
+      }
+      return reply(200, { drivers_available: (drivers || []).length });
+    }
     if (matchErr) {
       console.error(`[gig-checkout] driver check failed for gig=${gig.id}; letting payment proceed:`, matchErr);
     } else if (!drivers || drivers.length === 0) {

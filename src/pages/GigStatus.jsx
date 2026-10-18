@@ -67,6 +67,9 @@ export default function GigStatus() {
   const [paying, setPaying] = useState(false);
   // Pay was pressed but no driver was online nearby (customer not charged)
   const [noDriversNow, setNoDriversNow] = useState(false);
+  // Before paying: how many eligible drivers are online nearby right now.
+  // undefined = checking, null = couldn't tell (still allowed to pay), number = count
+  const [driversAvailable, setDriversAvailable] = useState(undefined);
   // Set when the customer comes back from PayFast; cleared once the ITN has
   // moved the gig on (or after 2 minutes, in case the payment never arrives)
   const [confirmingPayment, setConfirmingPayment] = useState(false);
@@ -235,6 +238,25 @@ export default function GigStatus() {
     }
   };
 
+  const checkAvailability = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      const res = await fetch(fnUrl('gig-checkout'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ gig_id: Number(gigId), check_only: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return; // e.g. no longer awaiting payment; the gig poll moves the page on
+      setDriversAvailable(data.drivers_available ?? null);
+      if (data.drivers_available > 0) setNoDriversNow(false);
+    } catch (err) {
+      console.error('[GigStatus] availability check failed:', err);
+      setDriversAvailable(null);
+    }
+  }, [gigId]);
+
   const handlePay = async () => {
     setPaying(true);
     try {
@@ -248,6 +270,7 @@ export default function GigStatus() {
       const data = await res.json().catch(() => ({}));
       if (res.status === 409 && data.no_drivers) {
         setNoDriversNow(true);
+        setDriversAvailable(0);
         return;
       }
       setNoDriversNow(false);
@@ -334,6 +357,16 @@ export default function GigStatus() {
     } catch { /* ignore */ }
     return () => window.removeEventListener(PAYMENT_RESULT_EVENT, onResult);
   }, [gigId, fetchGig]);
+
+  // While waiting for payment, look for drivers now and every 15 seconds, so
+  // the customer only pays once someone is available to take the gig.
+  const awaitingPayment = gig?.status === 'awaiting_payment';
+  useEffect(() => {
+    if (!awaitingPayment || confirmingPayment) return undefined;
+    checkAvailability();
+    const t = setInterval(checkAvailability, 15000);
+    return () => clearInterval(t);
+  }, [awaitingPayment, confirmingPayment, checkAvailability]);
 
   useEffect(() => {
     if (!confirmingPayment) return undefined;
@@ -440,14 +473,30 @@ export default function GigStatus() {
 
         {gig.status === 'awaiting_payment' && !confirmingPayment && (
           <div className="mb-4 space-y-2">
-            {noDriversNow && (
-              <p className="text-sm rounded-lg bg-amber-50 text-amber-900 p-3">
-                No drivers are available near your pickup right now. You have not been charged — try again in a few minutes.
+            {driversAvailable === undefined && (
+              <p className="text-sm rounded-lg bg-muted p-3 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Looking for drivers near your pickup…
               </p>
             )}
-            <Button className="w-full gap-2" onClick={handlePay} disabled={paying}>
+            {driversAvailable > 0 && (
+              <p className="text-sm rounded-lg bg-green-50 text-green-900 p-3">
+                {driversAvailable === 1 ? '1 driver is' : `${driversAvailable} drivers are`} available near you.
+                Pay to send them your request.
+              </p>
+            )}
+            {(driversAvailable === 0 || noDriversNow) && (
+              <p className="text-sm rounded-lg bg-amber-50 text-amber-900 p-3">
+                No drivers are available near your pickup right now. You won't be charged — we'll keep checking,
+                and you can pay as soon as one is available.
+              </p>
+            )}
+            <Button
+              className="w-full gap-2"
+              onClick={handlePay}
+              disabled={paying || driversAvailable === undefined || driversAvailable === 0}
+            >
               {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-              {noDriversNow ? `Try again · ${formatRand(gig.fare_amount)}` : `Pay ${formatRand(gig.fare_amount)}`}
+              Pay {formatRand(gig.fare_amount)}
             </Button>
             <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-px" />
