@@ -1,7 +1,8 @@
+import CustomerPayments from '@/components/home/CustomerPayments';
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/api/supabaseClient";
 import { downloadContractPDF } from "@/lib/contractExport";
 import { generateContractSections } from "@/lib/contractSections";
@@ -512,7 +513,7 @@ function VehicleListingsTab({ userId }) {
         setLoading(true);
         const { data, error: err } = await supabase
           .from("vehicles")
-          .select("id, make, model, year, plate, type, location, price, status, images, pickup_return_location, expires_at, listing_state, draft_contract_sections")
+          .select("id, make, model, year, plate, type, location, price, status, images, pickup_return_location, expires_at, listing_state, listing_purpose, draft_expires_at, ride_ready_status, draft_contract_sections")
           .eq("owner_id", userId)
           .order("created_at", { ascending: false });
 
@@ -559,7 +560,18 @@ function VehicleListingsTab({ userId }) {
                   {v.price    && (
                     <p className="text-xs font-semibold text-primary mt-1">R {v.price}/week</p>
                   )}
-                  {v.expires_at && (() => {
+                  {v.draft_expires_at && (
+                    <p className="text-[11px] font-medium text-amber-700 mt-1">
+                      📝 Not listed yet — finish by {new Date(v.draft_expires_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })} or it's removed
+                    </p>
+                  )}
+                  {v.listing_purpose === 'gigs' && (
+                    <p className="text-[11px] text-muted-foreground mt-1">For gigs only (not in the rental marketplace)</p>
+                  )}
+                  <Button size="sm" variant={v.draft_expires_at ? 'default' : 'outline'} className="mt-2 mr-2 text-xs" asChild>
+                    <Link to={`/vehicle-listing/${v.id}`}>{v.draft_expires_at ? 'Finish listing' : 'Listing & verification'}</Link>
+                  </Button>
+                  {v.listing_state !== 'draft' && v.listing_state !== 'not_listed' && v.expires_at && (() => {
                     const daysLeft = Math.ceil((new Date(v.expires_at) - Date.now()) / (24 * 60 * 60 * 1000));
                     const isExpired = v.listing_state === 'expired';
                     if (isExpired) return (
@@ -572,7 +584,7 @@ function VehicleListingsTab({ userId }) {
                     );
                     return null;
                   })()}
-                  {(v.listing_state === 'expired' || (v.expires_at && Math.ceil((new Date(v.expires_at) - Date.now()) / (24 * 60 * 60 * 1000)) <= 7)) && (
+                  {v.listing_state !== 'draft' && v.listing_state !== 'not_listed' && (v.listing_state === 'expired' || (v.expires_at && Math.ceil((new Date(v.expires_at) - Date.now()) / (24 * 60 * 60 * 1000)) <= 7)) && (
                     <div className="mt-2">
                       <RelistButton vehicle={v} />
                     </div>
@@ -701,6 +713,9 @@ export default function MyBriefcase() {
     );
   }
 
+  // Customer — this tab is their payments
+  if (role === 'customer') return <CustomerPayments />;
+
   const isDriver = role === 'driver';
   const isOwner  = role === 'owner';
   const isBoth   = role === 'both';
@@ -728,7 +743,7 @@ export default function MyBriefcase() {
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-20 lg:pb-8">
       {/* Header — back arrow + title, matching SearchPage layout */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="sticky top-0 z-30 -mx-4 -mt-4 px-4 pt-4 pb-3 mb-4 lg:-mx-8 lg:-mt-8 lg:px-8 lg:pt-8 bg-background/95 backdrop-blur border-b border-border/60 flex items-center gap-3">
         <button
           onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/app'); }}
           className="text-muted-foreground hover:text-foreground active:bg-accent rounded-lg p-2 -ml-2"

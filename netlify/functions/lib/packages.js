@@ -2,7 +2,8 @@
  * packages — single source of truth for Skootlink credit pack pricing
  * Place at: netlify/functions/lib/packages.js
  *
- * Keep in sync with the PACKAGES constants in Credits.jsx, CreditBalance.jsx,
+ * Credits were retired 2026-10-18; kept only so admin-transactions can label
+ * historical credit purchases. Was kept in sync with Credits.jsx, CreditBalance.jsx,
  * and Settings.jsx — a mismatch here means PayFast charges/grants a
  * completely different amount than what the UI advertises.
  */

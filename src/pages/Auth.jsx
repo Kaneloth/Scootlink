@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { setUser } from '@/lib/sentry';
 import { BiometricAuth, AndroidBiometryStrength } from '@aparajita/capacitor-biometric-auth';
 import { Capacitor } from '@capacitor/core';
+import { fnUrl } from '@/lib/functionsUrl';
 
 // ── WebAuthn helpers ──────────────────────────────────────────────────────────
 
@@ -23,7 +24,7 @@ function biometricError(code, message) {
 }
 
 async function setTokenCookie(refresh_token) {
-  await fetch('https://skootlink.co.za/.netlify/functions/auth-set-token', {
+  await fetch(fnUrl('auth-set-token'), {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -137,7 +138,7 @@ async function triggerBiometricLogin() {
 
   // Path 3: httpOnly cookie via Netlify function
   try {
-    const res = await fetch('https://skootlink.co.za/.netlify/functions/auth-refresh', {
+    const res = await fetch(fnUrl('auth-refresh'), {
       method: 'POST',
       credentials: 'include',
     });
@@ -155,18 +156,24 @@ async function triggerBiometricLogin() {
 }
 
 // ── Fetch phone number via service-role Netlify function ─────────────────────
-async function fetchUserPhone(userId) {
-  if (!userId) return null;
+// get-profiles requires the caller's sign-in token; a user may always read
+// their own phone number.
+async function fetchUserPhone(userId, accessToken) {
+  if (!userId || !accessToken) return null;
   try {
-    const res = await fetch('https://skootlink.co.za/.netlify/functions/get-profiles', {
+    const res = await fetch(fnUrl('get-profiles'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ ids: [userId] }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error('[Auth] get-profiles failed:', res.status);
+      return null;
+    }
     const profiles = await res.json();
     return profiles?.[0]?.phone ?? null;
-  } catch {
+  } catch (err) {
+    console.error('[Auth] get-profiles error:', err);
     return null;
   }
 }
@@ -375,6 +382,10 @@ export default function Auth() {
       // is consumed by updateUser(), so getUser() returns null if called after.
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       const userId = currentUser?.id ?? null;
+      // Look up the phone number with the same session, also before
+      // updateUser(), for the same reason.
+      const { data: { session: recoverySession } } = await supabase.auth.getSession();
+      const phoneBeforeUpdate = await fetchUserPhone(userId, recoverySession?.access_token);
 
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
@@ -384,7 +395,7 @@ export default function Auth() {
         console.warn('[Auth] SMS skipped — could not get user ID before updateUser');
         toast.error('Password updated, but SMS skipped: could not identify user.');
       } else {
-        const phone = await fetchUserPhone(userId);
+        const phone = phoneBeforeUpdate;
         if (!phone) {
           console.warn('[Auth] SMS skipped — no phone number found for user:', userId);
           toast.error('Password updated, but no phone number found on your profile.');
@@ -549,7 +560,7 @@ export default function Auth() {
     if (!disputeMsg.trim()) return;
     setDisputeSending(true);
     try {
-      await fetch('https://skootlink.co.za/.netlify/functions/contact-support', {
+      await fetch(fnUrl('contact-support'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -576,7 +587,7 @@ export default function Auth() {
     if (!contactMsg.trim()) return;
     setContactSending(true);
     try {
-      await fetch('https://skootlink.co.za/.netlify/functions/contact-support', {
+      await fetch(fnUrl('contact-support'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: signupEmail, name: regName || 'New User', message: contactMsg }),

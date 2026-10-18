@@ -17,7 +17,8 @@ export default function PageHeader({ title, subtitle, backTo, action }) {
   };
 
   return (
-    <div className="flex items-center justify-between mb-6">
+    // Pinned to the top while the page scrolls underneath
+    <div className="sticky top-0 z-30 flex items-center justify-between py-3 mb-3 bg-background/95 backdrop-blur">
       <div className="flex items-center gap-3">
         {backTo !== undefined && backTo !== null && (
           <Button variant="ghost" size="icon" onClick={handleBack} className="rounded-full -ml-2">

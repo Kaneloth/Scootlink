@@ -126,7 +126,17 @@ export const handler = async (event) => {
     recipientId = record.user_id;
     title = record.title;
     body = record.body;
-    data = { type: record.type || '', notification_id: String(record.id) };
+    // Pass the notification's own data (e.g. gig_id) through to the device so
+    // tapping the push can open the right screen. FCM data values must be
+    // strings; nested values are JSON-encoded; reserved keys are skipped.
+    const extra = {};
+    if (record.data && typeof record.data === 'object') {
+      for (const [k, v] of Object.entries(record.data)) {
+        if (v == null || /^(from|notification|message_type|google|gcm)/i.test(k)) continue;
+        extra[k] = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      }
+    }
+    data = { ...extra, type: record.type || '', notification_id: String(record.id) };
   } else if (table === 'messages') {
     recipientId = record.receiver_id;
     body = record.body;
@@ -136,7 +146,15 @@ export const handler = async (event) => {
       .eq('id', record.sender_id)
       .single();
     title = `New message from ${sender?.full_name?.split(' ')[0] || 'someone'}`;
-    data = { type: 'message', sender_id: record.sender_id };
+    // Every chat belongs to a gig or a rental: gig messages open the trip
+    // screen (via /gig/:id), rental messages open that rental's chat on Home.
+    if (record.context_type === 'gig' && record.context_id) {
+      data = { type: 'gig_message', sender_id: record.sender_id, gig_id: String(record.context_id) };
+    } else if (record.context_type === 'rental' && record.context_id) {
+      data = { type: 'rental_message', sender_id: record.sender_id, rental_id: String(record.context_id) };
+    } else {
+      data = { type: 'message', sender_id: record.sender_id };
+    }
   } else {
     return { statusCode: 400, body: JSON.stringify({ error: 'Unknown table: ' + table }) };
   }

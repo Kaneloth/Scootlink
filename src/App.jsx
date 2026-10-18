@@ -13,7 +13,6 @@ import { supabase } from '@/api/supabaseClient';
 
 import Auth from '@/pages/Auth';
 import LandingPage from '@/pages/LandingPage';
-import Credits from '@/pages/Credits';
 import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/Dashboard';
 import SearchVehicles from '@/pages/SearchVehicles';
@@ -29,8 +28,18 @@ import FAQPage from '@/pages/FAQPage';
 import ContractBuilderTest from '@/pages/ContractBuilderTest'; // TEMPORARY — Phase 1 test only
 import Onboarding from '@/pages/Onboarding';
 
-import Messages from '@/pages/Messages';
 import ContactUs from '@/pages/ContactUs';
+import RequestGig from '@/pages/RequestGig';
+import GigStatus from '@/pages/GigStatus';
+import DriverActiveGig from '@/pages/DriverActiveGig';
+import GigOffer from '@/pages/GigOffer';
+import GigRedirect from '@/pages/GigRedirect';
+import DriverEarnings from '@/pages/DriverEarnings';
+import PushTapHandler from '@/components/PushTapHandler';
+import DriverGigVerification from '@/pages/DriverGigVerification';
+import VehicleRideReadySubmit from '@/pages/VehicleRideReadySubmit';
+import VehicleListing from '@/pages/VehicleListing';
+import GigsHub from '@/pages/GigsHub';
 
 // Web client ID from Google Cloud Console (Supabase Dashboard → Authentication
 // → Providers → Google → Client ID). Must be the Web client ID on every
@@ -43,19 +52,43 @@ const GOOGLE_WEB_CLIENT_ID = '777597551403-o1c521882a048uhk9luvgdpu8qluj0qm.apps
 // ternary below lets esbuild/Rollup prove the import() calls are dead code
 // and drop them entirely — the admin dashboard never ends up in the APK.
 // The regular web build (`npm run build`) keeps them as normal lazy chunks.
-const AdminLayout = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminLayout')) : null;
-const AdminOverview = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminOverview')) : null;
-const AdminUserManagement = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminUserManagement')) : null;
-const AdminRentalsOversight = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminRentalsOversight')) : null;
-const AdminPlatformVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminPlatformVerification')) : null;
-const AdminIdentityVerification = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminIdentityVerification')) : null;
-const AdminDisputesCenter = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminDisputesCenter')) : null;
-const AdminAnnouncements = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminAnnouncements')) : null;
-const AdminReminders = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminReminders')) : null;
-const AdminProximityAlerts = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminProximityAlerts')) : null;
-const AdminCreditGrants = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminCreditGrants')) : null;
-const AdminRefundRequests = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminRefundRequests')) : null;
-const AdminTransactions = __INCLUDE_ADMIN__ ? React.lazy(() => import('@/pages/admin/AdminTransactions')) : null;
+// Lazy-loads an admin page. If its file is gone because a new build was
+// deployed while this tab was open (the old file name no longer exists), reload
+// the page once to pick up the new build instead of showing an error screen.
+// The flag is cleared after any successful load, so it works again next deploy.
+const CHUNK_RELOAD_KEY = 'skootlink_chunk_reload';
+const lazyWithReload = (importer) => React.lazy(() =>
+  importer()
+    .then((mod) => { try { sessionStorage.removeItem(CHUNK_RELOAD_KEY); } catch { /* storage unavailable */ } return mod; })
+    .catch((err) => {
+      let alreadyReloaded = false;
+      try { alreadyReloaded = !!sessionStorage.getItem(CHUNK_RELOAD_KEY); } catch { /* storage unavailable */ }
+      if (!alreadyReloaded && /dynamically imported module|Importing a module script failed|Failed to fetch/i.test(String(err?.message || err))) {
+        console.warn('[App] Page file missing after a new deploy — reloading once:', err);
+        try { sessionStorage.setItem(CHUNK_RELOAD_KEY, '1'); } catch { /* storage unavailable */ }
+        window.location.reload();
+        return new Promise(() => {}); // keep the loading screen until the reload happens
+      }
+      throw err;
+    }));
+
+const AdminLayout = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminLayout')) : null;
+const AdminOverview = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminOverview')) : null;
+const AdminUserManagement = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminUserManagement')) : null;
+const AdminRentalsOversight = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminRentalsOversight')) : null;
+const AdminPlatformVerification = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminPlatformVerification')) : null;
+const AdminIdentityVerification = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminIdentityVerification')) : null;
+const AdminDisputesCenter = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminDisputesCenter')) : null;
+const AdminAnnouncements = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminAnnouncements')) : null;
+const AdminReminders = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminReminders')) : null;
+const AdminProximityAlerts = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminProximityAlerts')) : null;
+const AdminRefundRequests = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminRefundRequests')) : null;
+const AdminTransactions = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminTransactions')) : null;
+const AdminGigVerification = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminGigVerification')) : null;
+const AdminVehicleRideReady = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminVehicleRideReady')) : null;
+const AdminGigSettings = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminGigSettings')) : null;
+const AdminGigs = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminGigs')) : null;
+const AdminPayments = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminPayments')) : null;
 
 function AdminLoadingScreen() {
   return (
@@ -122,7 +155,8 @@ const AuthenticatedApp = () => {
 
       {/* Full-screen flows (no sidebar) */}
       <Route path="/onboarding" element={<Onboarding />} />
-      <Route path="/credits" element={<Credits />} />
+      {/* Credits are retired (listing fee + commission model); old links land on Home */}
+      <Route path="/credits" element={<Navigate to="/home" replace />} />
 
       {/* Main app with layout */}
       <Route element={<AppLayout />}>
@@ -139,8 +173,19 @@ const AuthenticatedApp = () => {
         <Route path="/faq" element={<FAQPage />} />
         <Route path="/contract-builder-test" element={<ContractBuilderTest />} />
         <Route path="/mysearch" element={<SearchPage />} />
-        <Route path="/messages" element={<Messages />} />
+        {/* No inbox: chats open from their rental or gig. Old links land on Home. */}
+        <Route path="/messages" element={<Navigate to="/home" replace />} />
         <Route path="/contact" element={<ContactUs />} />
+        <Route path="/gigs" element={<GigsHub />} />
+        <Route path="/request-gig" element={<RequestGig />} />
+        <Route path="/gig-status/:gigId" element={<GigStatus />} />
+        <Route path="/gig-drive/:gigId" element={<DriverActiveGig />} />
+        <Route path="/gig-offer/:gigId" element={<GigOffer />} />
+        <Route path="/gig/:gigId" element={<GigRedirect />} />
+        <Route path="/earnings" element={<DriverEarnings />} />
+        <Route path="/gig-verification" element={<DriverGigVerification />} />
+        <Route path="/vehicle-ride-ready/:vehicleId" element={<VehicleRideReadySubmit />} />
+        <Route path="/vehicle-listing/:vehicleId" element={<VehicleListing />} />
       </Route>
 
       {/* Admin dashboard — reachable as a normal web URL (skootlink.co.za/admin),
@@ -165,9 +210,13 @@ const AuthenticatedApp = () => {
           <Route path="announcements" element={<AdminAnnouncements />} />
           <Route path="reminders" element={<AdminReminders />} />
           <Route path="proximity-alerts" element={<AdminProximityAlerts />} />
-          <Route path="credit-grants" element={<AdminCreditGrants />} />
           <Route path="refund-requests" element={<AdminRefundRequests />} />
           <Route path="transactions" element={<AdminTransactions />} />
+          <Route path="gig-verification" element={<AdminGigVerification />} />
+          <Route path="vehicle-ride-ready" element={<AdminVehicleRideReady />} />
+          <Route path="gig-settings" element={<AdminGigSettings />} />
+          <Route path="gigs" element={<AdminGigs />} />
+          <Route path="payments" element={<AdminPayments />} />
         </Route>
       )}
 
@@ -417,7 +466,7 @@ function App() {
           try {
             const parsed = new URL(url);
 
-            // ── PayFast payment return (credits or verification) ──────────
+            // ── PayFast payment return (credits, verification or a gig fare) ──
             // Separate from the OAuth branch below — PayFast redirects here
             // via co.za.skootlink.app://payment-result, never with a `code`
             // param, so it's safe to fully branch off before touching any
@@ -427,7 +476,8 @@ function App() {
               const category = parsed.searchParams.get('category');
               const pkg = parsed.searchParams.get('package');
               const service = parsed.searchParams.get('service');
-              const detail = { status, category, package: pkg, service };
+              const gig_id = parsed.searchParams.get('gig_id'); // category 'gig' (GigStatus listens)
+              const detail = { status, category, package: pkg, service, gig_id };
               // Primary signal — appUrlOpen firing is the one thing in this
               // whole chain we've conclusively proven reliable (it's the
               // exact same mechanism Google sign-in already depends on).
@@ -500,6 +550,7 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router>
+          <PushTapHandler />
           <AuthenticatedApp />
         </Router>
         <Toaster />

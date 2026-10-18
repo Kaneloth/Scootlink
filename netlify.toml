@@ -14,6 +14,15 @@
   name = "vehicle-expiry-check"
   schedule = "0 6 * * *"
 
+[[scheduled.functions]]
+  name = "gig-expiry-check"
+  schedule = "* * * * *"
+
+# Daily 05:00 UTC (07:00 SAST): roadworthy / PDP expiry and 14-day reminders
+[[scheduled.functions]]
+  name = "gig-document-expiry"
+  schedule = "0 5 * * *"
+
 [functions]
   node_bundler = "esbuild"
   external_node_modules = ["firebase-admin"]

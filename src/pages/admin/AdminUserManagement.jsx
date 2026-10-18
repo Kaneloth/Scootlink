@@ -34,7 +34,6 @@ export default function AdminUserManagement() {
   const [suspendDays, setSuspendDays] = useState('7');
   const [suspendReason, setSuspendReason] = useState('');
   const [suspendReasonOther, setSuspendReasonOther] = useState('');
-  const [creditAmount, setCreditAmount] = useState('50');
   const [profileVisibilityEnabled, setProfileVisibilityEnabled] = useState(false);
   const [appSettingsLoading, setAppSettingsLoading] = useState(true);
   const [savingAppSetting, setSavingAppSetting] = useState(false);
@@ -62,15 +61,7 @@ export default function AdminUserManagement() {
     // — matches the same filter already used in Settings.jsx's admin tab.
     const filtered = (data || []).filter(u => u.id !== currentUser?.id);
 
-    const ids = filtered.map(u => u.id);
-    const balances = await Promise.all(
-      ids.map(async (id) => {
-        const { data: bal, error: balErr } = await supabase.rpc('get_credit_balance', { p_user_id: id });
-        return [id, balErr ? 0 : (bal ?? 0)];
-      })
-    );
-    const balanceMap = Object.fromEntries(balances);
-    setUsers(filtered.map(u => ({ ...u, credit_balance: balanceMap[u.id] ?? 0 })));
+    setUsers(filtered);
     setLoading(false);
   };
 
@@ -81,7 +72,7 @@ export default function AdminUserManagement() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+      const res = await fetch('/.netlify/functions/admin-app-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'get' }),
@@ -103,7 +94,7 @@ export default function AdminUserManagement() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/admin-app-settings', {
+      const res = await fetch('/.netlify/functions/admin-app-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'toggle_profile_visibility', enabled: next }),
@@ -199,7 +190,7 @@ export default function AdminUserManagement() {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
       if (token) {
-        await fetch('https://skootlink.co.za/.netlify/functions/admin-set-role', {
+        await fetch('/.netlify/functions/admin-set-role', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ userId: u.id, is_admin: granting }),
@@ -242,7 +233,7 @@ export default function AdminUserManagement() {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
       if (token) {
-        await fetch('https://skootlink.co.za/.netlify/functions/admin-ban-user', {
+        await fetch('/.netlify/functions/admin-ban-user', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -326,25 +317,6 @@ export default function AdminUserManagement() {
     setSaving(false);
   };
 
-  const adjustCredits = async (u, amount) => {
-    setBusyId(u.id);
-    const { error } = await supabase.rpc('add_credits', {
-      p_user_id: u.id,
-      p_amount: amount,
-      p_type: 'adjustment',
-      p_description: 'Admin credit adjustment',
-      p_ref_id: `admin:${u.id}`,
-    });
-    if (!error) {
-      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, credit_balance: (x.credit_balance || 0) + amount } : x));
-      if (selected?.id === u.id) setSelected(p => ({ ...p, credit_balance: (p.credit_balance || 0) + amount }));
-      toast.success(`${amount > 0 ? 'Added' : 'Subtracted'} ${Math.abs(amount)} credits`);
-    } else {
-      toast.error('Credit adjustment failed: ' + error.message);
-    }
-    setBusyId(null);
-  };
-
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">User Management</h2>
@@ -382,6 +354,7 @@ export default function AdminUserManagement() {
             className="border rounded-lg px-3 py-2 text-sm bg-background"
           >
             <option value="all">All Users</option>
+            <option value="customer">Customers</option>
             <option value="driver">Drivers</option>
             <option value="owner">Owners</option>
             <option value="both">Fleet Pro</option>
@@ -403,7 +376,6 @@ export default function AdminUserManagement() {
                 <th className="p-3 text-left">Email</th>
                 <th className="p-3 text-left">Type</th>
                 <th className="p-3 text-center">Status</th>
-                <th className="p-3 text-right">Credits</th>
                 <th className="p-3 text-left">Joined</th>
               </tr>
             </thead>
@@ -434,7 +406,6 @@ export default function AdminUserManagement() {
                          : u.id_verified ? <span className="text-green-600 font-medium text-xs">✅ Verified</span>
                          : <span className="text-muted-foreground text-xs">—</span>}
                       </td>
-                      <td className="p-3 text-right font-mono">{u.credit_balance ?? 0}</td>
                       <td className="p-3 text-muted-foreground">{u.created_at ? new Date(u.created_at).toLocaleDateString('en-ZA') : '—'}</td>
                     </tr>
                   );
@@ -537,6 +508,7 @@ export default function AdminUserManagement() {
                     value={editForm.account_type}
                     onChange={e => setEditForm(f => ({ ...f, account_type: e.target.value }))}
                   >
+                    <option value="customer">Customer</option>
                     <option value="driver">Driver</option>
                     <option value="owner">Owner</option>
                     <option value="both">Fleet Pro</option>
@@ -557,7 +529,6 @@ export default function AdminUserManagement() {
                     ['Location', selected.location],
                     ['Address', selected.residential_address],
                     ['Account Type', selected.account_type],
-                    ['Credit Balance', selected.credit_balance],
                     ['Ban Reason', selected.ban_reason],
                     ['Suspension Reason', selected.suspension_reason],
                   ].filter(([, v]) => v).map(([label, value]) => (
@@ -605,31 +576,6 @@ export default function AdminUserManagement() {
                     Unsuspend
                   </button>
                 )}
-              </div>
-
-              {/* Credits */}
-              <div className="flex items-center gap-2">
-                <Coins className="w-4 h-4 text-muted-foreground shrink-0" />
-                <input
-                  type="number"
-                  value={creditAmount}
-                  onChange={e => setCreditAmount(e.target.value)}
-                  className="w-24 border rounded-lg px-2 py-1.5 text-sm"
-                />
-                <button
-                  onClick={() => adjustCredits(selected, Math.abs(parseInt(creditAmount) || 0))}
-                  disabled={busyId === selected.id}
-                  className="text-xs px-3 py-1.5 rounded-lg border"
-                >
-                  Add
-                </button>
-                <button
-                  onClick={() => adjustCredits(selected, -Math.abs(parseInt(creditAmount) || 0))}
-                  disabled={busyId === selected.id}
-                  className="text-xs px-3 py-1.5 rounded-lg border"
-                >
-                  Subtract
-                </button>
               </div>
 
               {/* Suspend */}

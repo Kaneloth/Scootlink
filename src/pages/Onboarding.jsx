@@ -10,10 +10,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import {
-  User, Users, Crown, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Bike, Info,
+  User, Users, Crown, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Bike, Info, MapPin,
   Star, Upload, X, Plus, Trash2, Camera, Image as ImageIcon, Car, ImagePlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { fnUrl } from '@/lib/functionsUrl';
 
 const ADMIN_EMAILS = ['kaneloth@skootlink.co.za'];
 
@@ -93,10 +94,18 @@ const PLATFORM_OPTIONS = ['Uber', 'Bolt', 'Uber Eats', 'Mr D Food', 'Bolt Food',
 // ── Role options ──────────────────────────────────────────────────────────────
 const ROLES = [
   {
+    id: 'customer',
+    name: 'Customer',
+    description: 'Request rides and deliveries. Quick sign-up, no documents needed.',
+    icon: MapPin,
+    bg:   'bg-emerald-50',
+    border: 'border-emerald-200',
+    iconColor: 'text-emerald-600',
+  },
+  {
     id: 'driver',
     name: 'Driver',
-    description: 'Search for and rent vehicles listed by owners on Skootlink.',
-    freeCredits: 350,
+    description: 'Rent a vehicle from an owner, and earn from rides and deliveries once verified.',
     icon: Bike,
     bg:   'bg-blue-50',
     border: 'border-blue-200',
@@ -105,8 +114,7 @@ const ROLES = [
   {
     id: 'owner',
     name: 'Owner',
-    description: 'List your vehicles and connect with verified drivers.',
-    freeCredits: 1250,
+    description: 'List your vehicles for rent, or for rides and deliveries.',
     icon: Crown,
     bg:   'bg-amber-50',
     border: 'border-amber-200',
@@ -116,7 +124,6 @@ const ROLES = [
     id: 'both',
     name: 'Driver & Owner',
     description: 'Drive other vehicles and list your own — full platform access.',
-    freeCredits: 1250,
     icon: Users,
     bg:   'bg-primary/5',
     border: 'border-primary/30',
@@ -205,7 +212,7 @@ export default function Onboarding() {
   }, []);
 
   const [form, setForm] = useState({
-    role:                'driver',
+    role:                'customer',
     phone:               '',
     gender:              '',
     date_of_birth:       '',
@@ -227,11 +234,13 @@ export default function Onboarding() {
   // accounts get an extra step to list their first vehicle right here,
   // since deferring it to after onboarding is exactly what causes people to
   // never actually get around to it.
+  // Customers only request rides and deliveries: no driving history, no vehicle.
   const canListVehicles = form.role === 'owner' || form.role === 'both';
+  const drives = form.role === 'driver' || form.role === 'both';
   const STEPS = [
     ...BASE_STEPS,
     PHOTO_STEP,
-    ...(form.role === 'owner' ? [] : [PLATFORM_STEP]),
+    ...(drives ? [PLATFORM_STEP] : []),
     ...(canListVehicles ? [VEHICLE_STEP] : []),
   ];
 
@@ -359,17 +368,22 @@ export default function Onboarding() {
         } catch { /* non-fatal — vehicle still lists without coordinates */ }
       }
 
-      // Deliberately free — no credit check, no deduction. This is the
-      // person's very first listing, created in the same flow meant to
-      // reduce drop-off; charging for it here (and being able to fail if
-      // their sign-up credit grant hasn't landed yet, e.g. due to an
-      // IP-based false positive) would work against the entire point.
-      // Every vehicle listed after onboarding still goes through the normal
-      // tiered pricing via the regular Add Vehicle page, unaffected by this.
-      const { error } = await supabase.from('vehicles').insert(dbRow).select('*').single();
+      // A rental listing (migration 021): saved as a draft, then listed with
+      // the owner's free first listing straight away. Later vehicles go
+      // through Add Vehicle and the listing fee.
+      dbRow.listing_purpose = 'rental';
+      const { data: saved, error } = await supabase.from('vehicles').insert(dbRow).select('id').single();
       if (error) throw error;
 
-      toast.success('Vehicle listed!');
+      const { error: freeErr } = await supabase.rpc('start_free_listing', { p_vehicle_id: saved.id });
+      if (freeErr) {
+        // Saved but not listed (e.g. the free listing was already used):
+        // the owner finishes it on the listing page.
+        console.warn('[Onboarding] free listing not applied:', freeErr);
+        toast("Vehicle saved — finish listing it from My Briefcase.");
+        return true;
+      }
+      toast.success('Vehicle listed — your first listing is free!');
       return true;
     } catch (err) {
       console.error('[Onboarding] Vehicle save failed:', err);
@@ -523,7 +537,7 @@ export default function Onboarding() {
     phone:                normalisePhone(form.phone),
     gender:               form.gender,
     date_of_birth:        form.date_of_birth || null,
-    driving_experience:   form.role !== 'owner' ? (form.driving_experience || null) : null,
+    driving_experience:   drives ? (form.driving_experience || null) : null,
     location:             buildLocation(),
     residential_address:  form.residential_address,
     onboarding_completed: true,
@@ -543,40 +557,6 @@ export default function Onboarding() {
         if (error) console.error('[Onboarding] set_user_geo_location error:', error);
       }
     } catch (err) { console.error('[Onboarding] geocode error:', err); }
-  };
-
-  // ── Award sign-up free credits via Netlify function ──────────────────────
-  // Uses grant-signup-credits.js which guards against duplicate grants (same
-  // user_id, email, phone, device, or IP) — so this is always safe to call,
-  // even more than once for the same user; a second call for someone who
-  // already has a grant just returns { granted: 0, reason: 'already_granted' }.
-  // Called as soon as a role is selected (see nextStep), not gated behind
-  // completing the rest of onboarding — someone who picks a role and never
-  // finishes their profile still gets their bonus.
-  const awardSignupCredits = async (role, phone = '', vehicleListed = false) => {
-    try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser?.id) return;
-      const { data: { session } } = await supabase.auth.getSession();
-      await fetch('https://skootlink.co.za/.netlify/functions/grant-signup-credits', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({
-          user_id:            authUser.id,
-          email:              authUser.email ?? '',
-          phone:              phone ?? '',
-          device_fingerprint: localStorage.getItem('skootlink_device_fp') ?? '',
-          profile_type:       role,
-          vehicle_listed:     vehicleListed,
-        }),
-      });
-    } catch (creditErr) {
-      // Non-fatal — credits can be added manually if this ever fails
-      console.warn('[Onboarding] grant-signup-credits call failed:', creditErr);
-    }
   };
 
   const saveAndNavigate = async (destination) => {
@@ -657,25 +637,10 @@ export default function Onboarding() {
         await savePlatformHistoryEntries(authUser.id, entriesToSave);
       }
 
-      // ── List the vehicle first, if they added one on that step (free —
-      // see saveVehicleListing for why) ──────────────────────────────────────
-      let vehicleActuallyListed = false;
+      // ── List the vehicle, if they added one on that step (their free first
+      // listing — see saveVehicleListing) ────────────────────────────────────
       if (authUser?.id && canListVehicles) {
-        vehicleActuallyListed = await saveVehicleListing(authUser.id);
-      }
-
-      // ── Award sign-up free credits ─────────────────────────────────────────
-      // This is now the only place credits are granted — deferred to actual
-      // onboarding completion (not the earlier role-selection step) so we
-      // know whether they used the free vehicle listing before deciding the
-      // amount. Based on whether the listing actually succeeded, not just
-      // whether the form had data in it — if the insert failed for some
-      // reason, they still get the full amount rather than coming up short.
-      // Trade-off: someone who abandons onboarding partway through no longer
-      // gets any credits at all, whereas they previously would have (a
-      // deliberate choice — see conversation with Kanelo).
-      if (authUser?.id) {
-        await awardSignupCredits(form.role, form.phone, vehicleActuallyListed);
+        await saveVehicleListing(authUser.id);
       }
 
       sessionStorage.removeItem(ONBOARDING_PROGRESS_KEY);
@@ -835,7 +800,7 @@ export default function Onboarding() {
                 </div>
 
                 {/* Driving Experience — driver/both only */}
-                {form.role !== 'owner' && (
+                {drives && (
                   <div className="col-span-2">
                     <Label className="text-xs font-medium">Driving Experience</Label>
                     <Select value={form.driving_experience} onValueChange={v => update('driving_experience', v)}>

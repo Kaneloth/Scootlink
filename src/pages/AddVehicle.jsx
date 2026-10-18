@@ -1,5 +1,22 @@
+// src/pages/AddVehicle.jsx  (routes /add-vehicle and /edit-vehicle?id=)
+//
+// Adding a vehicle (migration 021): the owner first chooses what it is for —
+//   Rental: listed to drivers once the listing fee is paid (an owner's first
+//           listing is free) — done on the vehicle's listing page next;
+//   Gigs:   used for rides once its roadworthy certificate is approved;
+//   Both.
+// The new vehicle is saved as a hidden draft and the owner goes straight to
+// /vehicle-listing/:id to finish. A draft that completes no step within
+// 7 days is removed, photos included.
+//
+// Photos are uploaded only when the form is saved (not when picked), so an
+// abandoned form leaves nothing in Storage. Photos removed while editing are
+// deleted from Storage on save.
+//
+// Relisting (?relist=1, from older links) now happens on the listing page.
+
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { auth } from '@/api/supabaseData';
 import { supabase } from '@/api/supabaseClient';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -8,11 +25,10 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
-import { ImagePlus, X, Trash2 } from 'lucide-react';
+import { ImagePlus, X, Trash2, KeyRound, Car, Layers } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
 import { geocodeLocation } from '@/lib/geocode';
-import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
 
 export default function AddVehicle() {
   const navigate = useNavigate();
@@ -23,22 +39,25 @@ export default function AddVehicle() {
   const isRelist   = searchParams.get('relist') === '1';
   const isEditMode = !!editingId;
   const [loadingExisting, setLoadingExisting] = useState(isEditMode);
-  const [listingPrice, setListingPrice] = useState(null);
-  const [showTopUpPrompt, setShowTopUpPrompt] = useState(false);
+  // New vehicles: what it's for (required). Existing: shown, changed on the listing page.
+  const [purpose, setPurpose] = useState(null); // 'rental' | 'gigs' | 'both'
+  const [offer, setOffer] = useState(null);     // listing_offer(): { fee, period_months, free_available }
 
   useEffect(() => {
     auth.me().then(setUser).catch(() => {});
   }, []);
 
-  // Fetch the tiered listing price for new vehicles (not relevant when editing)
+  // Old relist links now go to the listing page
+  useEffect(() => {
+    if (isRelist && editingId) navigate(`/vehicle-listing/${editingId}`, { replace: true });
+  }, [isRelist, editingId, navigate]);
+
   useEffect(() => {
     if (isEditMode) return;
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase.rpc('get_listing_price', { p_owner_id: user.id });
-      setListingPrice(data ?? 250);
-    })();
+    supabase.rpc('listing_offer').then(({ data, error }) => {
+      if (error) console.error('[AddVehicle] listing_offer failed:', error);
+      else setOffer((data || [])[0] || null);
+    });
   }, [isEditMode]);
 
   const [form, setForm] = useState({
@@ -56,7 +75,10 @@ export default function AddVehicle() {
     pickup_return_location: '',
     status:                 'available',
   });
-  const [images,    setImages]    = useState([]);
+  // Photos: saved URLs (existing vehicle) + newly picked files (uploaded on save)
+  const [images,    setImages]    = useState([]);   // saved public URLs still kept
+  const [removedImages, setRemovedImages] = useState([]); // saved URLs the owner removed
+  const [newFiles,  setNewFiles]  = useState([]);   // [{ file, preview }]
   const [uploading, setUploading] = useState(false);
 
   // Prefill form when editing/relisting an existing vehicle
@@ -86,6 +108,7 @@ export default function AddVehicle() {
           status:                 data.status || 'available',
         });
         setImages(data.images || []);
+        setPurpose(data.listing_purpose || null);
       } catch (err) {
         toast.error('Could not load vehicle details: ' + err.message);
       } finally {
@@ -99,11 +122,30 @@ export default function AddVehicle() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
+      // Upload newly picked photos now (not when picked)
+      const uploaded = [];
+      if (newFiles.length) {
+        setUploading(true);
+        try {
+          for (const { file } of newFiles) {
+            const filePath = `${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+            const { error } = await supabase.storage.from('vehicle-images').upload(filePath, file, { upsert: true, contentType: file.type });
+            if (error) throw new Error('Photo upload failed: ' + error.message);
+            uploaded.push({ url: supabase.storage.from('vehicle-images').getPublicUrl(filePath).data.publicUrl, path: filePath });
+          }
+        } catch (err) {
+          // Don't leave half an upload behind
+          if (uploaded.length) await supabase.storage.from('vehicle-images').remove(uploaded.map((u) => u.path));
+          throw err;
+        } finally {
+          setUploading(false);
+        }
+      }
+
       // Map frontend field names → DB column names
-      const dbRow = { ...data };
+      const dbRow = { ...data, images: [...images, ...uploaded.map((u) => u.url)] };
       if ('vehicle_type'   in dbRow) { dbRow.type  = dbRow.vehicle_type;   delete dbRow.vehicle_type;   }
       if ('price_per_week' in dbRow) { dbRow.price = dbRow.price_per_week; delete dbRow.price_per_week; }
-      dbRow.owner_id = user.id;
 
       // Geocode the location and store a PostGIS geography point (non-fatal)
       if (dbRow.location) {
@@ -115,7 +157,7 @@ export default function AddVehicle() {
         } catch { /* non-fatal — vehicle still lists without coordinates */ }
       }
 
-      // ── Editing or relisting an existing vehicle ──────────────────────────
+      // ── Editing an existing vehicle ───────────────────────────────────────
       if (editingId) {
         const { data: result, error } = await supabase
           .from('vehicles')
@@ -124,99 +166,50 @@ export default function AddVehicle() {
           .eq('owner_id', user.id)
           .select()
           .single();
-        if (error) throw new Error(error.message);
-
-        // Relist = pay credits and reset the 6-month expiry clock
-        if (isRelist) {
-          // Count OTHER active vehicles (excluding this one) to determine tier:
-          // 0 others = 250cr (1st vehicle), 1 other = 200cr (2nd), 2+ others = 175cr (3rd+)
-          const { data: otherVehicles } = await supabase
-            .from('vehicles')
-            .select('id', { count: 'exact' })
-            .eq('owner_id', user.id)
-            .neq('id', editingId);
-          const otherCount = otherVehicles?.length ?? 0;
-          const relistCost = otherCount === 0 ? 250 : otherCount === 1 ? 200 : 175;
-
-          const { error: deductErr } = await supabase.rpc('deduct_credits', {
-            p_user_id:     user.id,
-            p_amount:      relistCost,
-            p_type:        'spend',
-            p_description: 'Vehicle relisting',
-            p_ref_id:      String(editingId),
-          });
-          if (deductErr) {
-            if (deductErr.message?.includes('insufficient_credits')) throw new Error('insufficient_credits');
-            throw new Error(deductErr.message || 'Could not charge relisting fee');
-          }
-
-          // Reset the expiry clock directly
-          await supabase.from('vehicles').update({
-            listed_at:        new Date().toISOString(),
-            expires_at:       new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000).toISOString(),
-            grace_expires_at: null,
-            listing_state:    'active',
-            reminder_7d_sent: false,
-            reminder_3d_sent: false,
-            reminder_1d_sent: false,
-          }).eq('id', editingId);
+        if (error) {
+          if (uploaded.length) await supabase.storage.from('vehicle-images').remove(uploaded.map((u) => u.path));
+          throw new Error(error.message);
         }
+        // Photos the owner removed: free the space
+        const gone = removedImages.map(extractVehicleImagePath).filter(Boolean);
+        if (gone.length) {
+          const { error: rmErr } = await supabase.storage.from('vehicle-images').remove(gone);
+          if (rmErr) console.error('[AddVehicle] removing old photos failed:', rmErr);
+        }
+
         return result;
       }
 
-      // ── Creating a brand new listing ───────────────────────────────────────
-      // Check credits BEFORE inserting to avoid orphan rows if payment fails.
-      // get_listing_price tells us the tier cost without charging yet.
-      const { data: tierPrice } = await supabase.rpc('get_listing_price', { p_owner_id: user.id });
-      const creditCost = tierPrice ?? 250;
-
-      // Check balance
-      const { data: balance } = await supabase.rpc('get_credit_balance', { p_user_id: user.id });
-      if ((balance ?? 0) < creditCost) {
-        throw new Error('insufficient_credits');
-      }
-
+      // ── Adding a new vehicle: saved as a hidden draft ─────────────────────
+      dbRow.owner_id = user.id;
+      dbRow.listing_purpose = purpose;
       const { data: result, error } = await supabase
         .from('vehicles')
         .insert(dbRow)
         .select('*')
         .single();
-      if (error) throw new Error(error.message);
-
-      // Charge tiered listing fee directly using the already-calculated creditCost
-      const { error: deductErr } = await supabase.rpc('deduct_credits', {
-        p_user_id:    user.id,
-        p_amount:     creditCost,
-        p_type:       'spend',
-        p_description: 'Vehicle listing',
-        p_ref_id:     String(result.id),
-      });
-      if (deductErr) {
-        await supabase.from('vehicles').delete().eq('id', result.id);
-        if (deductErr.message?.includes('insufficient_credits')) {
-          throw new Error('insufficient_credits');
-        }
-        throw new Error(deductErr.message || 'Could not charge listing fee');
+      if (error) {
+        if (uploaded.length) await supabase.storage.from('vehicle-images').remove(uploaded.map((u) => u.path));
+        throw new Error(error.message);
       }
 
       return result;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['my-vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['all-vehicles'] });
-      toast.success(
-        isRelist ? 'Vehicle re-listed! Your listing is active for another 6 months.' :
-        isEditMode ? 'Vehicle details updated!' :
-        'Vehicle listed successfully!'
-      );
-      navigate(isEditMode ? '/home' : '/briefcase');
+      newFiles.forEach((f) => URL.revokeObjectURL(f.preview));
+      setNewFiles([]);
+      if (isEditMode) {
+        toast.success('Vehicle details updated!');
+        navigate('/briefcase');
+      } else {
+        toast.success('Vehicle saved — finish listing it below');
+        navigate(`/vehicle-listing/${result.id}`);
+      }
     },
     onError: (err) => {
       console.error('Vehicle save error:', err);
-      if (err?.message === 'insufficient_credits') {
-        setShowTopUpPrompt(true);
-        return;
-      }
       toast.error('Failed to save vehicle: ' + (err?.message || 'Unknown error'));
     },
   });
@@ -309,46 +302,46 @@ export default function AddVehicle() {
     },
   });
 
-  const handleImageUpload = async (e) => {
-    const files = Array.from(e.target.files).slice(0, 3 - images.length);
+  // Picking photos only previews them; they are uploaded when the form is saved
+  const photoCount = images.length + newFiles.length;
+  const handleImagePick = (e) => {
+    const files = Array.from(e.target.files || []).slice(0, 3 - photoCount);
+    e.target.value = '';
     if (!files.length) return;
-    setUploading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const urls = [];
-      for (const file of files) {
-        const filePath = `${user.id}/${Date.now()}_${file.name}`;
-        const { error } = await supabase.storage.from('vehicle-images').upload(filePath, file, { upsert: true, contentType: file.type });
-        if (error) throw error;
-        const { data: { publicUrl } } = supabase.storage.from('vehicle-images').getPublicUrl(filePath);
-        urls.push(publicUrl);
-      }
-      setImages(prev => [...prev, ...urls]);
-    } catch (err) {
-      toast.error('Image upload failed: ' + err.message);
-    } finally {
-      setUploading(false);
-    }
+    setNewFiles((prev) => [...prev, ...files.map((file) => ({ file, preview: URL.createObjectURL(file) }))]);
   };
+  const removeSavedImage = (url) => {
+    setImages((prev) => prev.filter((u) => u !== url));
+    setRemovedImages((prev) => [...prev, url]);
+  };
+  const removeNewFile = (i) => {
+    setNewFiles((prev) => {
+      URL.revokeObjectURL(prev[i]?.preview);
+      return prev.filter((_, idx) => idx !== i);
+    });
+  };
+  const needsRentalDetails = purpose === 'rental' || purpose === 'both';
 
   const handleSubmit = () => {
-    if (!form.make || !form.model || !form.plate || !form.location || !form.price_per_week) {
+    if (!isEditMode && !purpose) {
+      toast.error('Choose what this vehicle is for first');
+      return;
+    }
+    if (!form.make || !form.model || !form.plate || !form.location || (needsRentalDetails && !form.price_per_week)) {
       toast.error('Please fill in all required fields');
       return;
     }
-    if (form.storage_type === 'owner_address' && !form.pickup_return_location) {
+    if (needsRentalDetails && form.storage_type === 'owner_address' && !form.pickup_return_location) {
       toast.error('Please specify the pickup/return address');
       return;
     }
     const payload = {
       ...form,
       year:           parseInt(form.year) || 2024,
-      price_per_week: parseFloat(form.price_per_week),
+      price_per_week: form.price_per_week ? parseFloat(form.price_per_week) : null,
       deposit:        parseFloat(form.deposit) || 0,
-      images,
-      rating:         0,
-      total_reviews:  0,
     };
+    if (!isEditMode) { payload.rating = 0; payload.total_reviews = 0; }
     // Only set status to 'available' for brand new listings —
     // editing/relisting must not override 'rented' or other states
     if (!isEditMode) payload.status = 'available';
@@ -364,7 +357,7 @@ export default function AddVehicle() {
   if (loadingExisting) {
     return (
       <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-        <PageHeader title={isRelist ? 'Re-list Vehicle' : 'Edit Vehicle'} backTo="/briefcase" />
+        <PageHeader title="Edit Vehicle" backTo="/briefcase" />
         <div className="flex justify-center py-16">
           <div className="w-7 h-7 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
         </div>
@@ -374,24 +367,55 @@ export default function AddVehicle() {
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
-      <InsufficientCreditsModal
-        open={showTopUpPrompt}
-        onClose={() => setShowTopUpPrompt(false)}
-        requiredAmount={listingPrice}
-        actionLabel={isRelist ? 're-list this vehicle' : 'list this vehicle'}
-      />
       <PageHeader
-        title={isRelist ? 'Re-list Vehicle' : isEditMode ? 'Edit Vehicle' : 'Add Vehicle'}
-        subtitle={isRelist ? 'Confirm or update details, then re-list for another 6 months' : isEditMode ? 'Update your vehicle details' : 'List your vehicle for drivers to rent'}
+        title={isEditMode ? 'Edit Vehicle' : 'Add Vehicle'}
+        subtitle={isEditMode ? 'Update your vehicle details' : 'Rent it to drivers, use it for gigs, or both'}
         backTo={isEditMode ? '/briefcase' : '/home'}
       />
-      {isRelist && (
-        <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-          <p className="text-xs text-amber-700 dark:text-amber-300">
-            🔄 Re-listing resets your listing's 6-month expiry from today.
+
+      {!isEditMode && (
+        <Card className="p-4 mb-4 border border-border/50">
+          <p className="font-semibold text-sm mb-1">What is this vehicle for? *</p>
+          <p className="text-xs text-muted-foreground mb-3">You can change this later on the vehicle's listing page.</p>
+          <div className="grid gap-2">
+            {[
+              { key: 'rental', icon: KeyRound, title: 'Rent it to drivers',
+                text: offer
+                  ? (offer.free_available
+                    ? `Listed in the marketplace. Your first listing is free for ${offer.period_months} months.`
+                    : `Listed in the marketplace for R${Number(offer.fee).toFixed(0)} per ${offer.period_months} months, including the rental agreement.`)
+                  : 'Listed in the marketplace once the listing fee is paid.' },
+              { key: 'gigs', icon: Car, title: 'Use it for gigs (rides)',
+                text: 'You drive it for Skootlink rides. Needs a roadworthy certificate approved by Skootlink. No listing fee.' },
+              { key: 'both', icon: Layers, title: 'Both',
+                text: 'Rent it to drivers who use it for rides. Needs the listing fee and the roadworthy certificate.' },
+            ].map(({ key, icon: Icon, title, text }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPurpose(key)}
+                className={`text-left rounded-xl border-2 p-3 flex gap-3 ${purpose === key ? 'border-primary bg-primary/5' : 'border-border/50'}`}
+              >
+                <Icon className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                <span>
+                  <span className="block font-medium text-sm">{title}</span>
+                  <span className="block text-xs text-muted-foreground">{text}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-3">
+            After saving, finish listing within 7 days (pay or use your free listing, or submit the roadworthy certificate) or the vehicle is removed.
           </p>
-        </div>
+        </Card>
       )}
+      {isEditMode && purpose && (
+        <p className="text-xs text-muted-foreground mb-3">
+          For: <span className="font-medium">{purpose === 'both' ? 'rental and gigs' : purpose === 'gigs' ? 'gigs' : 'rental'}</span> ·{' '}
+          <Link to={`/vehicle-listing/${editingId}`} className="text-primary underline">listing &amp; verification</Link>
+        </p>
+      )}
+
       <Card className="p-6 border border-border/50">
         <div className="space-y-4">
           <div>
@@ -454,6 +478,8 @@ export default function AddVehicle() {
             <Input className="mt-1" placeholder="Johannesburg CBD" value={form.location} onChange={e => update('location', e.target.value)} />
             <p className="text-[11px] text-muted-foreground mt-1">This will be geocoded so drivers can find you in proximity searches.</p>
           </div>
+          {(needsRentalDetails || (isEditMode && !purpose)) && (
+          <>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Storage Type</Label>
@@ -485,6 +511,8 @@ export default function AddVehicle() {
               <Input className="mt-1" type="number" placeholder="1000" value={form.deposit} onChange={e => update('deposit', e.target.value)} />
             </div>
           </div>
+          </>
+          )}
           {isEditMode && (
             <div>
               <Label>Listing Status</Label>
@@ -503,37 +531,47 @@ export default function AddVehicle() {
           <div>
             <Label>Photos (up to 3)</Label>
             <div className="mt-2 flex gap-3 flex-wrap">
-              {images.map((img, i) => (
-                <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group">
+              {images.map((img) => (
+                <div key={img} className="relative w-20 h-20 rounded-xl overflow-hidden group">
                   <img src={img} alt="" className="w-full h-full object-cover" />
                   <button
-                    onClick={() => setImages(prev => prev.filter((_, idx) => idx !== i))}
+                    type="button"
+                    onClick={() => removeSavedImage(img)}
                     className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Remove photo"
                   >
                     <X className="w-4 h-4 text-white" />
                   </button>
                 </div>
               ))}
-              {images.length < 3 && (
+              {newFiles.map((f, i) => (
+                <div key={f.preview} className="relative w-20 h-20 rounded-xl overflow-hidden group">
+                  <img src={f.preview} alt="" className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeNewFile(i)}
+                    className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Remove photo"
+                  >
+                    <X className="w-4 h-4 text-white" />
+                  </button>
+                </div>
+              ))}
+              {photoCount < 3 && (
                 <label className="w-20 h-20 rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors">
-                  {uploading ? (
-                    <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      <ImagePlus className="w-5 h-5 text-muted-foreground" />
-                      <span className="text-[10px] text-muted-foreground mt-1">Add</span>
-                    </>
-                  )}
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                  <ImagePlus className="w-5 h-5 text-muted-foreground" />
+                  <span className="text-[10px] text-muted-foreground mt-1">Add</span>
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleImagePick} />
                 </label>
               )}
             </div>
+            <p className="text-[11px] text-muted-foreground mt-1">Photos upload when you save.</p>
           </div>
           <div className="flex gap-3 mt-2">
             <Button onClick={handleSubmit} className="flex-1" disabled={mutation.isPending || deleteMutation.isPending || deleteImagesMutation.isPending}>
               {mutation.isPending
-                ? (isRelist ? 'Re-listing…' : isEditMode ? 'Saving…' : 'Listing…')
-                : (isRelist ? 'Re-list Vehicle' : isEditMode ? 'Save Changes' : 'List Vehicle')}
+                ? (uploading ? 'Uploading photos…' : 'Saving…')
+                : (isEditMode ? 'Save Changes' : 'Save and continue')}
             </Button>
             {isEditMode && (
               <Button

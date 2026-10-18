@@ -1,6 +1,14 @@
 /**
  * Netlify Function: payfast-webhook (ITN handler)
- * Verifies PayFast payment and grants credits on success.
+ * Verifies PayFast payment, then by custom_str3 (payment category):
+ *   'gig_fare'     -> mark_gig_fare_paid() (migration 018) and, if the gig was
+ *                     waiting for it, offer the gig to nearby drivers
+ *   'listing_fee'  -> mark_listing_fee_paid() (an owner's rental listing,
+ *                     migration 021)
+ *   'driver_settlement' -> mark_driver_settlement_paid() (a driver paying
+ *                     commission owed on cash gigs, migration 020)
+ *   'verification' -> mark_verification_paid()
+ *   (none / other) -> ignored (credit packages were retired 2026-10-18)
  * Set Notify URL in PayFast to: https://skootlink.co.za/.netlify/functions/payfast-webhook
  *
  * NOTE ON custom_str4 (app tag): Skootlink and Crosssa share one PayFast
@@ -15,7 +23,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { generateITNSignature, PAYFAST_VALIDATE_URL } from './lib/payfast.js';
-import { PACKAGES } from './lib/packages.js';
+import { offerGigToDrivers, DEFAULT_RADIUS_METERS } from './lib/gigMatching.js';
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -92,6 +100,102 @@ export const handler = async (event) => {
     return { statusCode: 200, body: 'OK' };
   }
 
+  // ── Gig fares (card gigs are paid before the driver search starts) ────────
+  if (payment_category === 'gig_fare') {
+    const paid = parseFloat(fields.amount_gross || fields.amount || '0');
+    const { data: rows, error } = await supabase.rpc('mark_gig_fare_paid', {
+      p_m_payment_id: fields.m_payment_id,
+      p_pf_payment_id: fields.pf_payment_id,
+      p_amount: paid,
+    });
+    if (error) {
+      console.error('[payfast-webhook] mark_gig_fare_paid failed:', error);
+      return { statusCode: 500, body: 'Error' }; // PayFast retries the ITN
+    }
+    const { gig_id: gigId, action } = (rows && rows[0]) || {};
+    console.log(`[payfast-webhook] gig fare m_payment_id=${fields.m_payment_id} gig=${gigId} action=${action} amount=${paid}`);
+
+    if (action === 'start_matching') {
+      const { data: gig, error: gErr } = await supabase
+        .from('gig_requests')
+        .select('id, gig_type, pickup_address, dropoff_address, fare_amount, payment_method')
+        .eq('id', gigId)
+        .single();
+      if (gErr) {
+        console.error('[payfast-webhook] could not load paid gig:', gErr);
+      } else {
+        const { notified, pushed } = await offerGigToDrivers(supabase, gig, DEFAULT_RADIUS_METERS, 'payfast-webhook');
+        console.log(`[payfast-webhook] gig=${gigId} paid; offered to ${notified} driver(s), ${pushed} push(es)`);
+      }
+    } else if (action === 'refund_queued') {
+      await supabase.rpc('create_notification', {
+        p_user_id: user_id,
+        p_type: 'gig_refund',
+        p_title: 'Payment received after your request ended',
+        p_body: `We received R${paid.toFixed(2)} for a request that had already ended. It will be refunded to you.`,
+        p_data: { gig_id: gigId },
+      }).then(({ error: nErr }) => { if (nErr) console.error('[payfast-webhook] notify failed:', nErr); });
+    } else if (action === 'amount_mismatch') {
+      console.error(`[payfast-webhook] AMOUNT MISMATCH for gig fare m_payment_id=${fields.m_payment_id}: paid ${paid}`);
+    }
+    return { statusCode: 200, body: 'OK' };
+  }
+
+  // ── Listing fee for a rental listing (migration 021) ─────────────────────
+  if (payment_category === 'listing_fee') {
+    const paid = parseFloat(fields.amount_gross || fields.amount || '0');
+    const { data: rows, error } = await supabase.rpc('mark_listing_fee_paid', {
+      p_m_payment_id: fields.m_payment_id,
+      p_pf_payment_id: fields.pf_payment_id,
+      p_amount: paid,
+    });
+    if (error) {
+      console.error('[payfast-webhook] mark_listing_fee_paid failed:', error);
+      return { statusCode: 500, body: 'Error' }; // PayFast retries the ITN
+    }
+    const { vehicle_id: vehicleId, owner_id: ownerId, action } = (rows && rows[0]) || {};
+    console.log(`[payfast-webhook] listing fee m_payment_id=${fields.m_payment_id} vehicle=${vehicleId} action=${action} amount=${paid}`);
+    if (action === 'activated') {
+      await supabase.rpc('create_notification', {
+        p_user_id: ownerId,
+        p_type: 'listing_active',
+        p_title: 'Your vehicle is listed',
+        p_body: 'Payment received — your vehicle is now visible to drivers.',
+        p_data: { vehicle_id: vehicleId },
+      }).then(({ error: nErr }) => { if (nErr) console.error('[payfast-webhook] notify failed:', nErr); });
+    } else if (action === 'amount_mismatch' || action === 'vehicle_missing') {
+      console.error(`[payfast-webhook] LISTING FEE NEEDS A MANUAL REFUND: ${action} m_payment_id=${fields.m_payment_id} paid R${paid}`);
+    }
+    return { statusCode: 200, body: 'OK' };
+  }
+
+  // ── Driver pays commission owed on cash gigs (migration 020) ─────────────
+  if (payment_category === 'driver_settlement') {
+    const paid = parseFloat(fields.amount_gross || fields.amount || '0');
+    const { data: rows, error } = await supabase.rpc('mark_driver_settlement_paid', {
+      p_m_payment_id: fields.m_payment_id,
+      p_pf_payment_id: fields.pf_payment_id,
+      p_amount: paid,
+    });
+    if (error) {
+      console.error('[payfast-webhook] mark_driver_settlement_paid failed:', error);
+      return { statusCode: 500, body: 'Error' }; // PayFast retries the ITN
+    }
+    const { driver_id: driverId, action } = (rows && rows[0]) || {};
+    console.log(`[payfast-webhook] settlement m_payment_id=${fields.m_payment_id} driver=${driverId} action=${action} amount=${paid}`);
+    if (action === 'credited' || action === 'amount_mismatch') {
+      if (action === 'amount_mismatch') console.error(`[payfast-webhook] settlement amount differs from what was asked; credited R${paid}`);
+      await supabase.rpc('create_notification', {
+        p_user_id: driverId,
+        p_type: 'payout_settlement',
+        p_title: 'Payment received',
+        p_body: `Thanks — R${paid.toFixed(2)} has been taken off what you owe Skootlink.`,
+        p_data: null,
+      }).then(({ error: nErr }) => { if (nErr) console.error('[payfast-webhook] notify failed:', nErr); });
+    }
+    return { statusCode: 200, body: 'OK' };
+  }
+
   // ── Handle verification service payments ────────────────────────────────────
   if (payment_category === 'verification') {
     const { error } = await supabase.rpc('mark_verification_paid', {
@@ -105,47 +209,7 @@ export const handler = async (event) => {
     return { statusCode: 200, body: 'OK' };
   }
 
-  // ── Handle credit package payments (existing flow) ──────────────────────────
-  const pkg = PACKAGES[package_id];
-  if (!pkg) {
-    console.error('[payfast-webhook] unknown package:', package_id);
-    return { statusCode: 200, body: 'OK' };
-  }
-
-  // ── 5. Amount sanity check ──────────────────────────────────────────────
-  const paidAmount = parseFloat(fields.amount_gross || fields.amount || '0');
-  if (Math.abs(paidAmount - pkg.price_zar) > 0.5) {
-    console.error(`[payfast-webhook] amount mismatch: expected ${pkg.price_zar}, got ${paidAmount}`);
-    return { statusCode: 200, body: 'OK' };
-  }
-
-  // ── 6. Idempotency check ────────────────────────────────────────────────
-  const { data: existing } = await supabase
-    .from('credit_ledger')
-    .select('id')
-    .eq('ref_id', fields.pf_payment_id)
-    .eq('type', 'purchase')
-    .maybeSingle();
-
-  if (existing) {
-    console.log(`[payfast-webhook] pf_payment_id=${fields.pf_payment_id} already processed`);
-    return { statusCode: 200, body: 'OK' };
-  }
-
-  // ── 7. Grant credits ────────────────────────────────────────────────────
-  const { error: creditErr } = await supabase.rpc('add_credits', {
-    p_user_id:     user_id,
-    p_amount:      pkg.credits,
-    p_type:        'purchase',
-    p_description: `${pkg.label} via PayFast — R${pkg.price_zar}`,
-    p_ref_id:      fields.pf_payment_id,
-  });
-
-  if (creditErr) {
-    console.error('[payfast-webhook] add_credits failed:', creditErr);
-    return { statusCode: 500, body: 'Error' };
-  }
-
-  console.log(`[payfast-webhook] Granted ${pkg.credits} credits to user=${user_id}`);
+  // Credit packages were retired (2026-10-18): nothing creates them any more.
+  console.warn(`[payfast-webhook] ITN with no known payment category ignored: category=${payment_category || '(none)'} m_payment_id=${fields.m_payment_id}`);
   return { statusCode: 200, body: 'OK' };
 };

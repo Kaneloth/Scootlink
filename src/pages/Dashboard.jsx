@@ -23,8 +23,11 @@ import { generateContractSections, flattenContractSections, mergeDriverIntoDraft
 import ContractSectionsList from '@/components/contract/ContractSectionsList';
 import PageHeader from '@/components/layout/PageHeader';
 import StatCard from '@/components/dashboard/StatCard';
-import InsufficientCreditsModal from '@/components/credits/InsufficientCreditsModal';
-import { useCredits } from '@/hooks/useCredits';
+import HomeTopBar from '@/components/home/HomeTopBar';
+import OpenGigCards from '@/components/home/OpenGigCards';
+import DriverGigsPanel from '@/components/home/DriverGigsPanel';
+import OwnerAttention from '@/components/home/OwnerAttention';
+import CustomerHome from '@/components/home/CustomerHome';
 
 import VehicleCard from '@/components/vehicles/VehicleCard';
 import RentalCard from '@/components/dashboard/RentalCard';
@@ -32,6 +35,9 @@ import EmptyState from '@/components/common/EmptyState';
 import LeaveReviewModal from '@/components/reviews/LeaveReviewModal';
 import StarRating from '@/components/reviews/StarRating';
 import ImageLightbox from '@/components/ui/ImageLightbox';
+import { fnUrl } from '@/lib/functionsUrl';
+import RentalChatSheet from '@/components/chat/RentalChatSheet';
+import useRentalUnread from '@/hooks/useRentalUnread';
 
 // Skeleton for the stat cards row while user is loading
 function StatCardsSkeleton() {
@@ -61,182 +67,6 @@ function ActionButtonsSkeleton() {
   );
 }
 
-// ─── Top-up modal ───────────────────────────────────────────────────────────
-// Same packages/copy as the Credits tab in Settings — shown when an owner
-// doesn't have enough credits to finalise a rental agreement.
-const TOPUP_PACKAGES = [
-  { id: 'starter',  label: 'Starter Pack',  price: 49,  credits: 250  },
-  { id: 'standard', label: 'Standard Pack', price: 79,  credits: 450, popular: true },
-  { id: 'pro',      label: 'Pro Pack',      price: 129, credits: 750  },
-  { id: 'business', label: 'Business Pack', price: 199, credits: 1250 },
-];
-
-const TOPUP_CREDIT_COSTS = [
-  { icon: '💬', action: 'Start a chat',              cost: '50 credits'  },
-  { icon: '🚗', action: 'List a vehicle (1st)',       cost: '250 credits' },
-  { icon: '🚗', action: 'List a vehicle (2nd)',       cost: '200 credits' },
-  { icon: '🚗', action: 'List a vehicle (3rd+)',      cost: '175 credits' },
-  { icon: '📝', action: 'Sign a rental contract',     cost: '200 credits' },
-];
-
-function TopUpModal({ onClose }) {
-  const { balance, loading, refetch } = useCredits();
-  const [purchasing,  setPurchasing]  = useState(null);
-  const [selectedPkg, setSelectedPkg] = useState(
-    TOPUP_PACKAGES.find(p => p.popular)?.id || TOPUP_PACKAGES[1].id
-  );
-  const [showCosts, setShowCosts] = useState(false);
-
-  const handlePurchase = async () => {
-    const pkg = TOPUP_PACKAGES.find(p => p.id === selectedPkg);
-    if (!pkg) return;
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) { toast.error('Please sign in first.'); return; }
-    setPurchasing(pkg.id);
-
-    try {
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/payfast-initiate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ package_id: pkg.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not start payment');
-
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = data.action_url;
-      Object.entries(data.fields).forEach(([key, value]) => {
-        const input = document.createElement('input');
-        input.type  = 'hidden';
-        input.name  = key;
-        input.value = value;
-        form.appendChild(input);
-      });
-      document.body.appendChild(form);
-      form.submit();
-    } catch (err) {
-      toast.error(err.message || 'Could not start payment. Please try again.');
-      setPurchasing(null);
-    }
-  };
-
-  const selected = TOPUP_PACKAGES.find(p => p.id === selectedPkg);
-
-  return (
-    <div
-      className="fixed inset-0 z-[9999] bg-black/50 flex items-end sm:items-center justify-center p-4"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="bg-background rounded-2xl w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="font-bold text-foreground">Buy Credits</h2>
-          <button onClick={onClose} className="p-3 rounded-lg hover:bg-muted transition-colors -mr-1" style={{ minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <X className="w-5 h-5 text-muted-foreground" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-5">
-          {/* Balance */}
-          <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20">
-            <div>
-              <p className="text-xs text-muted-foreground">Your credit balance</p>
-              {loading
-                ? <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin mt-1" />
-                : <p className="text-3xl font-bold text-primary">{balance}</p>}
-              <p className="text-xs text-muted-foreground mt-0.5">credits · never expire</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <Coins className="w-6 h-6 text-primary" />
-            </div>
-          </div>
-
-          {/* Packages */}
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Choose a package</p>
-            <div className="space-y-2.5">
-              {TOPUP_PACKAGES.map(pkg => {
-                const isSelected = selectedPkg === pkg.id;
-                return (
-                  <button
-                    key={pkg.id}
-                    onClick={() => setSelectedPkg(pkg.id)}
-                    disabled={purchasing !== null}
-                    className={`w-full text-left rounded-2xl border-2 px-4 py-3.5 transition-all disabled:opacity-60 ${
-                      isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-card hover:border-primary/40'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary' : 'border-muted-foreground/40'}`}>
-                          {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
-                        </div>
-                        <div className="flex items-baseline gap-1.5">
-                          <span className={`text-xl font-extrabold ${isSelected ? 'text-primary' : 'text-foreground'}`}>
-                            {pkg.credits.toLocaleString()}
-                          </span>
-                          <span className="text-sm text-muted-foreground font-medium">credits</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {pkg.popular && (
-                          <span className="text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full">🔥 POPULAR</span>
-                        )}
-                        <span className={`text-base font-bold ${isSelected ? 'text-primary' : 'text-foreground'}`}>R{pkg.price}</span>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Pay button */}
-          <Button onClick={handlePurchase} disabled={purchasing !== null} className="w-full h-12 text-base font-bold rounded-2xl gap-2">
-            {purchasing
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
-              : <>Pay R{selected?.price} — Get {selected?.credits.toLocaleString()} credits</>}
-          </Button>
-          <p className="text-center text-[11px] text-muted-foreground -mt-3">
-            Secure payment via card or EFT · Credits added instantly
-          </p>
-
-          {/* How far your credits go — collapsible */}
-          <div className="border border-border rounded-2xl overflow-hidden">
-            <button onClick={() => setShowCosts(v => !v)} className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-muted/40 transition-colors">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">How far your credits go</p>
-              {showCosts ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-            </button>
-            {showCosts && (
-              <div className="px-4 pb-4 space-y-2 border-t border-border pt-3">
-                {TOPUP_CREDIT_COSTS.map(({ icon, action, cost }) => (
-                  <div key={action} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{icon}</span>
-                      <p className="text-xs text-muted-foreground">{action}</p>
-                    </div>
-                    <span className="text-xs font-semibold text-foreground shrink-0 ml-2">{cost}</span>
-                  </div>
-                ))}
-                <div className="pt-2 border-t border-border">
-                  <p className="text-[11px] text-muted-foreground text-center">Credits never expire · Sign-up bonus included</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Profile Detail Panel ─────────────────────────────────────────────────────
-// Standalone component so it can be used as a direct child of createPortal
-// without the broken .map() pattern.
 function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, canMessage, onMessageBlocked }) {
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [platformHistory, setPlatformHistory] = useState([]);
@@ -350,16 +180,19 @@ function ProfileDetailPanel({ profile, role, currentYear, onClose, onMessage, ca
             </div>
           )}
 
-          {/* Message button */}
-          <Button
-            className="w-full gap-2"
-            onClick={() => {
-              if (!canMessage) { onMessageBlocked(); return; }
-              onMessage(profile.id);
-            }}
-          >
-            <MessageCircle className="w-4 h-4" /> Message {profile.full_name?.split(' ')[0] || role}
-          </Button>
+          {/* Message button — only when the two of you share a rental (the chat
+              lives on that rental) */}
+          {onMessage && (
+            <Button
+              className="w-full gap-2"
+              onClick={() => {
+                if (!canMessage) { onMessageBlocked(); return; }
+                onMessage(profile.id);
+              }}
+            >
+              <MessageCircle className="w-4 h-4" /> Message {profile.full_name?.split(' ')[0] || role}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -380,6 +213,8 @@ export default function Dashboard() {
   const [selectedOwner,   setSelectedOwner]   = useState(null);
   const [loadingOwnerId,  setLoadingOwnerId]  = useState(null);
   const [endingRentalId,  setEndingRentalId]  = useState(null);
+  // Rental chat sheet: the rental whose chat is open (migration 017)
+  const [chatRental,      setChatRental]      = useState(null);
 
   // Contract modal states
   const [contractModal, setContractModal] = useState(false);
@@ -391,9 +226,6 @@ export default function Dashboard() {
   // 'review' = driver reading and confirming
   const [contractEditMode, setContractEditMode] = useState('accept');
 
-  // Insufficient-credits modal (shown when owner can't afford to finalise a rental)
-  const [showCreditsNeededModal, setShowCreditsNeededModal] = useState(false);
-  const [showTopUpModal, setShowTopUpModal] = useState(false);
 
   const ownerVehiclesRef = useRef(null);
   const ownerAssignmentsRef = useRef(null);
@@ -711,7 +543,9 @@ export default function Dashboard() {
   const { data: rentals = [] } = useQuery({
     queryKey: ['my-rentals'],
     queryFn: async () => {
-      const all = await Rental.list();
+      // Newest first: Rental.list() defaults to the OLDEST 50 rows, which
+      // would hide a user's recent rentals (and their chats) once they have more.
+      const all = await Rental.list('-created_at', 200);
       return all.filter(r => r.owner_id === user?.id || r.driver_id === user?.id);
     },
     enabled: !!user?.id,
@@ -722,13 +556,20 @@ export default function Dashboard() {
   const fetchProfilesViaFunction = async (ids) => {
     if (!ids || ids.length === 0) return [];
     try {
-      const res = await fetch('https://skootlink.co.za/.netlify/functions/get-profiles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids }),
-      });
-      if (res.ok) return await res.json();
-    } catch { /* fall through to direct query */ }
+      // get-profiles requires the caller's sign-in token.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const res = await fetch(fnUrl('get-profiles'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({ ids }),
+        });
+        if (res.ok) return await res.json();
+        console.error('[Dashboard] get-profiles failed:', res.status);
+      }
+    } catch (err) {
+      console.error('[Dashboard] get-profiles error, using direct query:', err);
+    }
     // Fallback: direct Supabase query using only columns confirmed to exist.
     // Including unknown columns (avatar_url, etc.) silently kills the entire query.
     const { data } = await supabase
@@ -800,6 +641,47 @@ export default function Dashboard() {
   const driverPendingConfRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'awaiting_driver_confirmation');
   const driverAcceptedRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'driver_accepted');
   const driverActiveRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'active');
+  const driverRequestedRentals = rentals.filter(r => r.driver_id === user?.id && r.status === 'pending');
+
+  // ── Rental chats ─────────────────────────────────────────────────────────
+  // Every chat belongs to a rental: it opens from that rental's card, from a
+  // profile panel (latest rental with that person) or from a push
+  // notification (/home?chat=<rentalId>).
+  const rentalUnread = useRentalUnread(user?.id);
+
+  const vehicleTitle = (r) => {
+    const v = vehicles.find(x => x.id === r.vehicle_id) || allVehiclesLookup.find(x => x.id === r.vehicle_id) || allVehicles.find(x => x.id === r.vehicle_id);
+    return v ? `${v.make} ${v.model}` : `Vehicle #${r.vehicle_id}`;
+  };
+
+  const openRentalChat = (r) => {
+    if (!r || !user) return;
+    setChatRental(r);
+  };
+
+  // Latest rental between me and this person (any status), for profile panels
+  const latestRentalWith = (personId) => rentals
+    .filter(r => (r.owner_id === user?.id && r.driver_id === personId) || (r.driver_id === user?.id && r.owner_id === personId))
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0) || b.id - a.id)[0] || null;
+
+  const renderChatButton = (r, label, className = 'flex-1') => {
+    const n = rentalUnread.forRental(r.id);
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        className={`${className} gap-1.5 text-primary border-primary/30 hover:bg-primary/5`}
+        onClick={(e) => { e.stopPropagation(); openRentalChat(r); }}
+      >
+        <MessageCircle className="w-3.5 h-3.5" /> {label}
+        {n > 0 && (
+          <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+            {n > 99 ? '99+' : n}
+          </span>
+        )}
+      </Button>
+    );
+  };
 
   const scrollToSection = (ref) => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -913,28 +795,11 @@ export default function Dashboard() {
     }
   };
 
-  // Owner's final confirm — deducts 200 credits, activates rental, downloads PDF
+  // Owner's final confirm — activates the rental and downloads the PDF. The
+  // rental agreement is included in the vehicle's listing fee (migration 021);
+  // credits are retired.
   const handleOwnerFinalise = async () => {
     if (!selectedProposal) return;
-
-    // Deduct 200 credits from the owner for accessing the rental agreement
-    // — admins are exempt from all credit gates.
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    const isAdminUser = currentUser?.user_metadata?.is_admin === true
-      || ['kaneloth@skootlink.co.za'].includes(currentUser?.email);
-    if (currentUser && !isAdminUser) {
-      const { error: creditErr } = await supabase.rpc('deduct_credits', {
-        p_user_id:     currentUser.id,
-        p_amount:      200,
-        p_type:        'spend',
-        p_description: 'Access rental agreement',
-        p_ref_id:      selectedProposal.id,
-      });
-      if (creditErr?.message?.includes('insufficient_credits')) {
-        setShowCreditsNeededModal(true);
-        return;
-      }
-    }
 
     try {
       const rental = rentals.find(r => r.id === selectedProposal.id);
@@ -1164,6 +1029,20 @@ export default function Dashboard() {
     }, { replace: true });
   }, [ownerPendingRentals, searchParams]);
 
+  // Deep link from a chat push notification: /home?chat=<rental_id>
+  useEffect(() => {
+    const chatId = searchParams.get('chat');
+    if (!chatId || !user) return;
+    const rental = rentals.find(r => String(r.id) === String(chatId));
+    if (!rental) return; // rentals may still be loading; this re-runs when they arrive
+    setChatRental(rental);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('chat');
+      return next;
+    }, { replace: true });
+  }, [rentals, searchParams, user]);
+
   // Owner withdraws the contract they sent — cancelled removes it from both views
   const handleWithdrawContract = async (rental) => {
     if (!window.confirm('Withdraw this contract? It will be removed from both your dashboard and the driver\'s. You can send a new proposal at any time.')) return;
@@ -1181,7 +1060,7 @@ export default function Dashboard() {
     if (!window.confirm('Reject this contract? It will be removed from both your dashboard and the owner\'s. Message the owner if you want to renegotiate.')) return;
     try {
       await Rental.update(rental.id, { status: 'cancelled' });
-      toast.success('Contract rejected and removed from both dashboards. Use Messages to renegotiate.');
+      toast.success('Contract rejected and removed from both dashboards. Send a new proposal to renegotiate.');
       queryClient.invalidateQueries({ queryKey: ['my-rentals'] });
     } catch (err) {
       toast.error(`Could not reject contract: ${err?.message || 'please try again.'}`);
@@ -1237,19 +1116,7 @@ export default function Dashboard() {
 
   const renderOwnerContent = () => (
     <>
-      <h3 className="text-lg font-semibold mb-3" ref={ownerVehiclesRef}>My Listed Vehicles</h3>
-      {vehicles.length > 0 ? (
-        <div className="space-y-3">
-          {vehicles.map(v => (
-            <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/edit-vehicle?id=${v.id}`)} />
-          ))}
-        </div>
-      ) : (
-        <EmptyState icon="🚗" title="No vehicles listed" description="Add your first vehicle to start earning"
-          action={<Link to="/add-vehicle"><Button size="sm"><Plus className="w-4 h-4 mr-1" />Add Vehicle</Button></Link>} />
-      )}
-
-      <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerAssignmentsRef}>Active Assignments</h3>
+      <h3 className="text-lg font-semibold mb-3" ref={ownerAssignmentsRef}>Rental Requests & Assignments</h3>
 
       {ownerPendingRentals.length > 0 && (
         <div className="mb-6">
@@ -1280,6 +1147,8 @@ export default function Dashboard() {
                       {loadingDriverId === r.driver_id ? 'Loading…' : '👤 View driver details'}
                     </button>
                   )}
+
+                  {r.driver_id && <div className="mb-3">{renderChatButton(r, 'Message Driver', 'w-full')}</div>}
 
                   {/* Accept / Reject — separated by a visible divider */}
                   <div className="flex gap-2 pt-2 border-t border-amber-200 dark:border-amber-800">
@@ -1313,8 +1182,9 @@ export default function Dashboard() {
                     <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                   </div>
                   <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
-                    Contract sent — waiting for driver to review. Edit if changes were agreed via Messages, or withdraw to cancel.
+                    Contract sent — waiting for driver to review. Edit if you agreed changes in the chat, or withdraw to cancel.
                   </p>
+                  {r.driver_id && <div className="mb-2">{renderChatButton(r, 'Message Driver', 'w-full')}</div>}
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" className="flex-1 gap-1.5" onClick={() => openContractModal(r, 'edit')}>
                       ✏️ Edit Contract
@@ -1348,6 +1218,7 @@ export default function Dashboard() {
                   <p className="text-xs text-emerald-700 dark:text-emerald-300 mb-3">
                     ✅ Driver has accepted the contract. Review it and confirm to activate the rental.
                   </p>
+                  {r.driver_id && <div className="mb-2">{renderChatButton(r, 'Message Driver', 'w-full')}</div>}
                   <div className="flex gap-2">
                     <Button size="sm" className="flex-1 gap-1" onClick={() => openContractModal(r, 'finalise')}>
                       <Check className="w-3.5 h-3.5" /> Confirm & Finalise
@@ -1388,16 +1259,7 @@ export default function Dashboard() {
                     </button>
                   )}
                   <div className="flex gap-2 pt-2 border-t border-green-200 dark:border-green-800">
-                    {r.driver_id && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 gap-1.5 text-primary border-primary/30 hover:bg-primary/5"
-                        onClick={() => navigate(`/messages?userId=${r.driver_id}`)}
-                      >
-                        <MessageCircle className="w-3.5 h-3.5" /> Message Driver
-                      </Button>
-                    )}
+                    {r.driver_id && renderChatButton(r, 'Message Driver')}
                     <Button
                       variant="outline"
                       size="sm"
@@ -1416,6 +1278,18 @@ export default function Dashboard() {
         ) : (
           <EmptyState icon="📋" title="No active assignments" description="When drivers rent your vehicles, they'll appear here" />
         )
+      )}
+
+      <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerVehiclesRef}>My Listed Vehicles</h3>
+      {vehicles.length > 0 ? (
+        <div className="space-y-3">
+          {vehicles.map(v => (
+            <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/edit-vehicle?id=${v.id}`)} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState icon="🚗" title="No vehicles listed" description="Add your first vehicle to start earning"
+          action={<Link to="/add-vehicle"><Button size="sm"><Plus className="w-4 h-4 mr-1" />Add Vehicle</Button></Link>} />
       )}
 
       <h3 className="text-lg font-semibold mb-3 mt-8" ref={ownerNearbyDriversRef}>Nearby Drivers</h3>
@@ -1516,6 +1390,26 @@ export default function Dashboard() {
 
   const renderDriverContent = () => (
     <>
+      {driverRequestedRentals.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold mb-3">Requests You Sent</h3>
+          <div className="space-y-3">
+            {driverRequestedRentals.map(r => {
+              const ownerName = getCounterpartyName(r.owner_id) || 'Owner';
+              return (
+                <Card key={r.id} className="p-4 border border-border/50">
+                  <p className="font-semibold">{vehicleTitle(r)}</p>
+                  <p className="text-xs text-muted-foreground">Owner: {ownerName}</p>
+                  <p className="text-xs text-muted-foreground">{r.start_date} – {r.end_date}</p>
+                  <p className="text-xs text-muted-foreground mt-2">Waiting for the owner to respond.</p>
+                  {r.owner_id && <div className="mt-3">{renderChatButton(r, 'Message Owner', 'w-full')}</div>}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {driverPendingConfRentals.length > 0 && (
         <div className="mb-6">
           <h3 className="text-lg font-semibold mb-3">Contract Pending Your Review</h3>
@@ -1532,8 +1426,9 @@ export default function Dashboard() {
                     <p className="text-xs font-medium">R {r.price_per_week}/week • Deposit R {r.deposit}</p>
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Review the contract carefully. If you need changes, use Messages to discuss with the owner first.
+                    Review the contract carefully. If you need changes, message the owner first.
                   </p>
+                  {r.owner_id && <div className="mb-2">{renderChatButton(r, 'Message Owner', 'w-full')}</div>}
                   <div className="flex gap-2">
                     <Button size="sm" className="flex-1 gap-1" onClick={() => openContractModal(r, 'review')}>
                       <Check className="w-3.5 h-3.5" /> Review & Accept
@@ -1565,6 +1460,7 @@ export default function Dashboard() {
                   <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
                     ✅ You accepted the contract. Waiting for the owner to confirm and activate the rental.
                   </p>
+                  {r.owner_id && <div className="mt-3">{renderChatButton(r, 'Message Owner', 'w-full')}</div>}
                 </Card>
               );
             })}
@@ -1597,16 +1493,7 @@ export default function Dashboard() {
                   </button>
                 )}
                 <div className="flex gap-2 pt-2 border-t border-green-200 dark:border-green-800">
-                  {r.owner_id && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 gap-1.5 text-primary border-primary/30 hover:bg-primary/5"
-                      onClick={() => navigate(`/messages?userId=${r.owner_id}`)}
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" /> Message Owner
-                    </Button>
-                  )}
+                  {r.owner_id && renderChatButton(r, 'Message Owner')}
                   <Button
                     variant="outline"
                     size="sm"
@@ -1634,7 +1521,7 @@ export default function Dashboard() {
               .slice((driverVehiclesPage - 1) * DRIVER_VEHICLES_PAGE_SIZE, driverVehiclesPage * DRIVER_VEHICLES_PAGE_SIZE)
               .map(v => {
                 const isAdminUser = user?.user_metadata?.is_admin === true || ['kaneloth@skootlink.co.za'].includes(user?.email);
-                const canRent = true; // credits checked at rental request stage
+                const canRent = true;
                 return canRent ? (
                   <VehicleCard key={v.id} vehicle={v} onClick={() => navigate(`/rental-request?vehicleId=${v.id}`)} />
                 ) : (
@@ -1765,31 +1652,24 @@ export default function Dashboard() {
 
   const currentYear = new Date().getFullYear();
 
-  const [refreshing, setRefreshing] = useState(false);
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['my-vehicles'] }),
-      queryClient.invalidateQueries({ queryKey: ['all-vehicles'] }),
-      queryClient.invalidateQueries({ queryKey: ['nearby-vehicles'] }),
-      queryClient.invalidateQueries({ queryKey: ['all-vehicles-lookup'] }),
-      queryClient.invalidateQueries({ queryKey: ['my-rentals'] }),
-      queryClient.invalidateQueries({ queryKey: ['my-reviews'] }),
-    ]);
-    setRefreshing(false);
-  };
+  // Refreshing is pull-to-refresh on the whole page (AppLayout's PullToRefresh)
+
+  // Customers (rides and deliveries only) get their own Home
+  if (user && accountType === 'customer') return <CustomerHome user={user} />;
+
+  const drivesGigs = accountType === 'driver' || accountType === 'both';
+  const ownsVehicles = accountType === 'owner' || accountType === 'both';
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-      <PageHeader
-        title={`Welcome${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`}
-        subtitle="Manage your vehicles and rentals"
-        action={
-          <button onClick={handleRefresh} className="p-1.5 rounded-full hover:bg-muted transition-colors" aria-label="Refresh">
-            <RefreshCw className={`w-4 h-4 text-primary ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
-        }
-      />
+      <HomeTopBar user={user} />
+
+      {/* A live trip comes first, for every role */}
+      {user?.id && <OpenGigCards userId={user.id} />}
+
+      {/* Then the role's own controls: gigs for drivers, vehicles needing action for owners */}
+      {user?.id && drivesGigs && <DriverGigsPanel userId={user.id} />}
+      {user?.id && ownsVehicles && <OwnerAttention userId={user.id} />}
 
       {/* Automated reminder banner (condition-triggered, not manually sent) */}
       {reminder && (() => {
@@ -1898,8 +1778,8 @@ export default function Dashboard() {
 
      
 
-      {renderStatCards()}
       {renderActionButtons()}
+      {renderStatCards()}
 
       <div className="mt-8" ref={tabsRef}>
         {/* Don't render tabs until user is loaded — avoids flashing wrong tab content */}
@@ -1974,6 +1854,18 @@ export default function Dashboard() {
         />
       )}
 
+      {chatRental && user && (
+        <RentalChatSheet
+          rentalId={chatRental.id}
+          meId={user.id}
+          otherId={chatRental.owner_id === user.id ? chatRental.driver_id : chatRental.owner_id}
+          otherName={getCounterpartyName(chatRental.owner_id === user.id ? chatRental.driver_id : chatRental.owner_id)
+            || (chatRental.owner_id === user.id ? 'Driver' : 'Owner')}
+          subtitle={vehicleTitle(chatRental)}
+          onClose={() => setChatRental(null)}
+        />
+      )}
+
       {/* Driver & Owner profile detail panels — two explicit portals (never use .map for portals) */}
       {selectedDriver && createPortal(
         <ProfileDetailPanel
@@ -1981,7 +1873,7 @@ export default function Dashboard() {
           role="Driver"
           currentYear={currentYear}
           onClose={() => setSelectedDriver(null)}
-          onMessage={(id) => { setSelectedDriver(null); navigate(`/messages?userId=${id}`); }}
+          onMessage={latestRentalWith(selectedDriver.id) ? () => { const r = latestRentalWith(selectedDriver.id); setSelectedDriver(null); openRentalChat(r); } : null}
           canMessage={true}
           onMessageBlocked={() => toast.warning('Please upgrade your account to send messages')}
         />,
@@ -1993,7 +1885,7 @@ export default function Dashboard() {
           role="Owner"
           currentYear={currentYear}
           onClose={() => setSelectedOwner(null)}
-          onMessage={(id) => { setSelectedOwner(null); navigate(`/messages?userId=${id}`); }}
+          onMessage={latestRentalWith(selectedOwner.id) ? () => { const r = latestRentalWith(selectedOwner.id); setSelectedOwner(null); openRentalChat(r); } : null}
           canMessage={true}
           onMessageBlocked={() => toast.warning('Please upgrade your account to send messages')}
         />,
@@ -2084,7 +1976,7 @@ export default function Dashboard() {
                 {showNearbyContractForm && (
                   <div className="mt-4 space-y-3">
                     <p className="text-xs text-muted-foreground">
-                      Use this after agreeing on terms via Messages. The driver will see the contract on their dashboard and confirm to activate the rental.
+                      The driver will see the contract on their dashboard and confirm to activate the rental.
                     </p>
 
                     {vehicles.length === 0 ? (
@@ -2170,19 +2062,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="px-6 pb-6 shrink-0">
-              <Button
-                className="w-full gap-2"
-                variant="outline"
-                onClick={() => {
-                  setNearbyDriverDetail(null);
-                  setShowNearbyContractForm(false);
-                  navigate(`/messages?userId=${nearbyDriverDetail.id}`);
-                }}
-              >
-                <MessageCircle className="w-4 h-4" /> Message {nearbyDriverDetail.full_name?.split(' ')[0] || 'Driver'}
-              </Button>
-            </div>
           </div>
         </div>,
         document.body
@@ -2251,9 +2130,9 @@ export default function Dashboard() {
 
             <p className="text-xs text-muted-foreground mb-3 shrink-0">
               {contractEditMode === 'review'
-                ? 'Read the full agreement carefully. If you need changes, close this and discuss with the owner via Messages. Accept only when fully satisfied.'
+                ? 'Read the full agreement carefully. If you need changes, close this and message the owner from the contract card. Accept only when fully satisfied.'
                 : contractEditMode === 'edit'
-                  ? 'Edit the contract to reflect changes agreed via Messages, then save. The driver will see the updated version.'
+                  ? 'Edit the contract to reflect the changes you agreed, then save. The driver will see the updated version.'
                   : contractEditMode === 'finalise'
                     ? 'The driver has accepted this contract. Review it one final time, then confirm to activate the rental.'
                     : 'Edit the contract below — fill in all details, dates and terms. When ready, send it to the driver to review and accept.'}
@@ -2311,20 +2190,6 @@ export default function Dashboard() {
         document.body
       )}
 
-      {/* Insufficient-credits prompt — shown when owner can't afford to finalise a rental */}
-      <InsufficientCreditsModal
-        open={showCreditsNeededModal}
-        onClose={() => setShowCreditsNeededModal(false)}
-        requiredAmount={200}
-        actionLabel="finalise this rental agreement"
-        onViewPackages={() => setShowTopUpModal(true)}
-      />
-
-      {/* Top-up / buy-credits modal */}
-      {showTopUpModal && createPortal(
-        <TopUpModal onClose={() => setShowTopUpModal(false)} />,
-        document.body
-      )}
     </div>
   );
 }

@@ -15,6 +15,8 @@
  * Returns null only if everything fails.
  */
 
+import { fnUrl } from '@/lib/functionsUrl';
+
 // ── Known SA places for fuzzy correction ─────────────────────────────────────
 const SA_PLACES = [
   'Pretoria', 'Johannesburg', 'Cape Town', 'Durban', 'Bloemfontein',
@@ -116,7 +118,7 @@ async function _tryGeocode(query) {
   // 3. Nominatim via Netlify proxy
   try {
     const res = await fetch(
-      `/.netlify/functions/geocode?q=${encodeURIComponent(query)}`
+      `${fnUrl('geocode')}?q=${encodeURIComponent(query)}`
     );
     if (res.ok) {
       const data = await res.json();
@@ -159,4 +161,69 @@ export async function geocodeLocation(query) {
 
   console.error('[geocode] All geocoders failed for query:', query);
   return null;
+}
+
+// ── Live-typing suggestions (NEW) ─────────────────────────────────────────────
+// Separate from geocodeLocation() above, which is deliberately kept
+// untouched — Onboarding.jsx and AddVehicle.jsx both depend on its current
+// single-best-match, 3-service-fallback behavior.
+//
+// This uses Photon ONLY, not the full 3-service fallback chain — a
+// debounced as-you-type dropdown needs one fast source, not a chain that
+// can take 1-3+ seconds per keystroke pause. Photon is the one of the
+// three actually suited to this (returns ranked multiple results;
+// Open-Meteo and Nominatim are reasonable single-shot fallbacks but
+// weren't built for rapid-fire suggestion queries).
+//
+// Returns [] (never throws) on any failure or empty query — callers
+// should treat an empty array as "no suggestions yet", not an error.
+export async function searchLocationSuggestions(query, limit = 5) {
+  if (!query || query.trim().length < 3) return [];
+
+  try {
+    const res = await fetch(
+      `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=${limit}&lang=en`
+    );
+    if (!res.ok) return [];
+
+    const geojson = await res.json();
+    const features = geojson?.features || [];
+
+    return features.map((feature) => {
+      const [longitude, latitude] = feature.geometry.coordinates;
+      const p = feature.properties;
+      return {
+        latitude,
+        longitude,
+        displayName: [p.name, p.city, p.state, p.country].filter(Boolean).join(', '),
+      };
+    });
+  } catch (err) {
+    console.error('[geocode] searchLocationSuggestions failed:', err);
+    return [];
+  }
+}
+
+
+// ── Reverse geocoding (coordinates -> short place name) ───────────────────────
+// Photon (OpenStreetMap), same source as the live suggestions. Returns
+// { short, full } — short is "Suburb, City" for compact display (Home header),
+// full is a street-level address (pickup field) — or null on any failure.
+export async function reverseGeocode(latitude, longitude) {
+  try {
+    const res = await fetch(`https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}&lang=en`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const p = data?.features?.[0]?.properties;
+    if (!p) return null;
+    const area = p.district || p.locality || p.suburb || p.name;
+    const city = p.city || p.town || p.county || p.state;
+    const short = [area, city].filter((v, i, a) => v && a.indexOf(v) === i).join(', ');
+    const street = p.street ? `${p.housenumber ? `${p.housenumber} ` : ''}${p.street}` : (p.name && p.name !== area ? p.name : null);
+    const full = [street, area, city].filter((v, i, a) => v && a.indexOf(v) === i).join(', ');
+    return short ? { short, full: full || short } : null;
+  } catch (err) {
+    console.warn('[geocode] reverse geocode failed:', err.message);
+    return null;
+  }
 }

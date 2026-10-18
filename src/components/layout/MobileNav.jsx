@@ -1,34 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Search, Clock, Briefcase, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Search, Clock, Briefcase, Route, Wallet } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
+import useRentalUnread from '@/hooks/useRentalUnread';
 
 const baseItems = [
   { label: 'Home',     icon: LayoutDashboard, path: '/home'            },
   { label: 'Search',   icon: Search,          path: '/search-vehicles' },
   { label: 'Activity',  icon: Clock,           path: '/activity'        },
   { icon: Briefcase, label: 'Briefcase', path: '/briefcase' },
-  { label: 'Messages', icon: MessageCircle,   path: '/messages'        },
 ];
 
 export default function MobileNav() {
   const location                          = useLocation();
   const [accountType, setAccountType]     = useState('driver');
-  const [unreadCount, setUnreadCount]     = useState(0);
-  const [creditModalOpen, setCreditModalOpen] = useState(false);
-  const userIdRef                          = useRef(null);
-
-  // Hide nav when the credit purchase modal is open
-  useEffect(() => {
-    const onOpen  = () => setCreditModalOpen(true);
-    const onClose = () => setCreditModalOpen(false);
-    window.addEventListener('skootlink:credit-modal-open',  onOpen);
-    window.addEventListener('skootlink:credit-modal-close', onClose);
-    return () => {
-      window.removeEventListener('skootlink:credit-modal-open',  onOpen);
-      window.removeEventListener('skootlink:credit-modal-close', onClose);
-    };
-  }, []);
+  const [userId, setUserId]               = useState(null);
 
   // ── Resolve user ID and account type from Supabase auth directly ──────────
   // Resolve effective account type from profile
@@ -39,9 +25,8 @@ export default function MobileNav() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      userIdRef.current = user.id;
+      setUserId(user.id);
       setAccountType(resolveAccountType(user.user_metadata));
-      fetchUnreadCount(user.id);
     });
   }, []);
 
@@ -49,68 +34,37 @@ export default function MobileNav() {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        userIdRef.current = session.user.id;
+        setUserId(session.user.id);
         setAccountType(resolveAccountType(session.user.user_metadata));
-        fetchUnreadCount(session.user.id);
+      } else {
+        setUserId(null);
       }
     });
     return () => subscription?.unsubscribe();
   }, []);
 
-  // ── Unread count fetch ────────────────────────────────────────────────────
-  const fetchUnreadCount = async (userId) => {
-    if (!userId) return;
-    const [{ data: unread, error }, { data: blockedRows }] = await Promise.all([
-      supabase.from('messages').select('id, sender_id').eq('receiver_id', userId).eq('read', false),
-      supabase.from('blocked_users').select('blocked_id').eq('blocker_id', userId),
-    ]);
-    if (error) return;
-    const blockedIds = new Set((blockedRows || []).map(r => r.blocked_id));
-    const count = (unread || []).filter(m => !blockedIds.has(m.sender_id)).length;
-    setUnreadCount(count);
-  };
-
-  // ── Realtime: refresh count on any message change ────────────────────────
-  useEffect(() => {
-    const channel = supabase
-      .channel('mobilenav-unread-badge')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-        if (userIdRef.current) fetchUnreadCount(userIdRef.current);
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, () => {
-        if (userIdRef.current) fetchUnreadCount(userIdRef.current);
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, () => {
-        if (userIdRef.current) fetchUnreadCount(userIdRef.current);
-      })
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, []);
-
-  // ── Polling fallback: refresh every 20 s in case realtime is unavailable ──
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (userIdRef.current) fetchUnreadCount(userIdRef.current);
-    }, 20000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // ── Re-fetch whenever route changes (opening /messages marks as read) ─────
-  useEffect(() => {
-    if (userIdRef.current) fetchUnreadCount(userIdRef.current);
-  }, [location.pathname]);
+  // ── Unread chat badge on Home ─────────────────────────────────────────────
+  // There is no inbox: rental chats open from their rental card on Home, so
+  // the unread count for rental chats sits on the Home tab. Gig chats show
+  // their own count on the trip screen.
+  const { total: unreadCount } = useRentalUnread(userId);
 
   const searchPath =
     accountType === 'owner' ? '/find-drivers' :
     accountType === 'both'  ? '/mysearch'     :
     '/search-vehicles';
 
-  const navItems = baseItems.map(item =>
-    item.label === 'Search' ? { ...item, path: searchPath } : item
-  );
-
-  if (creditModalOpen) return null;
+  // Customers (rides and deliveries only): the Search slot holds their trips
+  // and the Briefcase slot their payments — same tab positions, so swiping
+  // between tabs works the same for every role.
+  const navItems = accountType === 'customer'
+    ? baseItems.map(item =>
+        item.label === 'Search'    ? { label: 'Trips',    icon: Route,  path: '/mysearch' } :
+        item.label === 'Briefcase' ? { label: 'Payments', icon: Wallet, path: '/briefcase' } :
+        item)
+    : baseItems.map(item =>
+        item.label === 'Search' ? { ...item, path: searchPath } : item
+      );
 
   return (
     <nav
@@ -120,7 +74,7 @@ export default function MobileNav() {
       <div className="flex justify-around items-center py-2 px-2">
         {navItems.map((item) => {
           const isActive  = location.pathname === item.path;
-          const showBadge = item.label === 'Messages' && unreadCount > 0;
+          const showBadge = item.label === 'Home' && unreadCount > 0;
 
           return (
             <Link
