@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import GigRatingCard from '@/components/gigs/GigRatingCard';
 import GigChat from '@/components/gigs/GigChat';
+import RefundBankDetails from '@/components/gigs/RefundBankDetails';
 import { Loader2, Car, Package, MapPin, Star, Phone, XCircle, CreditCard, ShieldCheck } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
@@ -376,9 +377,9 @@ export default function GigStatus() {
   }
   const refundAmount = Math.max(0, Number(gig.fare_amount || 0) - Number(gig.cancellation_fee || 0));
   const refundNote = gig.payment_status === 'refund_due'
-    ? `A refund of ${formatRand(refundAmount)} is on its way to your card.`
+    ? `A refund of ${formatRand(refundAmount)} is on its way to you.`
     : gig.payment_status === 'refunded'
-      ? `${formatRand(refundAmount)} has been refunded to your card. Your bank may take a few days to show it.`
+      ? `${formatRand(refundAmount)} has been refunded. Your bank may take a few days to show it.`
       : null;
   const showDriver = (gig.status === 'accepted' || gig.status === 'in_progress') && driverProfile;
   const canCancel = gig.status === 'awaiting_payment' || gig.status === 'pending' || gig.status === 'accepted';
@@ -425,6 +426,9 @@ export default function GigStatus() {
 
         {refundNote && (
           <p className="text-sm mb-4 rounded-lg bg-muted p-3">{refundNote}</p>
+        )}
+        {gig.payment_status === 'refund_due' && (
+          <RefundBankDetails gigId={gig.id} meId={gig.customer_id} />
         )}
 
         {gig.status === 'awaiting_payment' && !confirmingPayment && (

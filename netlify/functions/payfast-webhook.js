@@ -129,7 +129,7 @@ export const handler = async (event) => {
         p_user_id: user_id,
         p_type: 'gig_refund',
         p_title: 'Payment received after your request ended',
-        p_body: `We received R${paid.toFixed(2)} for a request that had already ended. It will be refunded to your card.`,
+        p_body: `We received R${paid.toFixed(2)} for a request that had already ended. It will be refunded to you.`,
         p_data: { gig_id: gigId },
       }).then(({ error: nErr }) => { if (nErr) console.error('[payfast-webhook] notify failed:', nErr); });
     } else if (action === 'amount_mismatch') {

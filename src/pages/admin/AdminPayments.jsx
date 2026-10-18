@@ -4,8 +4,11 @@
 // Everything goes through the admin-payments Netlify function (migration 018).
 //
 // Refunds: a paid card gig that is cancelled or finds no driver queues a
-// refund of the fare minus any fee. "Refund now" sends it through PayFast's
-// Refunds API (live mode only — PayFast refunds don't work in sandbox).
+// refund of the fare minus any fee. "Refund now" asks PayFast how it can be
+// refunded and sends it (live mode only — PayFast refunds don't work in
+// sandbox). When PayFast will only pay it into a bank account, it waits for
+// the customer to add their bank details on the gig screen, then shows as
+// due again.
 // "Mark refunded" records a refund done by hand in the PayFast dashboard.
 // Automatic refunds (every minute, by gig-expiry-check) can be switched on
 // once a live refund has been checked.
@@ -27,6 +30,7 @@ const who = (p) => (p ? `${p.full_name || 'Unnamed'}${p.email ? ` · ${p.email}`
 
 const REFUND_CLS = {
   due: 'bg-amber-100 text-amber-700',
+  needs_bank_details: 'bg-purple-100 text-purple-700',
   processing: 'bg-blue-100 text-blue-700',
   failed: 'bg-red-100 text-red-700',
   refunded: 'bg-green-100 text-green-700',
@@ -57,7 +61,12 @@ function RefundRow({ r, mode, onDone }) {
   const refundNow = async () => {
     if (!window.confirm(`Send a refund of ${rand(r.amount)} to ${r.customer?.full_name || 'the customer'} through PayFast now?`)) return;
     setBusy('send');
-    try { await callAdminPayments({ action: 'refund_now', refundId: r.id }); toast.success('Refund sent ✓'); onDone(); }
+    try {
+      const out = await callAdminPayments({ action: 'refund_now', refundId: r.id });
+      if (out.ok) toast.success(out.method === 'BANK_PAYOUT' ? 'Refund sent to the customer\'s bank account ✓' : 'Refund sent ✓');
+      else if (out.needsBankDetails) toast(out.message || 'Waiting for the customer\'s bank details');
+      onDone();
+    }
     catch (err) { toast.error(err.message); onDone(); }
     setBusy(null);
   };
@@ -78,9 +87,19 @@ function RefundRow({ r, mode, onDone }) {
           <p className="text-xs text-muted-foreground">{who(r.customer)}</p>
           <p className="text-xs text-muted-foreground">Queued {when(r.created_at)}{r.attempts ? ` · ${r.attempts} attempt(s)` : ''}</p>
         </div>
-        <span className={`text-[11px] px-2 py-0.5 rounded-full ${REFUND_CLS[r.status] || 'bg-muted'}`}>{r.status}</span>
+        <span className={`text-[11px] px-2 py-0.5 rounded-full ${REFUND_CLS[r.status] || 'bg-muted'}`}>
+          {r.status === 'needs_bank_details' ? 'waiting for bank details' : r.status}
+        </span>
       </div>
-      {r.last_error && r.status !== 'refunded' && <p className="text-xs text-red-700 break-words">{r.last_error}</p>}
+      {(r.funding_type || r.refund_method) && (
+        <p className="text-xs text-muted-foreground">
+          {r.funding_type ? `Paid by ${r.funding_type}` : ''}{r.funding_type && r.refund_method ? ' · ' : ''}
+          {r.refund_method === 'BANK_PAYOUT' ? 'refund goes to a bank account' : r.refund_method === 'PAYMENT_SOURCE' ? 'refund goes back to the card' : r.refund_method || ''}
+        </p>
+      )}
+      {r.last_error && r.status !== 'refunded' && (
+        <p className={`text-xs break-words ${r.status === 'needs_bank_details' ? 'text-purple-700' : 'text-red-700'}`}>{r.last_error}</p>
+      )}
       {r.status === 'refunded' && (
         <p className="text-xs text-muted-foreground">Refunded {when(r.processed_at)}{r.provider_reference ? ` · ref ${r.provider_reference}` : ''}</p>
       )}

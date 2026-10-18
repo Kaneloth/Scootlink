@@ -4,7 +4,8 @@
  *
  * POST body:
  *   { action: 'overview' }
- *   { action: 'refund_now', refundId }                 send a queued refund through PayFast (live mode only)
+ *   { action: 'refund_now', refundId }                 ask PayFast how it can be refunded, then send it (live mode only);
+ *                                                      a bank payout without the customer's details waits for them
  *   { action: 'mark_refunded', refundId, reference }   refund done by hand in the PayFast dashboard
  *   { action: 'settle_payout', withdrawalId, outcome: 'processing' | 'paid' | 'rejected', note }
  *                                                      note = EFT reference (paid) or reason (rejected)
@@ -56,7 +57,7 @@ export const handler = async (event) => {
     if (body.action === 'overview') {
       const [refundsRes, payoutsRes, settingsRes, paidRes] = await Promise.all([
         supabaseAdmin.from('gig_refunds')
-          .select('id, gig_id, customer_id, amount, status, attempts, last_error, provider_reference, created_at, processed_at')
+          .select('id, gig_id, customer_id, amount, status, attempts, last_error, provider_reference, refund_method, funding_type, created_at, processed_at')
           .order('created_at', { ascending: false }).limit(100),
         supabaseAdmin.from('withdrawal_requests')
           .select('id, driver_id, amount, status, bank_account_holder, bank_name, bank_account_number, bank_branch_code, bank_account_type, requested_at, processed_at, payment_reference, rejection_reason')
@@ -84,7 +85,10 @@ export const handler = async (event) => {
 
     if (body.action === 'refund_now') {
       const out = await sendGigRefund(supabaseAdmin, Number(body.refundId), user.id);
-      return reply(out.ok ? 200 : 400, out.ok ? { ok: true, reference: out.reference } : { error: out.error });
+      if (out.ok) return reply(200, { ok: true, reference: out.reference, method: out.method });
+      // Not an error: PayFast wants a bank payout and the customer has been asked for details
+      if (out.needsBankDetails) return reply(200, { ok: false, needsBankDetails: true, message: out.error });
+      return reply(400, { error: out.error });
     }
 
     if (body.action === 'mark_refunded') {
