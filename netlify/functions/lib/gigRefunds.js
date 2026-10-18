@@ -77,6 +77,9 @@ export async function sendGigRefund(supabase, refundId, adminId = null) {
   catch (err) { return fail(`PayFast refund query failed: ${err.message}`); }
   if (!q.ok) return fail(`PayFast refund query ${q.status}: ${JSON.stringify(q.body).slice(0, 500)}`);
   const info = payload(q.body);
+  // Keep PayFast's own answer for the admin screen and the function log
+  const raw = JSON.stringify(q.body).slice(0, 600);
+  console.log(`[gigRefunds] refund ${refund.id} query for ${payment.pf_payment_id}: ${raw}`);
   const available = Number(info.amount_available_for_refund);
   const isFull = Number.isFinite(available) ? cents >= available : cents >= Math.round(Number(payment.amount) * 100);
   const option = (isFull ? info.refund_full : info.refund_partial) || {};
@@ -85,8 +88,8 @@ export async function sendGigRefund(supabase, refundId, adminId = null) {
   const meta = { p_method: method, p_funding_type: funding };
 
   if (String(info.status || '').toUpperCase() === 'NOT_AVAILABLE' || method === 'NOT_AVAILABLE' || !method) {
-    const why = (info.errors || []).join(' ') || 'PayFast says this payment cannot be refunded through the API';
-    return fail(`Not refundable via PayFast (${isFull ? 'full' : 'partial'}): ${why}`, meta);
+    const why = (info.errors || []).join(' ') || 'no reason given';
+    return fail(`Not refundable via PayFast (${isFull ? 'full' : 'partial'}): ${why}. PayFast replied: ${raw}`, meta);
   }
   if (Number.isFinite(available) && cents > available) {
     return fail(`PayFast has only R${(available / 100).toFixed(2)} left to refund on this payment`, meta);
