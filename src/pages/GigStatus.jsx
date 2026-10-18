@@ -14,21 +14,31 @@
 // Falls back to a manual refetch on mount + a 5s poll as a safety net in
 // case Realtime isn't wired up correctly, so this doesn't fail silently
 // if that dashboard setting turns out to be off.
+//
+// Payment (migration 018): a new card gig starts as 'awaiting_payment'. This
+// page shows the fare and a Pay button (gig-checkout -> PayFast). When
+// PayFast's ITN confirms the payment the gig becomes 'pending' and the
+// driver search starts; the poll / Realtime picks that up. After a paid gig
+// is cancelled or finds no driver, the refund state is shown here.
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, fetchProfilesByIds } from '@/api/supabaseData';
+import { fnUrl } from '@/lib/functionsUrl';
+import { openPayfastCheckout, PAYMENT_RESULT_EVENT } from '@/lib/payfastCheckout';
+import { Capacitor } from '@capacitor/core';
 import { notify } from '@/lib/notify';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import GigRatingCard from '@/components/gigs/GigRatingCard';
 import GigChat from '@/components/gigs/GigChat';
-import { Loader2, Car, Package, MapPin, Star, Phone, XCircle } from 'lucide-react';
+import { Loader2, Car, Package, MapPin, Star, Phone, XCircle, CreditCard, ShieldCheck } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { toast } from 'sonner';
 
 const STATUS_COPY = {
+  awaiting_payment: { title: 'Pay to find a driver', sub: 'We start searching as soon as your payment is confirmed' },
   pending: { title: 'Finding a driver...', sub: 'Searching nearby drivers' },
   accepted: { title: 'Driver found!', sub: 'Your driver is on the way' },
   in_progress: { title: 'Gig in progress', sub: null },
@@ -52,6 +62,11 @@ export default function GigStatus() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportText, setReportText] = useState('');
   const [reporting, setReporting] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [paying, setPaying] = useState(false);
+  // Set when the customer comes back from PayFast; cleared once the ITN has
+  // moved the gig on (or after 2 minutes, in case the payment never arrives)
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
   const loadedVehicleIdRef = useRef(null);
   // Which driver's profile is loaded (or loading). A ref, not state, so the
   // 5s poll and the Realtime handler always see the current value.
@@ -179,11 +194,18 @@ export default function GigStatus() {
       }
       fee = Number(quote) || 0;
     }
-    let message = 'Cancel this request?';
+    let message = gig.status === 'awaiting_payment'
+      ? 'Cancel this request? You have not been charged.'
+      : gig.payment_status === 'paid' && fee <= 0
+        ? 'Cancel this request? Your payment will be refunded in full.'
+        : 'Cancel this request?';
     if (fee > 0) {
       message = gig.driver_arrived_at
         ? `Your driver is already at the pickup point. Cancelling now incurs a ${formatRand(fee)} cancellation fee. Cancel anyway?`
         : `Your driver is on the way. Cancelling now incurs a ${formatRand(fee)} cancellation fee. Cancel anyway?`;
+      if (gig.payment_status === 'paid' && gig.fare_amount > fee) {
+        message = message.replace(' Cancel anyway?', ` The rest of your fare (${formatRand(gig.fare_amount - fee)}) will be refunded. Cancel anyway?`);
+      }
     }
     if (!window.confirm(message)) return;
     setCancelling(true);
@@ -207,6 +229,31 @@ export default function GigStatus() {
       toast.error('Something went wrong. Please try again.');
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const handlePay = async () => {
+    setPaying(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Please sign in again');
+      const res = await fetch(fnUrl('gig-checkout'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ gig_id: gig.id, is_native: Capacitor.isNativePlatform() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        fetchGig();
+        throw new Error(data.error || 'This request is no longer waiting for payment');
+      }
+      if (!res.ok || !data.payment) throw new Error(data.error || 'Payment could not be started');
+      await openPayfastCheckout(data.payment);
+    } catch (err) {
+      console.error('[GigStatus] pay error:', err);
+      toast.error(err.message || 'Payment could not be started. Please try again.');
+    } finally {
+      setPaying(false);
     }
   };
 
@@ -252,6 +299,41 @@ export default function GigStatus() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gigId]);
 
+  // Back from PayFast — web: ?payment=success|cancelled; native: the
+  // payment-result event from App.jsx's deep-link handler.
+  useEffect(() => {
+    const result = searchParams.get('payment');
+    if (!result) return;
+    if (result === 'success') setConfirmingPayment(true);
+    if (result === 'cancelled') toast('Payment cancelled — you have not been charged');
+    setSearchParams((prev) => { const n = new URLSearchParams(prev); n.delete('payment'); return n; }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const onResult = (e) => {
+      const d = e.detail || {};
+      if (d.category !== 'gig' || String(d.gig_id) !== String(gigId)) return;
+      try { sessionStorage.removeItem('skootlink_payment_result'); } catch { /* ignore */ }
+      if (d.status === 'success') { setConfirmingPayment(true); fetchGig(); }
+      else toast('Payment cancelled — you have not been charged');
+    };
+    window.addEventListener(PAYMENT_RESULT_EVENT, onResult);
+    // The app may have been reopened by the deep link before this page mounted
+    try {
+      const stashed = JSON.parse(sessionStorage.getItem('skootlink_payment_result') || 'null');
+      if (stashed) onResult({ detail: stashed });
+    } catch { /* ignore */ }
+    return () => window.removeEventListener(PAYMENT_RESULT_EVENT, onResult);
+  }, [gigId, fetchGig]);
+
+  useEffect(() => {
+    if (!confirmingPayment) return undefined;
+    if (gig && gig.status !== 'awaiting_payment') { setConfirmingPayment(false); return undefined; }
+    const t = setTimeout(() => setConfirmingPayment(false), 120000);
+    return () => clearTimeout(t);
+  }, [confirmingPayment, gig]);
+
   if (loading) {
     return (
       <div className="p-4 lg:p-8 max-w-2xl mx-auto flex items-center justify-center min-h-[50vh]">
@@ -285,11 +367,22 @@ export default function GigStatus() {
     if (gig.customer_no_show) sub = 'Your driver waited at the pickup point but you didn\'t arrive';
     if (gig.admin_resolution === 'admin_cancelled') sub = 'Cancelled by Skootlink support';
     if (gig.admin_resolution === 'voided') sub = 'Your report was upheld and the gig was voided';
+    if (gig.cancellation_reason === 'Payment not completed') sub = 'The payment was not completed, so the request was cancelled';
     if (gig.cancellation_fee > 0) sub += ` · Cancellation fee ${formatRand(gig.cancellation_fee)}`;
     copy = { title: 'Cancelled', sub };
   }
+  if (gig.status === 'awaiting_payment' && confirmingPayment) {
+    copy = { title: 'Confirming your payment…', sub: 'This usually takes a few seconds' };
+  }
+  const refundAmount = Math.max(0, Number(gig.fare_amount || 0) - Number(gig.cancellation_fee || 0));
+  const refundNote = gig.payment_status === 'refund_due'
+    ? `A refund of ${formatRand(refundAmount)} is on its way to your card.`
+    : gig.payment_status === 'refunded'
+      ? `${formatRand(refundAmount)} has been refunded to your card. Your bank may take a few days to show it.`
+      : null;
   const showDriver = (gig.status === 'accepted' || gig.status === 'in_progress') && driverProfile;
-  const canCancel = gig.status === 'pending' || gig.status === 'accepted';
+  const canCancel = gig.status === 'awaiting_payment' || gig.status === 'pending' || gig.status === 'accepted';
+  const payLabel = { paid: 'Paid', refund_due: 'Refund due', refunded: 'Refunded', kept: 'Paid' }[gig.payment_status];
 
   return (
     <div className="p-4 lg:p-8 max-w-2xl mx-auto">
@@ -297,7 +390,7 @@ export default function GigStatus() {
 
       <Card className="p-6 border border-border/50">
         <div className="flex items-center gap-3 mb-4">
-          {gig.status === 'pending' ? (
+          {gig.status === 'pending' || (gig.status === 'awaiting_payment' && confirmingPayment) ? (
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
           ) : gig.status === 'cancelled' ? (
             <XCircle className="w-6 h-6 text-destructive" />
@@ -325,8 +418,27 @@ export default function GigStatus() {
 
         {gig.fare_amount != null && (
           <p className="text-sm mb-4">
-            Estimated fare: <span className="font-bold">{formatRand(gig.fare_amount)}</span>
+            Fare: <span className="font-bold">{formatRand(gig.fare_amount)}</span>
+            {payLabel && <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{payLabel}</span>}
           </p>
+        )}
+
+        {refundNote && (
+          <p className="text-sm mb-4 rounded-lg bg-muted p-3">{refundNote}</p>
+        )}
+
+        {gig.status === 'awaiting_payment' && !confirmingPayment && (
+          <div className="mb-4 space-y-2">
+            <Button className="w-full gap-2" onClick={handlePay} disabled={paying}>
+              {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+              Pay {formatRand(gig.fare_amount)}
+            </Button>
+            <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-px" />
+              Secure payment through PayFast. If no driver is found you get a full refund.
+              Cancelling after a driver has been on the way for a while incurs a cancellation fee.
+            </p>
+          </div>
         )}
 
         {showDriver && (

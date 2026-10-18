@@ -1,6 +1,10 @@
 /**
  * Netlify Function: payfast-webhook (ITN handler)
- * Verifies PayFast payment and grants credits on success.
+ * Verifies PayFast payment, then by custom_str3 (payment category):
+ *   'gig_fare'     -> mark_gig_fare_paid() (migration 018) and, if the gig was
+ *                     waiting for it, offer the gig to nearby drivers
+ *   'verification' -> mark_verification_paid()
+ *   (none)         -> credit package purchase
  * Set Notify URL in PayFast to: https://skootlink.co.za/.netlify/functions/payfast-webhook
  *
  * NOTE ON custom_str4 (app tag): Skootlink and Crosssa share one PayFast
@@ -16,6 +20,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { generateITNSignature, PAYFAST_VALIDATE_URL } from './lib/payfast.js';
 import { PACKAGES } from './lib/packages.js';
+import { offerGigToDrivers, DEFAULT_RADIUS_METERS } from './lib/gigMatching.js';
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -89,6 +94,47 @@ export const handler = async (event) => {
 
   if (!user_id) {
     console.error('[payfast-webhook] missing custom_str1 (user_id)');
+    return { statusCode: 200, body: 'OK' };
+  }
+
+  // ── Gig fares (card gigs are paid before the driver search starts) ────────
+  if (payment_category === 'gig_fare') {
+    const paid = parseFloat(fields.amount_gross || fields.amount || '0');
+    const { data: rows, error } = await supabase.rpc('mark_gig_fare_paid', {
+      p_m_payment_id: fields.m_payment_id,
+      p_pf_payment_id: fields.pf_payment_id,
+      p_amount: paid,
+    });
+    if (error) {
+      console.error('[payfast-webhook] mark_gig_fare_paid failed:', error);
+      return { statusCode: 500, body: 'Error' }; // PayFast retries the ITN
+    }
+    const { gig_id: gigId, action } = (rows && rows[0]) || {};
+    console.log(`[payfast-webhook] gig fare m_payment_id=${fields.m_payment_id} gig=${gigId} action=${action} amount=${paid}`);
+
+    if (action === 'start_matching') {
+      const { data: gig, error: gErr } = await supabase
+        .from('gig_requests')
+        .select('id, gig_type, pickup_address, dropoff_address, fare_amount')
+        .eq('id', gigId)
+        .single();
+      if (gErr) {
+        console.error('[payfast-webhook] could not load paid gig:', gErr);
+      } else {
+        const { notified, pushed } = await offerGigToDrivers(supabase, gig, DEFAULT_RADIUS_METERS, 'payfast-webhook');
+        console.log(`[payfast-webhook] gig=${gigId} paid; offered to ${notified} driver(s), ${pushed} push(es)`);
+      }
+    } else if (action === 'refund_queued') {
+      await supabase.rpc('create_notification', {
+        p_user_id: user_id,
+        p_type: 'gig_refund',
+        p_title: 'Payment received after your request ended',
+        p_body: `We received R${paid.toFixed(2)} for a request that had already ended. It will be refunded to your card.`,
+        p_data: { gig_id: gigId },
+      }).then(({ error: nErr }) => { if (nErr) console.error('[payfast-webhook] notify failed:', nErr); });
+    } else if (action === 'amount_mismatch') {
+      console.error(`[payfast-webhook] AMOUNT MISMATCH for gig fare m_payment_id=${fields.m_payment_id}: paid ${paid}`);
+    }
     return { statusCode: 200, body: 'OK' };
   }
 

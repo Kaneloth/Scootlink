@@ -21,6 +21,7 @@ const TABS = [
 ];
 
 const STATUS_CLS = {
+  awaiting_payment: 'bg-amber-100 text-amber-700',
   pending: 'bg-blue-100 text-blue-700',
   accepted: 'bg-blue-100 text-blue-700',
   in_progress: 'bg-indigo-100 text-indigo-700',
@@ -65,7 +66,8 @@ function GigRow({ gig, onDone }) {
   };
 
   const Icon = gig.gig_type === 'delivery' ? Package : Car;
-  const isActive = ['pending', 'accepted', 'in_progress'].includes(gig.status);
+  const isActive = ['awaiting_payment', 'pending', 'accepted', 'in_progress'].includes(gig.status);
+  const PAY_LABEL = { awaiting: 'awaiting payment', paid: 'paid', refund_due: 'refund due', refunded: 'refunded', kept: 'fee kept' };
 
   return (
     <div className="rounded-xl border border-border p-4 space-y-3 bg-card">
@@ -87,7 +89,7 @@ function GigRow({ gig, onDone }) {
         <p><span className="text-muted-foreground">Driver:</span> {person(gig.driver)}</p>
         <p className="sm:col-span-2 truncate"><span className="text-muted-foreground">From:</span> {gig.pickup_address}</p>
         <p className="sm:col-span-2 truncate"><span className="text-muted-foreground">To:</span> {gig.dropoff_address}</p>
-        <p><span className="text-muted-foreground">Fare:</span> {rand(gig.fare_amount)}</p>
+        <p><span className="text-muted-foreground">Fare:</span> {rand(gig.fare_amount)}{gig.payment_status && gig.payment_status !== 'none' ? ` · ${PAY_LABEL[gig.payment_status] || gig.payment_status}` : ''}</p>
         {gig.cancellation_fee > 0 && (
           <p><span className="text-muted-foreground">{gig.customer_no_show ? 'No-show fee' : 'Cancellation fee'}:</span> {rand(gig.cancellation_fee)}</p>
         )}

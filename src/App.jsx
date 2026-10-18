@@ -89,6 +89,7 @@ const AdminGigVerification = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/
 const AdminVehicleRideReady = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminVehicleRideReady')) : null;
 const AdminGigSettings = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminGigSettings')) : null;
 const AdminGigs = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminGigs')) : null;
+const AdminPayments = __INCLUDE_ADMIN__ ? lazyWithReload(() => import('@/pages/admin/AdminPayments')) : null;
 
 function AdminLoadingScreen() {
   return (
@@ -215,6 +216,7 @@ const AuthenticatedApp = () => {
           <Route path="vehicle-ride-ready" element={<AdminVehicleRideReady />} />
           <Route path="gig-settings" element={<AdminGigSettings />} />
           <Route path="gigs" element={<AdminGigs />} />
+          <Route path="payments" element={<AdminPayments />} />
         </Route>
       )}
 
@@ -464,7 +466,7 @@ function App() {
           try {
             const parsed = new URL(url);
 
-            // ── PayFast payment return (credits or verification) ──────────
+            // ── PayFast payment return (credits, verification or a gig fare) ──
             // Separate from the OAuth branch below — PayFast redirects here
             // via co.za.skootlink.app://payment-result, never with a `code`
             // param, so it's safe to fully branch off before touching any
@@ -474,7 +476,8 @@ function App() {
               const category = parsed.searchParams.get('category');
               const pkg = parsed.searchParams.get('package');
               const service = parsed.searchParams.get('service');
-              const detail = { status, category, package: pkg, service };
+              const gig_id = parsed.searchParams.get('gig_id'); // category 'gig' (GigStatus listens)
+              const detail = { status, category, package: pkg, service, gig_id };
               // Primary signal — appUrlOpen firing is the one thing in this
               // whole chain we've conclusively proven reliable (it's the
               // exact same mechanism Google sign-in already depends on).

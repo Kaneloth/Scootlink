@@ -55,7 +55,7 @@ export default function GigsHub() {
           .from('gig_requests')
           .select('id, gig_type, status, customer_id, driver_id, pickup_address, driver_arrived_at, driver_completed_at')
           .or(`customer_id.eq.${me.id},driver_id.eq.${me.id}`)
-          .in('status', ['pending', 'accepted', 'in_progress'])
+          .in('status', ['awaiting_payment', 'pending', 'accepted', 'in_progress'])
           .order('created_at', { ascending: false });
         if (error) console.error('[GigsHub] open gigs fetch failed:', error);
         setOpenGigs(data || []);
@@ -106,7 +106,7 @@ export default function GigsHub() {
       {/* Unfinished gigs: get back to the trip screen */}
       {openGigs.map((g) => {
         const asDriver = g.driver_id === user?.id;
-        let label = 'Finding a driver';
+        let label = g.status === 'awaiting_payment' ? 'Waiting for your payment' : 'Finding a driver';
         if (g.status === 'accepted') {
           label = asDriver
             ? (g.driver_arrived_at ? 'Waiting at pickup' : 'Head to pickup')

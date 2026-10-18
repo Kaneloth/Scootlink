@@ -17,7 +17,7 @@ const supabaseAdmin = createClient(
 );
 
 const FILTERS = {
-  active: ['pending', 'accepted', 'in_progress'],
+  active: ['awaiting_payment', 'pending', 'accepted', 'in_progress'],
   disputed: ['disputed'],
   completed: ['completed'],
   cancelled: ['cancelled', 'no_drivers_available'],
@@ -56,7 +56,7 @@ export const handler = async (event) => {
     if (body.action === 'list') {
       let q = supabaseAdmin
         .from('gig_requests')
-        .select('id, gig_type, status, customer_id, driver_id, pickup_address, dropoff_address, fare_amount, cancellation_fee, customer_no_show, commission_amount, driver_payout_amount, dispute_reason, admin_resolution, admin_note, created_at, accepted_at, started_at, completed_at, cancelled_at, cancelled_by, disputed_at, auto_confirmed')
+        .select('id, gig_type, status, payment_method, payment_status, customer_id, driver_id, pickup_address, dropoff_address, fare_amount, cancellation_fee, customer_no_show, commission_amount, driver_payout_amount, dispute_reason, admin_resolution, admin_note, created_at, accepted_at, started_at, completed_at, cancelled_at, cancelled_by, disputed_at, auto_confirmed')
         .order('created_at', { ascending: false })
         .limit(100);
       const statuses = FILTERS[body.filter];

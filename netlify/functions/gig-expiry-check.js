@@ -5,7 +5,13 @@
  *
  *   1. ~1 min unmatched (retry_count = 0) -> re-broadcast at a wider radius
  *   2. ~2 min unmatched (retry_count >= 1) -> auto-cancel, status becomes
- *      'no_drivers_available', customer notified
+ *      'no_drivers_available', customer notified (a paid fare is refunded:
+ *      the refund is queued by migration 018's trigger)
+ *   "Unmatched" is measured from searching_since (when the card payment
+ *   arrived), falling back to created_at for older gigs.
+ *   3. Card gigs never paid within the payment window -> cancelled
+ *      (expire_unpaid_gigs, migration 018)
+ *   4. If app_settings.gig_auto_refunds is on, send queued refunds
  *
  * NOTE on timing: this mirrors an original 30s/60s design intent, but
  * Netlify Scheduled Functions run on cron and practically can't go finer
@@ -14,10 +20,7 @@
  * comfortably supports minute-level invocations before relying on this
  * in production (not yet verified).
  *
- * Duplicates the broadcast logic from create-gig-request.js — same
- * REST-broadcast approach, kept inline rather than shared since there's
- * no established shared-lib convention in netlify/functions yet. Worth
- * extracting to a shared helper if a third caller ever needs it.
+ * Broadcasting is shared with payfast-webhook via lib/gigMatching.js.
  *
  * Schedule in netlify.toml:
  *   [[scheduled.functions]]
@@ -27,6 +30,8 @@
  * Place at: netlify/functions/gig-expiry-check.js
  */
 import { createClient } from '@supabase/supabase-js';
+import { offerGigToDrivers, EXPANDED_RADIUS_METERS } from './lib/gigMatching.js';
+import { sendGigRefund } from './lib/gigRefunds.js';
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -35,7 +40,6 @@ const supabase = createClient(
 
 const RETRY_AFTER_MS = 60 * 1000;       // expand radius after ~1 min unmatched
 const CANCEL_AFTER_MS = 2 * 60 * 1000;  // give up after ~2 min unmatched
-const EXPANDED_RADIUS_METERS = 7000;    // matches the 5km -> 7km precedent from planning notes
 const STALE_DRIVER_MS = 2 * 60 * 1000;     // drivers silent this long are flipped to unavailable
 
 async function notify(userId, type, title, body, data = null) {
@@ -48,99 +52,9 @@ async function notify(userId, type, title, body, data = null) {
   }
 }
 
-// Records who was offered this gig (migration 013) and sends each NEWLY
-// offered driver an in-app notification. The notifications-table webhook
-// turns that into a phone push (send-push-notification), so drivers whose
-// app is closed still hear about the gig; tapping it opens /gig-offer/:id.
-// Drivers already offered (e.g. at 5 km, before the 7 km re-broadcast) are
-// skipped so nobody gets the same offer twice.
-async function recordOffersAndNotify(gig, drivers, logTag) {
-  const rows = drivers.map((d) => ({
-    gig_id: gig.id,
-    driver_id: d.driver_id,
-    distance_meters: d.distance_meters,
-  }));
-  const { data: inserted, error } = await supabase
-    .from('gig_offers')
-    .upsert(rows, { onConflict: 'gig_id,driver_id', ignoreDuplicates: true })
-    .select('driver_id, distance_meters');
-  if (error) {
-    console.error(`[${logTag}] Recording offers failed for gig=${gig.id}:`, error);
-    return 0;
-  }
-
-  const title = gig.gig_type === 'ride' ? 'New ride request nearby' : 'New delivery request nearby';
-  const fare = gig.fare_amount != null ? ` · R${Number(gig.fare_amount).toFixed(2)}` : '';
-  const results = await Promise.allSettled((inserted || []).map((d) =>
-    supabase.rpc('create_notification', {
-      p_user_id: d.driver_id,
-      p_type: 'gig_offer',
-      p_title: title,
-      p_body: `Pickup: ${gig.pickup_address}${fare} · ${(Number(d.distance_meters || 0) / 1000).toFixed(1)} km away`,
-      p_data: { gig_id: gig.id },
-    }).then(({ error: nErr }) => { if (nErr) throw nErr; }),
-  ));
-  const failed = results.filter((r) => r.status === 'rejected');
-  if (failed.length) {
-    console.error(`[${logTag}] ${failed.length} offer notification(s) failed for gig=${gig.id}:`, failed[0].reason);
-  }
-  return results.length - failed.length;
-}
-
-async function broadcastToDrivers(gig, radiusMeters) {
-  const { data: nearbyDrivers, error: matchErr } = await supabase.rpc(
-    'find_nearby_eligible_drivers',
-    { p_gig_id: gig.id, p_radius_meters: radiusMeters },
-  );
-
-  if (matchErr) {
-    console.error(`[gig-expiry-check] Matching RPC failed for gig=${gig.id}:`, matchErr);
-    return 0;
-  }
-  if (!nearbyDrivers || nearbyDrivers.length === 0) {
-    return 0;
-  }
-
-  const messages = nearbyDrivers.map((d) => ({
-    topic: `driver:${d.driver_id}:gig-offers`,
-    event: 'gig_offer',
-    private: true,
-    payload: {
-      gig_id: gig.id,
-      gig_type: gig.gig_type,
-      pickup_address: gig.pickup_address,
-      dropoff_address: gig.dropoff_address,
-      fare_amount: gig.fare_amount,
-      distance_meters: d.distance_meters,
-    },
-  }));
-
-  try {
-    const res = await fetch(`${process.env.VITE_SUPABASE_URL}/realtime/v1/api/broadcast`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-      body: JSON.stringify({ messages }),
-    });
-    if (!res.ok) {
-      console.error(`[gig-expiry-check] Broadcast failed for gig=${gig.id}:`, await res.text());
-      return 0;
-    }
-  } catch (err) {
-    console.error(`[gig-expiry-check] Broadcast threw for gig=${gig.id}:`, err);
-    return 0;
-  }
-
-  await recordOffersAndNotify(gig, nearbyDrivers, 'gig-expiry-check');
-  return nearbyDrivers.length;
-}
-
 export const handler = async () => {
   const now = new Date();
-  const results = { rebroadcast: 0, cancelled: 0, stale_drivers_cleared: 0, auto_confirmed: 0, errors: [] };
+  const results = { rebroadcast: 0, cancelled: 0, unpaid_expired: 0, refunds_sent: 0, stale_drivers_cleared: 0, auto_confirmed: 0, errors: [] };
 
   try {
     // Backstop cleanup: a driver whose app closed or lost signal stops sending
@@ -162,16 +76,16 @@ export const handler = async () => {
 
     const { data: gigs, error } = await supabase
       .from('gig_requests')
-      .select('id, gig_type, customer_id, pickup_address, dropoff_address, fare_amount, status, retry_count, search_radius_meters, created_at')
+      .select('id, gig_type, customer_id, pickup_address, dropoff_address, fare_amount, status, payment_status, retry_count, search_radius_meters, created_at, searching_since')
       .eq('status', 'pending');
 
     if (error) throw error;
 
     for (const gig of gigs) {
-      const elapsedMs = now - new Date(gig.created_at);
+      const elapsedMs = now - new Date(gig.searching_since || gig.created_at);
 
       if (gig.retry_count === 0 && elapsedMs >= RETRY_AFTER_MS) {
-        const notified = await broadcastToDrivers(gig, EXPANDED_RADIUS_METERS);
+        const { notified } = await offerGigToDrivers(supabase, gig, EXPANDED_RADIUS_METERS, 'gig-expiry-check');
 
         const { error: updateErr } = await supabase
           .from('gig_requests')
@@ -207,12 +121,38 @@ export const handler = async () => {
         await notify(
           gig.customer_id, 'gig_no_drivers',
           'No drivers available',
-          `We couldn't find a driver for your ${gig.gig_type} request near ${gig.pickup_address}. Please try again.`,
+          `We couldn't find a driver for your ${gig.gig_type} request near ${gig.pickup_address}.`
+            + (gig.payment_status === 'paid' ? ' Your payment will be refunded in full.' : ' Please try again.'),
           { gig_id: gig.id, action: 'retry_gig' },
         );
 
         console.log(`[gig-expiry-check] gig=${gig.id} cancelled — no drivers found after retry`);
         results.cancelled++;
+      }
+    }
+
+    // Card gigs nobody paid for in time (migration 018)
+    const { data: expired, error: expErr } = await supabase.rpc('expire_unpaid_gigs');
+    if (expErr) {
+      console.error('[gig-expiry-check] expire_unpaid_gigs failed:', expErr);
+    } else {
+      for (const e of expired || []) {
+        results.unpaid_expired++;
+        await notify(e.customer_id, 'gig_payment_expired', 'Request cancelled',
+          'Your request was cancelled because the payment was not completed. You have not been charged.', { gig_id: e.gig_id });
+      }
+    }
+
+    // Queued refunds, once automatic refunds are switched on in admin
+    const { data: cfg } = await supabase.from('app_settings').select('gig_auto_refunds').eq('id', 1).maybeSingle();
+    if (cfg?.gig_auto_refunds) {
+      const { data: due, error: dueErr } = await supabase
+        .from('gig_refunds').select('id').eq('status', 'due').order('id').limit(10);
+      if (dueErr) console.error('[gig-expiry-check] loading due refunds failed:', dueErr);
+      for (const r of due || []) {
+        const out = await sendGigRefund(supabase, r.id, null);
+        if (out.ok) results.refunds_sent++;
+        else results.errors.push(`refund ${r.id}: ${out.error}`);
       }
     }
 

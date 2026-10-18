@@ -13,8 +13,8 @@
 // oversight.
 //
 // No live fare preview — fare is computed server-side in
-// create-gig-request.js and shown on the waiting screen after creation,
-// rather than duplicating the fare-calc + app_settings fetch logic here.
+// create-gig-request.js and shown on the status page, where the customer
+// pays it (upfront, through PayFast) before any driver is searched for.
 //
 // "Use current location" for pickup is a best-effort enhancement via the
 // standard browser Geolocation API (navigator.geolocation) — NOT
@@ -126,11 +126,8 @@ export default function RequestGig() {
       }
       if (!res.ok) throw new Error(data.error || 'Failed to request gig');
 
-      toast.success(
-        data.driversNotified > 0
-          ? `Looking for a driver — ${data.driversNotified} nearby`
-          : 'Request sent — searching for a driver'
-      );
+      // Card gigs are paid upfront: the status page shows the fare and the
+      // Pay button; the driver search starts once PayFast confirms payment.
       navigate(`/gig-status/${data.gig.id}`);
     } catch (err) {
       console.error('[RequestGig] submit error:', err);
@@ -236,7 +233,7 @@ export default function RequestGig() {
 
             <Button onClick={handleSubmit} className="w-full gap-2" disabled={!canSubmit}>
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {submitting ? 'Requesting...' : `Request ${gigType === 'ride' ? 'Ride' : 'Delivery'}`}
+              {submitting ? 'Getting your fare…' : 'See fare & pay'}
             </Button>
           </div>
         </Card>
