@@ -65,6 +65,8 @@ export default function GigStatus() {
   const [reporting, setReporting] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [paying, setPaying] = useState(false);
+  // Pay was pressed but no driver was online nearby (customer not charged)
+  const [noDriversNow, setNoDriversNow] = useState(false);
   // Set when the customer comes back from PayFast; cleared once the ITN has
   // moved the gig on (or after 2 minutes, in case the payment never arrives)
   const [confirmingPayment, setConfirmingPayment] = useState(false);
@@ -244,6 +246,11 @@ export default function GigStatus() {
         body: JSON.stringify({ gig_id: gig.id, is_native: Capacitor.isNativePlatform() }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 409 && data.no_drivers) {
+        setNoDriversNow(true);
+        return;
+      }
+      setNoDriversNow(false);
       if (res.status === 409) {
         fetchGig();
         throw new Error(data.error || 'This request is no longer waiting for payment');
@@ -433,9 +440,14 @@ export default function GigStatus() {
 
         {gig.status === 'awaiting_payment' && !confirmingPayment && (
           <div className="mb-4 space-y-2">
+            {noDriversNow && (
+              <p className="text-sm rounded-lg bg-amber-50 text-amber-900 p-3">
+                No drivers are available near your pickup right now. You have not been charged — try again in a few minutes.
+              </p>
+            )}
             <Button className="w-full gap-2" onClick={handlePay} disabled={paying}>
               {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-              Pay {formatRand(gig.fare_amount)}
+              {noDriversNow ? `Try again · ${formatRand(gig.fare_amount)}` : `Pay ${formatRand(gig.fare_amount)}`}
             </Button>
             <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-px" />
